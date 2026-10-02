@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人工作台产品方案 · Personal Workspace Blueprint</title>
+<style>
+:root{--g-blue:#0B57D0;--g-blue-soft:#E8F0FE;--ink:#1d1d1f;--ink2:#424245;--ink3:#86868b;--bg:#f5f5f7;--card:#fff;--line:#e8e8ed;
+--red:#E5484D;--amber:#F5A623;--blue:#3B82F6;--green:#22A06B;--gray:#9CA3AF;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Segoe UI",Roboto,"Noto Sans SC",sans-serif;background:var(--bg);color:var(--ink);line-height:1.8;font-size:15px}
+.wrap{max-width:1060px;margin:0 auto;padding:0 22px 70px}
+a{color:var(--g-blue);text-decoration:none;border-bottom:1px solid rgba(11,87,208,.25)}
+.src{font-size:12px;color:var(--ink3)}
+.src a{font-size:12px}
+/* hero */
+.hero{background:linear-gradient(135deg,#0B1426 0%,#132B45 55%,#0E2A2E 100%);color:#fff;border-radius:0 0 28px 28px;padding:64px 36px 46px;margin-bottom:34px}
+.hero .tag{display:inline-block;font-size:12px;letter-spacing:.14em;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);padding:5px 14px;border-radius:999px;margin-bottom:18px}
+.hero h1{font-size:40px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+.hero p{color:rgba(255,255,255,.72);max-width:640px;font-size:15px}
+.hero .meta{margin-top:22px;font-size:12.5px;color:rgba(255,255,255,.55)}
+/* toc */
+.toc{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:36px}
+.toc a{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;color:var(--ink);border-bottom:1px solid var(--line);transition:.2s}
+.toc a:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.06)}
+.toc b{display:block;font-size:19px;color:var(--g-blue);font-weight:700}
+.toc span{font-size:13px;color:var(--ink2)}
+/* sections */
+section{margin-bottom:46px}
+h2.sec{font-size:26px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:12px}
+h2.sec .no{font-size:13px;font-weight:700;color:#fff;background:var(--g-blue);border-radius:8px;padding:3px 10px;letter-spacing:.05em}
+.lede{color:var(--ink3);font-size:14px;margin-bottom:20px}
+h3.blk{font-size:19px;font-weight:700;margin:28px 0 12px;padding-left:12px;border-left:4px solid var(--g-blue)}
+h4{font-size:15.5px;margin:18px 0 8px;color:var(--ink)}
+p{margin-bottom:10px}
+/* tables */
+.tbl-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:14px;margin:14px 0 20px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
+th{background:#fafafa;text-align:left;padding:11px 14px;font-weight:600;color:var(--ink2);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid #f1f1f4;vertical-align:top}
+tr:last-child td{border-bottom:none}
+/* cards & misc */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+.card h4{margin-top:0}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;text-align:center}
+.kpi b{display:block;font-size:24px;color:var(--g-blue)}
+.kpi span{font-size:12px;color:var(--ink3)}
+blockquote{border-left:4px solid var(--amber);background:#FFFBEB;padding:12px 16px;border-radius:0 12px 12px 0;margin:14px 0;font-size:13.5px}
+.tip{border-left-color:var(--g-blue);background:var(--g-blue-soft)}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;margin-left:6px;vertical-align:1px}
+.b-g{background:var(--g-green-soft,#E6F4EA);color:#137333}
+.b-b{background:var(--g-blue-soft);color:var(--g-blue)}
+.b-r{background:#FDECEA;color:#C5221F}
+.b-y{background:#FEF7E0;color:#B06000}
+.chip{display:inline-block;font-size:12px;padding:2px 10px;border-radius:999px;font-weight:600}
+ul.tick{list-style:none;margin:8px 0 14px}
+ul.tick li{padding:6px 0 6px 26px;position:relative;border-bottom:1px dashed #eee}
+ul.tick li:before{content:"✓";position:absolute;left:2px;color:var(--green);font-weight:700}
+ul.tick li b{color:var(--ink)}
+.ref{display:inline-block;background:#f0f3f8;color:var(--g-blue);font-size:11px;padding:1px 8px;border-radius:6px;margin-left:4px;white-space:nowrap}
+.ref a{color:inherit;border:none}
+/* flow diagram (pure CSS) */
+.flow{display:flex;gap:0;align-items:stretch;justify-content:center;margin:22px 0}
+.fnode{flex:1;max-width:250px;background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:16px;text-align:center}
+.fnode .ic{font-size:26px}
+.fnode b{display:block;margin:6px 0 4px;font-size:15px}
+.fnode small{color:var(--ink3);font-size:12px;line-height:1.5;display:block}
+.farrow{display:flex;align-items:center;justify-content:center;color:var(--g-blue);font-size:20px;padding:0 6px;font-weight:700}
+/* jump matrix */
+.jm{display:grid;grid-template-columns:1fr;gap:10px;margin:16px 0}
+.jrow{display:grid;grid-template-columns:200px 30px 200px 1fr;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.jrow .a,.jrow .z{font-weight:600;font-size:13.5px}
+.jrow .a span,.jrow .z span{display:block;font-weight:400;font-size:11.5px;color:var(--ink3)}
+.jrow .ar{color:var(--g-blue);font-weight:700;text-align:center}
+/* priority colors */
+.pri{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
+.pri .pc{border-radius:14px;padding:14px;color:#fff;text-align:center}
+.pri .pc b{font-size:17px;display:block}
+.pri .pc small{opacity:.92;font-size:11.5px;display:block;margin-top:4px;line-height:1.45}
+/* type scale */
+.tsr{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid #f1f1f4;padding:9px 4px}
+.tsr .t{width:230px;flex-shrink:0}
+.tsr .m{margin-left:auto;color:var(--ink3);font-size:12px;white-space:nowrap}
+/* stage */
+.stage{border-left:3px solid var(--g-blue);margin:0 0 18px 8px;padding:2px 0 14px 18px;position:relative}
+.stage:before{content:"";position:absolute;left:-8.5px;top:8px;width:14px;height:14px;border-radius:50%;background:var(--g-blue);border:3px solid #fff;box-shadow:0 0 0 1px var(--g-blue)}
+.stage h4{margin:0 0 4px}
+.stage .dur{font-size:12px;color:var(--g-blue);font-weight:600}
+/* code */
+.code{background:#0d1117;color:#c9d1d9;border-radius:12px;padding:14px 18px;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;overflow-x:auto;margin:12px 0;line-height:1.7}
+.code .c{color:#8b949e}
+.code .k{color:#79c0ff}
+/* footer */
+.foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink3);font-size:12.5px;text-align:center}
+@media(max-width:820px){.toc{grid-template-columns:repeat(2,1fr)}.grid2,.grid3{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.flow{flex-direction:column}.farrow{transform:rotate(90deg)}.jrow{grid-template-columns:1fr;gap:4px}.jrow .ar{text-align:left}.pri{grid-template-columns:1fr 1fr}.hero h1{font-size:30px}}
+@media print{.hero{border-radius:0}body{background:#fff}}
+</style>
+</head>
+<body>
+<div class="hero">
+  <div class="tag">PERSONAL WORKSPACE · PRODUCT BLUEPRINT</div>
+  <h1>个人工作台产品方案</h1>
+  <p>任务清单 × 文档工作站 × AI 助手面板 —— 三大内嵌互跳模块的一体化设计。基于 10 款竞品全景、6 类专项深挖与两大设计体系规范，产出的完整技术路线、前端框架设计与美术方案。</p>
+  <div class="meta">整合自三路调研成果（竞品全景/任务清单 · 文档工作站/AI面板 · 设计规范/技术选型）｜ 2026-10-01 ｜ 依据 20+ 官方来源与 GitHub 实时数据交叉核验</div>
+</div>
+<div class="wrap">
+
+<nav class="toc">
+  <a href="#s1"><b>01</b><span>市场调研摘要</span></a>
+  <a href="#s2"><b>02</b><span>优化后的产品设想</span></a>
+  <a href="#s3"><b>03</b><span>完整技术路线</span></a>
+  <a href="#s4"><b>04</b><span>前端框架设计</span></a>
+  <a href="#s5"><b>05</b><span>美术方案</span></a>
+</nav>
+
+<!-- ============ 01 ============ -->
+<section id="s1">
+  <h2 class="sec"><span class="no">01</span>市场调研摘要</h2>
+  <p class="lede">10 款一体化竞品 + 7 款任务管理产品 + 6 类文档/AI 面板专项深挖的核心结论。</p>
+
+  <h3 class="blk">1.1 竞品格局：五类玩家，各自所长</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>流派</th><th>代表</th><th>对本项目最有价值的启示</th></tr></thead>
+    <tbody>
+      <tr><td><strong>全能工作台</strong></td><td>Notion、Microsoft Loop</td><td>「任务=数据库行=页面」同源架构；Loop 的可移植组件跨模块同步 <span class="ref"><a href="https://www.notion.com/pricing">来源</a></span></td></tr>
+      <tr><td><strong>本地优先知识库</strong></td><td>Obsidian、Anytype、思源</td><td>本地文件主权 + 双链/反链面板 + 块级锚点跳转 <span class="ref"><a href="https://obsidian.md/pricing">来源</a></span></td></tr>
+      <tr><td><strong>AI-native 结构化</strong></td><td>Tana、Notion AI</td><td>AI 把对话/会议直接转结构化任务，AI 从插件变内置 <span class="ref"><a href="https://tana.inc/blog/best-notion-alternatives-2026">来源</a></span></td></tr>
+      <tr><td><strong>苹果设计标杆</strong></td><td>Craft（Apple 设计奖）、Things 3</td><td>极简美学 + 块级引用 + 四清单时间语义 <span class="ref"><a href="https://www.craft.do/pricing">来源</a></span></td></tr>
+      <tr><td><strong>垂直专精</strong></td><td>Heptabase（PDF 研究）、TickTick（任务）、Readwise Reader（阅读）</td><td>PDF 标注成卡保留原文回链；同数据四视图切换 <span class="ref"><a href="https://heptabase.com/pricing">来源</a></span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">1.2 三大趋势（2024–2026）</h3>
+  <div class="grid3">
+    <div class="card"><h4>🤖 AI 内置化</h4><p class="src">Notion Business 2025-05 起 AI 无限内置；Tana/Capacities/Craft 均原生集成。AI 面板不是附加件，应作为一级模块设计。</p></div>
+    <div class="card"><h4>🔗 任务与笔记同源</h4><p class="src">Capacities「任务强绑定笔记」、Obsidian Tasks、Tana Supertag——三模块数据同源是业界收敛方向，互跳应从数据层打通。</p></div>
+    <div class="card"><h4>📐 三栏布局收敛</h4><p class="src">左侧导航 + 中央画布 + 右侧信息/反链面板成为事实标准（Notion/Obsidian/思源/Reader 一致）。</p></div>
+  </div>
+
+  <h3 class="blk">1.3 最值得借鉴的模式 Top 6</h3>
+  <ul class="tick">
+    <li><b>Things 3 四清单时间语义</b>（Today / Upcoming / Anytime / Someday + Logbook 归档）——最简洁的「每日/每周/长期」分层，直接采用 <span class="ref"><a href="https://culturedcode.com/things/support/articles/4001304">来源</a></span></li>
+    <li><b>Readwise Reader 双坐标位置记忆</b>——「最近滚动位置」与「深度阅读进度」分开记录、双色进度条渲染，防快速翻页污染 <span class="ref"><a href="https://docs.readwise.io/reader/docs/faqs">来源</a></span></li>
+    <li><b>Heptabase/Reader 注释即锚点</b>——高亮自动生成深链，任务可直跳「文档某一句话」 <span class="ref"><a href="https://www.zotero.org/support/pdf_reader">来源</a></span></li>
+    <li><b>Poe/OpenRouter 额度范式</b>——订阅档位↔点数余额进度条+重置日；运行中任务卡片（徽标+脉冲+token 实时数+Stop） <span class="ref"><a href="https://poe.com/subscription_plans">来源</a></span></li>
+    <li><b>TickTick 同数据四视图</b>（列表/看板/日历/四象限一键切换）+ 内置番茄钟/习惯 <span class="ref"><a href="https://ticktick.com/features?language=en_us">来源</a></span></li>
+    <li><b>全局 Cmd+K 命令面板</b>——Notion/Craft/Tana/Akiflow 一致采用，是三模块互跳的最高效入口 <span class="ref"><a href="https://akiflow.com">来源</a></span></li>
+  </ul>
+  <blockquote>⚠️ 风险提示：Omnivore 已于 2024-11 关停、Pocket 已宣布关停——Reader 类「位置全端同步」已成标配能力，自建工作台必须内建而非外挂。<span class="src">（<a href="https://gleamr.io/blog/omnivore-shut-down-alternatives">来源1</a> · <a href="https://talk.macpowerusers.com/t/so-with-pocket-shutting-down-what-read-it-later-service-do-you-recommend/40772">来源2</a>）</span></blockquote>
+</section>
+<!-- ============ 02 ============ -->
+<section id="s2">
+  <h2 class="sec"><span class="no">02</span>优化后的产品设想</h2>
+  <p class="lede">在原三大模块设想之上，按「调研依据 → 功能修订/增补」逐条落地。✅=保留原设想，🔧=修订，➕=增补。</p>
+
+  <h3 class="blk">2.1 模块一：任务清单</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th style="width:11%">类型</th><th style="width:34%">功能</th><th style="width:33%">设计要点</th><th>调研依据</th></tr></thead>
+    <tbody>
+      <tr><td>✅ 保留</td><td>每日 / 每周 / 长期三层任务</td><td>落地为 <b>四清单时间语义</b>：Today（今日）→ Upcoming（近期滚动）→ Anytime（随时池）→ Someday（将来也许），完成项自动入 Logbook 归档</td><td>Things 3 官方四清单定义 <span class="ref"><a href="https://culturedcode.com/things/support/articles/4001304">来源</a></span></td></tr>
+      <tr><td>🔧 修订</td><td>优先级颜色</td><td>改为 <b>红→橙黄→蓝→灰白</b> 四档；<b>绿色不用于优先级</b>，保留给「进行中/已完成」状态语义，避免语义冲突（详见 5.6）</td><td>Todoist/滴答清单官方四色规范：业界绿色惯例作状态色 <span class="ref"><a href="https://www.todoist.com/help/todoist/features/set-a-priority-in-todoist-Wy82Jp">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>My Day 每日规划</td><td>每天空清单启动 + 系统智能建议今日候选任务，强制轻量「规划-回顾」仪式</td><td>Microsoft To Do My Day <span class="ref"><a href="https://support.microsoft.com/en-us/todo/my-day-and-suggestions">来源</a></span> · Sunsama <span class="ref"><a href="https://www.sunsama.com">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>同数据四视图</td><td>列表 / 看板 / 日历 / 四象限一键切换，数据与视图分离</td><td>TickTick 官方功能页 <span class="ref"><a href="https://ticktick.com/features?language=en_us">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>自然语言录入</td><td>输入「明天14:00 交报告 P1」自动解析日期与优先级</td><td>Todoist/TickTick NLP 惯例 <span class="ref"><a href="https://ticktick.com/features?language=en_us">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>专注套件</td><td>内置番茄钟 + 习惯打卡 + 专注统计，与任务同池</td><td>TickTick <span class="ref"><a href="https://ticktick.com/features?language=en_us">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>任务↔文档互挂</td><td>任务卡片常驻显示关联文档/高亮锚点；从文档批注可一键「转任务」</td><td>Capacities「任务强绑定笔记」 <span class="ref"><a href="https://capacities.io/pricing">来源</a></span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">2.2 模块二：文档工作站</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th style="width:11%">类型</th><th style="width:34%">功能</th><th style="width:33%">设计要点</th><th>调研依据</th></tr></thead>
+    <tbody>
+      <tr><td>✅ 保留</td><td>PDF / Markdown 阅读</td><td>三栏工作区：左侧库+目录、中央阅读画布、右侧批注面板；支持多标签页开</td><td>Zotero 7 阅读器黄金布局 <span class="ref"><a href="https://www.zotero.org/support/pdf_reader">来源</a></span></td></tr>
+      <tr><td>🔧 修订</td><td>阅读位置记忆</td><td><b>双坐标方案</b>：<code>lastScroll</code>（瞬时）与 <code>readingProgress</code>（深度）分开存；PDF 存「页码+偏移」，MD 存「块锚点」；打开 300ms 内恢复并 toast 提示</td><td>Readwise Reader 双位置追踪 <span class="ref"><a href="https://docs.readwise.io/reader/docs/faqs">来源</a></span> · Zotero 打开即回原页 <span class="ref"><a href="https://forums.zotero.org/discussion/96728/understanding-annotations-across-devices">来源</a></span></td></tr>
+      <tr><td>🔧 修订</td><td>文档内链接跳转</td><td>标题锚点 + 块锚点两级（<code>[[doc#heading]]</code> / <code>#^blockID</code>）；站内链接走路由、外链交系统浏览器；链接悬停浮动预览</td><td>Obsidian 官方链接体系 <span class="ref"><a href="https://obsidian.md/help/links">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>双目录导航</td><td>章节 TOC 与「我的高亮/批注 TOC」并列为一级导航；支持用户自建书签</td><td>Readwise Reader · PDF Expert <span class="ref"><a href="https://docs.readwise.io/reader/docs/faqs/highlights-tags-notes">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>批注三件套 + 转任务</td><td>高亮（≤4 色）+ 侧栏评论 + 区域截图，结构化存储；每条批注自动生成深链，可一键「转任务」入清单</td><td>Zotero 批注提取回链 + Reader 高亮体系 <span class="ref"><a href="https://www.zotero.org/support/pdf_reader">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>沉浸排版</td><td>日间/夜间/羊皮纸/暮色四模式；字号/行距/页宽可调且<b>按文档记忆</b>；PDF 暗色反色渲染不破坏图片</td><td>ReadEra/justRead/Reader 惯例 <span class="ref"><a href="https://justread.app/en/customization">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>反向链接面板</td><td>「本文档被哪些任务/笔记引用」可逆查询 + 关系图谱</td><td>Obsidian Backlinks <span class="ref"><a href="https://obsidian.md/pricing">来源</a></span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">2.3 模块三：AI 助手面板</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th style="width:11%">类型</th><th style="width:34%">功能</th><th style="width:33%">设计要点</th><th>调研依据</th></tr></thead>
+    <tbody>
+      <tr><td>🔧 修订</td><td>AI 资产列表</td><td><b>Provider 分组卡片</b>（厂商徽标+模型名+版本）：API Key 型（TypingMind 式）与订阅账号型（Raycast BYOA 式）并存；每卡显示「等级徽章+额度进度条+重置日期」</td><td>LobeChat 分组 + Poe 点数/额度 + Raycast BYOA <span class="ref"><a href="https://lobehub.com/docs/usage/providers">来源1</a> <a href="https://poe.com/subscription_plans">2</a> <a href="https://www.raycast.com/pricing">3</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>运行中任务卡片</td><td>卡片=模型徽标+任务标题+流式脉冲动画+token 实时计数+Stop 按钮；点击直达对应对话/文档上下文</td><td>AI Chat 界面范式（2026） <span class="ref"><a href="https://uxpatterns.dev/patterns/ai-intelligence/ai-chat">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>消息五态状态机</td><td>queued → streaming（含工具调用展开行）→ done（token/费用角标）→ cancelled → failed（可重试，保留已生成内容）；会话中途切模型不丢上下文</td><td>LibreChat 多 Endpoint 惯例 <span class="ref"><a href="https://www.librechat.ai/docs/features">来源</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>用量仪表盘</td><td>四指标：花费($) / Tokens / 请求数 / 平均延迟；按「时间 × 模型 × 模块」下钻；环形图（模型占比）+ 折线（日趋势）</td><td>OpenRouter Activity Dashboard + Cherry Studio <span class="ref"><a href="https://openrouter.ai/blog/announcements/activity-dashboard">来源1</a> <a href="https://docs.cherryai.com.cn/docs/en-us/pre-basic/settings/usage">2</a></span></td></tr>
+      <tr><td>➕ 增补</td><td>Key 槽位管理</td><td>按 Provider 分槽保存/命名/更换；卡片显示尾四位+状态灯；<b>永不明文回显完整 Key，本地存储不上云</b></td><td>TypingMind BYOK <span class="ref"><a href="https://www.typingmind.com/apikey">来源</a></span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">2.4 增补：两个横切能力</h3>
+  <div class="grid2">
+    <div class="card"><h4>⌘K 全局命令面板 <span class="badge b-g">P0 必做</span></h4><p>统一入口：搜任务/文档/AI 会话、快速新建、模块跳转。Notion/Craft/Tana/Akiflow 一致采用，是三模块互跳效率之王。<span class="src">依据：<a href="https://zapier.com/blog/best-notion-alternatives">竞品共性</a></span></p></div>
+    <div class="card"><h4>📅 今日 Dashboard（每日笔记） <span class="badge b-g">P0 必做</span></h4><p>以「每日笔记」为聚合首页：今日任务 + 最近阅读 + AI 运行状态一屏总览。Tana/Logseq/Craft 的 Today 页模式。<span class="src">依据：<a href="https://tana.inc/blog/best-notion-alternatives-2026">Tana 竞品文</a></span></p></div>
+    <div class="card"><h4>🧊 白板 Canvas <span class="badge b-y">P2 可延后</span></h4><p>项目脑图→拆任务→贴文档卡片的自由空间（Obsidian Canvas/Heptabase 模式），v2 再上。<span class="src">依据：<a href="https://dexi.net/compare/obsidian-vs-heptabase">对比评测</a></span></p></div>
+    <div class="card"><h4>🛡️ 数据安全底座 <span class="badge b-b">贯穿</span></h4><p>版本历史 + 回收站（Craft 30 天惯例）+ 本地数据主权/端到端加密（Anytype 理念）。<span class="src">依据：<a href="https://support.craft.do/en/account-and-subscription/subscription-plans/plans-and-pricing">Craft</a> · <a href="https://productivity.directory/anytype">Anytype</a></span></p></div>
+  </div>
+
+  <h3 class="blk">2.5 三模块互跳关系设计</h3>
+  <div class="flow">
+    <div class="fnode"><div class="ic">✅</div><b>任务清单</b><small>任务卡 → 关联文档锚点<br>任务卡 → 「AI 拆解/总结」</small></div>
+    <div class="farrow">⇄</div>
+    <div class="fnode"><div class="ic">📄</div><b>文档工作站</b><small>批注 → 一键转任务<br>阅读上下文 → AI 问答</small></div>
+    <div class="farrow">⇄</div>
+    <div class="fnode"><div class="ic">🤖</div><b>AI 助手面板</b><small>运行卡片 → 跳回来源任务/文档<br>产物 → 存为任务/批注</small></div>
+  </div>
+  <div class="jm">
+    <div class="jrow"><div class="a"><span>任务清单</span>任务卡片</div><div class="ar">→</div><div class="z"><span>文档工作站</span>定位到页码/锚点</div><div>任务挂 <code>docRef</code> 字段；点击侧栏「上下文」直接深链定位 <span class="ref"><a href="https://capacities.io/pricing">依据</a></span></div></div>
+    <div class="jrow"><div class="a"><span>文档工作站</span>批注高亮</div><div class="ar">→</div><div class="z"><span>任务清单</span>新建任务</div><div>批注菜单「转任务」自动携带引用深链与摘录 <span class="ref"><a href="https://www.zotero.org/support/pdf_reader">依据</a></span></div></div>
+    <div class="jrow"><div class="a"><span>任务清单</span>任务操作</div><div class="ar">→</div><div class="z"><span>AI 面板</span>发起会话</div><div>「AI 拆解子任务/总结进展」按钮，带任务上下文注入 Prompt <span class="ref"><a href="https://www.todoist.com/pricing">依据：Todoist AI Assistant</a></span></div></div>
+    <div class="jrow"><div class="a"><span>AI 面板</span>运行卡片</div><div class="ar">→</div><div class="z"><span>任务/文档</span>回到来源</div><div>卡片记录 <code>sourceModule+sourceId</code>，点击直达发起处 <span class="ref"><a href="https://uxpatterns.dev/patterns/ai-intelligence/ai-chat">依据</a></span></div></div>
+    <div class="jrow"><div class="a"><span>文档工作站</span>选中文本</div><div class="ar">→</div><div class="z"><span>AI 面板</span>划词问答</div><div>选区浮动工具条：解释/翻译/摘要，回答页保留文档锚点 <span class="ref"><a href="https://blog.readwise.io/p/getting-started-with-reader">依据：Reader 高亮+AI</a></span></div></div>
+    <div class="jrow"><div class="a"><span>全局 ⌘K</span>任意位置</div><div class="ar">→</div><div class="z"><span>三模块</span>统一检索直达</div><div>跨模块统一索引（任务/文档/会话/批注），键盘流最高优先 <span class="ref"><a href="https://akiflow.com">依据</a></span></div></div>
+  </div>
+</section>
+<!-- ============ 03 ============ -->
+<section id="s3">
+  <h2 class="sec"><span class="no">03</span>完整技术路线</h2>
+  <p class="lede">选型原则：本地优先、单人开发可持续维护、React 生态组件复用最大化、桌面/双端就绪。</p>
+
+  <h3 class="blk">3.1 技术栈选型及理由</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th style="width:20%">层</th><th style="width:26%">选型</th><th>理由与对比结论</th></tr></thead>
+    <tbody>
+      <tr><td><strong>前端框架</strong></td><td><strong>React 18 + TypeScript + Vite</strong> <span class="badge b-g">首选</span></td><td>关键组件（react-pdf / react-markdown / dnd-kit / FullCalendar）全部是 React 一等公民；个人工具无 SSR/SEO 诉求，Vite 比 Next.js 更轻。Vue/Svelte 备选可走通但组件生态需妥协（详见 5A5B 素材对比表）</td></tr>
+      <tr><td><strong>桌面壳</strong></td><td><strong>Tauri 2</strong>（可选，后期）<span class="badge b-b">增强</span></td><td>Rust 壳，安装包 ~10MB、内存显著低于 Electron；PWA 先行，需要系统级能力时再包壳 <span class="src"><a href="https://tauri.app">tauri.app</a></span></td></tr>
+      <tr><td><strong>UI 组件</strong></td><td>Tailwind CSS + shadcn/ui + Radix</td><td>无头组件 + 完全可定制 Token，最贴合「MD3 骨架 + HIG 气质」的融合设计</td></tr>
+      <tr><td><strong>状态管理</strong></td><td><strong>Zustand</strong>（全局）+ TanStack Query（异步）</td><td>跨模块共享状态的最小方案；Store 按四域拆分（见 4.4）<span class="src"><a href="https://zustand.docs.pmnd.rs">zustand.docs.pmnd.rs</a></span></td></tr>
+      <tr><td><strong>路由</strong></td><td>React Router v7</td><td>路由分区承载模块互跳上下文（见 4.3）</td></tr>
+      <tr><td><strong>本地存储</strong></td><td><strong>IndexedDB（Dexie.js 封装）</strong></td><td>结构化大容量（PDF Blob、批注、任务、会话）；LocalStorage 仅存 UI 偏好 <span class="src"><a href="https://dexie.org">dexie.org</a></span></td></tr>
+      <tr><td><strong>同步/协作（预留）</strong></td><td><strong>Yjs CRDT</strong> + y-indexeddb + y-websocket（自托管）</td><td>今天单机，明天多端/协作无需重构；冲突自动合并 <span class="src"><a href="https://github.com/yjs/yjs">yjs（22.9k★，2026-09 活跃）</a></span></td></tr>
+      <tr><td><strong>图表</strong></td><td>ECharts（按需引入）或轻量 SVG 自绘</td><td>AI 用量仪表盘四指标下钻图表</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">3.2 整体架构（单体组件化，明确不上微前端）</h3>
+  <div class="code"><span class="c">// 架构分层 —— 个人工作台（单 SPA）</span>
+┌─────────────────────────────────────────────────────────┐
+│  UI 层    TodayDashboard │ Tasks │ Docs │ AIPanel │ ⌘K    │
+├─────────────────────────────────────────────────────────┤
+│  状态层   Zustand(任务/文档/AI/UI 四域 Store) + 事件总线    │
+├─────────────────────────────────────────────────────────┤
+│  领域层   任务引擎 │ 文档引擎(PDF/MD) │ AI 网关(Provider池) │
+├─────────────────────────────────────────────────────────┤
+│  数据层   Dexie/IndexedDB(文件·批注·任务·会话) + Yjs 模型   │
+├─────────────────────────────────────────────────────────┤
+│  同步层   y-indexeddb(本地) → y-websocket(可选) → 导出备份  │
+└─────────────────────────────────────────────────────────┘</div>
+  <blockquote class="tip"><b>为什么不上微前端/模块联邦：</b>微前端解决「多团队独立部署/异构栈」问题，本项目三大模块需要深度数据联动（互跳矩阵 2.5），单体组件化 + 路由分区 + 共享 Store 成本最低、体验最好。模块联邦仅在未来把 AI 面板拆为独立服务时再评估。<span class="src">（5A5B 调研结论 B2）</span></blockquote>
+
+  <h3 class="blk">3.3 数据存储与同步方案</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>数据</th><th>存储形态</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td>PDF 原文件</td><td>IndexedDB Blob</td><td>按文件 hash 去重；阅读位置以 hash 为主键（文件重命名不丢进度）</td></tr>
+      <tr><td>阅读位置</td><td><code>{docHash, page, offset, progress, updatedAt}</code></td><td><b>双坐标</b>：lastScroll 与 readingProgress 分开存；MD 存块锚点而非像素偏移，内容增删后仍准确 <span class="ref"><a href="https://docs.readwise.io/reader/docs/faqs">依据</a></span></td></tr>
+      <tr><td>批注</td><td><code>{id, docHash, page, text, color, comment, deepLink}</code></td><td>结构化存储，天然可供 AI 摘要 / 任务生成消费</td></tr>
+      <tr><td>任务</td><td><code>{id, title, tier, priority, docRef?, aiRef?, doneAt}</code></td><td>docRef/aiRef 即互跳外键；完成入 Logbook</td></tr>
+      <tr><td>AI 配置</td><td>Provider 卡片 + Key 槽位（本地加密）</td><td>永不上云明文；用量记录 <code>{ts, provider, model, tokens, cost, module}</code></td></tr>
+      <tr><td>跨端同步（预留）</td><td>Yjs Doc + y-websocket</td><td>先 y-indexeddb 本地持久化，同步上线零迁移；纯文件走 WebDAV</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">3.4 关键组件选型（GitHub 实核数据 · 2026-10-01）</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>用途</th><th>推荐</th><th>Star</th><th>维护</th><th>备选与说明</th></tr></thead>
+    <tbody>
+      <tr><td><strong>PDF 渲染</strong></td><td><strong>PDF.js</strong>（via react-pdf 封装）</td><td>54.0k / 11.2k</td><td>✅ 活跃</td><td>mozilla/pdf.js + wojtekmaj/react-pdf；文本层选择是实现批注深链的关键</td></tr>
+      <tr><td><strong>MD 渲染（阅读）</strong></td><td><strong>react-markdown</strong> + remark-gfm</td><td>15.9k</td><td>✅ 活跃</td><td>unified 插件生态，安全默认；备选 markdown-it 22.0k（插件灵活）</td></tr>
+      <tr><td><strong>MD 编辑</strong></td><td><strong>TipTap</strong> / Milkdown</td><td>38.6k / ~9.5k</td><td>✅ 活跃</td><td>TipTap：ProseMirror 内核所见即所得；Milkdown：Markdown-first 插件化；轻量备选 CodeMirror 6 分屏</td></tr>
+      <tr><td><strong>拖拽（看板/四象限）</strong></td><td>dnd-kit</td><td>—</td><td>✅</td><td>React 生态事实标准，多容器跨列表拖拽</td></tr>
+      <tr><td><strong>日历/时间块</strong></td><td>FullCalendar</td><td>—</td><td>✅</td><td>月/周/日视图 + 拖拽排期，MIT 版够用</td></tr>
+      <tr><td><strong>命令面板 ⌘K</strong></td><td>cmdk</td><td>—</td><td>✅</td><td>shadcn/ui Command 基于它；配 fuse.js 模糊检索</td></tr>
+    </tbody>
+  </table></div>
+  <p class="src">Star 数为 2026-10-01 GitHub API 实核：mozilla/pdf.js 53,970 ｜ wojtekmaj/react-pdf 11,185 ｜ react-markdown 15,902 ｜ markdown-it 21,951 ｜ marked 37,216 ｜ tiptap 38,608 ｜ yjs 22,872 ｜ automerge 6,633（CRDT 取 Yjs：社区绑定与持久化生态更成熟）</p>
+
+  <h3 class="blk">3.5 开发阶段划分</h3>
+  <div class="stage"><div class="dur">M1 · 第 1-3 周</div><h4>任务清单 MVP</h4><p>四清单 + 优先级四色 + NLP 录入 + 列表/看板视图 + Dexie 持久化 + Logbook。<b>验收：全键盘可完成一天的「录入-勾选-归档」循环。</b></p></div>
+  <div class="stage"><div class="dur">M2 · 第 4-6 周</div><h4>文档工作站 MVP</h4><p>PDF/MD 导入 + 渲染 + 双坐标位置记忆 + 章节 TOC + 批注三件套。<b>验收：关掉浏览器重开，300ms 内回到上次阅读位置。</b></p></div>
+  <div class="stage"><div class="dur">M3 · 第 7-9 周</div><h4>AI 助手面板</h4><p>Provider 卡片 + Key 槽位 + 会话五态 + 运行中任务卡片 + 用量仪表盘。<b>验收：多模型会话中切换不丢上下文，用量可按模型/模块下钻。</b></p></div>
+  <div class="stage"><div class="dur">M4 · 第 10-12 周</div><h4>互跳与打磨</h4><p>⌘K 面板 + 今日 Dashboard + 批注转任务 / AI 划词问答 + 深色模式 + 动效细化 + Tauri 包壳（可选）。<b>验收：互跳矩阵 6 条链路全通。</b></p></div>
+</section>
+
+<!-- ============ 04 ============ -->
+<section id="s4">
+  <h2 class="sec"><span class="no">04</span>前端框架设计</h2>
+  <p class="lede">信息架构 → 组件结构 → 路由与状态 → 互跳机制，四层递进。</p>
+
+  <h3 class="blk">4.1 信息架构（IA）</h3>
+  <div class="code"><span class="c">// 顶层 IA：三栏骨架 + 一级界面</span>
+AppShell
+├─ Sidebar（左侧导航，全局常驻，可折叠）
+│   ├─ 今日 Today Dashboard   ← 默认首页（每日笔记式聚合）
+│   ├─ ✅ 任务清单（四清单 × 四视图）
+│   ├─ 📄 文档工作站（文档库）
+│   ├─ 🤖 AI 助手（会话列表 + 资产管理）
+│   └─ 设置（外观 / AI 资产 / 数据备份）
+├─ Content（中央画布，路由切换）
+└─ RightPanel（右侧上下文面板：批注 / 反链 / 任务详情，按需展开）</div>
+
+  <h3 class="blk">4.2 组件结构（关键部分）</h3>
+  <div class="code">src/
+├─ app/            # Shell、路由表、全局 Provider、⌘K
+├─ modules/
+│  ├─ tasks/       # TaskList · TaskCard · BoardView · CalendarView · MatrixView · QuickAdd(NLP)
+│  ├─ docs/        # DocLibrary · PdfViewer(PDF.js文本层) · MdViewer · TocPanel(章节+高亮双目录)
+│  │               # AnnotationPanel · PositionRestore · ReadingSettings(per-doc)
+│  ├─ ai/          # ProviderCards · KeyVault · RunTaskCard · ChatSession(五态) · UsageDashboard
+│  └─ today/       # DailyNote · TodayAgenda · RecentReads · AiRunning
+├─ shared/         # ui/(shadcn) · DeepLink · CommandPalette · EchartsBox
+└─ stores/         # tasks.ts · docs.ts · ai.ts · ui.ts (Zustand 四域)</div>
+
+  <h3 class="blk">4.3 路由表设计</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>路径</th><th>界面</th><th>互跳上下文参数</th></tr></thead>
+    <tbody>
+      <tr><td><code>/today</code></td><td>今日 Dashboard</td><td>—</td></tr>
+      <tr><td><code>/tasks?tier=today&view=board&focus=:id</code></td><td>任务清单（tier×view 组合）</td><td><code>focus</code> 高亮定位某任务</td></tr>
+      <tr><td><code>/docs</code> · <code>/docs/:docId?p=:n&hl=:annId</code></td><td>文档库 / 阅读器</td><td><code>p</code> 页码或块锚点；<code>hl</code> 打开即闪烁对应批注</td></tr>
+      <tr><td><code>/ai</code> · <code>/ai/:sessionId?src=task:12</code></td><td>AI 面板 / 会话</td><td><code>src</code> 记录发起来源，运行卡片可回跳</td></tr>
+      <tr><td><code>/settings/:tab</code></td><td>设置（appearance/models/data）</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">4.4 状态管理：四域 Store + 声明式深链</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Store</th><th>职责（⭐=跨模块共享项）</th></tr></thead>
+    <tbody>
+      <tr><td><code>tasksStore</code></td><td>任务 CRUD、四清单过滤、⭐选中任务、⭐docRef/aiRef 索引</td></tr>
+      <tr><td><code>docsStore</code></td><td>文档库、⭐当前阅读位置、⭐批注索引、per-doc 排版设置</td></tr>
+      <tr><td><code>aiStore</code></td><td>Provider 资产、会话五态、⭐运行中任务、用量记录</td></tr>
+      <tr><td><code>uiStore</code></td><td>主题、侧栏、命令面板开关、toast</td></tr>
+    </tbody>
+  </table></div>
+  <p>跨模块<b>动作型</b>联动（如「批注→转任务」）不直接调用对方 Store，统一走声明式深链工具，保持模块单向依赖：</p>
+  <div class="code"><span class="c">// 互跳统一入口 shared/DeepLink.ts —— 模块间零直接 import</span>
+<span class="k">import</span> { openTask, openDoc, openAi } <span class="k">from</span> <span class="string">'@/shared/DeepLink'</span>;
+openDoc({ docHash, page: 42, hl: annId });      <span class="c">// 任务 → 文档定位</span>
+openTask({ preset: { title: 摘录, docRef } });  <span class="c">// 批注 → 转任务</span>
+openAi({ context: { task: taskId } });          <span class="c">// 任务 → AI 会话</span></div>
+  <blockquote class="tip"><b>互跳机制小结：</b>① 路由参数承载定位上下文（可分享/可回退）；② Zustand 共享选中态；③ DeepLink 工具收敛跳转动作，任何模块只依赖它而非彼此——与竞品「任务=行=页面」同源思想一致，实现更轻。</blockquote>
+</section>
+<!-- ============ 05 ============ -->
+<section id="s5">
+  <h2 class="sec"><span class="no">05</span>美术方案（MD3 × HIG × 极简）</h2>
+  <p class="lede">总纲：<b>用 MD3 的系统化 Token 当骨架，用 HIG 的克制气质定调性</b>——信息密度疏朗、色彩留白做层级、动效轻而有目的。两体系要点各 ≤10 条的完整摘要见 <a href="/shared/个人工作台调研_5A5B_设计规范与技术选型/index.html">5A5B 素材报告</a>。</p>
+
+  <h3 class="blk">5.1 设计原则（三条）</h3>
+  <div class="kpis"><div class="kpi"><span class="v">层次靠留白</span><span class="l">优先用间距与 surface 色阶分层，阴影只用于悬浮态（HIG 材质哲学）</span></div><div class="kpi"><span class="v">一屏一事</span><span class="l">每个视图单一主任务，次级信息进右栏/抽屉（极简主义）</span></div><div class="kpi"><span class="v">Token 驱动</span><span class="l">30 个语义变量亮暗两套，全站零硬编码色值（MD3 方法论）</span></div></div>
+
+  <h3 class="blk">5.2 色彩系统（MD3 角色化 + HIG 语义化）</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Token</th><th>亮色</th><th>暗色</th><th>用途（MD3 角色）</th></tr></thead>
+    <tbody>
+      <tr><td><code>--primary</code></td><td><span class="chip" style="background:#0B57D0"></span>#0B57D0</td><td>#A8C7FA</td><td>主按钮/选中态/链接（Google Blue 系）</td></tr>
+      <tr><td><code>--surface</code></td><td>#FFFFFF</td><td>#1E1F24</td><td>画布（MD3 surface role）</td></tr>
+      <tr><td><code>--surface-2</code></td><td>#F5F5F7</td><td>#26272C</td><td>卡片/侧栏（MD3 surface-container）</td></tr>
+      <tr><td><code>--outline</code></td><td>#E8E8ED</td><td>#3A3B40</td><td>描边分隔（MD3 outline-variant）</td></tr>
+      <tr><td><code>--on-surface</code></td><td>#1D1D1F</td><td>#E6E6EA</td><td>正文 / <code>--on-surface-2</code> #86868B 次级（HIG 灰阶）</td></tr>
+      <tr><td><code>--glass</code></td><td colspan="2">backdrop-filter: blur(20px) saturate(1.6) + 72% 透明度</td><td>仅顶栏/侧栏/⌘K 面板（HIG 材质点睛，勿滥用）</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">5.3 优先级颜色映射规范（搜索员A 关键结论已吸收）</h3>
+  <blockquote class="warn"><b>⚠️ 重要修订：</b>业界（Todoist/滴答清单等）惯例将<b>绿色保留给「进行中/已完成」状态语义</b>，若同时用作优先级会造成同屏语义冲突。故优先级采用 <b>红-橙-蓝-灰白</b> 四档，原设想中的绿色移出优先级序列。</blockquote>
+  <div class="prio">
+    <div class="pcard" style="--c:#E5484D"><span class="dot"></span><b>P0 紧急</b><span class="hex">#E5484D · Red 9</span><span>当天必须完成；列表左侧 3px 色条 + 左上标签，不整行铺色</span></div>
+    <div class="pcard" style="--c:#F5A623"><span class="dot"></span><b>P1 重要</b><span class="hex">#F5A623 · Amber</span><span>本周内完成；今日视图自动置顶聚合</span></div>
+    <div class="pcard" style="--c:#3B82F6"><span class="dot"></span><b>P2 常规</b><span class="hex">#3B82F6 · Blue 8</span><span>按四清单节奏推进，默认档</span></div>
+    <div class="pcard" style="--c:#9CA3AF"><span class="dot"></span><b>P3 低</b><span class="hex">#9CA3AF · Gray / White</span><span>随时池/将来也许；仅灰点标记，最弱视觉</span></div>
+    <div class="pcard" style="--c:#22A06B"><span class="dot"></span><b>状态色（保留）</b><span class="hex">#22A06B · Green</span><span>进行中（脉冲）/ 已完成（对勾+划线），不做优先级</span></div>
+  </div>
+  <p class="src">依据：Todoist 四优先级色 <a href="https://www.todoist.com/help/todoist/features/set-a-priority-in-todoist-Wy82Jp">todoist.com</a> · 滴答清单四象限 <a href="https://help.dida365.com">help.dida365.com</a> · 搜索员A 子任务2 结论</p>
+
+  <h3 class="blk">5.4 字体排印（HIG Dynamic Type 精神 × MD3 字阶结构）</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>样式</th><th>字号/行高</th><th>字重</th><th>使用</th></tr></thead>
+    <tbody>
+      <tr><td>Display</td><td>34/40</td><td>700（-0.5px）</td><td>今日 Dashboard 日期大标题</td></tr>
+      <tr><td>Title L / M</td><td>24/32 · 20/28</td><td>600</td><td>页面级标题 / 卡片组标题</td></tr>
+      <tr><td>Body L / M</td><td>17/26 · 15/24</td><td>400</td><td>任务标题 / 正文与批注</td></tr>
+      <tr><td>Label / Caption</td><td>13/18 · 11/14</td><td>500 / 400</td><td>标签、时间戳、优先级徽标（≤11px 不用纯灰）</td></tr>
+      <tr><td>代码/MD 等宽</td><td>13/20</td><td>400</td><td>ui-monospace 栈（SF Mono 系）</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>字体栈：</b><code>system-ui, -apple-system, "SF Pro Text", "PingFang SC", "Segoe UI", Roboto, "Noto Sans SC"</code> —— 苹果设备自动命中 SF Pro/苹方，其他平台命中 Roboto/思源，一套代码双平台原生感；正文行宽 ≤72 字符（长文阅读最舒适区间）。</p>
+
+  <h3 class="blk">5.5 圆角、阴影与留白</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>层级</th><th>圆角</th><th>阴影/描边</th><th>场景</th></tr></thead>
+    <tbody>
+      <tr><td>页面画布</td><td>0</td><td>—</td><td>surface 底色</td></tr>
+      <tr><td>卡片 surface-2</td><td><b>16px</b></td><td>无阴影，1px outline</td><td>任务卡/文档卡/AI 卡（HIG 克制）</td></tr>
+      <tr><td>弹层（⌘K/菜单）</td><td><b>20px</b></td><td><code>0 24px 64px rgba(0,0,0,.18)</code> 单层大柔和</td><td>MD3 Elevation-3 等效</td></tr>
+      <tr><td>按钮/输入/标签</td><td>10px / full</td><td>hover 时 +1 微阴影</td><td>胶囊按钮（pill）</td></tr>
+      <tr><td>侧栏/顶栏</td><td>0（顶栏 16 下缘）</td><td>毛玻璃 + 1px 底描边</td><td>HIG 材质分层</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>留白网格：</b>8pt 基准（MD3）；页面边距 24px，卡片内边距 16–20px，组间距 24–32px，疏朗优先；最小点击目标 44×44px（HIG），移动端侧边距 16px。</p>
+
+  <h3 class="blk">5.6 动效规范（MD3 Token 精确值）</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>场景</th><th>时长 / 缓动（MD3 Token）</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>勾选任务、小控件反馈</td><td>150ms / <code>cubic-bezier(.2,0,0,1)</code> standard</td><td>MD3 short4 + 对勾弹性过冲 8%</td></tr>
+      <tr><td>卡片进场 / 视图切换</td><td>300ms / standard，12px 上移淡入</td><td>MD3 medium2；同层 8ms 级联错峰</td></tr>
+      <tr><td>模块互跳转场</td><td>400ms / <code>cubic-bezier(.05,.7,.1,1)</code> emphasized-decelerate</td><td>MD3 long2；共享元素（任务卡→文档卡）连续感 <span class="ref"><a href="https://m3.material.io/styles/motion/easing-and-duration/tokens-specs">tokens-specs</a></span></td></tr>
+      <tr><td>AI 运行中卡片</td><td>1.4s 循环脉冲（透明度 .55↔1）</td><td>HIG：可感知但不焦虑；Stop 按钮常驻</td></tr>
+      <tr><td>系统「减弱动态效果」</td><td>全部替换为 80ms 淡入淡出</td><td>HIG 无障碍硬性要求 <span class="ref"><a href="https://developer.apple.com/design/human-interface-guidelines/motion">HIG · Motion</a></span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="blk">5.7 设计案例参考（8 个 · 官网链接均真实可访问）</h3>
+  <div class="ref-grid">
+    <a class="refc" href="https://culturedcode.com/things/"><b>Things 3</b><span>极简 GTD 天花板：四清单信息架构、蓝白克制配色——任务模块第一参照</span></a>
+    <a class="refc" href="https://linear.app/"><b>Linear</b><span>暗色工作台质感标杆：快、键盘流、命令面板——⌘K 与列表交互参照</span></a>
+    <a class="refc" href="https://www.raycast.com/"><b>Raycast</b><span>命令面板即应用：AI 扩展+模型切换卡片——AI 面板交互参照</span></a>
+    <a class="refc" href="https://www.notion.so/calendar"><b>Notion Calendar</b><span>Google Meet 基因的极简日程：与任务模块日历视图互补参照</span></a>
+    <a class="refc" href="https://www.craft.do/"><b>Craft</b><span>Apple Design Award：文档排版与手势——文档工作站气质参照</span></a>
+    <a class="refc" href="https://openrouter.ai"><b>OpenRouter Dashboard</b><span>AI 用量四指标仪表盘——AI 用量页直接对标</span></a>
+    <a class="refc" href="https://lobehub.com/"><b>LobeChat</b><span>Provider 分组卡片+模型市场——AI 资产列表直接对标</span></a>
+    <a class="refc" href="https://dribbble.com/tags/minimal-dashboard"><b>Dribbble · minimal dashboard</b><span>概念稿灵感池（检索入口）；Mobbin/Figma Community 同理：<a href="https://mobbin.com">mobbin.com</a> · <a href="https://www.figma.com/community/search?query=minimal%20dashboard">figma.com/community</a></span></a>
+  </div>
+</section>
+
+<!-- ============ 附录 ============ -->
+<section id="s6">
+  <h2 class="sec"><span class="no">06</span>附录：开源参考项目与来源汇总</h2>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>项目</th><th>Star</th><th>技术栈</th><th>参考价值</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://github.com/AppFlowy-IO/AppFlowy">AppFlowy</a></td><td>77.0k</td><td>Flutter/Rust</td><td>Notion 类全功能对标（不可直接抄架构，看功能边界）</td></tr>
+      <tr><td><a href="https://github.com/toeverything/AFFiNE">AFFiNE</a></td><td>73.2k</td><td>React/TS</td><td>文档+白板+任务合一，其 BlockSuite 分层值得借鉴</td></tr>
+      <tr><td><a href="https://github.com/siyuan-note/siyuan">思源笔记</a></td><td>46.6k</td><td>TS</td><td>块引用/双链 + 本地优先存储设计</td></tr>
+      <tr><td><a href="https://github.com/outline/outline">Outline</a></td><td>40.8k</td><td>React/Node</td><td>React 中型知识库工程范本</td></tr>
+      <tr><td><a href="https://github.com/glanceapp/glance">Glance</a></td><td>37.3k</td><td>Go</td><td>信息聚合 Dashboard 布局参考</td></tr>
+      <tr><td><a href="https://github.com/super-productivity/super-productivity">Super Productivity</a></td><td>22.4k</td><td>Angular/TS</td><td>任务+时间块+PWA 本地持久化，与本项目最接近</td></tr>
+      <tr><td><a href="https://github.com/gethomepage/homepage">Homepage</a></td><td>32.9k</td><td>React</td><td>自托管起始页组件化布局</td></tr>
+      <tr><td><a href="https://github.com/Lissy93/dashy">Dashy</a></td><td>26.6k</td><td>Vue</td><td>Dashboard 配置化与主题系统</td></tr>
+    </tbody>
+  </table></div>
+  <p class="src"><b>素材溯源：</b>竞品全景与任务清单 → 搜索员A 报告 ｜ 文档工作站与 AI 面板 → 搜索员B 报告 ｜ 设计规范与技术选型 → 5A5B 素材报告（shared/ 目录）。所有 Star 数 2026-10-01 经 GitHub API 实核。</p>
+</section>
+
+</div>
+<footer>《个人工作台产品方案》· 报告汇总员整合三路调研产出 · 2026-10-01</footer>
+</body>
+</html>
