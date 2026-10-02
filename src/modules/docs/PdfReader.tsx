@@ -58,6 +58,7 @@ export function PdfReader({
   const lastScrollTop = useRef(0)
   const restoredRef = useRef(false)
   const lastJumpTs = useRef(0)
+  const lastWriteRef = useRef(0)
 
   useEffect(() => {
     void getDocBlob(hash).then(async (blob) => {
@@ -162,6 +163,9 @@ export function PdfReader({
 
     const delta = Math.abs(top - lastScrollTop.current)
     lastScrollTop.current = top
+    const now = Date.now()
+    if (now - lastWriteRef.current < 500) return
+    lastWriteRef.current = now
     if (delta < 3000) {
       const pageTop = offsets.current[current]
       const pageHpx = pageH(current)

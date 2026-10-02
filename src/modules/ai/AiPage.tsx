@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useSearchParams } from 'react-router'
-import { MessageSquare, Plus, Square } from 'lucide-react'
+import { MessageSquare, Plus, Square, Trash2 } from 'lucide-react'
 import { db, type AiSession } from '@/db/db'
+import { deleteSession } from '@/db/ai'
 import { useAi } from '@/stores/ai'
+import { useUi } from '@/stores/ui'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Button } from '@/shared/ui/Button'
 import { cn } from '@/lib/cn'
@@ -126,25 +128,49 @@ export function AiPage() {
                   还没有会话。<br />发消息或从任务/文档发起。
                 </p>
               )}
-              {sessions.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => { setSessionId(s.id); setShowListMobile(false) }}
-                  className={cn(
-                    'text-left px-3 py-2.5 rounded-[12px] transition-colors cursor-pointer',
-                    sessionId === s.id ? 'bg-primary-soft' : 'hover:bg-surface-3',
-                  )}
-                >
-                  <span className="flex items-center gap-1.5">
-                    {s.sourceModule && <MessageSquare size={11} className="text-primary shrink-0" />}
-                    <span className={cn('text-[13px] truncate flex-1', sessionId === s.id && 'text-primary font-medium')}>{s.title}</span>
-                  </span>
-                  <span className="block text-[10.5px] text-on-surface-2 mt-0.5 truncate">
-                    {s.model}
-                    {s.sourceLabel ? ` · 来自${s.sourceModule === 'task' ? '任务' : '文档'}` : ''}
-                  </span>
-                </button>
-              ))}
+              {sessions.map((s) => {
+                const active = sessionId === s.id
+                return (
+                  <div
+                    key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setSessionId(s.id); setShowListMobile(false) }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { setSessionId(s.id); setShowListMobile(false) } }}
+                    className={cn(
+                      'group flex items-start gap-1 px-3 py-2.5 rounded-[12px] transition-colors cursor-pointer',
+                      active ? 'bg-primary-soft' : 'hover:bg-surface-3',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        {s.sourceModule && <MessageSquare size={11} className={active ? 'text-primary shrink-0' : 'text-on-surface-2 shrink-0'} />}
+                        <span className={cn('text-[13px] truncate flex-1', active && 'text-primary font-medium')}>{s.title}</span>
+                      </span>
+                      <span className="block text-[10.5px] text-on-surface-2 mt-0.5 truncate">
+                        {s.model}
+                        {s.sourceLabel ? ` · 来自${s.sourceModule === 'task' ? '任务' : '文档'}` : ''}
+                      </span>
+                    </div>
+                    <button
+                      aria-label="删除会话"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void deleteSession(s.id).then(() => {
+                          if (sessionId === s.id) setSessionId(null)
+                          useUi.getState().toast('会话已删除')
+                        })
+                      }}
+                      className={cn(
+                        'grid place-items-center w-6 h-6 rounded-lg text-on-surface-2 hover:text-danger hover:bg-danger/10 cursor-pointer shrink-0',
+                        active ? 'opacity-70' : 'opacity-0 group-hover:opacity-70',
+                      )}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </aside>
 

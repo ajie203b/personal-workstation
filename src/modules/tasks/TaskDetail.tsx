@@ -23,10 +23,33 @@ export function TaskDetail() {
   const task = all.find((t) => t.id === detailId) ?? null
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
+  // 标题/笔记本地态 + 400ms 防抖写库（避免每个按键一次事务）
+  const [titleDraft, setTitleDraft] = useState('')
+  const [notesDraft, setNotesDraft] = useState('')
 
   useEffect(() => {
     if (!detailId) setConfirmDelete(false)
   }, [detailId])
+
+  useEffect(() => {
+    if (task) {
+      setTitleDraft(task.title)
+      setNotesDraft(task.notes ?? '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id])
+
+  useEffect(() => {
+    if (!task || task.id !== detailId) return
+    if (titleDraft === task.title && notesDraft === (task.notes ?? '')) return
+    const timer = setTimeout(() => {
+      void updateTask(task.id, {
+        ...(titleDraft !== task.title ? { title: titleDraft } : {}),
+        ...(notesDraft !== (task.notes ?? '') ? { notes: notesDraft } : {}),
+      })
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [titleDraft, notesDraft, task, detailId])
 
   if (!task) return null
 
@@ -52,8 +75,8 @@ export function TaskDetail() {
         <div>
           <label className={FIELD}>标题</label>
           <textarea
-            value={task.title}
-            onChange={(e) => patch({ title: e.target.value })}
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
             rows={2}
             className={cn(INPUT, 'h-auto py-2.5 resize-none leading-relaxed text-[15px]')}
           />
@@ -62,8 +85,8 @@ export function TaskDetail() {
         <div>
           <label className={FIELD}>笔记</label>
           <textarea
-            value={task.notes ?? ''}
-            onChange={(e) => patch({ notes: e.target.value })}
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value)}
             rows={4}
             placeholder="补充说明、链接…"
             className={cn(INPUT, 'h-auto py-2.5 resize-none leading-relaxed')}
