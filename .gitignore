@@ -1,0 +1,20 @@
+node_modules
+dist
+dev-dist
+*.local
+.DS_Store
+*.log
+
+# 安卓构建产物与签名密钥（keystore 只留在本机，勿入库）
+android/.gradle
+android/app/build
+android/build
+android/app/workstation.keystore
+android/local.properties
+gradle-build.log
+
+# APK 走 GitHub Release 发布，不入库
+apk
+
+# 测试脚手架
+nlp-test.cjs
