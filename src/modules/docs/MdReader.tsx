@@ -56,6 +56,7 @@ export function MdReader({
   const lastScrollTop = useRef(0)
   const lastJumpTs = useRef(0)
   const restoredRef = useRef(false)
+  const lastWriteRef = useRef(0)
 
   // 顶级块分配锚点 id
   useLayoutEffect(() => {
@@ -137,8 +138,12 @@ export function MdReader({
     onProgress(current, pct)
 
     // 防快速翻页污染：单次位移 > 3000px 视为跳转，只更新 lastScroll
+    // 写库节流至 500ms/次（阅读位置精度足够，避免每个滚动事件都开事务）
     const delta = Math.abs(top - lastScrollTop.current)
     lastScrollTop.current = top
+    const now = Date.now()
+    if (now - lastWriteRef.current < 500) return
+    lastWriteRef.current = now
     if (delta < 3000) {
       const block = kids.find((k) => Number(k.id.slice(1)) === current)
       const ratio = block && block.offsetHeight > 0

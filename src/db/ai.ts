@@ -117,6 +117,17 @@ export async function startDocAiSession(
   return session
 }
 
+/** 应用启动清理：把上次中断遗留的 streaming/queued 消息标记为已停止（保留已生成内容） */
+export async function cleanupStaleStreaming(): Promise<void> {
+  try {
+    const stale = await db.aiMessages.filter((m) => m.state === 'streaming' || m.state === 'queued').toArray()
+    if (!stale.length) return
+    await db.aiMessages.bulkPut(stale.map((m) => ({ ...m, state: 'cancelled' as const })))
+  } catch {
+    /* 数据库尚未就绪时忽略，下次启动再清理 */
+  }
+}
+
 /* ============ 用量聚合（时间 × 模型 × 模块） ============ */
 
 export interface UsageAggregate {

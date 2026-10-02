@@ -12,6 +12,15 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>个人工作站</title>
+    <script>
+      // 主题预置：React 挂载前设置 dark 类，避免暗色用户启动时闪白
+      try {
+        var saved = JSON.parse(localStorage.getItem('ws-ui') || '{}');
+        var theme = (saved.state && saved.state.theme) || 'system';
+        var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+      } catch (e) { /* 忽略 */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>
