@@ -7,6 +7,11 @@
 
 ## 快速开始（网页版）
 
+**在线版（推荐，无需安装）**：<https://ajie203b.github.io/personal-workstation-site/>
+任何电脑打开即用；数据存在各自浏览器的 IndexedDB，GitHub 不存储任何用户数据。更新部署：`bash scripts/deploy-site.sh`。
+
+本地开发：
+
 ```bash
 npm install
 npm run dev        # 开发：http://localhost:5173
