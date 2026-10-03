@@ -27,9 +27,7 @@ export function Sidebar() {
       )}
     >
       <div className="flex items-center gap-2.5 h-14 px-3.5 shrink-0">
-        <div className="grid place-items-center w-8 h-8 rounded-[9px] bg-primary text-on-primary text-[15px] font-bold shrink-0">
-          工
-        </div>
+        <img src="./brand.png" alt="" className="w-8 h-8 rounded-[9px] object-cover shrink-0" />
         {!collapsed && (
           <span className="hidden lg:block text-[15px] font-semibold tracking-wide">个人工作站</span>
         )}

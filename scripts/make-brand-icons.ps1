@@ -110,6 +110,9 @@ New-BrandIcon -Size 180 -Out (Join-Path $webIcons 'apple-touch-icon.png') -Shape
 # favicon.png (small square)
 New-BrandIcon -Size 48 -Out (Join-Path $root 'public\favicon.png') -Shape 'rounded'
 
+# in-app brand mark (sidebar / mobile top bar)
+New-BrandIcon -Size 144 -Out (Join-Path $root 'public\brand.png') -Shape 'square'
+
 Write-Host '--- Android launcher icons ---'
 $densities = @{ 'mipmap-mdpi' = 48; 'mipmap-hdpi' = 72; 'mipmap-xhdpi' = 96; 'mipmap-xxhdpi' = 144; 'mipmap-xxxhdpi' = 192 }
 foreach ($k in $densities.Keys) {
