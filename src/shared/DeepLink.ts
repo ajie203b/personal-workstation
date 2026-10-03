@@ -23,15 +23,3 @@ export function openTaskWithRef(ref: DocRef): void {
   params.set('presetDoc', JSON.stringify(ref))
   go(`/tasks?${params}`)
 }
-
-/** 任务 → AI 面板：带来源上下文发起会话 */
-export function openAiWithSource(sourceModule: 'task' | 'doc', sourceId: string): void {
-  go(`/ai?src=${sourceModule}:${encodeURIComponent(sourceId)}`)
-}
-
-/** AI 运行卡片 → 回到来源 */
-export function openSource(src: string): void {
-  const [mod, id] = src.split(':')
-  if (mod === 'task') go(`/tasks?focus=${encodeURIComponent(id)}`)
-  else if (mod === 'doc') go(`/docs/${encodeURIComponent(id)}`)
-}

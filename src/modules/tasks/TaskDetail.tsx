@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { Sparkles, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type Task, type Tier } from '@/db/db'
 import { deleteTask, restoreTask, toggleDone, updateTask } from '@/db/tasks'
 import { useAllTasks } from '@/db/hooks'
@@ -18,7 +17,6 @@ const INPUT =
 /** 任务详情：桌面/平板=右侧滑入面板，手机=底部抽屉 */
 export function TaskDetail() {
   const { detailId, openDetail } = useTasksUi()
-  const navigate = useNavigate()
   const all = useAllTasks()
   const task = all.find((t) => t.id === detailId) ?? null
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -175,17 +173,6 @@ export function TaskDetail() {
         )}
 
         <div className="flex items-center gap-2 pt-1">
-          <Button
-            variant="outline"
-            className="flex-1"
-            title="让 AI 帮你拆解这个任务"
-            onClick={() => {
-              openDetail(null)
-              navigate(`/ai?src=task:${task.id}`)
-            }}
-          >
-            <Sparkles size={14} /> AI 拆解
-          </Button>
           {done ? (
             <Button variant="primary" className="flex-1" onClick={() => void toggleDone(task)}>
               恢复为未完成

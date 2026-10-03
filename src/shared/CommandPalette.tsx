@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router'
 import {
-  Bot, CalendarCheck, FileText, ListTodo, MessageSquare, Moon, Plus, Search, Settings2, Sun,
+  CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun,
 } from 'lucide-react'
-import { db, type AiSession } from '@/db/db'
+import { db } from '@/db/db'
 import { useUi, togglePalette } from '@/stores/ui'
 import { useTasksUi } from '@/stores/tasks'
 import { cn } from '@/lib/cn'
@@ -36,11 +36,6 @@ export function CommandPalette() {
     [],
   )
   const docs = useLiveQuery(() => db.docs.toArray(), [], [])
-  const sessions = useLiveQuery(
-    async () => (await db.aiSessions.orderBy('updatedAt').reverse().toArray()).slice(0, 20),
-    [],
-    [] as AiSession[],
-  )
 
   const items = useMemo<PaletteItem[]>(() => {
     const openTask = (id: string, tier: string) => {
@@ -49,13 +44,11 @@ export function CommandPalette() {
     }
     const actions: PaletteItem[] = [
       { id: 'a-new-task', group: '动作', label: '新建任务', hint: 'N', icon: <Plus size={15} />, run: () => { navigate('/tasks'); setTimeout(() => window.dispatchEvent(new CustomEvent('ws:focus-quickadd')), 150) } },
-      { id: 'a-new-doc', group: '动作', label: '新建文档', hint: 'MD 编辑器', icon: <FileText size={15} />, run: () => navigate('/docs/new') },
-      { id: 'a-new-ai', group: '动作', label: '新 AI 会话', icon: <Bot size={15} />, run: () => navigate('/ai') },
+      { id: 'a-new-doc', group: '动作', label: '写文档', hint: 'MD 编辑器', icon: <FileText size={15} />, run: () => navigate('/docs/new') },
       { id: 'a-today', group: '动作', label: '今日', icon: <CalendarCheck size={15} />, run: () => navigate('/today') },
       { id: 'a-tasks', group: '动作', label: '任务清单', icon: <ListTodo size={15} />, run: () => navigate('/tasks') },
       { id: 'a-docs', group: '动作', label: '文档工作站', icon: <FileText size={15} />, run: () => navigate('/docs') },
-      { id: 'a-ai', group: '动作', label: 'AI 助手', icon: <Bot size={15} />, run: () => navigate('/ai') },
-      { id: 'a-settings', group: '动作', label: '设置', icon: <Settings2 size={15} />, run: () => navigate('/settings') },
+      { id: 'a-settings', group: '动作', label: '设置（含 AI 资产）', icon: <Settings2 size={15} />, run: () => navigate('/settings') },
       {
         id: 'a-theme', group: '动作',
         label: theme === 'dark' ? '切换到浅色主题' : theme === 'light' ? '切换到深色主题' : '切换主题（当前跟随系统）',
@@ -71,12 +64,8 @@ export function CommandPalette() {
       id: `d-${d.id}`, group: '文档', label: d.title, hint: d.kind.toUpperCase(),
       icon: <FileText size={15} />, run: () => navigate(`/docs/${d.id}`),
     }))
-    const sessionItems: PaletteItem[] = (sessions ?? []).map((s) => ({
-      id: `s-${s.id}`, group: '会话', label: s.title, hint: s.model,
-      icon: <MessageSquare size={15} />, run: () => navigate(`/ai?s=${s.id}`),
-    }))
-    return [...actions, ...taskItems, ...docItems, ...sessionItems]
-  }, [tasks, docs, sessions, theme, navigate, setTheme])
+    return [...actions, ...taskItems, ...docItems]
+  }, [tasks, docs, theme, navigate, setTheme])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

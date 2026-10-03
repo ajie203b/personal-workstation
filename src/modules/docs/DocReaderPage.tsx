@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   ArrowLeft, BookmarkPlus, Copy, Crop, Highlighter, List, ListPlus,
-  MessageSquareText, PanelRight, Settings2, Sparkles, Trash2, LocateFixed, Plus, X,
+  MessageSquareText, PanelRight, Settings2, Trash2, LocateFixed, Plus, X,
 } from 'lucide-react'
 import type { Annotation, Doc, DocSettings, Task } from '@/db/db'
 import { db } from '@/db/db'
@@ -174,24 +174,6 @@ export function DocReaderPage() {
       window.getSelection()?.removeAllRanges()
     },
     [doc, selection, toast, navigate],
-  )
-
-  /** 划词 → 问 AI（方案 2.5：回答页保留文档来源） */
-  const askAi = useCallback(
-    async (sel: Selection) => {
-      if (!doc) return
-      const { startDocAiSession } = await import('@/db/ai')
-      const anchor = sel.kind === 'pdf' ? `p${sel.page}` : `b${sel.blockIdx}`
-      const session = await startDocAiSession(doc, sel.text, anchor)
-      if (!session) {
-        toast('请先在「AI 助手 → 资产」配置服务商与 Key')
-        return
-      }
-      setSelection(null)
-      window.getSelection()?.removeAllRanges()
-      navigate(`/ai?s=${session.id}`)
-    },
-    [doc, toast, navigate],
   )
 
   const addCurrentBookmark = useCallback(async () => {
@@ -370,14 +352,6 @@ export function DocReaderPage() {
                 }}
               >
                 <Copy size={15} />
-              </button>
-              <button
-                aria-label="问AI"
-                title="把选段发给 AI 助手"
-                className="grid place-items-center w-7 h-7 rounded-lg text-primary hover:bg-primary-soft"
-                onClick={() => void askAi(selection)}
-              >
-                <Sparkles size={15} />
               </button>
               <button
                 aria-label="高亮并转为任务"

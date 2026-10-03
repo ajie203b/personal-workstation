@@ -13,7 +13,6 @@ import { TasksPage } from '@/modules/tasks/TasksPage'
 const DocsPage = lazy(() => import('@/modules/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
 const DocReaderPage = lazy(() => import('@/modules/docs/DocReaderPage').then((m) => ({ default: m.DocReaderPage })))
 const MdEditorPage = lazy(() => import('@/modules/docs/MdEditorPage').then((m) => ({ default: m.MdEditorPage })))
-const AiPage = lazy(() => import('@/modules/ai/AiPage').then((m) => ({ default: m.AiPage })))
 const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 
 const RouteLoader = (
@@ -36,7 +35,8 @@ export default function App() {
             <Route path="docs/new" element={<MdEditorPage />} />
             <Route path="docs/edit/:docId" element={<MdEditorPage />} />
             <Route path="docs/:docId" element={<DocReaderPage />} />
-            <Route path="ai" element={<AiPage />} />
+            {/* AI 助手已移除：旧链接跳设置（资产仍在设置的「AI 资产」页） */}
+            <Route path="ai" element={<Navigate to="/settings" replace />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Route>

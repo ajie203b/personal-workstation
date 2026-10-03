@@ -7,9 +7,10 @@ import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { isNative } from '@/lib/native'
+import { ProviderCards } from '@/modules/ai/ProviderCards'
 import { cn } from '@/lib/cn'
 
-type Tab = 'appearance' | 'data' | 'about'
+type Tab = 'appearance' | 'ai' | 'data' | 'about'
 
 const THEME_CARDS: { value: Theme; label: string; icon: typeof Sun; preview: [string, string] }[] = [
   { value: 'light', label: '浅色', icon: Sun, preview: ['#FFFFFF', '#0B57D0'] },
@@ -29,13 +30,24 @@ export function SettingsPage() {
         className="self-start"
         options={[
           { value: 'appearance', label: '外观' },
+          { value: 'ai', label: 'AI 资产' },
           { value: 'data', label: '数据' },
           { value: 'about', label: '关于' },
         ]}
       />
       {tab === 'appearance' && <AppearanceTab />}
+      {tab === 'ai' && <AiTab />}
       {tab === 'data' && <DataTab />}
       {tab === 'about' && <AboutTab />}
+    </div>
+  )
+}
+
+/** AI 资产：会员订阅 + API 套餐（原 AI 助手模块的资产部分） */
+function AiTab() {
+  return (
+    <div className="flex flex-col gap-4 min-h-0" style={{ minHeight: '60vh' }}>
+      <ProviderCards />
     </div>
   )
 }

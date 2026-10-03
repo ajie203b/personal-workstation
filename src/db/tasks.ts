@@ -1,5 +1,6 @@
 import { db, type Priority, type Task, type Tier } from './db'
 import { uid } from '@/lib/id'
+import { addDaysStr, todayStr } from '@/lib/date'
 
 export interface NewTaskInput {
   title: string
@@ -37,13 +38,44 @@ export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | 'c
   await db.tasks.update(id, { ...patch, updatedAt: Date.now() })
 }
 
-/** 勾选完成 / 恢复。完成时写 doneAt（自动进入 Logbook） */
+/** 勾选完成 / 恢复。完成时写 doneAt（自动进入 Logbook）；重复任务（打卡）自动生成下一次 */
 export async function toggleDone(task: Task): Promise<void> {
   if (task.status === 'done') {
     await updateTask(task.id, { status: 'todo', doneAt: undefined })
-  } else {
-    await updateTask(task.id, { status: 'done', doneAt: Date.now() })
+    return
   }
+  await updateTask(task.id, { status: 'done', doneAt: Date.now() })
+  if (task.repeat) {
+    await spawnNextOccurrence(task)
+  }
+}
+
+/** 重复任务完成 → 生成下一次出现（打卡循环） */
+async function spawnNextOccurrence(task: Task): Promise<void> {
+  const base = task.due ?? todayStr()
+  let nextDue: string
+  if (task.repeat === 'daily') {
+    nextDue = addDaysStr(1, new Date(base + 'T00:00:00'))
+  } else if (task.repeat === 'weekly') {
+    nextDue = addDaysStr(7, new Date(base + 'T00:00:00'))
+  } else {
+    // weekdays：跳到下一个工作日（周一~周五）
+    let d = new Date(base + 'T00:00:00')
+    do {
+      d = new Date(d.getTime() + 86400000)
+    } while (d.getDay() === 0 || d.getDay() === 6)
+    nextDue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  await addTask({
+    title: task.title,
+    tier: task.tier,
+    priority: task.priority,
+    due: nextDue,
+    dueTime: task.dueTime,
+    tags: task.tags,
+    notes: task.notes,
+    repeat: task.repeat,
+  })
 }
 
 export async function moveTier(id: string, tier: Tier): Promise<void> {
