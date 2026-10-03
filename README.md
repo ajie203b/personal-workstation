@@ -2,7 +2,7 @@
 
 任务清单 × 文档工作站 × AI 助手面板的一体化个人工作台。本地优先、数据不出本机、单人不设账号。
 
-> 依据《产品方案》（`docs/产品方案.html`）落地。当前版本 **v0.4.0（M1+M2+M3 已上线；M4 ⌘K 命令面板、M2.5 截图批注/多标签/MD 编辑器已上线）**。
+> 依据《产品方案》（`docs/产品方案.html`）落地。当前版本 **v0.5.0（M1-M4 全部上线：任务清单 / 文档工作站 / AI 资产管理与对话 / ⌘K / 截图批注 / 多标签 / MD 编辑器）**。
 > 提供 **安卓 App**（Capacitor 封装，完全离线、无需服务器）与 **网页版 PWA** 两种形态。最新 APK 在 [Releases](../../releases) 页下载。
 
 ## 快速开始（网页版）
@@ -100,11 +100,10 @@ npm run build && npx cap sync android
 - **互跳**：任务卡上的文档引用可点击直达阅读位置（含页码/块锚点/批注闪烁）
 - 暂缓至 M2.5：PDF 区域截图批注、多标签页阅读、MD 编辑器（TipTap）
 
-## 功能（M3 · AI 助手面板）
+## 功能（M3 · AI 资产管理中心 + 对话）
 
-- **Provider 资产卡**：预设 DeepSeek / OpenAI / Kimi / OpenRouter / Ollama，也可自定义 OpenAI 兼容端点；API Key 仅存本机，卡片只显示尾四位 + 状态灯，永不明文回显；支持额度进度条与重置日
-- **连接测试**：一键拉取 `/models` 同步模型列表
-- **流式会话**：OpenAI 兼容 SSE 打字机输出；**消息五态**（queued → streaming → done / cancelled / failed），失败可重试且保留已生成内容；**中途切模型不丢上下文**
+- **AI 资产管理（主视图）**：统一管理手上的 AI 会员与 API 套餐 —— **会员订阅**（16 家厂商品牌色标自动匹配、套餐名、到期倒计时、续费周期、账号备注、管理页直达）；**API 套餐**（OpenAI 兼容端点、Key 槽位尾四位+状态灯、额度进度条、模型列表、连接测试同步）
+- **流式会话（辅助）**：OpenAI 兼容 SSE 打字机输出；**消息五态**（queued → streaming → done / cancelled / failed），失败可重试且保留已生成内容；**中途切模型不丢上下文**
 - **运行中任务卡片**：侧栏常驻（脉冲动画 + 实时字数 + Stop），今日页显示生成中数量
 - **用量仪表盘**：花费 / Tokens / 请求数 / 平均延迟四指标；模型占比环形图、每日趋势、按来源模块（对话/任务/文档）下钻；按模型价格配置自动计算费用
 - **三模块互跳**：任务详情「AI 拆解」→ 带上下文开话；文档划词「问AI」→ 引用选段自动生成回复；会话头来源徽标一键跳回任务/文档
@@ -138,8 +137,8 @@ src/
 ├─ modules/
 │  ├─ tasks/       # QuickAdd(NLP) · TaskItem · TaskList · BoardView · LogbookView · TaskDetail
 │  ├─ today/       # 今日 Dashboard
-│  ├─ docs/        # M2 占位
-│  ├─ ai/          # M3 占位
+│  ├─ docs/        # 文档库 + 三栏阅读器 + TipTap 编辑器
+│  ├─ ai/          # AI 资产管理 + 对话 + 用量仪表盘
 │  └─ settings/    # 外观 / 数据备份 / 关于(PWA安装)
 ├─ shared/         # ui 组件 · DeepLink 互跳入口 · 快捷键 · 主题
 ├─ stores/         # ui.ts / tasks.ts（Zustand）
