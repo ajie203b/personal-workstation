@@ -13,10 +13,12 @@ interface UiState {
   theme: Theme
   sidebarCollapsed: boolean
   shortcutsOpen: boolean
+  paletteOpen: boolean
   toasts: ToastItem[]
   setTheme: (t: Theme) => void
   setSidebarCollapsed: (v: boolean) => void
   setShortcutsOpen: (v: boolean) => void
+  setPaletteOpen: (v: boolean) => void
   toast: (message: string, action?: ToastItem['action']) => void
   dismissToast: (id: string) => void
 }
@@ -27,10 +29,12 @@ export const useUi = create<UiState>()(
       theme: 'system',
       sidebarCollapsed: false,
       shortcutsOpen: false,
+      paletteOpen: false,
       toasts: [],
       setTheme: (theme) => set({ theme }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+      setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       toast: (message, action) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, action }] }))
@@ -44,3 +48,8 @@ export const useUi = create<UiState>()(
     },
   ),
 )
+
+/** Ctrl/Cmd+K 快捷键不走 persist 的 setter，专供命令面板 */
+export function togglePalette() {
+  useUi.getState().setPaletteOpen(!useUi.getState().paletteOpen)
+}

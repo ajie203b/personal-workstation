@@ -101,15 +101,19 @@ export interface ReadingPosition {
   updatedAt: number
 }
 
-/** 批注：高亮（≤4 色）+ 评论，结构化存储可供 AI/任务消费 */
+/** 批注：文字高亮（≤4 色）或区域截图（M2.5），结构化存储可供 AI/任务消费 */
 export interface Annotation {
   id: string
   docHash: string
+  /** text=划词高亮（默认）；shot=区域截图（含 img 缩略图） */
+  kind?: 'text' | 'shot'
+  /** 截图缩略图（JPEG dataURL，最长边 ~480px，仅存本地） */
+  img?: string
   /** PDF 归一化矩形（相对页宽高），MD 为 undefined */
   rects?: { x: number; y: number; w: number; h: number }[]
   page?: number // PDF 页码（1 起）
   blockIdx?: number // MD 块序号
-  text: string // 摘录
+  text: string // 摘录（截图批注为备注文字）
   color: 'yellow' | 'green' | 'blue' | 'red'
   comment?: string
   createdAt: number

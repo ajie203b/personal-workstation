@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import {
-  ArrowLeft, BookmarkPlus, Copy, Highlighter, List, ListPlus,
+  ArrowLeft, BookmarkPlus, Copy, Crop, Highlighter, List, ListPlus,
   MessageSquareText, PanelRight, Settings2, Sparkles, Trash2, LocateFixed, Plus, X,
 } from 'lucide-react'
 import type { Annotation, Doc, DocSettings, Task } from '@/db/db'
@@ -12,7 +12,9 @@ import {
   getDocBlob, getPosition, saveDocSettings, touchDoc, updateAnnotation,
 } from '@/db/docs'
 import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
+import { useDocTabs } from '@/stores/tabs'
 import { useUi } from '@/stores/ui'
+import { cn } from '@/lib/cn'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Sheet } from '@/shared/ui/Sheet'
 import { MdReader, parseMdBlocks } from './MdReader'
@@ -48,6 +50,7 @@ export function DocReaderPage() {
     { page: number; offsetRatio: number } | { blockIdx: number; ratio: number } | null
   >(null)
   const [selection, setSelection] = useState<Selection | null>(null)
+  const [shotMode, setShotMode] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [leftTab, setLeftTab] = useState<'toc' | 'marks'>('toc')
   const [rightTab, setRightTab] = useState<'anns' | 'backlinks'>('anns')
@@ -109,6 +112,29 @@ export function DocReaderPage() {
     restoredShown.current = true
     toast('已回到上次阅读位置')
   }, [toast])
+
+  // 多标签（M2.5）：打开的文档登记进标签栏
+  const openTab = useDocTabs((s) => s.open)
+  useEffect(() => {
+    if (doc) openTab(doc.id, doc.title)
+  }, [doc?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 区域截图（M2.5）：裁剪结果存为截图批注
+  const onShot = useCallback(
+    (shot: { page: number; rects: { x: number; y: number; w: number; h: number }[]; img: string }) => {
+      if (!doc) return
+      void addAnnotation({
+        docHash: doc.hash,
+        kind: 'shot',
+        img: shot.img,
+        page: shot.page,
+        rects: shot.rects,
+        text: '区域截图',
+        color: 'blue',
+      }).then(() => toast('已添加截图批注'))
+    },
+    [doc, toast],
+  )
 
   const onProgress = useCallback((locator: number, pct: number) => {
     setProgressPct(pct)
@@ -206,6 +232,11 @@ export function DocReaderPage() {
           </p>
         </div>
         <IconBtn label="添加书签" onClick={() => void addCurrentBookmark()}><BookmarkPlus size={18} /></IconBtn>
+        {doc.kind === 'pdf' && (
+          <IconBtn label={shotMode ? '退出截图模式' : '区域截图批注（拖拽框选）'} active={shotMode} onClick={() => setShotMode((v) => !v)}>
+            <Crop size={18} />
+          </IconBtn>
+        )}
 
         {/* 排版设置（弹层） */}
         <div className="relative">
@@ -254,6 +285,9 @@ export function DocReaderPage() {
         <IconBtn label="批注面板" className="hidden lg:grid" onClick={() => setRightTab(rightTab === 'anns' ? 'backlinks' : 'anns')}><PanelRight size={18} /></IconBtn>
       </header>
 
+      {/* 多标签栏（M2.5）：打开过多个文档时显示 */}
+      <TabBar docId={docId} onJump={(id) => navigate(`/docs/${id}`)} />
+
       {/* 三栏工作区 */}
       <div className="flex-1 flex min-h-0">
         {/* 左：目录 + 高亮 */}
@@ -292,6 +326,8 @@ export function DocReaderPage() {
               annotations={annotations}
               jump={jump}
               onSelection={(sel) => setSelection(sel ? { kind: 'pdf', ...sel } : null)}
+              shotMode={shotMode}
+              onShot={onShot}
               onProgress={(page, pct2) => onProgress(page, pct2)}
               onRestored={onRestored}
               onLoaded={(n, outline) => {
@@ -411,6 +447,46 @@ export function DocReaderPage() {
 }
 
 /* ---------- 小组件 ---------- */
+
+/** 多标签栏：关一个自动切邻居；仅剩一个时不显示 */
+function TabBar({ docId, onJump }: { docId?: string; onJump: (id: string) => void }) {
+  const tabs = useDocTabs((s) => s.tabs)
+  const closeTab = useDocTabs((s) => s.close)
+  if (tabs.length < 2) return null
+  return (
+    <div className="shrink-0 flex items-stretch gap-1 px-2 pt-1.5 overflow-x-auto border-b border-outline/60 bg-surface">
+      {tabs.map((t) => {
+        const active = t.id === docId
+        return (
+          <div
+            key={t.id}
+            className={cn(
+              'group flex items-center gap-1.5 pl-3 pr-1.5 h-9 rounded-t-[10px] cursor-pointer select-none shrink-0 max-w-[180px] transition-colors',
+              active ? 'bg-surface-2 text-on-surface' : 'text-on-surface-2 hover:bg-surface-3/70',
+            )}
+            onClick={() => onJump(t.id)}
+          >
+            <span className={cn('text-[12px] truncate', active && 'font-medium')}>{t.title}</span>
+            <button
+              aria-label={`关闭标签 ${t.title}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                const neighbor = closeTab(t.id)
+                if (t.id === docId) {
+                  if (neighbor) onJump(neighbor)
+                  else window.location.hash = '#/docs'
+                }
+              }}
+              className="grid place-items-center w-5 h-5 rounded-md opacity-40 group-hover:opacity-100 hover:bg-danger/10 hover:text-danger cursor-pointer"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 function IconBtn({
   children, label, onClick, className = '', active = false,
@@ -638,8 +714,11 @@ function RightContent({
       )}
       {annotations.map((a) => (
         <div key={a.id} className="card px-3 py-2.5 mb-2">
+          {a.kind === 'shot' && a.img && (
+            <img src={a.img} alt="区域截图" className="w-full rounded-[8px] border border-outline mb-2 cursor-zoom-in" onClick={() => onJump(docKindAnchor(a), a.id)} />
+          )}
           <div className="flex items-start gap-2">
-            <span className={`shrink-0 mt-1 w-2.5 h-2.5 rounded-full ${a.color === 'yellow' ? 'bg-yellow-400' : a.color === 'green' ? 'bg-green-400' : a.color === 'blue' ? 'bg-blue-400' : 'bg-red-400'}`} />
+            <span className={`shrink-0 mt-1 w-2.5 h-2.5 rounded-full ${a.kind === 'shot' ? 'bg-primary' : a.color === 'yellow' ? 'bg-yellow-400' : a.color === 'green' ? 'bg-green-400' : a.color === 'blue' ? 'bg-blue-400' : 'bg-red-400'}`} />
             <p className="flex-1 text-[12.5px] leading-snug text-on-surface">{a.text}</p>
           </div>
           {a.comment && !editing && <p className="text-[12px] text-on-surface-2 mt-1.5 pl-[18px]">{a.comment}</p>}
@@ -657,7 +736,7 @@ function RightContent({
             />
           ) : null}
           <div className="flex items-center gap-0.5 mt-1.5 -ml-1">
-            {COLORS.map((c) => (
+            {a.kind !== 'shot' && COLORS.map((c) => (
               <button
                 key={c}
                 aria-label={`改为${c}`}
@@ -665,7 +744,7 @@ function RightContent({
                 className={`w-5 h-5 rounded-full hl-${c} border ${a.color === c ? 'border-on-surface' : 'border-outline/50'} cursor-pointer`}
               />
             ))}
-            <span className="w-px h-4 bg-outline mx-1" />
+            {a.kind !== 'shot' && <span className="w-px h-4 bg-outline mx-1" />}
             <MiniBtn label="评论" onClick={() => setEditing(editing === a.id ? null : a.id)}><MessageSquareText size={13} /></MiniBtn>
             <MiniBtn label="定位" onClick={() => onJump(docKindAnchor(a), a.id)}><LocateFixed size={13} /></MiniBtn>
             <MiniBtn label="转任务" onClick={() => onToTask(a)}><Plus size={13} /></MiniBtn>

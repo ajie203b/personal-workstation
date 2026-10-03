@@ -28,6 +28,9 @@ interface Props {
   annotations: Annotation[]
   jump: { anchor: string; hl?: string; ts: number } | null
   onSelection: (sel: PdfSelectionInfo | null) => void
+  /** 区域截图模式（M2.5）：开启时在页面上拖拽框选 */
+  shotMode?: boolean
+  onShot?: (shot: { page: number; rects: { x: number; y: number; w: number; h: number }[]; img: string }) => void
   onProgress: (page: number, pct: number) => void
   onRestored: () => void
   onLoaded: (numPages: number, outline: TocItem[]) => void
@@ -45,9 +48,9 @@ const PDF_OPTIONS = {
   standardFontDataUrl: 'pdfjs/standard_fonts/',
 }
 
-/** PDF 阅读器：精确占位 + 窗口渲染 + 文本层划词 + 暗色反色 */
+/** PDF 阅读器：精确占位 + 窗口渲染 + 文本层划词 + 区域截图 + 暗色反色 */
 export function PdfReader({
-  hash, settings, annotations, jump, onSelection, onProgress, onRestored, onLoaded, scrollRef, initialTarget,
+  hash, settings, annotations, jump, onSelection, shotMode, onShot, onProgress, onRestored, onLoaded, scrollRef, initialTarget,
 }: Props) {
   const [data, setData] = useState<ArrayBuffer | null>(null)
   const [numPages, setNumPages] = useState(0)
@@ -55,6 +58,8 @@ export function PdfReader({
   const [containerW, setContainerW] = useState(0)
   const [center, setCenter] = useState(1) // 当前视口中心页
   const [flashId, setFlashId] = useState<string | null>(null)
+  // 截图框选状态
+  const [drag, setDrag] = useState<{ page: number; x0: number; y0: number; x1: number; y1: number } | null>(null)
   const lastScrollTop = useRef(0)
   const restoredRef = useRef(false)
   const lastJumpTs = useRef(0)
@@ -250,6 +255,60 @@ export function PdfReader({
     [onSelection, scrollRef],
   )
 
+  // —— 区域截图（M2.5）：从渲染画布裁剪矩形区域 ——
+  const cropCanvas = useCallback((wrapper: HTMLElement, rect: { x: number; y: number; w: number; h: number }): string | null => {
+    const canvas = wrapper.querySelector('canvas')
+    if (!canvas) return null
+    const sx = rect.x * canvas.width
+    const sy = rect.y * canvas.height
+    const sw = Math.max(2, rect.w * canvas.width)
+    const sh = Math.max(2, rect.h * canvas.height)
+    const outW = Math.min(480, Math.round(sw))
+    const outH = Math.max(2, Math.round(sh * (outW / sw)))
+    const out = document.createElement('canvas')
+    out.width = outW
+    out.height = outH
+    const ctx = out.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, outW, outH)
+    try {
+      return out.toDataURL('image/jpeg', 0.82)
+    } catch {
+      return null
+    }
+  }, [])
+
+  const onShotMouseDown = useCallback((e: React.MouseEvent, page: number, wrapper: HTMLElement) => {
+    if (!shotMode) return
+    e.preventDefault()
+    const r = wrapper.getBoundingClientRect()
+    setDrag({ page, x0: (e.clientX - r.left) / r.width, y0: (e.clientY - r.top) / r.height, x1: (e.clientX - r.left) / r.width, y1: (e.clientY - r.top) / r.height })
+  }, [shotMode])
+
+  const onShotMouseMove = useCallback((e: React.MouseEvent, page: number, wrapper: HTMLElement) => {
+    setDrag((d) => {
+      if (!d || d.page !== page) return d
+      const r = wrapper.getBoundingClientRect()
+      return { ...d, x1: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y1: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }
+    })
+  }, [])
+
+  const onShotMouseUp = useCallback((_e: React.MouseEvent, page: number, wrapper: HTMLElement) => {
+    if (!shotMode || !drag || drag.page !== page) return
+    const x = Math.min(drag.x0, drag.x1)
+    const y = Math.min(drag.y0, drag.y1)
+    const w = Math.abs(drag.x1 - drag.x0)
+    const h = Math.abs(drag.y1 - drag.y0)
+    setDrag(null)
+    if (w < 0.02 || h < 0.02) return // 过小的框选视为误触
+    const img = cropCanvas(wrapper, { x, y, w, h })
+    if (img && onShot) {
+      onShot({ page, rects: [{ x, y, w, h }], img })
+    }
+    // 清掉可能残留的文本选择
+    window.getSelection()?.removeAllRanges()
+  }, [shotMode, drag, cropCanvas, onShot])
+
   const lo = Math.max(1, center - RENDER_WINDOW)
   const hi = Math.min(numPages, center + RENDER_WINDOW)
   const dark = settings.theme === 'night' || settings.theme === 'dusk'
@@ -272,8 +331,10 @@ export function PdfReader({
                 <div
                   data-page={p}
                   style={{ width: dispW, height: pageH(p - 1) }}
-                  className={`relative rounded-[8px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''}`}
-                  onMouseUp={(e) => onPageMouseUp(p, e.currentTarget)}
+                  className={`relative rounded-[8px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
+                  onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
+                  onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
+                  onMouseMove={(e) => onShotMouseMove(e, p, e.currentTarget)}
                 >
                   {inWindow ? (
                     <Page
@@ -284,30 +345,47 @@ export function PdfReader({
                       loading=""
                     />
                   ) : null}
-                  {/* 批注高亮叠层 */}
+                  {/* 截图框选预览 */}
+                  {drag && drag.page === p && (
+                    <div
+                      className="absolute border-2 border-primary bg-primary/10 pointer-events-none z-10"
+                      style={{
+                        left: `${Math.min(drag.x0, drag.x1) * 100}%`,
+                        top: `${Math.min(drag.y0, drag.y1) * 100}%`,
+                        width: `${Math.abs(drag.x1 - drag.x0) * 100}%`,
+                        height: `${Math.abs(drag.y1 - drag.y0) * 100}%`,
+                      }}
+                    />
+                  )}
+                  {/* 批注叠层：文字高亮填充 / 截图批注描边 */}
                   {annotations
                     .filter((a) => a.page === p && a.rects)
-                    .map((a) => (
-                      <div
-                        key={a.id}
-                        data-ann={a.id}
-                        className={`absolute pointer-events-none ${a.color === 'yellow' ? 'hl-yellow' : a.color === 'green' ? 'hl-green' : a.color === 'blue' ? 'hl-blue' : 'hl-red'} ${flashId === a.id ? 'ann-flash' : ''}`}
-                        style={{ ['--ann-opacity' as string]: '0.4' }}
-                      >
-                        {a.rects!.map((r, ri) => (
-                          <span
-                            key={ri}
-                            className="absolute"
-                            style={{
-                              left: `${r.x * 100}%`,
-                              top: `${r.y * 100}%`,
-                              width: `${r.w * 100}%`,
-                              height: `${r.h * 100}%`,
-                            }}
-                          />
-                        ))}
-                      </div>
-                    ))}
+                    .map((a) => {
+                      const isShot = a.kind === 'shot'
+                      const colorCls = a.color === 'yellow' ? 'hl-yellow' : a.color === 'green' ? 'hl-green' : a.color === 'blue' ? 'hl-blue' : 'hl-red'
+                      return (
+                        <div
+                          key={a.id}
+                          data-ann={a.id}
+                          className={`absolute pointer-events-none ${colorCls} ${flashId === a.id ? 'ann-flash' : ''}`}
+                          style={{ ['--ann-opacity' as string]: '0.4' }}
+                        >
+                          {a.rects!.map((r, ri) => (
+                            <span
+                              key={ri}
+                              className={`absolute ${isShot ? 'border-2 border-primary' : ''}`}
+                              style={{
+                                left: `${r.x * 100}%`,
+                                top: `${r.y * 100}%`,
+                                width: `${r.w * 100}%`,
+                                height: `${r.h * 100}%`,
+                                ...(isShot ? { background: 'rgba(11, 87, 208, 0.08)' } : {}),
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )
+                    })}
                 </div>
                 <span className="text-[11px] text-on-surface-2 select-none">
                   {p} / {numPages}
