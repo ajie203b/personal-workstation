@@ -1,16 +1,15 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Bot, CheckCircle2, FileText, FileType2, History, Keyboard } from 'lucide-react'
+import { History, Keyboard, Plus } from 'lucide-react'
 import { useAllTasks, useRecentDocs, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
-import { useAi } from '@/stores/ai'
 import { isThisWeek, fmtWeekdayLong, greeting } from '@/lib/date'
-import { QuickAdd } from '@/modules/tasks/QuickAdd'
+import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
 
-/** 今日 Dashboard（方案 2.4）：每日笔记式聚合首页 —— 今日任务 + 统计 + 模块状态 */
+/** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
 export function TodayPage() {
   const all = useAllTasks()
   const todayTasks = useMemo(() => sortTasks(deriveToday(all)), [all])
@@ -18,26 +17,35 @@ export function TodayPage() {
   const weekDone = useMemo(() => all.filter((t) => t.status === 'done' && isThisWeek(t.doneAt ?? 0)).length, [all])
   const totalDone = useMemo(() => all.filter((t) => t.status === 'done').length, [all])
   const openShortcuts = useUi((s) => s.setShortcutsOpen)
-  const navigate = useNavigate()
-  const aiRunning = Object.keys(useAi((s) => s.running)).length
+  const [addOpen, setAddOpen] = useState(false)
 
   const date = new Date()
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">
       <header className="pt-1">
-        <p className="text-[13px] text-on-surface-2">{greeting(date)}</p>
-        <h1 className="text-[32px] md:text-[34px] font-bold leading-[40px] tracking-tight mt-0.5">
-          {fmtWeekdayLong(date)}
-        </h1>
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] text-on-surface-2">{greeting(date)}</p>
+            <h1 className="text-[32px] md:text-[34px] font-bold leading-[40px] tracking-tight mt-0.5">
+              {fmtWeekdayLong(date)}
+            </h1>
+          </div>
+          <button
+            aria-label="添加任务"
+            title="添加任务（单次 / 打卡）"
+            onClick={() => setAddOpen(true)}
+            className="grid place-items-center w-12 h-12 rounded-full bg-primary text-on-primary shadow-md hover:opacity-90 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
+          >
+            <Plus size={24} strokeWidth={2.4} />
+          </button>
+        </div>
         <p className="text-[13.5px] text-on-surface-2 mt-1">
           {todayTasks.length > 0
             ? `今天有 ${todayTasks.length} 件事等你处理，一件件来。`
             : '今天的清单已清空，享受此刻。'}
         </p>
       </header>
-
-      <QuickAdd defaultTier="today" todayContext placeholder="今天要做什么？（下午3点 开会 P1）" />
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-start">
         {/* 今日任务 */}
@@ -52,7 +60,7 @@ export function TodayPage() {
             scope="today"
             tasks={todayTasks}
             emptyTitle="今天没有安排"
-            emptyHint="添加时写「明天」「下周三」会自动进入「近期」清单。"
+            emptyHint="点右上角加号添加任务；写「每天」可创建打卡任务。"
           />
         </section>
 
@@ -65,29 +73,6 @@ export function TodayPage() {
               <Kpi value={todayDone.length} label="今日完成" tone="ok" />
               <Kpi value={weekDone} label="本周完成" />
               <Kpi value={totalDone} label="累计完成" />
-            </div>
-          </section>
-
-          <section className="card p-4">
-            <h2 className="text-[13px] font-semibold text-on-surface-2 mb-3">模块</h2>
-            <div className="flex flex-col gap-2.5 text-[13.5px]">
-              <ModuleRow icon={CheckCircle2} name="任务清单" desc="M1 已上线" tone="ok" />
-              <ModuleRow icon={FileText} name="文档工作站" desc="M2 已上线" tone="ok" />
-              <button
-                type="button"
-                onClick={() => navigate('/ai')}
-                className="flex items-center gap-2.5 text-left cursor-pointer"
-              >
-                <Bot size={16} className={aiRunning > 0 ? 'text-primary' : 'text-on-surface-2'} />
-                <span className="font-medium">AI 助手</span>
-                {aiRunning > 0 && (
-                  <span className="flex items-center gap-1 text-[11.5px] text-primary">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ai-pulse" />
-                    {aiRunning} 个生成中
-                  </span>
-                )}
-                {!aiRunning && <span className="ml-auto text-[11.5px] text-on-surface-2">M3 已上线</span>}
-              </button>
             </div>
           </section>
 
@@ -108,6 +93,8 @@ export function TodayPage() {
           <RecentReads />
         </aside>
       </div>
+
+      <AddTaskSheet open={addOpen} onOpenChange={setAddOpen} defaultTier="today" todayContext />
     </div>
   )
 }
@@ -143,13 +130,12 @@ function RecentReads() {
               }}
               className="flex items-center gap-2 px-2 py-1.5 rounded-[10px] hover:bg-surface-3 transition-colors"
             >
-              {d.kind === 'pdf' ? <FileText size={14} className="text-on-surface-2 shrink-0" /> : <FileType2 size={14} className="text-on-surface-2 shrink-0" />}
               <span className="text-[12.5px] truncate flex-1">{d.title}</span>
             </span>
           ))}
         </span>
       ) : (
-        <span className="block text-[12px] text-on-surface-2">到「文档工作站」导入 PDF / Markdown 后，这里会显示最近打开的文档</span>
+        <span className="block text-[12px] text-on-surface-2">到「文档工作站」导入或撰写文档后，这里会显示最近打开的内容</span>
       )}
     </button>
   )
@@ -160,26 +146,6 @@ function Kpi({ value, label, tone }: { value: number; label: string; tone?: 'ok'
     <div className="rounded-[12px] bg-surface px-3 py-2.5 border border-outline/60">
       <b className={`block text-[22px] leading-7 font-bold ${tone === 'ok' ? 'text-ok' : 'text-primary'}`}>{value}</b>
       <span className="text-[11.5px] text-on-surface-2">{label}</span>
-    </div>
-  )
-}
-
-function ModuleRow({
-  icon: Icon,
-  name,
-  desc,
-  tone,
-}: {
-  icon: typeof Bot
-  name: string
-  desc: string
-  tone?: 'ok'
-}) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <Icon size={16} className={tone === 'ok' ? 'text-ok' : 'text-on-surface-2'} />
-      <span className="font-medium">{name}</span>
-      <span className="ml-auto text-[11.5px] text-on-surface-2">{desc}</span>
     </div>
   )
 }

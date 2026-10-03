@@ -1,7 +1,7 @@
-import { db, type AiMessage, type AiProvider, type AiSession, type AiUsageRow } from './db'
+import { db, type AiProvider } from './db'
 import { uid } from '@/lib/id'
 
-/* ============ Provider 资产 ============ */
+/* ============ AI 资产（会员订阅 / API 套餐） ============ */
 
 /** 预设厂商模板（OpenAI 兼容） */
 export const PROVIDER_PRESETS: { name: string; baseUrl: string; models: string[] }[] = [
@@ -76,7 +76,7 @@ export function maskKey(key: string): string {
 export async function testProvider(p: AiProvider): Promise<{ ok: boolean; models?: string[]; error?: string }> {
   try {
     const res = await fetch(`${(p.baseUrl ?? '').replace(/\/$/, '')}/models`, {
-      headers: { Authorization: `Bearer ${p.apiKey}` },
+      headers: { Authorization: `Bearer ${p.apiKey ?? ''}` },
     })
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
     const json = (await res.json()) as { data?: { id: string }[] }
@@ -84,145 +84,5 @@ export async function testProvider(p: AiProvider): Promise<{ ok: boolean; models
     return { ok: true, models }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : '网络错误' }
-  }
-}
-
-/* ============ 会话与消息（五态） ============ */
-
-export async function createSession(input: Omit<AiSession, 'id' | 'createdAt' | 'updatedAt'>): Promise<AiSession> {
-  const now = Date.now()
-  const s: AiSession = { ...input, id: uid(), createdAt: now, updatedAt: now }
-  await db.aiSessions.add(s)
-  return s
-}
-
-export async function updateSession(id: string, patch: Partial<AiSession>): Promise<void> {
-  await db.aiSessions.update(id, { ...patch, updatedAt: Date.now() })
-}
-
-export async function deleteSession(id: string): Promise<void> {
-  await db.transaction('rw', db.aiSessions, db.aiMessages, async () => {
-    const msgs = await db.aiMessages.where('sessionId').equals(id).toArray()
-    await db.aiMessages.bulkDelete(msgs.map((m) => m.id))
-    await db.aiSessions.delete(id)
-  })
-}
-
-export async function addMessage(input: Omit<AiMessage, 'id' | 'createdAt'>): Promise<AiMessage> {
-  const m: AiMessage = { ...input, id: uid(), createdAt: Date.now() }
-  await db.aiMessages.add(m)
-  await db.aiSessions.update(input.sessionId, { updatedAt: Date.now() })
-  return m
-}
-
-export async function updateMessage(id: string, patch: Partial<AiMessage>): Promise<void> {
-  await db.aiMessages.update(id, patch)
-}
-
-export async function recordUsage(row: Omit<AiUsageRow, 'id' | 'ts'>): Promise<void> {
-  await db.aiUsage.add({ ...row, id: uid(), ts: Date.now() })
-}
-
-/** 默认 Provider：第一个配了 Key 的 API 资产 */
-export async function getDefaultProvider(): Promise<AiProvider | undefined> {
-  const all = await db.aiProviders.toArray()
-  return all.find((p) => (p.kind ?? 'api') === 'api' && p.apiKey)
-}
-
-/** 文档划词 → 问 AI：直接建会话（保留文档来源锚点，方案 2.5） */
-export async function startDocAiSession(
-  doc: import('./db').Doc,
-  quote: string,
-  anchor: string,
-): Promise<AiSession | null> {
-  const provider = await getDefaultProvider()
-  if (!provider) return null
-  const session = await createSession({
-    title: quote.slice(0, 24) || `问《${doc.title}》`,
-    providerId: provider.id,
-    model: provider.models[0] ?? '',
-    sourceModule: 'doc',
-    sourceId: doc.id,
-    sourceLabel: doc.title,
-  })
-  await addMessage({
-    sessionId: session.id,
-    role: 'user',
-    content: `我在阅读《${doc.title}》时选中了这段话：\n\n「${quote}」\n\n请解释这段话的含义，如有必要请补充上下文。`,
-    state: 'done',
-  })
-  void anchor // 深链锚点保留在会话来源里，回答页可回跳
-  return session
-}
-
-/** 应用启动清理：把上次中断遗留的 streaming/queued 消息标记为已停止（保留已生成内容） */
-export async function cleanupStaleStreaming(): Promise<void> {
-  try {
-    const stale = await db.aiMessages.filter((m) => m.state === 'streaming' || m.state === 'queued').toArray()
-    if (!stale.length) return
-    await db.aiMessages.bulkPut(stale.map((m) => ({ ...m, state: 'cancelled' as const })))
-  } catch {
-    /* 数据库尚未就绪时忽略，下次启动再清理 */
-  }
-}
-
-/* ============ 用量聚合（时间 × 模型 × 模块） ============ */
-
-export interface UsageAggregate {
-  cost: number
-  tokensIn: number
-  tokensOut: number
-  requests: number
-  avgLatency: number
-  byModel: { model: string; tokens: number; cost: number }[]
-  byDay: { day: string; tokens: number; cost: number }[]
-  byModule: { module: string; requests: number; tokens: number; cost: number }[]
-}
-
-export async function aggregateUsage(days = 30): Promise<UsageAggregate> {
-  const since = Date.now() - days * 86400000
-  const rows = await db.aiUsage.where('ts').aboveOrEqual(since).toArray()
-  const ok = rows.filter((r) => r.ok)
-  const cost = ok.reduce((s, r) => s + r.cost, 0)
-  const tokensIn = ok.reduce((s, r) => s + r.tokensIn, 0)
-  const tokensOut = ok.reduce((s, r) => s + r.tokensOut, 0)
-  const latencies = ok.map((r) => r.latencyMs).filter((n) => n > 0)
-  const avgLatency = latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0
-
-  const modelMap = new Map<string, { tokens: number; cost: number }>()
-  const dayMap = new Map<string, { tokens: number; cost: number }>()
-  const moduleMap = new Map<string, { requests: number; tokens: number; cost: number }>()
-  for (const r of ok) {
-    const m = modelMap.get(r.model) ?? { tokens: 0, cost: 0 }
-    m.tokens += r.tokensIn + r.tokensOut
-    m.cost += r.cost
-    modelMap.set(r.model, m)
-
-    const day = new Date(r.ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
-    const d = dayMap.get(day) ?? { tokens: 0, cost: 0 }
-    d.tokens += r.tokensIn + r.tokensOut
-    d.cost += r.cost
-    dayMap.set(day, d)
-
-    const mod = moduleMap.get(r.module) ?? { requests: 0, tokens: 0, cost: 0 }
-    mod.requests++
-    mod.tokens += r.tokensIn + r.tokensOut
-    mod.cost += r.cost
-    moduleMap.set(r.module, mod)
-  }
-  const sortDays = (a: string, b: string) => {
-    const [am, ad] = a.split('/').map(Number)
-    const [bm, bd] = b.split('/').map(Number)
-    return am - bm || ad - bd
-  }
-  return {
-    cost,
-    tokensIn,
-    tokensOut,
-    requests: ok.length,
-    avgLatency,
-    byModel: [...modelMap.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.tokens - a.tokens),
-    byDay: [...dayMap.entries()].map(([day, v]) => ({ day, ...v })).sort((a, b) => sortDays(a.day, b.day)),
-    byModule: [...moduleMap.entries()].map(([module, v]) => ({ module, ...v })).sort((a, b) => b.tokens - a.tokens),
   }
 }

@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router'
+import { NavLink, useNavigate } from 'react-router'
 import { ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
@@ -7,12 +7,13 @@ import { cn } from '@/lib/cn'
 import { ThemeButton } from './ThemeButton'
 
 /**
- * 左侧导航：
+ * 左侧导航（设置入口在左上角品牌图标）：
  * - ≥lg：完整侧栏（可折叠成图标栏，状态持久化）
  * - md（平板竖屏 / 窄窗口）：图标栏
  * - <md：隐藏，由底部导航接管
  */
 export function Sidebar() {
+  const navigate = useNavigate()
   const collapsed = useUi((s) => s.sidebarCollapsed)
   const setCollapsed = useUi((s) => s.setSidebarCollapsed)
   const all = useAllTasks()
@@ -27,7 +28,14 @@ export function Sidebar() {
       )}
     >
       <div className="flex items-center gap-2.5 h-14 px-3.5 shrink-0">
-        <img src="./brand.png" alt="" className="w-8 h-8 rounded-[9px] object-cover shrink-0" />
+        <button
+          aria-label="进入设置"
+          title="设置"
+          onClick={() => navigate('/settings')}
+          className="shrink-0 cursor-pointer rounded-[11px] active:opacity-80"
+        >
+          <img src="./brand.png" alt="" className="w-10 h-10 rounded-[11px] object-cover" />
+        </button>
         {!collapsed && (
           <span className="hidden lg:block text-[15px] font-semibold tracking-wide">个人工作站</span>
         )}
@@ -72,16 +80,6 @@ export function Sidebar() {
                     )}
                   >
                     {counts.today}
-                  </span>
-                )}
-                {item.milestone && (
-                  <span
-                    className={cn(
-                      'hidden lg:block ml-auto text-[10px] px-1.5 py-0.5 rounded-md bg-surface-3 text-on-surface-2',
-                      collapsed && 'lg:hidden',
-                    )}
-                  >
-                    {item.milestone}
                   </span>
                 )}
               </>

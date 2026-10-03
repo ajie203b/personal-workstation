@@ -6,7 +6,6 @@ import './styles/index.css'
 import { registerSW } from 'virtual:pwa-register'
 import { initInstallPrompt } from './lib/pwa'
 import { isNative, initAndroidBackButton } from './lib/native'
-import { cleanupStaleStreaming } from './db/ai'
 import { ErrorBoundary } from './shared/ErrorBoundary'
 
 // PWA（Service Worker + 安装提示）仅在浏览器环境启用；
@@ -17,9 +16,6 @@ if (isNative()) {
   registerSW({ immediate: true })
   initInstallPrompt()
 }
-
-// 上次会话中断遗留的 streaming/queued 消息标记为已停止（保留已生成内容）
-void cleanupStaleStreaming()
 
 // 阅读位置由应用自己的双坐标机制管理，禁用浏览器的刷新滚动恢复
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
