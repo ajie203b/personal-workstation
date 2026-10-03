@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { FileText, FileType2, Import, Search, Trash2 } from 'lucide-react'
+import { FileText, FileType2, Import, PenLine, Search, Trash2 } from 'lucide-react'
 import type { Doc } from '@/db/db'
 import { deleteDoc, importDoc } from '@/db/docs'
 import { useDocs } from '@/db/hooks'
@@ -70,8 +70,11 @@ export function DocsPage() {
             aria-label="搜索文档"
             className="h-9 w-36 sm:w-44 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
           />
+          <Button size="sm" onClick={() => navigate('/docs/new')}>
+            <PenLine size={15} /> 写文档
+          </Button>
           <Button variant="primary" size="sm" onClick={() => fileRef.current?.click()} disabled={importing}>
-            <Import size={15} /> {importing ? '导入中…' : '导入文档'}
+            <Import size={15} /> {importing ? '导入中…' : '导入'}
           </Button>
           <input
             ref={fileRef}
@@ -91,11 +94,16 @@ export function DocsPage() {
         <EmptyState
           icon={FileType2}
           title="文档库还是空的"
-          hint="导入 PDF / Markdown / TXT 开始阅读。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
+          hint="导入 PDF / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
         >
-          <Button variant="primary" size="sm" onClick={() => fileRef.current?.click()}>
-            <Import size={15} /> 选择文件
-          </Button>
+          <div className="flex gap-2 justify-center">
+            <Button variant="primary" size="sm" onClick={() => navigate('/docs/new')}>
+              <PenLine size={15} /> 写文档
+            </Button>
+            <Button size="sm" onClick={() => fileRef.current?.click()}>
+              <Import size={15} /> 选择文件
+            </Button>
+          </div>
         </EmptyState>
       ) : filtered.length === 0 ? (
         <EmptyState icon={Search} title="没有匹配的文档" hint="换个关键词试试。" />
