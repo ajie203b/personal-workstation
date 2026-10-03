@@ -36,7 +36,7 @@ export async function streamChat(
 ): Promise<void> {
   let res: Response
   try {
-    res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    res = await fetch(`${(provider.baseUrl ?? '').replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       signal,
       headers: {

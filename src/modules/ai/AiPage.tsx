@@ -22,10 +22,10 @@ interface Source {
   prefill: string
 }
 
-/** AI 助手面板（M3）：对话 / 资产 / 用量 */
+/** AI 助手面板（M3 改版）：资产优先 —— 会员订阅 / API 套餐管理为主，对话为辅 */
 export function AiPage() {
   const [params] = useSearchParams()
-  const [tab, setTab] = useState<Tab>('chat')
+  const [tab, setTab] = useState<Tab>('assets')
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showListMobile, setShowListMobile] = useState(true)
   const [source, setSource] = useState<Source | null>(null)
@@ -38,10 +38,12 @@ export function AiPage() {
     if (s) {
       setSessionId(s)
       setShowListMobile(false)
+      setTab('chat')
       return
     }
     const src = params.get('src')
     if (!src) return
+    setTab('chat')
     const [module, id] = src.split(':')
     if (module !== 'task' && module !== 'doc') return
     void (async () => {
@@ -71,8 +73,8 @@ export function AiPage() {
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'chat', label: '对话' },
             { value: 'assets', label: '资产' },
+            { value: 'chat', label: '对话' },
             { value: 'usage', label: '用量' },
           ]}
         />

@@ -132,15 +132,32 @@ export interface Bookmark {
 
 export type MessageState = 'queued' | 'streaming' | 'done' | 'cancelled' | 'failed'
 
-/** Provider 资产卡：API Key 本地存储，永不明文回显（方案 2.3） */
+/**
+ * AI 资产（方案 2.3 改）：会员订阅 或 API 套餐，一张卡管理一个资产
+ */
+export type AiAssetKind = 'subscription' | 'api'
+
 export interface AiProvider {
   id: string
+  kind: AiAssetKind
   name: string
-  baseUrl: string // OpenAI 兼容根地址，如 https://api.deepseek.com/v1
-  apiKey: string
-  /** 可用模型列表（可手填，也可从 /models 拉取） */
+  /** 会员订阅：套餐名（如 ChatGPT Plus）；API：可留空 */
+  planName?: string
+  /** 会员订阅：到期日 YYYY-MM-DD */
+  expiresAt?: string
+  /** 会员订阅：续费周期 */
+  cycle?: 'monthly' | 'yearly' | 'once'
+  /** 账号 / 邮箱备注 */
+  account?: string
+  /** 官网 / 管理页链接 */
+  manageUrl?: string
+  /** API：OpenAI 兼容根地址 */
+  baseUrl?: string
+  /** API：Key 本地存储，永不明文回显 */
+  apiKey?: string
+  /** API：可用模型列表（可手填，也可从 /models 拉取） */
   models: string[]
-  /** 每百万 token 价格（可选，用于费用统计） */
+  /** API：每百万 token 价格（可选，用于费用统计） */
   pricePrompt?: number
   priceCompletion?: number
   /** 额度展示（可选）：总额度与重置日 */
