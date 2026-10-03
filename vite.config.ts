@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
       ...(lan ? [basicSsl()] : []),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
+        includeAssets: ['favicon.png', 'icons/apple-touch-icon.png'],
         manifest: {
           name: '个人工作站',
           short_name: '工作站',
