@@ -13,6 +13,44 @@ export const PROVIDER_PRESETS: { name: string; baseUrl: string; models: string[]
   { name: '自定义', baseUrl: '', models: [] },
 ]
 
+/** 会员订阅预设 */
+export const SUBSCRIPTION_PRESETS: { name: string; planName: string }[] = [
+  { name: 'OpenAI', planName: 'ChatGPT Plus' },
+  { name: 'Anthropic', planName: 'Claude Pro' },
+  { name: 'Moonshot Kimi', planName: 'Kimi 会员' },
+  { name: 'DeepSeek', planName: 'DeepSeek 套餐' },
+  { name: '智谱 GLM', planName: 'GLM 币' },
+  { name: '自定义', planName: '' },
+]
+
+/** 厂商品牌标：名称匹配 → 品牌色字母标 */
+const BRAND_MARKS: { match: string[]; mark: string; color: string }[] = [
+  { match: ['openai', 'chatgpt', 'gpt'], mark: 'GPT', color: '#10A37F' },
+  { match: ['deepseek'], mark: 'DS', color: '#4D6BFE' },
+  { match: ['kimi', 'moonshot'], mark: 'K', color: '#1E1E24' },
+  { match: ['claude', 'anthropic'], mark: 'C', color: '#D97757' },
+  { match: ['gemini', 'google'], mark: 'G', color: '#4285F4' },
+  { match: ['通义', 'qwen', '阿里'], mark: '通', color: '#615CED' },
+  { match: ['智谱', 'glm', 'chatglm'], mark: 'GLM', color: '#3859FF' },
+  { match: ['豆包', 'doubao', '字节'], mark: '豆', color: '#3B82F6' },
+  { match: ['grok', 'xai'], mark: 'X', color: '#111111' },
+  { match: ['openrouter'], mark: 'OR', color: '#6467F2' },
+  { match: ['ollama'], mark: 'OL', color: '#0F172A' },
+  { match: ['copilot', 'microsoft', 'azure'], mark: 'MS', color: '#0078D4' },
+  { match: ['groq'], mark: 'GQ', color: '#F55036' },
+  { match: ['mistral'], mark: 'M', color: '#FA500F' },
+  { match: ['腾讯', '混元'], mark: '混', color: '#0052D9' },
+  { match: ['百度', '文心'], mark: '文', color: '#2932E1' },
+]
+
+export function providerBrand(name: string): { mark: string; color: string } {
+  const lower = name.toLowerCase()
+  for (const b of BRAND_MARKS) {
+    if (b.match.some((m) => lower.includes(m))) return { mark: b.mark, color: b.color }
+  }
+  return { mark: name.slice(0, 2) || '?', color: '#0B57D0' }
+}
+
 export async function addProvider(input: Omit<AiProvider, 'id' | 'createdAt'>): Promise<AiProvider> {
   const p: AiProvider = { ...input, id: uid(), createdAt: Date.now() }
   await db.aiProviders.add(p)
@@ -37,7 +75,7 @@ export function maskKey(key: string): string {
 /** 连接测试：GET /models */
 export async function testProvider(p: AiProvider): Promise<{ ok: boolean; models?: string[]; error?: string }> {
   try {
-    const res = await fetch(`${p.baseUrl.replace(/\/$/, '')}/models`, {
+    const res = await fetch(`${(p.baseUrl ?? '').replace(/\/$/, '')}/models`, {
       headers: { Authorization: `Bearer ${p.apiKey}` },
     })
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
@@ -85,10 +123,10 @@ export async function recordUsage(row: Omit<AiUsageRow, 'id' | 'ts'>): Promise<v
   await db.aiUsage.add({ ...row, id: uid(), ts: Date.now() })
 }
 
-/** 默认 Provider：第一个配了 Key 的 */
+/** 默认 Provider：第一个配了 Key 的 API 资产 */
 export async function getDefaultProvider(): Promise<AiProvider | undefined> {
   const all = await db.aiProviders.toArray()
-  return all.find((p) => p.apiKey)
+  return all.find((p) => (p.kind ?? 'api') === 'api' && p.apiKey)
 }
 
 /** 文档划词 → 问 AI：直接建会话（保留文档来源锚点，方案 2.5） */
