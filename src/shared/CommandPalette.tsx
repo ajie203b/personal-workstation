@@ -48,7 +48,7 @@ export function CommandPalette() {
       { id: 'a-today', group: '动作', label: '今日', icon: <CalendarCheck size={15} />, run: () => navigate('/today') },
       { id: 'a-tasks', group: '动作', label: '任务清单', icon: <ListTodo size={15} />, run: () => navigate('/tasks') },
       { id: 'a-docs', group: '动作', label: '文档工作站', icon: <FileText size={15} />, run: () => navigate('/docs') },
-      { id: 'a-settings', group: '动作', label: '设置（含 AI 资产）', icon: <Settings2 size={15} />, run: () => navigate('/settings') },
+      { id: 'a-settings', group: '动作', label: '设置', icon: <Settings2 size={15} />, run: () => navigate('/settings') },
       {
         id: 'a-theme', group: '动作',
         label: theme === 'dark' ? '切换到浅色主题' : theme === 'light' ? '切换到深色主题' : '切换主题（当前跟随系统）',

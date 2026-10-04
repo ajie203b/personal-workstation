@@ -7,7 +7,8 @@ import type { Annotation, DocSettings } from '@/db/db'
 export interface MdSelectionInfo {
   text: string
   blockIdx: number
-  popover: { left: number; top: number }
+  /** 浮条锚点（容器坐标）：below=true 表示应显示在选区下方（靠近顶部时翻转） */
+  popover: { left: number; y: number; below: boolean }
 }
 
 interface Props {
@@ -155,8 +156,8 @@ export function MdReader({
     }
   }, [hash, onProgress, scrollRef])
 
-  // 划词检测（在正文容器上）
-  const onMouseUp = useCallback(() => {
+  // 划词检测（mouseup 与移动端 selectionchange/touchend 共用）
+  const checkSelection = useCallback(() => {
     const sel = window.getSelection()
     const container = scrollRef.current
     if (!sel || sel.isCollapsed || !container) {
@@ -176,16 +177,38 @@ export function MdReader({
     }
     const blockIdx = Number((blockEl as HTMLElement).id.slice(1))
     const rect = sel.getRangeAt(0).getBoundingClientRect()
-    const cRect = container.getBoundingClientRect()
+    // 视口坐标（浮条为 fixed 定位，不受滚动容器裁剪）
+    const topAbs = rect.top
+    const bottomAbs = rect.bottom
+    const below = topAbs < 90
     onSelection({
       text,
       blockIdx,
       popover: {
-        left: rect.left - cRect.left + rect.width / 2,
-        top: rect.top - cRect.top - 6,
+        left: rect.left + rect.width / 2,
+        y: below ? bottomAbs : topAbs,
+        below,
       },
     })
   }, [onSelection, scrollRef])
+
+  const onMouseUp = useCallback(() => checkSelection(), [checkSelection])
+
+  // 移动端：长按选择后无 mouseup，用 selectionchange / touchend 触发
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const debounced = () => {
+      clearTimeout(timer)
+      timer = setTimeout(checkSelection, 250)
+    }
+    document.addEventListener('selectionchange', debounced)
+    document.addEventListener('touchend', debounced)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('selectionchange', debounced)
+      document.removeEventListener('touchend', debounced)
+    }
+  }, [checkSelection])
 
   return (
     <div ref={scrollRef} onScroll={onScroll} className={`h-full overflow-y-auto theme-${settings.theme}`}>

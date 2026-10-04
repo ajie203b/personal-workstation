@@ -248,10 +248,10 @@ body {
 }
 .pdf-dark .textLayer { opacity: 0.9; }
 
-/* 划词浮条 */
+/* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */
 .sel-popover {
-  position: absolute;
-  z-index: 30;
+  position: fixed;
+  z-index: 60;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -285,6 +285,11 @@ body {
 .md-body img { max-width: 100%; border-radius: 10px; }
 .md-body hr { border: none; border-top: 1px solid var(--md-rule); margin: 1.8em 0; }
 .md-body mark { background: transparent; color: inherit; padding: 0.1em 0; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+/* 批注颜色：优先级高于上面的 mark 透明底（否则原文里看不到颜色） */
+.md-body mark.hl-yellow { background: rgba(250, 204, 21, 0.42); }
+.md-body mark.hl-green { background: rgba(74, 222, 128, 0.38); }
+.md-body mark.hl-blue { background: rgba(96, 165, 250, 0.38); }
+.md-body mark.hl-red { background: rgba(248, 113, 113, 0.38); }
 
 /* MD 阅读主题（日间/夜间/羊皮纸/暮色，按文档记忆） */
 .theme-day {

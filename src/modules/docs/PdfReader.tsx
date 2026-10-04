@@ -13,7 +13,8 @@ export interface PdfSelectionInfo {
   text: string
   page: number
   rects: { x: number; y: number; w: number; h: number }[]
-  popover: { left: number; top: number }
+  /** 浮条锚点（容器坐标）：below=true 表示应显示在选区下方 */
+  popover: { left: number; y: number; below: boolean }
 }
 
 export interface TocItem {
@@ -55,6 +56,7 @@ export function PdfReader({
   const [data, setData] = useState<ArrayBuffer | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([]) // 每页 高/宽
+  const [baseWidths, setBaseWidths] = useState<number[]>([]) // 每页 scale=1 基准宽（--scale-factor 用）
   const [containerW, setContainerW] = useState(0)
   const [center, setCenter] = useState(1) // 当前视口中心页
   const [flashId, setFlashId] = useState<string | null>(null)
@@ -104,12 +106,15 @@ export function PdfReader({
       setNumPages(n)
       // 全量取页面宽高比（仅元数据，不渲染），占位零漂移
       const rs: number[] = []
+      const ws: number[] = []
       for (let i = 1; i <= n; i++) {
         const page = await pdf.getPage(i)
         const vp = page.getViewport({ scale: 1 })
         rs.push(vp.height / vp.width)
+        ws.push(vp.width)
       }
       setRatios(rs)
+      setBaseWidths(ws)
 
       // 大纲解析：dest → 页码
       const outlineItems: TocItem[] = []
@@ -212,48 +217,75 @@ export function PdfReader({
     }
   }, [jump, numPages, ratios, scrollRef, layout, pageH])
 
-  // 划词检测
+  // 划词检测（mouseup 与移动端 selectionchange/touchend 共用）
+  const computePageSelection = useCallback((page: number, wrapper: HTMLElement): PdfSelectionInfo | null => {
+    const sel = window.getSelection()
+    const container = scrollRef.current
+    if (!sel || sel.isCollapsed || !container) return null
+    const text = sel.toString().trim()
+    if (!text) return null
+    const range = sel.getRangeAt(0)
+    const wRect = wrapper.getBoundingClientRect()
+    const rects = Array.from(range.getClientRects())
+      .map((r) => ({
+        x: (r.left - wRect.left) / wRect.width,
+        y: (r.top - wRect.top) / wRect.height,
+        w: r.width / wRect.width,
+        h: r.height / wRect.height,
+      }))
+      .filter((r) => r.w > 0.001 && r.h > 0.001)
+    if (!rects.length) return null
+    const last = rects[rects.length - 1]
+    const firstTop = rects[0].y * wRect.height + wRect.top
+    const lastBottom = (last.y + last.h) * wRect.height + wRect.top
+    const below = firstTop < 90
+    return {
+      text,
+      page,
+      rects,
+      popover: {
+        left: (last.x + last.w / 2) * wRect.width + wRect.left,
+        y: below ? lastBottom : firstTop,
+        below,
+      },
+    }
+  }, [scrollRef])
+
   const onPageMouseUp = useCallback(
     (page: number, wrapper: HTMLElement) => {
-      const sel = window.getSelection()
-      const container = scrollRef.current
-      if (!sel || sel.isCollapsed || !container) {
-        onSelection(null)
-        return
-      }
-      const text = sel.toString().trim()
-      if (!text) {
-        onSelection(null)
-        return
-      }
-      const range = sel.getRangeAt(0)
-      const wRect = wrapper.getBoundingClientRect()
-      const cRect = container.getBoundingClientRect()
-      const rects = Array.from(range.getClientRects())
-        .map((r) => ({
-          x: (r.left - wRect.left) / wRect.width,
-          y: (r.top - wRect.top) / wRect.height,
-          w: r.width / wRect.width,
-          h: r.height / wRect.height,
-        }))
-        .filter((r) => r.w > 0.001 && r.h > 0.001)
-      if (!rects.length) {
-        onSelection(null)
-        return
-      }
-      const last = rects[rects.length - 1]
-      onSelection({
-        text,
-        page,
-        rects,
-        popover: {
-          left: (last.x + last.w / 2) * wRect.width + (wRect.left - cRect.left),
-          top: last.y * wRect.height + (wRect.top - cRect.top) - 6,
-        },
-      })
+      onSelection(computePageSelection(page, wrapper))
     },
-    [onSelection, scrollRef],
+    [onSelection, computePageSelection],
   )
+
+  // 移动端：长按选择后无 mouseup，用 selectionchange / touchend 触发
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const debounced = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const sel = window.getSelection()
+        if (!sel || sel.isCollapsed) {
+          onSelection(null)
+          return
+        }
+        const node = sel.anchorNode
+        const pageEl = (node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null
+        if (!pageEl) {
+          onSelection(null)
+          return
+        }
+        onSelection(computePageSelection(Number(pageEl.dataset.page), pageEl))
+      }, 250)
+    }
+    document.addEventListener('selectionchange', debounced)
+    document.addEventListener('touchend', debounced)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('selectionchange', debounced)
+      document.removeEventListener('touchend', debounced)
+    }
+  }, [computePageSelection, onSelection])
 
   // —— 区域截图（M2.5）：从渲染画布裁剪矩形区域 ——
   const cropCanvas = useCallback((wrapper: HTMLElement, rect: { x: number; y: number; w: number; h: number }): string | null => {
@@ -330,7 +362,7 @@ export function PdfReader({
               <div key={p} className="flex flex-col items-center gap-1">
                 <div
                   data-page={p}
-                  style={{ width: dispW, height: pageH(p - 1) }}
+                  style={{ width: dispW, height: pageH(p - 1), ['--scale-factor' as string]: String(dispW / (baseWidths[p - 1] || 612)) }}
                   className={`relative rounded-[8px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
                   onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
                   onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
@@ -367,7 +399,7 @@ export function PdfReader({
                         <div
                           key={a.id}
                           data-ann={a.id}
-                          className={`absolute pointer-events-none ${colorCls} ${flashId === a.id ? 'ann-flash' : ''}`}
+                          className={`absolute inset-0 pointer-events-none ${colorCls} ${flashId === a.id ? 'ann-flash' : ''}`}
                           style={{ ['--ann-opacity' as string]: '0.4' }}
                         >
                           {a.rects!.map((r, ri) => (
