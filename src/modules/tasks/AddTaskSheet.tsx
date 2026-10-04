@@ -4,7 +4,7 @@ import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { addTask } from '@/db/tasks'
 import { todayStr, fmtDue } from '@/lib/date'
 import { PRIORITY_VAR, type RepeatKind, type Tier } from '@/db/db'
-import { Sheet } from '@/shared/ui/Sheet'
+import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Button } from '@/shared/ui/Button'
 import { cn } from '@/lib/cn'
@@ -67,8 +67,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title="添加任务">
-      <div className="flex flex-col gap-4">
+    <Dialog open={open} onOpenChange={onOpenChange} title="添加任务" widthClass="w-[min(620px,92vw)]">
+      <div className="flex flex-col gap-3">
         {/* 输入区 */}
         <div className="card px-3.5 py-3 focus-within:border-primary/50 transition-colors">
           <textarea
@@ -144,7 +144,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           {mode === 'repeat' ? '添加打卡任务' : '添加任务'}
         </Button>
       </div>
-    </Sheet>
+    </Dialog>
   )
 }
 

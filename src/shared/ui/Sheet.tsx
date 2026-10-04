@@ -55,18 +55,24 @@ export function Dialog({
   title,
   description,
   children,
+  widthClass = 'w-[min(400px,92vw)]',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
   description?: string
   children: ReactNode
+  /** 默认 400px；宽短弹窗传 w-[min(620px,92vw)] */
+  widthClass?: string
 }) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
-        <RadixDialog.Content className="pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(400px,92vw)] p-5">
+        <RadixDialog.Content
+          className={cn('pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-5', widthClass)}
+          style={{ animation: 'fade-up var(--dur-1) var(--ease-standard)' }}
+        >
           <RadixDialog.Title className="text-[17px] font-semibold">{title}</RadixDialog.Title>
           {description && (
             <RadixDialog.Description className="mt-1.5 text-[13.5px] text-on-surface-2 leading-relaxed">

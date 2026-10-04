@@ -22,7 +22,7 @@ export function TodayPage() {
   const date = new Date()
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">
+    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">
       <header className="pt-1">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
@@ -35,7 +35,8 @@ export function TodayPage() {
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
             onClick={() => setAddOpen(true)}
-            className="grid place-items-center w-12 h-12 rounded-full bg-primary text-on-primary shadow-md hover:opacity-90 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
+            className="grid place-items-center w-12 h-12 rounded-full border border-ok/30 shadow-sm hover:scale-105 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
+            style={{ background: 'color-mix(in srgb, var(--ok) 14%, var(--surface))', color: 'var(--ok)' }}
           >
             <Plus size={24} strokeWidth={2.4} />
           </button>
