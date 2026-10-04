@@ -141,6 +141,27 @@ body {
   border-radius: 6px;
 }
 
+/* 输入类控件自带边框反馈（focus 时边框变主色），不再叠加外描边圈
+   （否则出现一圈与外轮廓不重合的蓝圈） */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+/* 卡片内输入聚焦 → 卡片边框亮起（与外轮廓重合的反馈） */
+.card:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+/* TipTap 编辑区（contenteditable）：去掉焦点蓝框，光标即反馈 */
+.tiptap:focus,
+.tiptap:focus-visible,
+.ProseMirror:focus,
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
 /* 细滚动条 */
 * { scrollbar-width: thin; scrollbar-color: var(--outline) transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }

@@ -56,7 +56,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
         e.preventDefault()
         submit()
       }}
-      className="card card-hover px-4 py-3"
+      className="card card-hover px-4 py-3 focus-within:border-primary/50"
     >
       <div className="flex items-center gap-3">
         <input

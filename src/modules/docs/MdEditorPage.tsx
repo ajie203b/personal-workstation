@@ -182,9 +182,9 @@ export function MdEditorPage() {
         </div>
       )}
 
-      {/* 编辑区 */}
+      {/* 编辑区：全屏书写 */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-[720px] mx-auto px-4 py-8">
+        <div className="w-full px-5 md:px-12 py-8">
           {ready && editor ? (
             <EditorContent editor={editor} />
           ) : (
