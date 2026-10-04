@@ -68,7 +68,8 @@ async function spawnNextOccurrence(task: Task): Promise<void> {
   }
   await addTask({
     title: task.title,
-    tier: task.tier,
+    // 下一次未到期先进「近期」，到期当天自动浮上「今日」（否则勾完立刻顶回今日列表）
+    tier: nextDue > todayStr() ? 'upcoming' : task.tier,
     priority: task.priority,
     due: nextDue,
     dueTime: task.dueTime,
