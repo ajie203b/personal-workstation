@@ -8,7 +8,7 @@ import {
 import type { Annotation, Doc, DocSettings, Task } from '@/db/db'
 import { db } from '@/db/db'
 import {
-  addAnnotation, addBookmark, annotationToTask, deleteAnnotation, deleteBookmark,
+  addAnnotation, addBookmark, deleteAnnotation, deleteBookmark,
   getDocBlob, getPosition, saveDocSettings, touchDoc, updateAnnotation,
 } from '@/db/docs'
 import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
@@ -16,6 +16,8 @@ import { useDocTabs } from '@/stores/tabs'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { Segmented } from '@/shared/ui/Segmented'
+import { Button } from '@/shared/ui/Button'
+import { Dialog } from '@/shared/ui/Sheet'
 import { Sheet } from '@/shared/ui/Sheet'
 import { MdReader, parseMdBlocks } from './MdReader'
 import { PdfReader, type TocItem } from './PdfReader'
@@ -23,8 +25,8 @@ import { PdfReader, type TocItem } from './PdfReader'
 const DEFAULT_SETTINGS: DocSettings = { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 72 }
 
 type Selection =
-  | { kind: 'md'; text: string; blockIdx: number; popover: { left: number; top: number } }
-  | { kind: 'pdf'; text: string; page: number; rects: { x: number; y: number; w: number; h: number }[]; popover: { left: number; top: number } }
+  | { kind: 'md'; text: string; blockIdx: number; popover: { left: number; y: number; below: boolean } }
+  | { kind: 'pdf'; text: string; page: number; rects: { x: number; y: number; w: number; h: number }[]; popover: { left: number; y: number; below: boolean } }
 
 const COLORS = ['yellow', 'green', 'blue', 'red'] as const
 
@@ -107,6 +109,20 @@ export function DocReaderPage() {
     }
   }, [docHash, paramP, paramHl])
 
+  /** 批注转任务（v0.7 改）：勾选内容进笔记区，标题由用户输入 */
+  const [taskFrom, setTaskFrom] = useState<{ ann: Annotation; doc: Doc } | null>(null)
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskNotes, setTaskNotes] = useState('')
+
+  // 预填笔记：勾选内容 + 已有评论
+  useEffect(() => {
+    if (taskFrom) {
+      const { ann } = taskFrom
+      setTaskNotes(`批注：${ann.text}${ann.comment ? `\n评论：${ann.comment}` : ''}`)
+      setTaskTitle('')
+    }
+  }, [taskFrom])
+
   const onRestored = useCallback(() => {
     if (restoredShown.current) return
     restoredShown.current = true
@@ -165,8 +181,7 @@ export function DocReaderPage() {
         : { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'md' }>).blockIdx, text: selection.text, color }
       const ann = await addAnnotation(base)
       if (withTask) {
-        await annotationToTask(ann, doc)
-        toast('已高亮并创建任务', { label: '查看', run: () => navigate('/tasks?tier=anytime') })
+        setTaskFrom({ ann, doc })
       } else {
         toast('已添加高亮')
       }
@@ -198,7 +213,7 @@ export function DocReaderPage() {
   return (
     <div className="h-full flex flex-col bg-surface">
       {/* 顶栏 */}
-      <header className="glass shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70">
+      <header className="glass relative z-30 shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70">
         <button
           onClick={() => navigate('/docs')}
           aria-label="返回文档库"
@@ -226,7 +241,10 @@ export function DocReaderPage() {
           {showSettings && (
             <>
               <div className="fixed inset-0 z-20" onClick={() => setShowSettings(false)} />
-              <div className="pop absolute right-0 top-12 z-30 w-[260px] p-4 flex flex-col gap-3.5">
+              <div
+                className="pop z-50 w-[260px] p-4 flex flex-col gap-3.5 fixed"
+                style={{ right: 12, top: 'calc(env(safe-area-inset-top, 0px) + 60px)' }}
+              >
                 <div>
                   <p className="text-[12px] font-medium text-on-surface-2 mb-1.5">阅读主题</p>
                   <Segmented
@@ -324,14 +342,14 @@ export function DocReaderPage() {
             <div className="h-full grid place-items-center text-on-surface-2 text-[13.5px]">正在载入文档…</div>
           )}
 
-          {/* 划词浮条 */}
+          {/* 划词浮条（选区近顶部时自动翻转到下方，避免被裁切/遮挡） */}
           {selection && (
             <div
               className="sel-popover"
               style={{
-                left: Math.min(Math.max(selection.popover.left, 90), (scrollRef.current?.clientWidth ?? 400) - 90),
-                top: Math.max(selection.popover.top, 8),
-                transform: 'translate(-50%, -100%)',
+                left: Math.min(Math.max(selection.popover.left, 104), window.innerWidth - 104),
+                top: Math.max(selection.popover.y, 8),
+                transform: selection.popover.below ? 'translate(-50%, 10px)' : 'translate(-50%, -100%)',
               }}
             >
               {COLORS.map((c) => (
@@ -373,9 +391,7 @@ export function DocReaderPage() {
             backlinks={backlinks}
             rightTab={rightTab}
             onJump={(a) => doJump(a)}
-            onToTask={(ann) => {
-              void annotationToTask(ann, doc).then(() => toast('已创建任务'))
-            }}
+            onToTask={(ann) => setTaskFrom({ ann, doc })}
             onDelete={(id) => void deleteAnnotation(id)}
             onRecolor={(id, color) => void updateAnnotation(id, { color })}
             onComment={(id, comment) => void updateAnnotation(id, { comment })}
@@ -383,6 +399,62 @@ export function DocReaderPage() {
           />
         </aside>
       </div>
+
+      {/* 批注 → 任务弹窗：勾选内容进笔记区，标题自己输入 */}
+      <Dialog
+        open={taskFrom != null}
+        onOpenChange={(v) => !v && setTaskFrom(null)}
+        title="从批注创建任务"
+        description="勾选内容已放入任务笔记；任务标题自己起。"
+      >
+        <div className="flex flex-col gap-3">
+          <label className="block">
+            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">任务标题</span>
+            <input
+              autoFocus
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+              placeholder="输入任务标题…"
+              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/60"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">笔记内容（已预填勾选内容，可改）</span>
+            <textarea
+              value={taskNotes}
+              onChange={(e) => setTaskNotes(e.target.value)}
+              rows={4}
+              className="w-full rounded-[10px] bg-surface-2 border border-outline px-3 py-2 text-[13px] outline-none focus:border-primary/60 resize-none leading-relaxed"
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setTaskFrom(null)}>取消</Button>
+            <Button
+              variant="primary"
+              disabled={!taskTitle.trim()}
+              onClick={() => {
+                if (!taskFrom) return
+                const { ann, doc: d } = taskFrom
+                const anchor = ann.page != null ? `p${ann.page}` : `b${ann.blockIdx ?? 0}`
+                void import('@/db/tasks').then(async ({ addTask }) => {
+                  const t = await addTask({
+                    title: taskTitle.trim(),
+                    tier: 'anytime',
+                    tags: ['批注'],
+                    notes: taskNotes.trim() || undefined,
+                  })
+                  await db.tasks.update(t.id, { docRef: { docId: d.id, anchor: `${anchor}#${ann.id}`, label: d.title } })
+                  toast('任务已创建')
+                  setTaskFrom(null)
+                  setTaskTitle('')
+                })
+              }}
+            >
+              创建任务
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       {/* 移动端抽屉 */}
       <Sheet open={mobilePanel === 'toc'} onOpenChange={(v) => !v && setMobilePanel(null)} title="目录与高亮">
@@ -409,7 +481,7 @@ export function DocReaderPage() {
             doJump(a)
             setMobilePanel(null)
           }}
-          onToTask={(ann) => void annotationToTask(ann, doc).then(() => toast('已创建任务'))}
+          onToTask={(ann) => setTaskFrom({ ann, doc })}
           onDelete={(id) => void deleteAnnotation(id)}
           onRecolor={(id, color) => void updateAnnotation(id, { color })}
           onComment={(id, comment) => void updateAnnotation(id, { comment })}

@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router'
+import { NavLink, useLocation, useNavigate } from 'react-router'
 import { ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
@@ -7,34 +7,41 @@ import { cn } from '@/lib/cn'
 import { ThemeButton } from './ThemeButton'
 
 /**
- * 左侧导航（设置入口在左上角品牌图标）：
+ * 左侧导航（设置入口在左上角品牌图标：单击进入 / 再点退出）：
  * - ≥lg：完整侧栏（可折叠成图标栏，状态持久化）
  * - md（平板竖屏 / 窄窗口）：图标栏
  * - <md：隐藏，由底部导航接管
  */
 export function Sidebar() {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const collapsed = useUi((s) => s.sidebarCollapsed)
   const setCollapsed = useUi((s) => s.setSidebarCollapsed)
   const all = useAllTasks()
   const counts = countByTier(all)
 
+  const onBrandClick = () => {
+    if (pathname.startsWith('/settings')) navigate('/today')
+    else navigate('/settings')
+  }
+
   return (
     <aside
       className={cn(
-        'glass hidden md:flex flex-col shrink-0 border-r border-outline/70 z-10',
+        'glass hidden md:flex flex-col shrink-0 border-r border-outline/70 z-30',
         'transition-[width] duration-300 ease-standard',
         collapsed ? 'w-16' : 'w-16 lg:w-60',
       )}
     >
       <div className="flex items-center gap-2.5 h-14 px-3.5 shrink-0">
         <button
-          aria-label="进入设置"
+          type="button"
+          aria-label="进入设置（再点返回）"
           title="设置"
-          onClick={() => navigate('/settings')}
-          className="shrink-0 cursor-pointer rounded-[11px] active:opacity-80"
+          onClick={onBrandClick}
+          className="shrink-0 cursor-pointer rounded-[11px] active:opacity-80 select-none"
         >
-          <img src="./brand.png" alt="" className="w-10 h-10 rounded-[11px] object-cover" />
+          <img src="./brand.png" alt="" className="w-10 h-10 rounded-[11px] object-cover" draggable={false} />
         </button>
         {!collapsed && (
           <span className="hidden lg:block text-[15px] font-semibold tracking-wide">个人工作站</span>
