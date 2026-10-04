@@ -104,8 +104,8 @@ function New-Splash {
 Write-Host '--- PWA icons ---'
 New-BrandIcon -Size 512 -Out (Join-Path $webIcons 'icon-512.png') -Shape 'rounded'
 New-BrandIcon -Size 192 -Out (Join-Path $webIcons 'icon-192.png') -Shape 'rounded'
-New-BrandIcon -Size 512 -Out (Join-Path $webIcons 'icon-512-maskable.png') -Shape 'square' -Bg '#FFFFFF'
-New-BrandIcon -Size 180 -Out (Join-Path $webIcons 'apple-touch-icon.png') -Shape 'square' -Bg '#FFFFFF'
+New-BrandIcon -Size 512 -Out (Join-Path $webIcons 'icon-512-maskable.png') -Shape 'square' -Scale 0.70 -Bg '#FFFFFF'
+New-BrandIcon -Size 180 -Out (Join-Path $webIcons 'apple-touch-icon.png') -Shape 'square' -Scale 0.95 -Bg '#FFFFFF'
 
 # favicon.png (small square)
 New-BrandIcon -Size 48 -Out (Join-Path $root 'public\favicon.png') -Shape 'rounded'
@@ -117,13 +117,14 @@ Write-Host '--- Android launcher icons ---'
 $densities = @{ 'mipmap-mdpi' = 48; 'mipmap-hdpi' = 72; 'mipmap-xhdpi' = 96; 'mipmap-xxhdpi' = 144; 'mipmap-xxxhdpi' = 192 }
 foreach ($k in $densities.Keys) {
   $size = $densities[$k]
-  New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher.png')) -Shape 'rounded'
-  New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher_round.png')) -Shape 'circle'
+  New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher.png')) -Shape 'rounded' -Scale 0.94
+  New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher_round.png')) -Shape 'circle' -Scale 0.94
 }
-# adaptive foreground: white bg + brand image at 78% (white blends into background layer)
+# adaptive foreground: brand image at 62% centered (safe zone is ~66% of canvas),
+# white padding blends into the white background layer -> full image visible on any launcher mask
 $fg = @{ 'mipmap-mdpi' = 108; 'mipmap-hdpi' = 162; 'mipmap-xhdpi' = 216; 'mipmap-xxhdpi' = 324; 'mipmap-xxxhdpi' = 432 }
 foreach ($k in $fg.Keys) {
-  New-BrandIcon -Size $fg[$k] -Out (Join-Path $res ($k + '\ic_launcher_foreground.png')) -Shape 'rounded' -Scale 0.78 -Bg '#FFFFFF'
+  New-BrandIcon -Size $fg[$k] -Out (Join-Path $res ($k + '\ic_launcher_foreground.png')) -Shape 'square' -Scale 0.62 -Bg '#FFFFFF'
 }
 
 # adaptive icon background -> white (blends with the brand image edge)
