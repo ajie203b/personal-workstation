@@ -69,7 +69,7 @@ export function TasksPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4">
+    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <h1 className="text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
         {!isLogbook && (
