@@ -33,10 +33,18 @@ export function TaskItem({ task, focused, overlay }: Props) {
     })
   }
 
+  // 点击分区：左半边 = 完成/恢复；右半区 = 打开详情
+  const onCardClick = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const onLeft = e.clientX - rect.left < rect.width / 2
+    if (onLeft) void toggleDone(task)
+    else openDetail(task.id)
+  }
+
   return (
     <div
       id={`task-${task.id}`}
-      onClick={overlay ? undefined : () => openDetail(task.id)}
+      onClick={overlay ? undefined : onCardClick}
       className={cn(
         'card card-hover relative px-4 py-3 cursor-pointer select-none',
         'transition-shadow duration-150',

@@ -195,7 +195,7 @@ function AboutTab() {
         <p className="mt-1">
           技术栈：React 18 + TypeScript + Vite + Tailwind CSS 4 + Zustand + Dexie（IndexedDB）+ PWA
         </p>
-        <p className="mt-1">路线：M1 任务清单 ✅ → M2 文档工作站 → M3 AI 助手面板 → M4 互跳与打磨</p>
+        <p className="mt-1">路线：M1 任务清单 ✅ → M2 文档工作站 ✅ → M3 互跳与打磨</p>
       </section>
     </div>
   )
