@@ -38,15 +38,18 @@ export function TaskItem({ task, focused, overlay }: Props) {
       id={`task-${task.id}`}
       onClick={overlay ? undefined : () => openDetail(task.id)}
       className={cn(
-        'card card-hover relative overflow-hidden px-4 py-3 cursor-pointer select-none',
+        'card card-hover relative px-4 py-3 cursor-pointer select-none',
         'transition-shadow duration-150',
         focused && 'ring-2 ring-primary/50',
         done && 'opacity-60',
       )}
+      // 优先级闭合边框：整卡外轮廓按红→橙黄→蓝→灰包裹，一眼识别档次
+      style={{
+        borderColor: PRIORITY_VAR[task.priority],
+        borderWidth: task.priority === 3 ? 1 : 1.5,
+        borderStyle: 'solid',
+      }}
     >
-      {/* 优先级左色条：红→橙黄→蓝→灰白，不整行铺色 */}
-      <span className="pri-bar" style={{ background: PRIORITY_VAR[task.priority], opacity: task.priority === 3 ? 0.7 : 1 }} />
-
       <div className="flex items-start gap-3">
         <CheckCircle checked={done} onChange={() => void toggleDone(task)} label={done ? '恢复任务' : '完成任务'} />
 
