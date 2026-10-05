@@ -40,6 +40,16 @@
   --dur-1: 150ms;
   --dur-2: 300ms;
   --dur-3: 400ms;
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 15px;
+  --fs-lg: 17px;
   --ease-standard: cubic-bezier(.2, 0, 0, 1);
   --ease-emph: cubic-bezier(.05, .7, .1, 1);
 }
@@ -300,6 +310,11 @@ select:focus-visible {
 .theme-transition,
 .theme-transition * {
   transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease !important;
+}
+
+/* 列表项进入/离开动画 */
+.list-item-enter {
+  animation: fade-up var(--dur-2) var(--ease-standard) both;
 }
 
 /* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */

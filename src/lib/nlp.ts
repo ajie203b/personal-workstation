@@ -35,6 +35,9 @@ export function parseQuickAdd(raw: string): ParsedTask {
     return ' '
   })
 
+  // 后置日期：标题后面的日期词也能识别
+  s = s.replace(/(开会|提醒|交|完成|处理)\s*(明天|今日|明天|后天)/g, '$1 $2 ')
+
   // —— 归一化（两趟，防贪心回溯拆散数字）：
   // ① 中文日期/重复词与任何非空白字符连写时补空格（含数字，如「明天14:00」「每天喝水」）
   s = s.replace(
