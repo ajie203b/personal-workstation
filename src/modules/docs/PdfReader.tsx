@@ -355,8 +355,8 @@ export function PdfReader({
       <Document
         file={data ?? undefined}
         onLoadSuccess={onLoad}
-        loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13.5px]">正在载入 PDF…</div>}
-        error={<div className="grid place-items-center h-40 text-danger text-[13.5px]">无法打开此 PDF</div>}
+        loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13px]">正在载入 PDF…</div>}
+        error={<div className="grid place-items-center h-40 text-danger text-[13px]">无法打开此 PDF</div>}
         className="flex flex-col items-center py-4 gap-4"
         options={PDF_OPTIONS}
       >
@@ -368,7 +368,7 @@ export function PdfReader({
                 <div
                   data-page={p}
                   style={{ width: dispW, height: pageH(p - 1), ['--scale-factor' as string]: String(dispW / (baseWidths[p - 1] || 612)) }}
-                  className={`relative rounded-[8px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
+                  className={`relative rounded-[10px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
                   onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
                   onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
                   onMouseMove={(e) => onShotMouseMove(e, p, e.currentTarget)}

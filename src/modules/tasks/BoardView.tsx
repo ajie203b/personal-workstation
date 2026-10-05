@@ -76,7 +76,7 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
     >
       <div className="flex items-center gap-2 px-2 pt-1.5 pb-3">
         <Icon size={15} className="text-on-surface-2" />
-        <span className="text-[13.5px] font-semibold">{TIER_LABEL[tier]}</span>
+        <span className="text-[13px] font-semibold">{TIER_LABEL[tier]}</span>
         <span className="text-[11px] text-on-surface-2 bg-surface-3 px-1.5 py-0.5 rounded-full">{tasks.length}</span>
       </div>
       <div className="flex flex-col gap-2 flex-1">

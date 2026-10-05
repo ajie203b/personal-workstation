@@ -60,7 +60,7 @@ export function DocsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div>
           <h1 className="text-[22px] font-bold leading-8">文档工作站</h1>
-          <p className="text-[12.5px] text-on-surface-2 mt-0.5">本地优先 · 按内容指纹去重 · 阅读进度自动记忆</p>
+          <p className="text-[13px] text-on-surface-2 mt-0.5">本地优先 · 按内容指纹去重 · 阅读进度自动记忆</p>
         </div>
         <div className="sm:ml-auto flex items-center gap-2">
           <input
@@ -121,8 +121,8 @@ export function DocsPage() {
                   {d.kind === 'pdf' ? <FileText size={20} /> : <FileType2 size={20} />}
                 </span>
                 <span className="flex-1 min-w-0">
-                  <span className="block text-[14.5px] font-semibold truncate">{d.title}</span>
-                  <span className="block text-[11.5px] text-on-surface-2 mt-0.5">
+                  <span className="block text-[15px] font-semibold truncate">{d.title}</span>
+                  <span className="block text-[12px] text-on-surface-2 mt-0.5">
                     {d.kind === 'pdf' ? 'PDF' : 'Markdown'} · {formatSize(d.size)} ·{' '}
                     {d.lastOpenedAt
                       ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`

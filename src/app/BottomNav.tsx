@@ -24,7 +24,7 @@ export function BottomNav() {
                 <item.icon size={21} strokeWidth={isActive ? 2.2 : 1.9} className={cn('transition-transform duration-200', isActive && '-translate-y-0.5')} />
                 {isActive && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-[3px] rounded-full bg-primary transition-all" />}
               </span>
-              <span className={cn('text-[10.5px] leading-none', isActive && 'font-semibold text-primary')}>{item.label}</span>
+              <span className={cn('text-[11px] leading-none', isActive && 'font-semibold text-primary')}>{item.label}</span>
             </>
           )}
         </NavLink>

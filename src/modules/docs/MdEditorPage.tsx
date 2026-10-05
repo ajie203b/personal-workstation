@@ -12,7 +12,7 @@ import { Button } from '@/shared/ui/Button'
 import { uid } from '@/lib/id'
 import { cn } from '@/lib/cn'
 
-const TOOLBAR_BTN = 'grid place-items-center w-8 h-8 rounded-[8px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer'
+const TOOLBAR_BTN = 'grid place-items-center w-8 h-8 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer'
 const TOOLBAR_ON = 'bg-primary-soft text-primary'
 
 /** MD 编辑器（M2.5 · TipTap）：新建 / 编辑 Markdown 文档，保存为本地文档 */
@@ -195,7 +195,7 @@ export function MdEditorPage() {
             className={cn(TOOLBAR_BTN, editor.isActive('codeBlock') && TOOLBAR_ON)}
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           ><Code size={15} /></button>
-          <span className="ml-auto text-[10.5px] text-on-surface-2 pr-1 shrink-0">Markdown 自动序列化</span>
+          <span className="ml-auto text-[11px] text-on-surface-2 pr-1 shrink-0">Markdown 自动序列化</span>
         </div>
       )}
 

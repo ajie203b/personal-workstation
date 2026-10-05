@@ -12,14 +12,14 @@ export function ToastHost() {
           key={t.id}
           role="status"
           aria-live="polite"
-          className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-[14px] shadow-lg max-w-full md:max-w-sm"
+          className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-[16px] shadow-lg max-w-full md:max-w-sm"
           style={{ background: 'var(--surface)', color: 'var(--on-surface)', border: '1px solid var(--outline)', boxShadow: 'var(--shadow-pop)', animation: 'fade-up var(--dur-2) var(--ease-standard)' }}
         >
-          <span className="text-[13.5px]">{t.message}</span>
+          <span className="text-[13px]">{t.message}</span>
           {t.action && (
             <button
               type="button"
-              className="text-[13.5px] font-semibold px-2 py-1 rounded-lg hover:bg-white/10 shrink-0"
+              className="text-[13px] font-semibold px-2 py-1 rounded-lg hover:bg-white/10 shrink-0"
               style={{ color: 'var(--primary)', fontWeight: 600 }}
               onClick={() => {
                 t.action!.run()

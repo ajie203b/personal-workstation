@@ -235,7 +235,7 @@ export function DocReaderPage() {
           <ArrowLeft size={19} />
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-[14.5px] font-semibold truncate leading-tight">{doc.title}</p>
+          <p className="text-[15px] font-semibold truncate leading-tight">{doc.title}</p>
           <p className="text-[11px] text-on-surface-2 leading-tight">
             {doc.kind === 'pdf' ? (numPages ? `PDF · ${numPages} 页` : 'PDF') : 'Markdown'}
             {progressPct > 0 && ` · 已读 ${pct}%`}
@@ -352,7 +352,7 @@ export function DocReaderPage() {
             />
           )}
           {!content && (
-            <div className="h-full grid place-items-center text-on-surface-2 text-[13.5px]">正在载入文档…</div>
+            <div className="h-full grid place-items-center text-on-surface-2 text-[13px]">正在载入文档…</div>
           )}
 
           {/* 划词浮条（选区近顶部时自动翻转到下方，避免被裁切/遮挡） */}
@@ -631,8 +631,8 @@ function TocContent({
                   className="w-full text-left px-2.5 py-2 rounded-[10px] hover:bg-surface-3 transition-colors cursor-pointer"
                   style={{ paddingLeft: 10 + item.level * 14 }}
                 >
-                  <span className="text-[12.5px] leading-snug line-clamp-2">{item.title}</span>
-                  <span className="ml-1.5 text-[10.5px] text-on-surface-2">{item.page}</span>
+                  <span className="text-[13px] leading-snug line-clamp-2">{item.title}</span>
+                  <span className="ml-1.5 text-[11px] text-on-surface-2">{item.page}</span>
                 </button>
               ))}
             </nav>
@@ -654,7 +654,7 @@ function TocContent({
               className="w-full text-left px-2.5 py-2 rounded-[10px] hover:bg-surface-3 transition-colors flex gap-2 cursor-pointer"
             >
               <span className={`shrink-0 mt-0.5 w-2.5 h-2.5 rounded-full ${a.color === 'yellow' ? 'bg-yellow-400' : a.color === 'green' ? 'bg-green-400' : a.color === 'blue' ? 'bg-blue-400' : 'bg-red-400'}`} />
-              <span className="text-[12.5px] leading-snug line-clamp-3">{a.text}</span>
+              <span className="text-[13px] leading-snug line-clamp-3">{a.text}</span>
             </button>
           ))}
         </div>
@@ -666,7 +666,7 @@ function TocContent({
           <p className="text-[11px] font-medium text-on-surface-2 px-2.5 py-1">书签</p>
           {marks.map((b) => (
             <div key={b.id} className="group flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] hover:bg-surface-3">
-              <button className="flex-1 text-left text-[12.5px] cursor-pointer" onClick={() => onJump(b.anchor)}>
+              <button className="flex-1 text-left text-[13px] cursor-pointer" onClick={() => onJump(b.anchor)}>
                 {b.label}
               </button>
               <button aria-label="删除书签" onClick={() => onDeleteBookmark(b.id)} className="opacity-0 group-hover:opacity-100 text-on-surface-2 hover:text-danger cursor-pointer">
@@ -707,7 +707,7 @@ function MdToc({ doc, onJump }: { doc: Doc; onJump: (anchor: string, hl?: string
           className="w-full text-left px-2.5 py-2 rounded-[10px] hover:bg-surface-3 transition-colors cursor-pointer"
           style={{ paddingLeft: 10 + (h.level - 1) * 14 }}
         >
-          <span className={`text-[12.5px] leading-snug line-clamp-2 ${h.level === 1 ? 'font-semibold' : ''}`}>{h.text}</span>
+          <span className={`text-[13px] leading-snug line-clamp-2 ${h.level === 1 ? 'font-semibold' : ''}`}>{h.text}</span>
         </button>
       ))}
     </nav>
@@ -774,11 +774,11 @@ function RightContent({
       {annotations.map((a) => (
         <div key={a.id} className="card px-3 py-2.5 mb-2">
           {a.kind === 'shot' && a.img && (
-            <img src={a.img} alt="区域截图" className="w-full rounded-[8px] border border-outline mb-2 cursor-zoom-in" onClick={() => onJump(docKindAnchor(a), a.id)} />
+            <img src={a.img} alt="区域截图" className="w-full rounded-[10px] border border-outline mb-2 cursor-zoom-in" onClick={() => onJump(docKindAnchor(a), a.id)} />
           )}
           <div className="flex items-start gap-2">
             <span className={`shrink-0 mt-1 w-2.5 h-2.5 rounded-full ${a.kind === 'shot' ? 'bg-primary' : a.color === 'yellow' ? 'bg-yellow-400' : a.color === 'green' ? 'bg-green-400' : a.color === 'blue' ? 'bg-blue-400' : 'bg-red-400'}`} />
-            <p className="flex-1 text-[12.5px] leading-snug text-on-surface">{a.text}</p>
+            <p className="flex-1 text-[13px] leading-snug text-on-surface">{a.text}</p>
           </div>
           {a.comment && !editing && <p className="text-[12px] text-on-surface-2 mt-1.5 pl-[18px]">{a.comment}</p>}
           {editing === a.id ? (
@@ -791,7 +791,7 @@ function RightContent({
                 onComment(a.id, e.target.value.trim() || undefined)
                 setEditing(null)
               }}
-              className="mt-1.5 w-full rounded-[10px] bg-surface border border-outline px-2.5 py-1.5 text-[12.5px] outline-none focus:border-primary/60 resize-none"
+              className="mt-1.5 w-full rounded-[10px] bg-surface border border-outline px-2.5 py-1.5 text-[13px] outline-none focus:border-primary/60 resize-none"
             />
           ) : null}
           <div className="flex items-center gap-0.5 mt-1.5 -ml-1">
@@ -808,7 +808,7 @@ function RightContent({
             <MiniBtn label="定位" onClick={() => onJump(docKindAnchor(a), a.id)}><LocateFixed size={13} /></MiniBtn>
             <MiniBtn label="转任务" onClick={() => onToTask(a)}><Plus size={13} /></MiniBtn>
             <MiniBtn label="删除" danger onClick={() => onDelete(a.id)}><Trash2 size={13} /></MiniBtn>
-            <span className="ml-auto text-[10.5px] text-on-surface-2 pr-1">
+            <span className="ml-auto text-[11px] text-on-surface-2 pr-1">
               {new Date(a.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
             </span>
           </div>

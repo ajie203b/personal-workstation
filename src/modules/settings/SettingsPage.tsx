@@ -113,7 +113,7 @@ function DataTab() {
     <div className="flex flex-col gap-4 max-w-xl">
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1">备份与恢复</h2>
-        <p className="text-[12.5px] text-on-surface-2 mb-3.5 leading-relaxed">
+        <p className="text-[13px] text-on-surface-2 mb-3.5 leading-relaxed">
           所有数据保存在本机浏览器（IndexedDB）。换设备或清除浏览器数据前，先导出 JSON 备份。
           {usage && ` 当前占用约 ${usage}。`}
         </p>
@@ -140,7 +140,7 @@ function DataTab() {
 
       <section className="card p-4" style={{ borderColor: 'color-mix(in srgb, var(--danger) 30%, var(--outline))' }}>
         <h2 className="text-[14px] font-semibold mb-1 text-danger">危险区</h2>
-        <p className="text-[12.5px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。</p>
+        <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。</p>
         <Button variant="danger" size="sm" onClick={() => setClearOpen(true)}>
           清空所有数据
         </Button>
@@ -175,14 +175,14 @@ function AboutTab() {
       {isNative() ? (
         <section className="card p-4">
           <h2 className="text-[14px] font-semibold mb-1.5">安装状态</h2>
-          <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
+          <p className="text-[13px] text-on-surface-2 leading-relaxed">
             已作为安卓应用安装运行 · 数据保存在应用沙箱内，卸载应用会同时删除数据，重要节点请先到「数据」页导出备份。
           </p>
         </section>
       ) : (
         <section className="card p-4">
           <h2 className="text-[14px] font-semibold mb-1.5">安装到设备</h2>
-          <p className="text-[12.5px] text-on-surface-2 mb-3 leading-relaxed">
+          <p className="text-[13px] text-on-surface-2 mb-3 leading-relaxed">
             {installable
               ? '检测到安装能力，点击下方按钮即可安装为独立应用（安卓桌面图标 / 桌面端窗口）。'
               : '若按钮不可用：安卓 Chrome 打开本站 → 菜单「添加到主屏幕/安装应用」；电脑浏览器地址栏右侧可点「安装」。'}
@@ -193,7 +193,7 @@ function AboutTab() {
         </section>
       )}
 
-      <section className="card p-4 text-[12.5px] text-on-surface-2 leading-relaxed">
+      <section className="card p-4 text-[13px] text-on-surface-2 leading-relaxed">
         <h2 className="text-[14px] font-semibold text-on-surface mb-1.5">关于</h2>
         <p>个人工作站 __APP_VERSION__ · 本地优先 · 数据不出本机</p>
         <p className="mt-1">

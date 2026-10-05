@@ -39,9 +39,9 @@ export function Sidebar() {
           aria-label="进入设置（再点返回）"
           title="设置"
           onClick={onBrandClick}
-          className="shrink-0 cursor-pointer rounded-[11px] active:opacity-80 select-none"
+          className="shrink-0 cursor-pointer rounded-[10px] active:opacity-80 select-none"
         >
-          <img src="./brand.png" alt="" className="w-10 h-10 rounded-[11px] object-cover" draggable={false} />
+          <img src="./brand.png" alt="" className="w-10 h-10 rounded-[10px] object-cover" draggable={false} />
         </button>
         {!collapsed && (
           <span className="hidden lg:block text-[15px] font-semibold tracking-wide overflow-hidden transition-opacity duration-150" style={{ opacity: collapsed ? 0 : 1 }}>个人工作站</span>
@@ -75,7 +75,7 @@ export function Sidebar() {
             {({ isActive }) => (
               <>
                 <item.icon size={19} strokeWidth={isActive ? 2.2 : 1.9} className="shrink-0" />
-                <span className={cn('hidden lg:block text-[13.5px] truncate', collapsed && 'lg:hidden')}>
+                <span className={cn('hidden lg:block text-[13px] truncate', collapsed && 'lg:hidden')}>
                   {item.label}
                 </span>
                 {item.path === '/tasks' && counts.today > 0 && (
