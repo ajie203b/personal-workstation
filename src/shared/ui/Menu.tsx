@@ -13,7 +13,6 @@ export function MenuContent({ children, className }: { children: ReactNode; clas
         align="end"
         className={cn(
           'pop z-50 min-w-[168px] p-1.5',
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
           className,
         )}
         style={{ animation: 'fade-up var(--dur-1) var(--ease-standard)' }}

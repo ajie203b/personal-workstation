@@ -46,7 +46,7 @@ export function TaskItem({ task, focused, overlay }: Props) {
       id={`task-${task.id}`}
       onClick={overlay ? undefined : onCardClick}
       className={cn(
-        'card card-hover relative px-4 py-3 cursor-pointer select-none',
+        'card card-hover relative px-4 py-3 cursor-pointer select-none hover:shadow-sm',
         'transition-shadow duration-150',
         focused && 'ring-2 ring-primary/50',
         done && 'opacity-60',

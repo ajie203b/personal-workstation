@@ -116,6 +116,10 @@
   --animate-ai-pulse: ai-pulse 1.4s ease-in-out infinite;
 }
 
+@keyframes fade-out-down {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -222,16 +226,6 @@ select:focus-visible {
   backdrop-filter: blur(20px) saturate(1.6);
 }
 
-/* 优先级左色条（列表左侧 3px，不整行铺色） */
-.pri-bar {
-  position: absolute;
-  left: 0;
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
-  border-radius: 3px;
-}
-
 /* 完成勾选描边动画 */
 .check-path {
   stroke-dasharray: 20;
@@ -310,11 +304,6 @@ select:focus-visible {
 .theme-transition,
 .theme-transition * {
   transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease !important;
-}
-
-/* 列表项进入/离开动画 */
-.list-item-enter {
-  animation: fade-up var(--dur-2) var(--ease-standard) both;
 }
 
 /* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */
