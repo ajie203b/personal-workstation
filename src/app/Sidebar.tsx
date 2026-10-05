@@ -44,7 +44,7 @@ export function Sidebar() {
           <img src="./brand.png" alt="" className="w-10 h-10 rounded-[11px] object-cover" draggable={false} />
         </button>
         {!collapsed && (
-          <span className="hidden lg:block text-[15px] font-semibold tracking-wide">个人工作站</span>
+          <span className="hidden lg:block text-[15px] font-semibold tracking-wide overflow-hidden transition-opacity duration-150" style={{ opacity: collapsed ? 0 : 1 }}>个人工作站</span>
         )}
         <button
           type="button"

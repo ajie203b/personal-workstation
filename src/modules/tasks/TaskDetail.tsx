@@ -17,8 +17,7 @@ const INPUT =
 /** 任务详情：居中弹窗（点任务卡右半区打开） */
 export function TaskDetail() {
   const { detailId, openDetail } = useTasksUi()
-  const all = useAllTasks()
-  const task = all.find((t) => t.id === detailId) ?? null
+  const task = useAllTasks().find((t) => t.id === detailId) ?? null
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
   // 标题/笔记本地态 + 400ms 防抖写库 + 关闭/切任务时立即 flush（防丢最后输入）

@@ -118,7 +118,7 @@ export function MdReader({
     const m = jump.anchor.match(/^b(\d+)/)
     if (!container || !m) return
     const block = bodyRef.current?.querySelector(`#b${m[1]}`) as HTMLElement | null
-    if (block) container.scrollTo({ top: Math.max(0, block.offsetTop - 60), behavior: 'smooth' })
+    if (block) container.scrollTo({ top: Math.max(0, block.offsetTop - 60), behavior: 'smooth' }) // 目录跳转保持 smooth
   }, [jump, scrollRef])
 
   // 滚动：双坐标保存 + 进度上报
