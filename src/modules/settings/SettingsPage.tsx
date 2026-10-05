@@ -6,6 +6,7 @@ import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
+import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { isNative } from '@/lib/native'
 import { cn } from '@/lib/cn'
 
@@ -169,9 +170,45 @@ function DataTab() {
 function AboutTab() {
   const [installable, setInstallable] = useState(canInstall())
   useEffect(() => onInstallAvailabilityChange(() => setInstallable(canInstall())), [])
+  const [checking, setChecking] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
+
+  const doCheck = async () => {
+    setChecking(true)
+    setUpdateInfo(null)
+    const info = await checkForUpdate()
+    setUpdateInfo(info)
+    setChecking(false)
+  }
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
+      {/* 更新检查 */}
+      <section className="card p-4">
+        <h2 className="text-[14px] font-semibold mb-1.5">软件更新</h2>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-[13px] text-on-surface-2">当前版本 {getCurrentVersion()}</span>
+          <Button size="sm" variant="outline" onClick={() => void doCheck()} disabled={checking}>
+            {checking ? '检查中…' : '检查更新'}
+          </Button>
+        </div>
+        {updateInfo && (
+          updateInfo.hasUpdate ? (
+            <div className="mt-3 p-3 rounded-[10px] bg-primary-soft flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[13px] font-medium text-primary">发现新版本 v{updateInfo.latestVersion}</p>
+                <p className="text-[11px] text-on-surface-2 mt-0.5">当前 v{updateInfo.currentVersion}</p>
+              </div>
+              <Button size="sm" variant="primary" onClick={() => openDownload(updateInfo.apkUrl)}>
+                下载 APK
+              </Button>
+            </div>
+          ) : (
+            <p className="mt-3 text-[12.5px] text-ok">已是最新版本</p>
+          )
+        )}
+      </section>
+
       {isNative() ? (
         <section className="card p-4">
           <h2 className="text-[14px] font-semibold mb-1.5">安装状态</h2>

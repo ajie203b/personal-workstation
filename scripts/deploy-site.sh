@@ -20,6 +20,9 @@ git remote add origin "$SITE_REPO"
 git fetch origin main --depth 1 > /dev/null 2>&1 || true
 touch .nojekyll
 cp -r "$ROOT/dist/"* .
+# 生成 version.json（版本号从 package.json 读取）
+VERSION=$(node -e "console.log(require('$ROOT/package.json').version)")
+echo "{\"version\":\"$VERSION\"}" > version.json
 git add -A
 git commit -m "deploy: $(date '+%Y-%m-%d %H:%M') 个人工作站" > /dev/null
 git push origin main --force > /dev/null 2>&1
