@@ -6,6 +6,7 @@ export type Theme = 'system' | 'light' | 'dark'
 export interface ToastItem {
   id: string
   message: string
+  leaving?: boolean
   action?: { label: string; run: () => void }
 }
 
@@ -40,7 +41,7 @@ export const useUi = create<UiState>()(
         set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, action }] }))
         setTimeout(() => get().dismissToast(id), 4000)
       },
-      dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+      dismissToast: (id) => { set((s) => ({ toasts: s.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) })); setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 160) },
     }),
     {
       name: 'ws-ui',
