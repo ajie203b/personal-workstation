@@ -31,11 +31,15 @@ export function CommandPalette() {
   const listRef = useRef<HTMLDivElement>(null)
 
   const tasks = useLiveQuery(
-    () => db.tasks.filter((t) => t.status !== 'done').toArray(),
-    [],
-    [],
-  )
-  const docs = useLiveQuery(() => db.docs.toArray(), [], [])
+    () => (open ? db.tasks.filter((t) => t.status !== 'done').toArray() : Promise.resolve([] as import('@/db/db').Task[])),
+    [open],
+    [] as import('@/db/db').Task[],
+  ) as import('@/db/db').Task[]
+  const docs = useLiveQuery(
+    () => (open ? db.docs.toArray() : Promise.resolve([] as import('@/db/db').Doc[])),
+    [open],
+    [] as import('@/db/db').Doc[],
+  ) as import('@/db/db').Doc[]
 
   const items = useMemo<PaletteItem[]>(() => {
     const openTask = (id: string, tier: string) => {

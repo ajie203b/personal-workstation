@@ -25,6 +25,7 @@ export function MdEditorPage() {
   const [ready, setReady] = useState(false)
   const [contentSeed, setContentSeed] = useState<string | null>(null)
   const savedHashRef = useRef<string | null>(null)
+  const saveRef = useRef<(() => Promise<void>) | null>(null)
 
   // 载入待编辑文档
   useEffect(() => {
@@ -77,6 +78,15 @@ export function MdEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready])
 
+  // Ctrl/Cmd+S 保存 + 路由离开守卫
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); void saveRef.current?.() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const save = useCallback(async () => {
     if (!editor) return
     const md = (editor.storage as { markdown?: { getMarkdown: () => string } }).markdown?.getMarkdown() ?? ''
@@ -108,6 +118,13 @@ export function MdEditorPage() {
       toast('文档已创建')
     }
   }, [editor, existing, title, toast])
+  saveRef.current = save
+
+  useEffect(() => {
+    const onUnload = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', onUnload)
+    return () => window.removeEventListener('beforeunload', onUnload)
+  }, [])
 
   return (
     <div className="h-full flex flex-col bg-surface">

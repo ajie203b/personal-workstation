@@ -6,19 +6,21 @@ export function ToastHost() {
   const { toasts, dismissToast } = useUi()
   if (!toasts.length) return null
   return (
-    <div className="fixed z-[60] bottom-20 md:bottom-6 inset-x-0 px-4 flex flex-col items-center gap-2 md:items-end md:right-5 md:left-auto pointer-events-none">
+    <div className="fixed z-[60] bottom-[calc(3.5rem+env(safe-area-inset-bottom)+12px)] md:bottom-6 inset-x-0 px-4 flex flex-col items-center gap-2 md:items-end md:right-5 md:left-auto pointer-events-none md:max-w-sm">
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-[14px] shadow-lg max-w-[92vw]"
-          style={{ background: 'var(--on-surface)', color: 'var(--surface)', animation: 'fade-up var(--dur-2) var(--ease-standard)' }}
+          role="status"
+          aria-live="polite"
+          className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-[14px] shadow-lg max-w-full md:max-w-sm"
+          style={{ background: 'var(--surface)', color: 'var(--on-surface)', border: '1px solid var(--outline)', boxShadow: 'var(--shadow-pop)', animation: 'fade-up var(--dur-2) var(--ease-standard)' }}
         >
           <span className="text-[13.5px]">{t.message}</span>
           {t.action && (
             <button
               type="button"
               className="text-[13.5px] font-semibold px-2 py-1 rounded-lg hover:bg-white/10 shrink-0"
-              style={{ color: 'var(--primary)' }}
+              style={{ color: 'var(--primary)', fontWeight: 600 }}
               onClick={() => {
                 t.action!.run()
                 dismissToast(t.id)

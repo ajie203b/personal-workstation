@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
-import { useAllTasks, deriveDone } from '@/db/hooks'
+import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
 import { useTasksUi } from '@/stores/tasks'
 import { QuickAdd } from './QuickAdd'
@@ -51,8 +51,8 @@ export function TasksPage() {
 
   const visible = useMemo(() => {
     if (isLogbook) return []
-    const active = all.filter((t) => t.status !== 'done' && t.tier === tier)
-    return sortTasks(active)
+    if (tier === 'today') return sortTasks(deriveToday(all))
+    return sortTasks(all.filter((t) => t.status !== 'done' && t.tier === tier))
   }, [all, tier, isLogbook])
 
   const setParam = (key: string, value: string) => {

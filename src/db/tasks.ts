@@ -12,6 +12,8 @@ export interface NewTaskInput {
   notes?: string
   repeat?: Task['repeat']
   status?: Task['status']
+  docRef?: Task['docRef']
+  aiRef?: string
 }
 
 export async function addTask(input: NewTaskInput): Promise<Task> {
@@ -27,6 +29,8 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
     due: input.due,
     dueTime: input.dueTime,
     repeat: input.repeat,
+    docRef: input.docRef,
+    aiRef: input.aiRef,
     createdAt: now,
     updatedAt: now,
   }
@@ -38,44 +42,60 @@ export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | 'c
   await db.tasks.update(id, { ...patch, updatedAt: Date.now() })
 }
 
-/** 勾选完成 / 恢复。完成时写 doneAt（自动进入 Logbook）；重复任务（打卡）自动生成下一次 */
+/** 勾选完成 / 恢复。完成时事务内写 doneAt + 生成下一次；恢复时事务内回收已生成的下一次 */
 export async function toggleDone(task: Task): Promise<void> {
   if (task.status === 'done') {
-    await updateTask(task.id, { status: 'todo', doneAt: undefined })
+    await db.transaction('rw', db.tasks, async () => {
+      await db.tasks.update(task.id, { status: 'todo', doneAt: undefined, updatedAt: Date.now() })
+      if (!task.repeat) return
+      const base = task.due ?? todayStr()
+      let nextDue: string
+      if (task.repeat === 'daily') nextDue = addDaysStr(1, new Date(base + 'T00:00:00'))
+      else if (task.repeat === 'weekly') nextDue = addDaysStr(7, new Date(base + 'T00:00:00'))
+      else {
+        let d = new Date(base + 'T00:00:00')
+        do { d = new Date(d.getTime() + 86400000) } while (d.getDay() === 0 || d.getDay() === 6)
+        nextDue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      }
+      const spawned = await db.tasks
+        .filter((t) => t.title === task.title && t.repeat === task.repeat && t.due === nextDue && t.status === 'todo' && t.createdAt > (task.doneAt ?? 0) && t.id !== task.id)
+        .toArray()
+      if (spawned.length) await db.tasks.bulkDelete(spawned.map((t) => t.id))
+    })
     return
   }
-  await updateTask(task.id, { status: 'done', doneAt: Date.now() })
-  if (task.repeat) {
-    await spawnNextOccurrence(task)
-  }
-}
-
-/** 重复任务完成 → 生成下一次出现（打卡循环） */
-async function spawnNextOccurrence(task: Task): Promise<void> {
-  const base = task.due ?? todayStr()
-  let nextDue: string
-  if (task.repeat === 'daily') {
-    nextDue = addDaysStr(1, new Date(base + 'T00:00:00'))
-  } else if (task.repeat === 'weekly') {
-    nextDue = addDaysStr(7, new Date(base + 'T00:00:00'))
-  } else {
-    // weekdays：跳到下一个工作日（周一~周五）
-    let d = new Date(base + 'T00:00:00')
-    do {
-      d = new Date(d.getTime() + 86400000)
-    } while (d.getDay() === 0 || d.getDay() === 6)
-    nextDue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  }
-  await addTask({
-    title: task.title,
-    // 下一次未到期先进「近期」，到期当天自动浮上「今日」（否则勾完立刻顶回今日列表）
-    tier: nextDue > todayStr() ? 'upcoming' : task.tier,
-    priority: task.priority,
-    due: nextDue,
-    dueTime: task.dueTime,
-    tags: task.tags,
-    notes: task.notes,
-    repeat: task.repeat,
+  await db.transaction('rw', db.tasks, async () => {
+    const now = Date.now()
+    await db.tasks.update(task.id, { status: 'done', doneAt: now, updatedAt: now })
+    if (!task.repeat) return
+    const base = task.due ?? todayStr()
+    let nextDue: string
+    if (task.repeat === 'daily') {
+      nextDue = addDaysStr(1, new Date(base + 'T00:00:00'))
+    } else if (task.repeat === 'weekly') {
+      nextDue = addDaysStr(7, new Date(base + 'T00:00:00'))
+    } else {
+      let d = new Date(base + 'T00:00:00')
+      do { d = new Date(d.getTime() + 86400000) } while (d.getDay() === 0 || d.getDay() === 6)
+      nextDue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    const next: Task = {
+      id: uid(),
+      title: task.title,
+      tier: nextDue > todayStr() ? 'upcoming' : task.tier,
+      priority: task.priority,
+      status: 'todo',
+      due: nextDue,
+      dueTime: task.dueTime,
+      tags: task.tags,
+      notes: task.notes,
+      repeat: task.repeat,
+      docRef: task.docRef,
+      aiRef: task.aiRef,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await db.tasks.add(next)
   })
 }
 
@@ -123,7 +143,6 @@ export async function exportAll(): Promise<string> {
     db.aiMessages.toArray(),
     db.aiUsage.toArray(),
   ])
-  // 文件本体转 base64（文档库备份可完整恢复）
   const blobRows = await Promise.all(
     blobs.map(async (row) => ({
       hash: row.hash,
@@ -180,28 +199,28 @@ export async function importAll(json: string): Promise<ImportResult> {
     'rw',
     [db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage],
     async () => {
-    if (data.tasks!.length) {
-      await db.tasks.bulkPut(data.tasks!)
-      result.tasks = data.tasks!.length
-    }
-    if (Array.isArray(data.settings) && data.settings.length) {
-      await db.settings.bulkPut(data.settings)
-      result.settings = data.settings.length
-    }
-    if (Array.isArray(data.docs)) {
-      await db.docs.bulkPut(data.docs)
-      result.docs = data.docs.length
-    }
-    if (Array.isArray(data.blobRows) && data.blobRows.length) {
-      await db.blobs.bulkPut(data.blobRows.map((r) => ({ hash: r.hash, blob: base64ToBlob(r.data, r.type) })))
-    }
-    if (Array.isArray(data.positions)) await db.positions.bulkPut(data.positions)
-    if (Array.isArray(data.annotations)) await db.annotations.bulkPut(data.annotations)
-    if (Array.isArray(data.bookmarks)) await db.bookmarks.bulkPut(data.bookmarks)
-    if (Array.isArray(data.aiProviders)) await db.aiProviders.bulkPut(data.aiProviders)
-    if (Array.isArray(data.aiSessions)) await db.aiSessions.bulkPut(data.aiSessions)
-    if (Array.isArray(data.aiMessages)) await db.aiMessages.bulkPut(data.aiMessages)
-    if (Array.isArray(data.aiUsage)) await db.aiUsage.bulkPut(data.aiUsage)
+      if (data.tasks!.length) {
+        await db.tasks.bulkPut(data.tasks!)
+        result.tasks = data.tasks!.length
+      }
+      if (Array.isArray(data.settings) && data.settings.length) {
+        await db.settings.bulkPut(data.settings)
+        result.settings = data.settings.length
+      }
+      if (Array.isArray(data.docs)) {
+        await db.docs.bulkPut(data.docs)
+        result.docs = data.docs.length
+      }
+      if (Array.isArray(data.blobRows) && data.blobRows.length) {
+        await db.blobs.bulkPut(data.blobRows.map((r) => ({ hash: r.hash, blob: base64ToBlob(r.data, r.type) })))
+      }
+      if (Array.isArray(data.positions)) await db.positions.bulkPut(data.positions)
+      if (Array.isArray(data.annotations)) await db.annotations.bulkPut(data.annotations)
+      if (Array.isArray(data.bookmarks)) await db.bookmarks.bulkPut(data.bookmarks)
+      if (Array.isArray(data.aiProviders)) await db.aiProviders.bulkPut(data.aiProviders)
+      if (Array.isArray(data.aiSessions)) await db.aiSessions.bulkPut(data.aiSessions)
+      if (Array.isArray(data.aiMessages)) await db.aiMessages.bulkPut(data.aiMessages)
+      if (Array.isArray(data.aiUsage)) await db.aiUsage.bulkPut(data.aiUsage)
     },
   )
   return result
@@ -223,6 +242,7 @@ export async function clearAllData(): Promise<void> {
       await db.aiSessions.clear()
       await db.aiMessages.clear()
       await db.aiUsage.clear()
+      localStorage.removeItem('ws-doc-tabs')
     },
   )
 }

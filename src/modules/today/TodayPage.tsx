@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { History, Keyboard, Plus } from 'lucide-react'
-import { useAllTasks, useRecentDocs, deriveToday, deriveTodayDone } from '@/db/hooks'
+import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
 import { isThisWeek, fmtWeekdayLong, greeting } from '@/lib/date'
 import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
@@ -11,15 +11,21 @@ import { openDoc } from '@/shared/DeepLink'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
 export function TodayPage() {
+  const today = useDateTick()
   const all = useAllTasks()
-  const todayTasks = useMemo(() => sortTasks(deriveToday(all)), [all])
-  const todayDone = useMemo(() => deriveTodayDone(all), [all])
+  const todayTasks = useMemo(() => sortTasks(deriveToday(all, today)), [all, today])
+  const todayDone = useMemo(() => deriveTodayDone(all, today), [all, today])
   const weekDone = useMemo(() => all.filter((t) => t.status === 'done' && isThisWeek(t.doneAt ?? 0)).length, [all])
   const totalDone = useMemo(() => all.filter((t) => t.status === 'done').length, [all])
   const openShortcuts = useUi((s) => s.setShortcutsOpen)
   const [addOpen, setAddOpen] = useState(false)
+  useEffect(() => {
+    const open = () => setAddOpen(true)
+    window.addEventListener('ws:focus-quickadd', open)
+    return () => window.removeEventListener('ws:focus-quickadd', open)
+  }, [])
 
-  const date = new Date()
+  const date = useMemo(() => new Date(), [today])
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">

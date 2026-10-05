@@ -65,15 +65,17 @@ export function parseQuickAdd(raw: string): ParsedTask {
   // —— 时间：14:00 / 14点 / 下午3点(半) / 中午12点 / 下午三点 ——
   // 前导空格与时段词前缀都可选：「下午3点」「今天 下午3点」「3点半」均可命中
   const timeRe =
-    /\s?(上午|早上|中午|下午|傍晚|晚上)?\s?([01]?\d|2[0-3]|一|两|二|三|四|五|六|七|八|九|十[一]?)点(半|[0-5]?\d分?)?/
+    /\s?(上午|早上|中午|下午|傍晚|晚上)?\s?(二十[一二三四五六七八九]?|[01]?\d|2[0-3]|十[一二三四五六七八九]?|一|两|二|三|四|五|六|七|八|九)点(半|[0-5]?\d分?)?/
   const tm = s.match(timeRe)
   if (tm) {
     const rawHour = tm[2]
     let h: number
     if (/^\d+$/.test(rawHour)) {
       h = Number(rawHour)
-    } else if (rawHour === '十' || rawHour === '十一') {
-      h = rawHour === '十' ? 10 : 11
+    } else if (rawHour.startsWith('二十')) {
+      h = rawHour === '二十' ? 20 : 20 + (CN_NUM[rawHour.slice(2)] ?? 0)
+    } else if (rawHour === '十' || rawHour === '十一' || rawHour === '十二') {
+      h = rawHour === '十' ? 10 : rawHour === '十一' ? 11 : 12
     } else {
       h = CN_NUM[rawHour] ?? 0
     }

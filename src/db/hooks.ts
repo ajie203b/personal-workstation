@@ -1,8 +1,25 @@
+import { useEffect, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Annotation, type Doc, type Task } from './db'
 import { todayStr } from '@/lib/date'
 
 const EMPTY: Task[] = []
+
+/** 当前日期 tick：60s + visibilitychange 校准，防跨零点冻结 */
+export function useDateTick(): string {
+  const [today, setToday] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })
+  useEffect(() => {
+    const check = () => {
+      const d = new Date()
+      const s = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      setToday((prev) => (prev === s ? prev : s))
+    }
+    const timer = setInterval(check, 60000)
+    document.addEventListener('visibilitychange', check)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', check) }
+  }, [])
+  return today
+}
 
 /** 全量任务（个人规模足够快），派生数据用 useMemo 计算 */
 export function useAllTasks(): Task[] {
@@ -19,15 +36,15 @@ export function deriveDone(all: Task[]): Task[] {
     .sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0))
 }
 
-export function deriveToday(all: Task[]): Task[] {
-  const today = todayStr()
-  return all.filter((t) => t.status !== 'done' && (t.tier === 'today' || (t.due != null && t.due <= today)))
+export function deriveToday(all: Task[], today?: string): Task[] {
+  const t = today ?? todayStr()
+  return all.filter((task) => task.status !== 'done' && (task.tier === 'today' || (task.due != null && task.due <= t)))
 }
 
-export function deriveTodayDone(all: Task[]): Task[] {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  return all.filter((t) => t.status === 'done' && (t.doneAt ?? 0) >= start.getTime())
+export function deriveTodayDone(all: Task[], today?: string): Task[] {
+  const t = today ?? todayStr()
+  const start = new Date(t + 'T00:00:00').getTime()
+  return all.filter((task) => task.status === 'done' && (task.doneAt ?? 0) >= start)
 }
 
 export function countByTier(all: Task[]): Record<string, number> {

@@ -57,6 +57,7 @@ export function MdReader({
   const lastScrollTop = useRef(0)
   const lastJumpTs = useRef(0)
   const restoredRef = useRef(false)
+  const lastReportedPct = useRef(-1)
   const lastWriteRef = useRef(0)
 
   // 顶级块分配锚点 id
@@ -136,7 +137,11 @@ export function MdReader({
       if (k.offsetTop <= top + container.clientHeight * 0.3) current = Number(k.id.slice(1)) || 0
       else break
     }
-    onProgress(current, pct)
+    const intPct = Math.round(pct * 100)
+    if (intPct !== lastReportedPct.current) {
+      lastReportedPct.current = intPct
+      onProgress(current, intPct / 100)
+    }
 
     // 防快速翻页污染：单次位移 > 3000px 视为跳转，只更新 lastScroll
     // 写库节流至 500ms/次（阅读位置精度足够，避免每个滚动事件都开事务）
