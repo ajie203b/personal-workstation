@@ -120,11 +120,11 @@ foreach ($k in $densities.Keys) {
   New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher.png')) -Shape 'rounded' -Scale 0.94
   New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher_round.png')) -Shape 'circle' -Scale 0.94
 }
-# adaptive foreground: brand image at 62% centered (safe zone is ~66% of canvas),
-# white padding blends into the white background layer -> full image visible on any launcher mask
+# adaptive foreground: brand image at 50% centered (aggressive launcher masks
+# can show as little as ~50% of canvas — 50% scale guarantees full visibility)
 $fg = @{ 'mipmap-mdpi' = 108; 'mipmap-hdpi' = 162; 'mipmap-xhdpi' = 216; 'mipmap-xxhdpi' = 324; 'mipmap-xxxhdpi' = 432 }
 foreach ($k in $fg.Keys) {
-  New-BrandIcon -Size $fg[$k] -Out (Join-Path $res ($k + '\ic_launcher_foreground.png')) -Shape 'square' -Scale 0.62 -Bg '#FFFFFF'
+  New-BrandIcon -Size $fg[$k] -Out (Join-Path $res ($k + '\ic_launcher_foreground.png')) -Shape 'square' -Scale 0.50 -Bg '#FFFFFF'
 }
 
 # adaptive icon background -> white (blends with the brand image edge)
