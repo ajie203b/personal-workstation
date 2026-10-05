@@ -44,6 +44,9 @@ export async function importDoc(file: File): Promise<ImportResult> {
     addedAt: Date.now(),
   }
   await db.transaction('rw', db.docs, db.blobs, async () => {
+    // 事务内复检（防并发导入同文件产生双行）
+    const recheck = await db.docs.where('hash').equals(hash).first()
+    if (recheck) return
     await db.blobs.put({ hash, blob: new Blob([buf], { type: file.type || 'application/octet-stream' }) })
     await db.docs.add(doc)
   })
@@ -65,7 +68,8 @@ export async function touchDoc(id: string): Promise<void> {
 export async function deleteDoc(doc: Doc): Promise<void> {
   await db.transaction('rw', db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, async () => {
     await db.docs.delete(doc.id)
-    await db.blobs.delete(doc.hash)
+    const otherRefs = await db.docs.where('hash').equals(doc.hash).count()
+    if (otherRefs === 0) await db.blobs.delete(doc.hash)
     await db.positions.delete(doc.hash)
     const anns = await db.annotations.where('docHash').equals(doc.hash).toArray()
     await db.annotations.bulkDelete(anns.map((a) => a.id))
@@ -102,8 +106,12 @@ export async function saveScrollAndProgress(
 
 /** 沉浸排版设置（按文档记忆） */
 export async function saveDocSettings(hash: string, settings: DocSettings): Promise<void> {
-  const pos = (await db.positions.get(hash)) ?? { hash, updatedAt: 0 }
-  await db.positions.put({ ...pos, hash, settings, updatedAt: Date.now() })
+  await db.transaction('rw', db.positions, async () => {
+    const pos = (await db.positions.get(hash)) ?? { hash, updatedAt: 0 }
+    pos.settings = settings
+    pos.updatedAt = Date.now()
+    await db.positions.put(pos)
+  })
 }
 
 /* ============ 批注与书签 ============ */

@@ -202,8 +202,15 @@ export function DocReaderPage() {
 
   if (!doc) {
     return (
-      <div className="h-full grid place-items-center text-on-surface-2 text-[13.5px]">
-        {docId ? '文档不存在或已删除' : '加载中…'}
+      <div className="h-full grid place-items-center text-center px-6">
+        <div>
+          <p className="text-[15px] font-semibold mb-1.5">{docId ? '文档不存在或已删除' : '加载中…'}</p>
+          {docId && (
+            <button onClick={() => { window.location.hash = '#/docs' }} className="text-[13px] text-primary hover:underline cursor-pointer">
+              返回文档库
+            </button>
+          )}
+        </div>
       </div>
     )
   }

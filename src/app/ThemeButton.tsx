@@ -17,7 +17,7 @@ export function ThemeButton({ compact = false }: { compact?: boolean }) {
       onClick={() => setTheme(NEXT[theme])}
       className={cn(
         'flex items-center gap-2 h-10 rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer',
-        compact ? 'w-10 justify-center' : 'w-full px-2.5 text-[13.5px]',
+        compact ? 'w-10 justify-center max-lg:px-0' : 'w-full px-2.5 text-[13.5px]',
       )}
     >
       <Icon size={18} strokeWidth={1.9} />

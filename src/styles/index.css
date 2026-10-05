@@ -34,7 +34,7 @@
   --glass-bg: rgba(255, 255, 255, 0.72);
 
   /* 弹层阴影：MD3 Elevation-3 等效，单层大柔和 */
-  --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.18);
+  --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.14);
 
   /* 动效时长（系统「减弱动态效果」时全部替换为 80ms） */
   --dur-1: 150ms;
@@ -188,7 +188,9 @@ select:focus-visible {
 .card-hover {
   transition: box-shadow var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-standard);
 }
-.card-hover:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
+.card-hover:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06); }
+.card-hover:active { transform: scale(0.995); }
+.dark .card-hover:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
 
 /* 弹层：20px 圆角 + 单层大柔和阴影 */
 .overlay-fade {
@@ -202,7 +204,8 @@ select:focus-visible {
   box-shadow: var(--shadow-pop);
 }
 
-/* 玻璃材质（HIG）：仅顶栏 / 侧栏 / ⌘K */
+/* 玻璃材质（HIG）：仅顶栏 / 侧栏 / ⌘K
+   边界规则：玻璃层 outline/70（半透）、弹层 outline（实色） */
 .glass {
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
@@ -292,6 +295,12 @@ select:focus-visible {
 /* 触摸热区：视觉尺寸可小、热区 ≥40px */
 .touch-target { position: relative; }
 .touch-target::after { content: ''; position: absolute; inset: -8px; }
+
+/* 主题切换过渡 */
+.theme-transition,
+.theme-transition * {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease !important;
+}
 
 /* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */
 .sel-popover {

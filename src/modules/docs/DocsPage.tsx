@@ -136,9 +136,7 @@ export function DocsPage() {
                   </span>
                 </span>
                 <span className="flex flex-col gap-1 self-start">
-                  <span
-                    role="button"
-                    aria-label="继续阅读"
+                  <span role="button" tabIndex={0} aria-label="继续阅读"
                     title="继续阅读"
                     onClick={(e) => {
                       e.stopPropagation()
@@ -148,9 +146,7 @@ export function DocsPage() {
                   >
                     <Import size={15} className="rotate-180" />
                   </span>
-                  <span
-                    role="button"
-                    aria-label="删除文档"
+                  <span role="button" tabIndex={0} aria-label="删除文档"
                     title="删除"
                     onClick={(e) => {
                       e.stopPropagation()

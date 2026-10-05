@@ -43,8 +43,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   const parsed = useMemo(() => parseQuickAdd(value), [value])
   const detectedRepeat = parsed.repeat ?? null
   // 检测优先：文本里有每天/每周/工作日 → 重复流程；否则看用户手动选择
-  const mode: Mode = detectedRepeat ? 'repeat' : (modeOverride ?? 'single')
-  const effectiveRepeat: RepeatKind | undefined = detectedRepeat ?? (mode === 'repeat' ? freqOverride : undefined)
+  const mode: Mode = modeOverride ?? (detectedRepeat ? 'repeat' : 'single')
+  const effectiveRepeat: RepeatKind | undefined = mode === 'repeat' ? (detectedRepeat ?? freqOverride) : undefined
   const chips = value.trim() ? parseSummary(parsed) : []
   const hasContent = value.trim().length > 0
 
@@ -114,10 +114,10 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           </div>
           <Segmented
             value={mode}
-            onChange={(v) => setModeOverride(v as Mode)}
+            onChange={(v) => { setModeOverride(v as Mode); if (v === 'single') setFreqOverride('daily') }}
             className="w-full [&>button]:flex-1"
             options={[
-              { value: 'single', label: '单次任务' },
+              { value: 'single', label: detectedRepeat ? '单次（忽略检测）' : '单次任务' },
               { value: 'repeat', label: '重复 / 打卡' },
             ]}
           />

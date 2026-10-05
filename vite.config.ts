@@ -10,8 +10,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 // npm run dev:lan / preview:lan 时以 HTTPS + 局域网可访问方式启动，
 // 供安卓手机/平板通过 https://<电脑IP>:端口 安装 PWA（Service Worker 需要安全上下文）。
 export default defineConfig(({ mode }) => {
+  const pkg = require('./package.json')
   const lan = mode === 'lan'
   return {
+    define: { __APP_VERSION__: JSON.stringify(pkg.version) },
     base: './',
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
@@ -50,7 +52,7 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           navigateFallback: 'index.html',
-          globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
+          globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,bcmap,pfb,ttf}'],
         },
         devOptions: { enabled: false },
       }),
