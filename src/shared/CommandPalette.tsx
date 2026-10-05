@@ -156,7 +156,7 @@ export function CommandPalette() {
           )}
           {groups.map((g) => (
             <div key={g.name} className="mb-1">
-              <p className="text-[10.5px] text-on-surface-2 px-3 pt-2 pb-1 tracking-wide">{g.name}</p>
+              <p className="text-[11px] text-on-surface-2 px-3 pt-2 pb-1 tracking-wide">{g.name}</p>
               {g.items.map((item) => {
                 flatIdx++
                 const idx = flatIdx
@@ -172,15 +172,15 @@ export function CommandPalette() {
                     )}
                   >
                     <span className={cn('shrink-0', idx === cursor ? 'text-primary' : 'text-on-surface-2')}>{item.icon}</span>
-                    <span className="text-[13.5px] truncate flex-1">{item.label}</span>
-                    {item.hint && <span className="text-[10.5px] text-on-surface-2 shrink-0">{item.hint}</span>}
+                    <span className="text-[13px] truncate flex-1">{item.label}</span>
+                    {item.hint && <span className="text-[11px] text-on-surface-2 shrink-0">{item.hint}</span>}
                   </button>
                 )
               })}
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-3 px-4 py-2 border-t border-outline text-[10.5px] text-on-surface-2">
+        <div className="flex items-center gap-3 px-4 py-2 border-t border-outline text-[11px] text-on-surface-2">
           <span><kbd className="kbd">↑↓</kbd> 选择</span>
           <span><kbd className="kbd">↵</kbd> 打开</span>
           <span className="ml-auto"><kbd className="kbd">Ctrl K</kbd> 呼出/关闭</span>

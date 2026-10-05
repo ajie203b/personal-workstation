@@ -47,7 +47,7 @@ export function TodayPage() {
             <Plus size={24} strokeWidth={2.4} />
           </button>
         </div>
-        <p className="text-[13.5px] text-on-surface-2 mt-1">
+        <p className="text-[13px] text-on-surface-2 mt-1">
           {todayTasks.length > 0
             ? `今天有 ${todayTasks.length} 件事等你处理，一件件来。`
             : '今天的清单已清空，享受此刻。'}
@@ -60,7 +60,7 @@ export function TodayPage() {
           <div className="flex items-baseline gap-2 px-1 mb-2.5">
             <h2 className="text-[15px] font-semibold">今日任务</h2>
             {todayDone.length > 0 && (
-              <span className="text-[11.5px] text-ok font-medium">已完成 {todayDone.length}</span>
+              <span className="text-[12px] text-ok font-medium">已完成 {todayDone.length}</span>
             )}
           </div>
           <TaskList
@@ -92,7 +92,7 @@ export function TodayPage() {
               <Keyboard size={17} />
             </span>
             <span>
-              <span className="block text-[13.5px] font-medium">全键盘工作流</span>
+              <span className="block text-[13px] font-medium">全键盘工作流</span>
               <span className="block text-[12px] text-on-surface-2 mt-0.5">按 ? 查看快捷键，N 快速添加</span>
             </span>
           </button>
@@ -121,7 +121,7 @@ function RecentReads() {
           <History size={17} />
         </span>
         <span>
-          <span className="block text-[13.5px] font-medium">最近阅读</span>
+          <span className="block text-[13px] font-medium">最近阅读</span>
           <span className="block text-[12px] text-on-surface-2 mt-0.5">继续上次的进度</span>
         </span>
       </span>
@@ -137,7 +137,7 @@ function RecentReads() {
               }}
               className="flex items-center gap-2 px-2 py-1.5 rounded-[10px] hover:bg-surface-3 transition-colors"
             >
-              <span className="text-[12.5px] truncate flex-1">{d.title}</span>
+              <span className="text-[13px] truncate flex-1">{d.title}</span>
             </span>
           ))}
         </span>
@@ -152,7 +152,7 @@ function Kpi({ value, label, tone }: { value: number; label: string; tone?: 'ok'
   return (
     <div className="rounded-[12px] bg-surface px-3 py-2.5 border border-outline/60">
       <b className={`block text-[22px] leading-7 font-bold ${tone === 'ok' ? 'text-ok' : 'text-primary'}`}>{value}</b>
-      <span className="text-[11.5px] text-on-surface-2">{label}</span>
+      <span className="text-[12px] text-on-surface-2">{label}</span>
     </div>
   )
 }

@@ -123,7 +123,7 @@ export function TasksPage() {
 
       {/* 视觉提示：今日视图显示今天日期 */}
       {!isLogbook && tier === 'today' && visible.length > 0 && (
-        <p className="text-[11.5px] text-on-surface-2 px-1">今天 · {today} · 按 ? 查看快捷键</p>
+        <p className="text-[12px] text-on-surface-2 px-1">今天 · {today} · 按 ? 查看快捷键</p>
       )}
     </div>
   )

@@ -73,19 +73,19 @@ export function TaskItem({ task, focused, overlay }: Props) {
           {(due || task.tags.length > 0 || task.repeat || task.docRef || task.status === 'doing') && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
               {task.status === 'doing' && (
-                <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ok">
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-ok">
                   <span className="w-1.5 h-1.5 rounded-full bg-ok animate-ai-pulse" />
                   进行中
                 </span>
               )}
               {due && (
-                <span className={cn('inline-flex items-center gap-1 text-[11.5px]', overdue ? 'text-danger font-medium' : 'text-on-surface-2')}>
+                <span className={cn('inline-flex items-center gap-1 text-[12px]', overdue ? 'text-danger font-medium' : 'text-on-surface-2')}>
                   <Clock size={12} />
                   {due.text}
                 </span>
               )}
               {task.repeat && (
-                <span className="inline-flex items-center gap-1 text-[11.5px] text-on-surface-2">
+                <span className="inline-flex items-center gap-1 text-[12px] text-on-surface-2">
                   <Repeat size={12} />
                   {{ daily: '每天', weekly: '每周', weekdays: '工作日' }[task.repeat]}
                 </span>
@@ -98,19 +98,19 @@ export function TaskItem({ task, focused, overlay }: Props) {
                     openDoc(task.docRef!)
                   }}
                   title="打开关联文档"
-                  className="inline-flex items-center gap-1 text-[11.5px] text-primary hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1 text-[12px] text-primary hover:underline cursor-pointer"
                 >
                   <FileText size={12} />
                   {task.docRef.label ?? '关联文档'}
                 </button>
               )}
               {task.tags.map((t) => (
-                <span key={t} className="text-[11.5px] text-on-surface-2">
+                <span key={t} className="text-[12px] text-on-surface-2">
                   #{t}
                 </span>
               ))}
               {(task.priority === 0 || task.priority === 1) && !done && (
-                <span className="inline-flex items-center gap-1 text-[11.5px] font-medium" style={{ color: PRIORITY_VAR[task.priority] }}>
+                <span className="inline-flex items-center gap-1 text-[12px] font-medium" style={{ color: PRIORITY_VAR[task.priority] }}>
                   <Flag size={12} />
                   {task.priority === 0 ? '紧急' : '重要'}
                 </span>

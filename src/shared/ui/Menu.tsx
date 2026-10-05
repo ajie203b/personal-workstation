@@ -39,7 +39,7 @@ export function MenuItem({
     <RadixMenu.Item
       onSelect={onSelect}
       className={cn(
-        'flex items-center gap-2 px-3 h-9 rounded-[10px] text-[13.5px] cursor-pointer outline-none select-none',
+        'flex items-center gap-2 px-3 h-9 rounded-[10px] text-[13px] cursor-pointer outline-none select-none',
         'transition-colors duration-150',
         danger ? 'text-danger data-[highlighted]:bg-danger/10' : 'text-on-surface data-[highlighted]:bg-surface-3',
         active && 'text-primary',

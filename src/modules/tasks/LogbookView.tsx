@@ -42,7 +42,7 @@ export function LogbookView() {
   return (
     <div className="flex flex-col gap-5 enter">
       <div className="flex items-center justify-between px-1">
-        <p className="text-[12.5px] text-on-surface-2">共 {done.length} 条已完成 · 归档即安心</p>
+        <p className="text-[13px] text-on-surface-2">共 {done.length} 条已完成 · 归档即安心</p>
         <Button size="sm" variant="danger" onClick={() => setClearOpen(true)}>
           清空日志
         </Button>

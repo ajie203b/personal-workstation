@@ -186,7 +186,7 @@ export function TaskDetail() {
                       #{t} ×
                     </button>
                   ))}
-                  {task.tags.length === 0 && <span className="text-[12.5px] text-on-surface-2">无标签</span>}
+                  {task.tags.length === 0 && <span className="text-[13px] text-on-surface-2">无标签</span>}
                 </div>
                 <input
                   value={tagDraft}
@@ -203,7 +203,7 @@ export function TaskDetail() {
               </div>
 
               {task.repeat && (
-                <p className="text-[12.5px] text-on-surface-2">
+                <p className="text-[13px] text-on-surface-2">
                   重复：{{ daily: '每天', weekly: '每周', weekdays: '工作日' }[task.repeat]}（打卡任务：完成后自动生成下一次）
                 </p>
               )}

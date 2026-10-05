@@ -18,7 +18,7 @@ export function KeyboardShortcutsDialog() {
       <div className="divide-y divide-outline">
         {ROWS.map(([k, label]) => (
           <div key={k + label} className="flex items-center justify-between py-2.5">
-            <span className="text-[13.5px]">{label}</span>
+            <span className="text-[13px]">{label}</span>
             <span className="kbd">{k}</span>
           </div>
         ))}

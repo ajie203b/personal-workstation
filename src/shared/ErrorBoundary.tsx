@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <RotateCcw size={24} />
             </div>
             <p className="text-[16px] font-semibold mb-1.5">页面出了点问题</p>
-            <p className="text-[12.5px] text-on-surface-2 leading-relaxed mb-4 break-all">
+            <p className="text-[13px] text-on-surface-2 leading-relaxed mb-4 break-all">
               {this.state.error.message || '未知错误'}（你的数据都在本地，刷新即可恢复）
             </p>
             <button

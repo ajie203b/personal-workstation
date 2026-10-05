@@ -114,7 +114,7 @@ function PreviewChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 h-6 px-2 rounded-full text-[11.5px]',
+        'inline-flex items-center gap-1 h-6 px-2 rounded-full text-[12px]',
         !color && 'bg-surface-3 text-on-surface-2',
       )}
       style={color ? { background: `color-mix(in srgb, ${color} 14%, transparent)`, color } : undefined}

@@ -20,9 +20,9 @@ export function TopBar({ title }: { title: string }) {
         aria-label="进入设置（再点返回）"
         title="设置"
         onClick={onBrandClick}
-        className="shrink-0 cursor-pointer rounded-[11px] active:opacity-80 select-none"
+        className="shrink-0 cursor-pointer rounded-[10px] active:opacity-80 select-none"
       >
-        <img src="./brand.png" alt="" className="w-10 h-10 rounded-[11px] object-cover" draggable={false} />
+        <img src="./brand.png" alt="" className="w-10 h-10 rounded-[10px] object-cover" draggable={false} />
       </button>
       <span className="text-[15px] font-semibold">{title}</span>
       <div className="ml-auto">
