@@ -17,6 +17,9 @@ if (isNative()) {
   initInstallPrompt()
 }
 
+// 申请持久化存储（防止浏览器磁盘压力下驱逐 IndexedDB）
+void navigator.storage?.persist?.()
+
 // 阅读位置由应用自己的双坐标机制管理，禁用浏览器的刷新滚动恢复
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
 

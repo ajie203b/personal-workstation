@@ -66,6 +66,7 @@ export function PdfReader({
   const restoredRef = useRef(false)
   const lastJumpTs = useRef(0)
   const lastWriteRef = useRef(0)
+  const lastReportedPct = useRef(-1)
 
   useEffect(() => {
     void getDocBlob(hash).then(async (blob) => {
@@ -169,7 +170,11 @@ export function PdfReader({
       } else hi = mid - 1
     }
     setCenter(current + 1)
-    onProgress(current + 1, pct)
+    const intPct = Math.round(pct * 100)
+    if (intPct !== lastReportedPct.current) {
+      lastReportedPct.current = intPct
+      onProgress(current + 1, intPct / 100)
+    }
 
     const delta = Math.abs(top - lastScrollTop.current)
     lastScrollTop.current = top

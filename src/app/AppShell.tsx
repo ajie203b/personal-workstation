@@ -3,12 +3,8 @@ import { useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
 import { TopBar } from './TopBar'
-import { NAV_ITEMS } from './nav'
+import { PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
-
-export const PAGE_TITLE: Record<string, string> = Object.fromEntries(
-  NAV_ITEMS.map((n) => [n.path, n.label]),
-)
 
 export function AppShell() {
   useThemeEffect()

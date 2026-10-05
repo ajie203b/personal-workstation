@@ -13,6 +13,16 @@ export async function initAndroidBackButton(): Promise<void> {
   if (!isNative()) return
   const { App } = await import('@capacitor/app')
   await App.addListener('backButton', ({ canGoBack }) => {
+    // 先检查是否有打开的弹层（Radix Dialog/Sheet 等）
+    const openDialog = document.querySelector('[role=dialog]')
+    if (openDialog) {
+      // 关闭最上层弹层
+      const closeBtn = openDialog.querySelector("button[aria-label=\"关闭\"]") as HTMLElement | null
+      if (closeBtn) { closeBtn.click(); return }
+      // Radix 处理 Esc
+      openDialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      return
+    }
     if (canGoBack) {
       window.history.back()
     } else {

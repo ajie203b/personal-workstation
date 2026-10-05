@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as RadixDialog from '@radix-ui/react-dialog'
 import { X, Trash2 } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type Task, type Tier } from '@/db/db'
@@ -21,13 +21,22 @@ export function TaskDetail() {
   const task = all.find((t) => t.id === detailId) ?? null
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
-  // 标题/笔记本地态 + 400ms 防抖写库（避免每个按键一次事务）
+  // 标题/笔记本地态 + 400ms 防抖写库 + 关闭/切任务时立即 flush（防丢最后输入）
   const [titleDraft, setTitleDraft] = useState('')
   const [notesDraft, setNotesDraft] = useState('')
+  const pendingRef = useRef<{ id: string; title: string; notes: string } | null>(null)
+
+  const flushSave = useCallback(() => {
+    const p = pendingRef.current
+    if (p) {
+      void updateTask(p.id, { title: p.title, notes: p.notes })
+      pendingRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
-    if (!detailId) setConfirmDelete(false)
-  }, [detailId])
+    if (!detailId) { flushSave(); setConfirmDelete(false) }
+  }, [detailId, flushSave])
 
   useEffect(() => {
     if (task) {
@@ -39,15 +48,24 @@ export function TaskDetail() {
 
   useEffect(() => {
     if (!task || task.id !== detailId) return
-    if (titleDraft === task.title && notesDraft === (task.notes ?? '')) return
+    if (titleDraft === task.title && notesDraft === (task.notes ?? '')) { pendingRef.current = null; return }
+    pendingRef.current = { id: task.id, title: titleDraft, notes: notesDraft }
     const timer = setTimeout(() => {
       void updateTask(task.id, {
         ...(titleDraft !== task.title ? { title: titleDraft } : {}),
         ...(notesDraft !== (task.notes ?? '') ? { notes: notesDraft } : {}),
       })
+      pendingRef.current = null
     }, 400)
     return () => clearTimeout(timer)
   }, [titleDraft, notesDraft, task, detailId])
+
+  // 页面关闭/刷新前 flush
+  useEffect(() => {
+    const onBeforeUnload = () => flushSave()
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => { window.removeEventListener('beforeunload', onBeforeUnload); flushSave() }
+  }, [flushSave])
 
   if (!task) return null
 

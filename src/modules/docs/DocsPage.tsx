@@ -130,7 +130,7 @@ export function DocsPage() {
                   </span>
                   <span className="flex items-center gap-2 mt-2">
                     <span className="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden">
-                      <span className="block h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
+                      <span className="block h-full w-full rounded-full bg-primary transition-transform duration-300 origin-left" style={{ transform: `scaleX(${pct / 100})` }} />
                     </span>
                     <span className="text-[11px] text-on-surface-2 tabular-nums">{pct}%</span>
                   </span>

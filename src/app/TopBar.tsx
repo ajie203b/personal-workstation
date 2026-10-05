@@ -13,7 +13,7 @@ export function TopBar({ title }: { title: string }) {
 
   return (
     <header
-      className="glass md:hidden sticky top-0 z-30 flex items-center gap-2.5 px-3 border-b border-outline/70"
+      className="glass lg:hidden sticky top-0 z-30 flex items-center gap-2.5 px-3 border-b border-outline/70"
       style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: 'calc(3.5rem + env(safe-area-inset-top))' }}
     >
       <button

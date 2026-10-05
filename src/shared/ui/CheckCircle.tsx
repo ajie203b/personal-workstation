@@ -24,7 +24,7 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
         'transition-all duration-150 ease-standard cursor-pointer',
         checked
           ? 'bg-ok border-ok animate-pop'
-          : 'border-on-surface-2/45 hover:border-primary bg-transparent',
+          : 'border-on-surface-2/60 hover:border-primary bg-transparent',
         className,
       )}
     >
@@ -32,7 +32,7 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
         <path
           d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
           fill="none"
-          stroke={checked ? '#fff' : 'transparent'}
+          stroke={checked ? 'var(--surface)' : 'transparent'}
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"

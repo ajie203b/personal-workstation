@@ -40,6 +40,8 @@
   --dur-1: 150ms;
   --dur-2: 300ms;
   --dur-3: 400ms;
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --ease-emph: cubic-bezier(.05, .7, .1, 1);
 }
 
 .dark {
@@ -71,6 +73,7 @@
   *, *::before, *::after {
     transition-duration: 80ms !important;
     animation-duration: 80ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
@@ -96,13 +99,17 @@
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emph: cubic-bezier(0.05, 0.7, 0.1, 1);
+    --ease-emph: cubic-bezier(0.05, 0.7, 0.1, 1);
 
   --animate-fade-up: fade-up var(--dur-2) var(--ease-standard) both;
   --animate-pop: pop var(--dur-2) var(--ease-standard);
   --animate-ai-pulse: ai-pulse 1.4s ease-in-out infinite;
 }
 
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
@@ -121,6 +128,7 @@
    基础样式
    ============================================================ */
 html, body, #root { height: 100%; }
+#root { height: 100dvh; }
 
 body {
   background: var(--surface);
@@ -133,12 +141,11 @@ body {
   overscroll-behavior-y: none;
 }
 
-::selection { background: var(--primary-soft); color: var(--on-surface); }
+::selection { background: color-mix(in srgb, var(--primary) 30%, var(--surface)); color: var(--on-surface); }
 
 :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
-  border-radius: 6px;
 }
 
 /* 输入类控件自带边框反馈（focus 时边框变主色），不再叠加外描边圈
@@ -184,6 +191,10 @@ select:focus-visible {
 .card-hover:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
 
 /* 弹层：20px 圆角 + 单层大柔和阴影 */
+.overlay-fade {
+  animation: fade-in var(--dur-1) ease both;
+}
+
 .pop {
   background: var(--surface);
   border: 1px solid var(--outline);
@@ -220,14 +231,23 @@ select:focus-visible {
 .enter { animation: fade-up var(--dur-2) var(--ease-standard) both; }
 
 /* 同层列表级联错峰（前 8 项各差 8ms，之后不再增加） */
-.cascade > *:nth-child(1) { animation-delay: 8ms; }
-.cascade > *:nth-child(2) { animation-delay: 16ms; }
-.cascade > *:nth-child(3) { animation-delay: 24ms; }
-.cascade > *:nth-child(4) { animation-delay: 32ms; }
-.cascade > *:nth-child(5) { animation-delay: 40ms; }
-.cascade > *:nth-child(6) { animation-delay: 48ms; }
-.cascade > *:nth-child(7) { animation-delay: 56ms; }
-.cascade > *:nth-child(8) { animation-delay: 64ms; }
+.cascade > * { animation: fade-up var(--dur-2) var(--ease-standard) both; }
+.cascade > *:nth-child(1) { animation-delay: 0ms; }
+.cascade > *:nth-child(2) { animation-delay: 45ms; }
+.cascade > *:nth-child(3) { animation-delay: 90ms; }
+.cascade > *:nth-child(4) { animation-delay: 135ms; }
+.cascade > *:nth-child(5) { animation-delay: 180ms; }
+.cascade > *:nth-child(6) { animation-delay: 225ms; }
+.cascade > *:nth-child(7) { animation-delay: 270ms; }
+.cascade > *:nth-child(8) { animation-delay: 315ms; }
+
+
+
+
+
+
+
+
 
 /* 键盘 kbd 徽标 */
 .kbd {
@@ -269,6 +289,10 @@ select:focus-visible {
 }
 .pdf-dark .textLayer { opacity: 0.9; }
 
+/* 触摸热区：视觉尺寸可小、热区 ≥40px */
+.touch-target { position: relative; }
+.touch-target::after { content: ''; position: absolute; inset: -8px; }
+
 /* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */
 .sel-popover {
   position: fixed;
@@ -281,7 +305,7 @@ select:focus-visible {
   background: var(--surface);
   border: 1px solid var(--outline);
   box-shadow: var(--shadow-pop);
-  animation: fade-up var(--dur-1) var(--ease-standard) both;
+  
 }
 
 /* MD 正文排版（≤72 字符行宽的沉浸阅读） */

@@ -91,7 +91,7 @@ function DataTab() {
     a.href = url
     a.download = `个人工作站备份-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
     toast('备份已导出')
   }
 
