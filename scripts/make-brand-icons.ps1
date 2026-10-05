@@ -104,8 +104,8 @@ function New-Splash {
 Write-Host '--- PWA icons ---'
 New-BrandIcon -Size 512 -Out (Join-Path $webIcons 'icon-512.png') -Shape 'rounded'
 New-BrandIcon -Size 192 -Out (Join-Path $webIcons 'icon-192.png') -Shape 'rounded'
-New-BrandIcon -Size 512 -Out (Join-Path $webIcons 'icon-512-maskable.png') -Shape 'square' -Scale 0.70 -Bg '#FFFFFF'
-New-BrandIcon -Size 180 -Out (Join-Path $webIcons 'apple-touch-icon.png') -Shape 'square' -Scale 0.95 -Bg '#FFFFFF'
+New-BrandIcon -Size 512 -Out (Join-Path $webIcons 'icon-512-maskable.png') -Shape 'square' -Scale 1.0
+New-BrandIcon -Size 180 -Out (Join-Path $webIcons 'apple-touch-icon.png') -Shape 'square' -Scale 1.0
 
 # favicon.png (small square)
 New-BrandIcon -Size 48 -Out (Join-Path $root 'public\favicon.png') -Shape 'rounded'
@@ -120,12 +120,7 @@ foreach ($k in $densities.Keys) {
   New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher.png')) -Shape 'rounded' -Scale 0.94
   New-BrandIcon -Size $size -Out (Join-Path $res ($k + '\ic_launcher_round.png')) -Shape 'circle' -Scale 0.94
 }
-# adaptive foreground: brand image at 50% centered (aggressive launcher masks
-# can show as little as ~50% of canvas — 50% scale guarantees full visibility)
-$fg = @{ 'mipmap-mdpi' = 108; 'mipmap-hdpi' = 162; 'mipmap-xhdpi' = 216; 'mipmap-xxhdpi' = 324; 'mipmap-xxxhdpi' = 432 }
-foreach ($k in $fg.Keys) {
-  New-BrandIcon -Size $fg[$k] -Out (Join-Path $res ($k + '\ic_launcher_foreground.png')) -Shape 'square' -Scale 0.50 -Bg '#FFFFFF'
-}
+# adaptive icons removed: legacy full-bleed icons used directly
 
 # adaptive icon background -> white (blends with the brand image edge)
 $bgFile = Join-Path $res 'values\ic_launcher_background.xml'
