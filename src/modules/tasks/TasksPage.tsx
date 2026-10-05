@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
 import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
@@ -25,7 +25,7 @@ export function TasksPage() {
 
   // 深链定位：/tasks?focus=:id（AI 运行卡片、反链面板回跳）
   const focusParam = params.get('focus')
-  useMemo(() => {
+  useEffect(() => {
     if (focusParam) {
       setFocusId(focusParam)
       setParams((prev) => {

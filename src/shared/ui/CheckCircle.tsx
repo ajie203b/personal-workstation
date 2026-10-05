@@ -20,7 +20,7 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
         onChange()
       }}
       className={cn(
-        'shrink-0 grid place-items-center w-[22px] h-[22px] mt-[2px] rounded-full border-[1.5px]',
+        'touch-target shrink-0 grid place-items-center w-[22px] h-[22px] mt-[2px] rounded-full border-[1.5px]',
         'transition-all duration-150 ease-standard cursor-pointer',
         checked
           ? 'bg-ok border-ok animate-pop'

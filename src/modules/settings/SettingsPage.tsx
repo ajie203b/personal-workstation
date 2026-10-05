@@ -83,7 +83,10 @@ function DataTab() {
     })
   }, [])
 
+  const [exporting, setExporting] = useState(false)
+
   const doExport = async () => {
+    setExporting(true)
     const json = await exportAll()
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -93,6 +96,7 @@ function DataTab() {
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 10000)
     toast('备份已导出')
+    setExporting(false)
   }
 
   const doImport = async (file: File) => {
@@ -114,7 +118,7 @@ function DataTab() {
           {usage && ` 当前占用约 ${usage}。`}
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => void doExport()}>
+          <Button variant="outline" size="sm" onClick={() => void doExport()} disabled={exporting}>
             <Download size={15} /> 导出备份
           </Button>
           <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>

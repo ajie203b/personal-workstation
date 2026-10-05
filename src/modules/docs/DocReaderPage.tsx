@@ -54,6 +54,12 @@ export function DocReaderPage() {
   const [selection, setSelection] = useState<Selection | null>(null)
   const [shotMode, setShotMode] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  useEffect(() => {
+    if (!showSettings) return
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowSettings(false) }
+    window.addEventListener('keydown', onEsc)
+    return () => window.removeEventListener('keydown', onEsc)
+  }, [showSettings])
   const [leftTab, setLeftTab] = useState<'toc' | 'marks'>('toc')
   const [rightTab, setRightTab] = useState<'anns' | 'backlinks'>('anns')
   const [mobilePanel, setMobilePanel] = useState<'toc' | 'anns' | null>(null)
@@ -287,8 +293,8 @@ export function DocReaderPage() {
           )}
         </div>
 
-        <IconBtn label="目录与高亮" className="md:hidden" onClick={() => setMobilePanel('toc')}><List size={18} /></IconBtn>
-        <IconBtn label="批注与反链" className="lg:hidden" onClick={() => setMobilePanel('anns')}><MessageSquareText size={18} /></IconBtn>
+        <IconBtn label="目录与高亮" className="lg:hidden" onClick={() => setMobilePanel('toc')}><List size={18} /></IconBtn>
+        <IconBtn label="批注与反链" className="hidden" onClick={() => setMobilePanel('anns')}><MessageSquareText size={18} /></IconBtn>
         <IconBtn label="批注面板" className="hidden lg:grid" onClick={() => setRightTab(rightTab === 'anns' ? 'backlinks' : 'anns')}><PanelRight size={18} /></IconBtn>
       </header>
 
@@ -311,7 +317,7 @@ export function DocReaderPage() {
         </aside>
 
         {/* 中：阅读画布 */}
-        <div className="flex-1 min-w-0 relative">
+        <div className="flex-1 min-w-0 relative min-h-[60vh]">
           {content?.kind === 'md' && (
             <MdReader
               hash={doc.hash}
