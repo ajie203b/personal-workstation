@@ -296,6 +296,14 @@ select:focus-visible {
 }
 .pdf-dark .textLayer { opacity: 0.9; }
 
+/* 文本层重影修复：全局 ::selection 的 color 会把文本层透明 span 染色，
+   选中时 canvas 文字与文本层文字同时可见（重影）。
+   恢复 pdf.js 默认行为：仅显示选区底色，文字保持透明。 */
+.textLayer ::selection {
+  color: transparent;
+  background: color-mix(in srgb, AccentColor, transparent 75%);
+}
+
 /* 触摸热区：视觉尺寸可小、热区 ≥40px */
 .touch-target { position: relative; }
 .touch-target::after { content: ''; position: absolute; inset: -8px; }

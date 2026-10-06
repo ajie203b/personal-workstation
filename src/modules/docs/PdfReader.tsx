@@ -5,6 +5,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css'
 import { saveScrollAndProgress } from '@/db/docs'
 import type { Annotation, DocSettings } from '@/db/db'
 import { getDocBlob } from '@/db/docs'
+import { cn } from '@/lib/cn'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
@@ -56,7 +57,6 @@ export function PdfReader({
   const [data, setData] = useState<ArrayBuffer | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([]) // 每页 高/宽
-  const [baseWidths, setBaseWidths] = useState<number[]>([]) // 每页 scale=1 基准宽（--scale-factor 用）
   const [containerW, setContainerW] = useState(0)
   const [center, setCenter] = useState(1) // 当前视口中心页
   const [flashId, setFlashId] = useState<string | null>(null)
@@ -107,15 +107,12 @@ export function PdfReader({
       setNumPages(n)
       // 全量取页面宽高比（仅元数据，不渲染），占位零漂移
       const rs: number[] = []
-      const ws: number[] = []
       for (let i = 1; i <= n; i++) {
         const page = await pdf.getPage(i)
         const vp = page.getViewport({ scale: 1 })
         rs.push(vp.height / vp.width)
-        ws.push(vp.width)
       }
       setRatios(rs)
-      setBaseWidths(ws)
 
       // 大纲解析：dest → 页码
       const outlineItems: TocItem[] = []
@@ -367,7 +364,7 @@ export function PdfReader({
               <div key={p} className="flex flex-col items-center gap-1">
                 <div
                   data-page={p}
-                  style={{ width: dispW, height: pageH(p - 1), ['--scale-factor' as string]: String(dispW / (baseWidths[p - 1] || 612)) }}
+                  style={{ width: dispW, height: pageH(p - 1) }}
                   className={`relative rounded-[10px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
                   onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
                   onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
@@ -404,13 +401,13 @@ export function PdfReader({
                         <div
                           key={a.id}
                           data-ann={a.id}
-                          className={`absolute inset-0 pointer-events-none ${colorCls} ${flashId === a.id ? 'ann-flash' : ''}`}
+                          className={`absolute inset-0 pointer-events-none ${flashId === a.id ? 'ann-flash' : ''}`}
                           style={{ ['--ann-opacity' as string]: '0.4' }}
                         >
                           {a.rects!.map((r, ri) => (
                             <span
                               key={ri}
-                              className={`absolute ${isShot ? 'border-2 border-primary' : ''}`}
+                              className={cn('absolute', isShot ? 'border-2 border-primary' : colorCls)}
                               style={{
                                 left: `${r.x * 100}%`,
                                 top: `${r.y * 100}%`,
