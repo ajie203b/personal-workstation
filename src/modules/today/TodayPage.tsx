@@ -83,19 +83,21 @@ export function TodayPage() {
             </div>
           </section>
 
-          <button
-            type="button"
-            onClick={() => openShortcuts(true)}
-            className="card card-hover p-4 flex items-center gap-3 text-left cursor-pointer"
-          >
-            <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
-              <Keyboard size={17} />
-            </span>
-            <span>
-              <span className="block text-[13px] font-medium">全键盘工作流</span>
-              <span className="block text-[12px] text-on-surface-2 mt-0.5">按 ? 查看快捷键，N 快速添加</span>
-            </span>
-          </button>
+          <div className="hidden md:block">
+            <button
+              type="button"
+              onClick={() => openShortcuts(true)}
+              className="card card-hover p-4 flex items-center gap-3 text-left cursor-pointer w-full"
+            >
+              <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
+                <Keyboard size={17} />
+              </span>
+              <span>
+                <span className="block text-[13px] font-medium">全键盘工作流</span>
+                <span className="block text-[12px] text-on-surface-2 mt-0.5">按 ? 查看快捷键，N 快速添加</span>
+              </span>
+            </button>
+          </div>
 
           <RecentReads />
         </aside>
