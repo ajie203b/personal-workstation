@@ -3,12 +3,18 @@ apply plugin: 'com.android.application'
 android {
     namespace "com.personal.workstation"
     compileSdk rootProject.ext.compileSdkVersion
+    // JBR 25 的版本号字符串会让 lint 内置 Kotlin 编译器崩溃（JavaVersion.parse "25.0.3"），
+    // 个人应用关闭 release 构建的 lintVital，编译期检查仍然保留
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
     defaultConfig {
         applicationId "com.personal.workstation"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 22
-        versionName "1.1.0"
+        versionCode 23
+        versionName "1.2.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

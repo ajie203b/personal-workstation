@@ -97,10 +97,12 @@ export function TasksPage() {
         )}
       </div>
 
-      <QuickAdd
-        defaultTier={tier}
-        placeholder={tier === 'today' ? '添加到今日…（明天14:00 交报告 P1 #工作）' : undefined}
-      />
+      {view === 'list' && (
+        <QuickAdd
+          defaultTier={tier}
+          placeholder={tier === 'today' ? '添加到今日…（明天14:00 交报告 P1 #工作）' : undefined}
+        />
+      )}
 
       <Segmented
         ariaLabel="清单切换"
