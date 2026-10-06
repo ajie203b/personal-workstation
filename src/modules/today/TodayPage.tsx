@@ -103,7 +103,6 @@ export function TodayPage() {
           </div>
 
           <FocusTimer />
-          <FocusTimer />
           <RecentReads />
         </aside>
       </div>
