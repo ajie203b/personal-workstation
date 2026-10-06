@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { History, Keyboard, Plus } from 'lucide-react'
+import { History, Keyboard, Plus, Sparkles } from 'lucide-react'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
-import { isThisWeek, fmtWeekdayLong, greeting } from '@/lib/date'
+import { isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
 import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
+import { FocusTimer } from '@/modules/focus/FocusTimer'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
 export function TodayPage() {
@@ -54,6 +55,8 @@ export function TodayPage() {
         </p>
       </header>
 
+      <SmartSuggestions all={all} />
+
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-start">
         {/* 今日任务 */}
         <section className="md:col-span-3 min-w-0">
@@ -99,12 +102,65 @@ export function TodayPage() {
             </button>
           </div>
 
+          <FocusTimer />
+          <FocusTimer />
           <RecentReads />
         </aside>
       </div>
 
       <AddTaskSheet open={addOpen} onOpenChange={setAddOpen} defaultTier="today" todayContext />
     </div>
+  )
+}
+
+/** My Day 智能建议队列：逾期 → 今日到期 → 3 日内 → 高优先加权 */
+function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
+  const suggestions = useMemo(() => {
+    const today = todayStr()
+    const threeDays = new Date()
+    threeDays.setDate(threeDays.getDate() + 3)
+    const threeDaysStr = `${threeDays.getFullYear()}-${String(threeDays.getMonth() + 1).padStart(2, '0')}-${String(threeDays.getDate()).padStart(2, '0')}`
+
+    return all
+      .filter((t) => t.status !== 'done' && t.tier !== 'today' && t.tier !== 'someday')
+      .map((t) => {
+        let score = 0
+        if (t.due && t.due < today) score += 100 // 逾期最高
+        else if (t.due && t.due === today) score += 80
+        else if (t.due && t.due <= threeDaysStr) score += 50
+        if (t.priority <= 1) score += 30 // P0/P1 加权
+        return { task: t, score }
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+  }, [all])
+
+  if (suggestions.length === 0) return null
+
+  return (
+    <section className="card p-4 border-ok/25">
+      <div className="flex items-center gap-2 mb-2.5">
+        <Sparkles size={14} className="text-ok" />
+        <span className="text-[13px] font-semibold text-ok">今日建议</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {suggestions.map(({ task }) => (
+          <button
+            key={task.id}
+            onClick={() => { window.location.hash = `#/tasks?tier=${task.tier}&focus=${task.id}` }}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-3 transition-colors text-left cursor-pointer w-full"
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ background: task.priority === 0 ? 'var(--p0)' : task.priority === 1 ? 'var(--p1)' : 'var(--p2)' }}
+            />
+            <span className="text-[13px] truncate flex-1">{task.title}</span>
+            {task.due && task.due < todayStr() && <span className="text-[10.5px] text-danger shrink-0">逾期</span>}
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
