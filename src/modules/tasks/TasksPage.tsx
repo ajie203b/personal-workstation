@@ -2,28 +2,31 @@ import { useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
 import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
-import { sortTasks } from '@/db/tasks'
+import { sortTasks, toggleDone } from '@/db/tasks'
 import { useTasksUi } from '@/stores/tasks'
 import { QuickAdd } from './QuickAdd'
 import { TaskList } from './TaskList'
 import { BoardView } from './BoardView'
+import { CalendarView } from './CalendarView'
+import { QuadrantView } from './QuadrantView'
 import { LogbookView } from './LogbookView'
 import { Segmented } from '@/shared/ui/Segmented'
 import { todayStr } from '@/lib/date'
 
-type View = 'list' | 'board'
+type View = 'list' | 'board' | 'calendar' | 'quadrant'
 
 /**
- * 任务清单（M1）：四清单 × 列表/看板视图 + NLP 录入 + Logbook。
+ * 任务清单：四清单 × 四视图（列表/看板/日历/四象限）+ NLP 录入 + Logbook。
  * tier/view 走 URL 参数，支持深链互跳（/tasks?tier=today&view=board）。
  */
 export function TasksPage() {
   const [params, setParams] = useSearchParams()
   const all = useAllTasks()
   const setFocusId = useTasksUi((s) => s.setFocusId)
+  const openDetail = useTasksUi((s) => s.openDetail)
   const today = todayStr()
 
-  // 深链定位：/tasks?focus=:id（AI 运行卡片、反链面板回跳）
+  // 深链定位：/tasks?focus=:id
   const focusParam = params.get('focus')
   useEffect(() => {
     if (focusParam) {
@@ -39,7 +42,8 @@ export function TasksPage() {
   const tierParam = params.get('tier')
   const isLogbook = tierParam === 'logbook'
   const tier: Tier = (TIERS as readonly string[]).includes(tierParam ?? '') ? (tierParam as Tier) : 'today'
-  const view: View = params.get('view') === 'board' ? 'board' : 'list'
+  const viewParam = params.get('view')
+  const view: View = (['list', 'board', 'calendar', 'quadrant'] as const).includes(viewParam as View) ? (viewParam as View) : 'list'
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
@@ -61,6 +65,9 @@ export function TasksPage() {
     setParams(next, { replace: true })
   }
 
+  const openTask = (id: string) => { setFocusId(id); openDetail(id) }
+  const completeTask = (t: typeof all[number]) => { void toggleDone(t) }
+
   const emptyMap: Record<Tier, { title: string; hint: string }> = {
     today: { title: '今天没有安排', hint: '从「随时池」拖几件过来，或直接添加。完成的一天会自动归档进日志。' },
     upcoming: { title: '近期没有排期', hint: '添加时写「明天」「下周三」「10月8日」会自动进入这里。' },
@@ -80,8 +87,10 @@ export function TasksPage() {
               value={view}
               onChange={(v) => setParam('view', v)}
               options={[
-                { value: 'list', label: '列表', },
+                { value: 'list', label: '列表' },
                 { value: 'board', label: '看板' },
+                { value: 'calendar', label: '日历' },
+                { value: 'quadrant', label: '四象限' },
               ]}
             />
           </div>
@@ -100,7 +109,7 @@ export function TasksPage() {
         options={[
           ...TIERS.map((t) => ({
             value: t as string,
-            label: TIER_LABEL[t] + (t === 'today' ? '' : ''),
+            label: TIER_LABEL[t],
             badge: String(counts[t] ?? 0),
           })),
           { value: 'logbook', label: '日志', badge: String(doneCount) },
@@ -112,6 +121,10 @@ export function TasksPage() {
         <LogbookView />
       ) : view === 'board' ? (
         <BoardView tasks={all} />
+      ) : view === 'calendar' ? (
+        <CalendarView tasks={all} onOpenTask={openTask} onToggleDone={completeTask} />
+      ) : view === 'quadrant' ? (
+        <QuadrantView tasks={all} onOpenTask={openTask} />
       ) : (
         <TaskList
           scope={`tasks-${tier}`}
@@ -121,7 +134,6 @@ export function TasksPage() {
         />
       )}
 
-      {/* 视觉提示：今日视图显示今天日期 */}
       {!isLogbook && tier === 'today' && visible.length > 0 && (
         <p className="text-[12px] text-on-surface-2 px-1">今天 · {today} · 按 ? 查看快捷键</p>
       )}

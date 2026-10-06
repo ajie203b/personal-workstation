@@ -71,15 +71,33 @@ export function CommandPalette() {
     return [...actions, ...taskItems, ...docItems]
   }, [tasks, docs, theme, navigate, setTheme])
 
+  // 拼音搜索：惰性加载 pinyin-pro
+  const [pinyinFn, setPinyinFn] = useState<((s: string) => string) | null>(null)
+  useEffect(() => {
+    if (query.trim() && !pinyinFn) {
+      import('pinyin-pro').then((m) => setPinyinFn(() => m.pinyin)).catch(() => {})
+    }
+  }, [query])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) {
-      // 默认视图：动作 + 最近内容各取前几条
       const byGroup = (g: string, n: number) => items.filter((i) => i.group === g).slice(0, n)
-      return [...byGroup('动作', 6), ...byGroup('任务', 4), ...byGroup('文档', 4), ...byGroup('会话', 4)]
+      return [...byGroup('动作', 6), ...byGroup('任务', 4), ...byGroup('文档', 4)]
     }
-    return items.filter((i) => i.label.toLowerCase().includes(q) || (i.hint ?? '').toLowerCase().includes(q)).slice(0, 24)
-  }, [items, query])
+    // 拼音匹配：把中文标题转拼音后比对
+    const match = (text: string) => {
+      if (text.toLowerCase().includes(q)) return true
+      if (pinyinFn) {
+        const py = (pinyinFn as (s: string, o?: object) => string)(text, { toneType: 'none' }).replace(/\s/g, '').toLowerCase()
+        if (py.includes(q)) return true
+        const initials = (pinyinFn as (s: string, o?: object) => string)(text, { pattern: 'first', toneType: 'none' }).replace(/\s/g, '').toLowerCase()
+        if (initials.includes(q)) return true
+      }
+      return false
+    }
+    return items.filter((i) => match(i.label) || (i.hint ?? '').toLowerCase().includes(q)).slice(0, 24)
+  }, [items, query, pinyinFn])
 
   // 打开时重置
   useEffect(() => {
