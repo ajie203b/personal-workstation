@@ -104,20 +104,23 @@ export function TasksPage() {
         />
       )}
 
-      <Segmented
-        ariaLabel="清单切换"
-        value={isLogbook ? 'logbook' : tier}
-        onChange={(v) => setParam('tier', v)}
-        options={[
-          ...TIERS.map((t) => ({
-            value: t as string,
-            label: TIER_LABEL[t],
-            badge: String(counts[t] ?? 0),
-          })),
-          { value: 'logbook', label: '日志', badge: String(doneCount) },
-        ]}
-        className="self-start max-w-full overflow-x-auto"
-      />
+      {/* 分级标签仅列表视图有语义（看板/日历/四象限展示全量任务，点击切换无效） */}
+      {view === 'list' && (
+        <Segmented
+          ariaLabel="清单切换"
+          value={isLogbook ? 'logbook' : tier}
+          onChange={(v) => setParam('tier', v)}
+          options={[
+            ...TIERS.map((t) => ({
+              value: t as string,
+              label: TIER_LABEL[t],
+              badge: String(counts[t] ?? 0),
+            })),
+            { value: 'logbook', label: '日志', badge: String(doneCount) },
+          ]}
+          className="self-start max-w-full overflow-x-auto"
+        />
+      )}
 
       {isLogbook ? (
         <LogbookView />
