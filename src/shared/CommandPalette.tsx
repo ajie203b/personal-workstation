@@ -201,7 +201,7 @@ export function CommandPalette() {
       <div className="absolute inset-0 bg-black/30" />
       <div
         className="pop absolute left-1/2 top-[14%] -translate-x-1/2 w-[min(600px,92vw)] overflow-hidden"
-        style={{ animation: 'fade-up var(--dur-1) var(--ease-standard)' }}
+        style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2.5 px-4 h-13 py-3 border-b border-outline">

@@ -122,22 +122,24 @@ export function TasksPage() {
         />
       )}
 
-      {isLogbook ? (
-        <LogbookView />
-      ) : view === 'board' ? (
-        <BoardView tasks={all} />
-      ) : view === 'calendar' ? (
-        <CalendarView tasks={all} onOpenTask={openTask} onToggleDone={completeTask} />
-      ) : view === 'quadrant' ? (
-        <QuadrantView tasks={all} onOpenTask={openTask} />
-      ) : (
-        <TaskList
-          scope={`tasks-${tier}`}
-          tasks={visible}
-          emptyTitle={emptyMap[tier].title}
-          emptyHint={emptyMap[tier].hint}
-        />
-      )}
+      <div key={view} className="enter">
+        {isLogbook ? (
+          <LogbookView />
+        ) : view === 'board' ? (
+          <BoardView tasks={all} />
+        ) : view === 'calendar' ? (
+          <CalendarView tasks={all} onOpenTask={openTask} onToggleDone={completeTask} />
+        ) : view === 'quadrant' ? (
+          <QuadrantView tasks={all} onOpenTask={openTask} />
+        ) : (
+          <TaskList
+            scope={`tasks-${tier}`}
+            tasks={visible}
+            emptyTitle={emptyMap[tier].title}
+            emptyHint={emptyMap[tier].hint}
+          />
+        )}
+      </div>
 
       {!isLogbook && tier === 'today' && visible.length > 0 && (
         <p className="text-[12px] text-on-surface-2 px-1">今天 · {today} · 按 ? 查看快捷键</p>

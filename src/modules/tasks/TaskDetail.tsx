@@ -115,7 +115,7 @@ export function TaskDetail() {
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
         <RadixDialog.Content
           className="pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(600px,92vw)] max-h-[86dvh] flex flex-col rounded-[20px]"
-          style={{ animation: 'fade-up var(--dur-1) var(--ease-standard)' }}
+          style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         >
           {/* 标题栏 */}
           <div className="flex items-center justify-between px-5 h-14 shrink-0 border-b border-outline">
