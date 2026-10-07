@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { History, Keyboard, Plus, Sparkles } from 'lucide-react'
+import { Clock3, History, Keyboard, Plus } from 'lucide-react'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
 import { isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
@@ -149,10 +149,10 @@ function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
   if (suggestions.length === 0) return null
 
   return (
-    <section className="card p-4 border-ok/25">
+    <section className="card p-4">
       <div className="flex items-center gap-2 mb-2.5">
-        <Sparkles size={14} className="text-ok" />
-        <span className="text-[13px] font-semibold text-ok">今日建议</span>
+        <Clock3 size={14} className="text-on-surface-2" />
+        <span className="text-[12px] font-medium text-on-surface-2 tracking-wide">今日建议</span>
       </div>
       <div className="flex flex-col gap-1.5">
         {suggestions.map(({ task }) => (

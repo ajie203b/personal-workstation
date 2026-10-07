@@ -18,7 +18,7 @@ import { cn } from '@/lib/cn'
 type Tab = 'appearance' | 'data' | 'about'
 
 const THEME_CARDS: { value: Theme; label: string; icon: typeof Sun; preview: [string, string] }[] = [
-  { value: 'light', label: '浅色', icon: Sun, preview: ['#FFFFFF', '#0B57D0'] },
+  { value: 'light', label: '浅色', icon: Sun, preview: ['#FFFFFF', '#2C55B8'] },
   { value: 'dark', label: '深色', icon: Moon, preview: ['#1E1F24', '#A8C7FA'] },
   { value: 'system', label: '跟随系统', icon: Monitor, preview: ['#EDEDF0', '#1E1F24'] },
 ]

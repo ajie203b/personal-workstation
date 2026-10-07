@@ -9,21 +9,21 @@
 :root {
   color-scheme: light;
 
-  /* 色彩 · 亮色 */
-  --primary: #0B57D0;
+  /* 色彩 · 亮色 —— 暖纸中性 + 墨蓝主色（编辑气质，去默认蓝模板味） */
+  --primary: #2C55B8;
   --on-primary: #FFFFFF;
-  --primary-soft: #E8F0FE;
+  --primary-soft: #EAEFF9;
   --surface: #FFFFFF;
-  --surface-2: #F5F5F7;
-  --surface-3: #EDEDF0;
-  --outline: #E8E8ED;
-  --on-surface: #1D1D1F;
-  --on-surface-2: #86868B;
+  --surface-2: #F7F6F3;
+  --surface-3: #EFEDE8;
+  --outline: #E6E4DE;
+  --on-surface: #201F1D;
+  --on-surface-2: #8B887F;
 
-  /* 优先级四档：红 → 橙黄 → 蓝 → 灰白（绿色保留给状态语义，不做优先级） */
+  /* 优先级四档：红 → 橙黄 → 钢蓝 → 灰白（绿色保留给状态语义，不做优先级） */
   --p0: #E5484D;
   --p1: #F5A623;
-  --p2: #3B82F6;
+  --p2: #4E7ACF;
   --p3: #9CA3AF;
 
   /* 状态色 */
@@ -31,10 +31,10 @@
   --danger: #E5484D;
 
   /* HIG 玻璃材质：仅顶栏 / 侧栏 / ⌘K 面板 */
-  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg: rgba(255, 255, 255, 0.78);
 
   /* 弹层阴影：MD3 Elevation-3 等效，单层大柔和 */
-  --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.14);
+  --shadow-pop: 0 24px 64px rgba(32, 31, 29, 0.13);
 
   /* 动效时长（系统「减弱动态效果」时全部替换为 80ms） */
   --dur-1: 150ms;
@@ -56,25 +56,25 @@
 
 .dark {
   color-scheme: dark;
-  --primary: #A8C7FA;
-  --on-primary: #0B2854;
-  --primary-soft: #1D3557;
-  --surface: #1E1F24;
-  --surface-2: #26272C;
-  --surface-3: #2E2F35;
-  --outline: #3A3B40;
-  --on-surface: #E6E6EA;
-  --on-surface-2: #9B9BA3;
+  --primary: #9FB6E8;
+  --on-primary: #152239;
+  --primary-soft: #242F47;
+  --surface: #1F1E21;
+  --surface-2: #27262A;
+  --surface-3: #302F33;
+  --outline: #3B3A3F;
+  --on-surface: #E8E7E4;
+  --on-surface-2: #9C9A96;
 
   --p0: #F26D6D;
   --p1: #F0B451;
-  --p2: #6FA5F5;
+  --p2: #7FA0E0;
   --p3: #8A8F98;
 
   --ok: #34C48C;
   --danger: #F26D6D;
 
-  --glass-bg: rgba(30, 31, 36, 0.72);
+  --glass-bg: rgba(31, 30, 33, 0.72);
   --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
 

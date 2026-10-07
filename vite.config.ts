@@ -42,7 +42,7 @@ export default defineConfig(({ mode }) => {
           scope: './',
           display: 'standalone',
           orientation: 'any',
-          theme_color: '#0B57D0',
+          theme_color: '#2C55B8',
           background_color: '#F5F5F7',
           icons: [
             { src: './icons/icon-192.png', sizes: '192x192', type: 'image/png' },

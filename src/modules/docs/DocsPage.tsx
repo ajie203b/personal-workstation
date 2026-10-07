@@ -174,7 +174,7 @@ export function DocsPage() {
                 }}
                 className="card card-hover text-left px-4 py-3.5 flex gap-3.5 cursor-pointer"
               >
-                <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
+                <span className="grid place-items-center w-11 h-11 rounded-[12px] text-on-surface-2/80 shrink-0">
                   <KindIcon kind={d.kind} />
                 </span>
                 <span className="flex-1 min-w-0">
