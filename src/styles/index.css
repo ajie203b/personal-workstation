@@ -396,3 +396,36 @@ select:focus-visible {
 .theme-night mark.hl-green, .theme-dusk mark.hl-green { background: rgba(74, 222, 128, 0.28); }
 .theme-night mark.hl-blue, .theme-dusk mark.hl-blue { background: rgba(96, 165, 250, 0.3); }
 .theme-night mark.hl-red, .theme-dusk mark.hl-red { background: rgba(248, 113, 113, 0.3); }
+
+/* 流式文档（EPUB/DOCX/PPTX/TXT）排版：复用 md 阅读主题变量 */
+.flow-seg-title {
+  color: var(--md-ink);
+  font-weight: 700;
+  font-size: 1.25em;
+  line-height: 1.4;
+  margin: 0 0 0.8em;
+}
+.flow-doc .ppt-slide-no {
+  color: var(--md-ink-2);
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin: 1.4em 0 0.4em;
+}
+.flow-body { color: var(--md-ink); }
+.flow-body h1, .flow-body h2, .flow-body h3, .flow-body h4 { color: var(--md-ink); font-weight: 700; line-height: 1.4; margin: 1.4em 0 0.6em; }
+.flow-body h1 { font-size: 1.5em; }
+.flow-body h2 { font-size: 1.25em; }
+.flow-body h3 { font-size: 1.1em; }
+.flow-body p { margin: 0.85em 0; }
+.flow-body ul, .flow-body ol { margin: 0.85em 0; padding-left: 1.6em; }
+.flow-body ul { list-style: disc; }
+.flow-body ol { list-style: decimal; }
+.flow-body li { margin: 0.3em 0; }
+.flow-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.flow-body blockquote { margin: 1.1em 0; padding: 0.4em 1.1em; border-left: 3px solid var(--primary); background: var(--md-quote); border-radius: 0 10px 10px 0; color: var(--md-ink-2); }
+.flow-body img { max-width: 100%; border-radius: 10px; }
+.flow-body table { border-collapse: collapse; margin: 1.1em 0; width: 100%; font-size: 0.92em; }
+.flow-body th, .flow-body td { border: 1px solid var(--md-rule); padding: 7px 12px; text-align: left; }
+.flow-body th { background: var(--md-quote); }
+.flow-body hr { border: none; border-top: 1px solid var(--md-rule); margin: 1.8em 0; }

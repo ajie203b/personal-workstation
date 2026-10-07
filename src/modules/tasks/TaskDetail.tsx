@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as RadixDialog from '@radix-ui/react-dialog'
-import { X, Trash2 } from 'lucide-react'
-import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type Task, type Tier } from '@/db/db'
+import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer } from 'lucide-react'
+import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type SubTask, type Task, type Tier } from '@/db/db'
+import { db } from '@/db/db'
 import { deleteTask, restoreTask, toggleDone, updateTask } from '@/db/tasks'
 import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
@@ -9,6 +10,7 @@ import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
+import { uid } from '@/lib/id'
 
 const FIELD = 'text-[12px] font-medium text-on-surface-2 mb-1.5 block'
 const INPUT =
@@ -20,6 +22,8 @@ export function TaskDetail() {
   const task = useAllTasks().find((t) => t.id === detailId) ?? null
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
+  const [subDraft, setSubDraft] = useState('')
+  const [focusMinutes, setFocusMinutes] = useState<number | null>(null)
   // 标题/笔记本地态 + 400ms 防抖写库 + 关闭/切任务时立即 flush（防丢最后输入）
   const [titleDraft, setTitleDraft] = useState('')
   const [notesDraft, setNotesDraft] = useState('')
@@ -44,6 +48,15 @@ export function TaskDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id])
+
+  // 该任务的累计专注分钟（v1.3 专注绑定）
+  useEffect(() => {
+    setFocusMinutes(null)
+    if (!task) return
+    void db.focusSessions.where('taskId').equals(task.id).toArray().then((rows) => {
+      setFocusMinutes(rows.reduce((s, r) => s + r.minutes, 0))
+    })
+  }, [task?.id, task?.id && detailId])
 
   useEffect(() => {
     if (!task || task.id !== detailId) return
@@ -75,6 +88,18 @@ export function TaskDetail() {
     if (t && !task.tags.includes(t)) patch({ tags: [...task.tags, t] })
     setTagDraft('')
   }
+
+  const setSubtasks = (list: SubTask[]) => patch({ subtasks: list })
+  const addSub = () => {
+    const t = subDraft.trim()
+    if (!t) return
+    setSubtasks([...(task.subtasks ?? []), { id: uid(), title: t, done: false }])
+    setSubDraft('')
+  }
+  const toggleSub = (sid: string) =>
+    setSubtasks((task.subtasks ?? []).map((s) => (s.id === sid ? { ...s, done: !s.done } : s)))
+  const removeSub = (sid: string) => setSubtasks((task.subtasks ?? []).filter((s) => s.id !== sid))
+  const doneSubs = (task.subtasks ?? []).filter((s) => s.done).length
 
   const remove = async () => {
     await deleteTask(task)
@@ -202,6 +227,58 @@ export function TaskDetail() {
                 />
               </div>
 
+              <div>
+                <label className={FIELD}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <ListChecks size={13} /> 子任务{task.subtasks?.length ? `（${doneSubs}/${task.subtasks.length}）` : ''}
+                  </span>
+                </label>
+                <div className="flex flex-col gap-1 mb-2">
+                  {(task.subtasks ?? []).map((s) => (
+                    <div key={s.id} className="group flex items-center gap-2 h-9 px-2.5 rounded-[10px] bg-surface-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleSub(s.id)}
+                        aria-label={s.done ? '取消完成子任务' : '完成子任务'}
+                        className={cn(
+                          'grid place-items-center w-4.5 h-4.5 rounded-full border-2 shrink-0 cursor-pointer transition-colors',
+                          s.done ? 'bg-ok border-ok text-white' : 'border-outline hover:border-primary',
+                        )}
+                      >
+                        {s.done && <span className="text-[9px] leading-none">✓</span>}
+                      </button>
+                      <span className={cn('flex-1 text-[13px] truncate', s.done && 'line-through text-on-surface-2')}>{s.title}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeSub(s.id)}
+                        aria-label="删除子任务"
+                        className="grid place-items-center w-6 h-6 rounded-[8px] text-on-surface-2 hover:text-danger cursor-pointer shrink-0"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={subDraft}
+                    onChange={(e) => setSubDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSub() } }}
+                    placeholder="添加步骤，回车确认"
+                    className={INPUT}
+                  />
+                  <Button size="sm" onClick={addSub} aria-label="添加子任务" className="shrink-0">
+                    <Plus size={15} />
+                  </Button>
+                </div>
+              </div>
+
+              {focusMinutes != null && focusMinutes > 0 && (
+                <p className="text-[12px] text-on-surface-2 inline-flex items-center gap-1.5">
+                  <Timer size={13} /> 累计专注 {focusMinutes} 分钟
+                </p>
+              )}
+
               {task.repeat && (
                 <p className="text-[13px] text-on-surface-2">
                   重复：{{ daily: '每天', weekly: '每周', weekdays: '工作日' }[task.repeat]}（打卡任务：完成后自动生成下一次）
@@ -218,6 +295,14 @@ export function TaskDetail() {
                     ✓ 完成并归档
                   </Button>
                 )}
+                <Button
+                  aria-label={task.pinned ? '取消置顶' : '置顶'}
+                  title={task.pinned ? '取消置顶' : '置顶到列表顶部'}
+                  onClick={() => patch({ pinned: !task.pinned || undefined })}
+                  className="shrink-0 w-10 px-0 justify-center"
+                >
+                  {task.pinned ? <PinOff size={16} /> : <Pin size={16} />}
+                </Button>
               </div>
 
               <div className="pt-2 border-t border-outline">

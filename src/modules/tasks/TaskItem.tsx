@@ -1,4 +1,4 @@
-import { Clock, FileText, Flag, MoreHorizontal, Repeat } from 'lucide-react'
+import { Clock, FileText, Flag, ListChecks, MoreHorizontal, Pin, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, TIER_LABEL, type Task } from '@/db/db'
 import { fmtDue } from '@/lib/date'
 import { cn } from '@/lib/cn'
@@ -115,6 +115,17 @@ export function TaskItem({ task, focused, overlay }: Props) {
                   {task.priority === 0 ? '紧急' : '重要'}
                 </span>
               )}
+              {task.pinned && (
+                <span className="inline-flex items-center gap-1 text-[12px] text-primary" title="已置顶">
+                  <Pin size={12} />
+                </span>
+              )}
+              {!!task.subtasks?.length && (
+                <span className={cn('inline-flex items-center gap-1 text-[12px] tabular-nums', done ? 'text-on-surface-2' : 'text-on-surface-2')}>
+                  <ListChecks size={12} />
+                  {task.subtasks.filter((s) => s.done).length}/{task.subtasks.length}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -155,6 +166,11 @@ export function TaskItem({ task, focused, overlay }: Props) {
                   {TIER_LABEL[t]}
                 </MenuItem>
               ))}
+              <MenuSeparator />
+              <MenuItem active={!!task.pinned} onSelect={() => void updateTask(task.id, { pinned: !task.pinned || undefined })}>
+                <Pin size={14} />
+                {task.pinned ? '取消置顶' : '置顶'}
+              </MenuItem>
               <MenuSeparator />
               {task.status !== 'done' && (
                 <MenuItem onSelect={() => void toggleDone(task)}>✓ 标记完成</MenuItem>

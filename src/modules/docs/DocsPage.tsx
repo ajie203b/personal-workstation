@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { FileText, FileType2, Import, PenLine, Search, Trash2 } from 'lucide-react'
+import { AlignLeft, BookOpen, FileText, FileSpreadsheet, FileType2, Import, PenLine, Presentation, Search, Trash2 } from 'lucide-react'
 import type { Doc } from '@/db/db'
+import { DOC_KIND_LABEL } from '@/db/db'
 import { deleteDoc, importDoc } from '@/db/docs'
 import { useDocs } from '@/db/hooks'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -11,6 +12,7 @@ import { EmptyState } from '@/shared/ui/EmptyState'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Button } from '@/shared/ui/Button'
 import { openDoc } from '@/shared/DeepLink'
+import { backfillDocTextIndex } from '@/lib/docTextIndex'
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
 export function DocsPage() {
@@ -31,10 +33,60 @@ export function DocsPage() {
     {} as Record<string, { progressPct?: number; updatedAt: number }>,
   )
 
-  const filtered = useMemo(
-    () => docs.filter((d) => d.title.toLowerCase().includes(keyword.trim().toLowerCase())),
-    [docs, keyword],
-  )
+  // 全文索引：进入页面静默回填（每轮 5 篇，直至补齐）
+  useEffect(() => {
+    let alive = true
+    const tick = () => {
+      if (!alive) return
+      void backfillDocTextIndex(5).then((n) => { if (n > 0) tick() })
+    }
+    tick()
+    return () => { alive = false }
+  }, [])
+
+  // 搜索：标题命中 + 全文命中（含片段与分段号）
+  const results = useMemo(() => {
+    const kw = keyword.trim().toLowerCase()
+    if (!kw) return null
+    return docs.map((d) => {
+      const titleHit = d.title.toLowerCase().includes(kw)
+      return { doc: d, titleHit }
+    })
+  }, [docs, keyword])
+
+  const textHits = useLiveQuery(async () => {
+    const kw = keyword.trim().toLowerCase()
+    if (!kw || kw.length < 2) return {}
+    const rows = await db.docText.toArray()
+    const map: Record<string, { count: number; snippet: string; seg?: number }> = {}
+    for (const r of rows) {
+      const lower = r.text.toLowerCase()
+      const idx = lower.indexOf(kw)
+      if (idx === -1) continue
+      // 统计命中次数（前 500 处封顶防长文卡顿）
+      let count = 0
+      let pos = idx
+      while (pos !== -1 && count < 500) { count++; pos = lower.indexOf(kw, pos + kw.length) }
+      // 找命中所在分段（页/章/片）
+      let seg: number | undefined
+      if (r.segments?.length) {
+        let acc = 0
+        for (let i = 0; i < r.segments.length; i++) {
+          acc += r.segments[i].length + 1
+          if (acc > idx) { seg = i + 1; break }
+        }
+      }
+      const start = Math.max(0, idx - 24)
+      const snippet = (start > 0 ? '…' : '') + r.text.slice(start, idx + kw.length + 56).replace(/\s+/g, ' ') + '…'
+      map[r.hash] = { count, snippet, seg }
+    }
+    return map
+  }, [keyword], {} as Record<string, { count: number; snippet: string; seg?: number }>)
+
+  const filtered = useMemo(() => {
+    if (!results) return null
+    return results.filter((r) => r.titleHit || (textHits[r.doc.hash]?.count ?? 0) > 0)
+  }, [results, textHits])
 
   const onImport = async (files: FileList | null) => {
     if (!files?.length) return
@@ -66,9 +118,9 @@ export function DocsPage() {
           <input
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="搜索标题…"
+            placeholder="搜索标题或全文…"
             aria-label="搜索文档"
-            className="h-9 w-36 sm:w-44 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+            className="h-9 w-36 sm:w-52 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
           />
           <Button size="sm" onClick={() => navigate('/docs/new')}>
             <PenLine size={15} /> 写文档
@@ -80,7 +132,7 @@ export function DocsPage() {
             ref={fileRef}
             type="file"
             multiple
-            accept=".pdf,.md,.markdown,.txt"
+            accept=".pdf,.md,.markdown,.txt,.epub,.docx,.pptx"
             className="hidden"
             onChange={(e) => {
               void onImport(e.target.files)
@@ -94,7 +146,7 @@ export function DocsPage() {
         <EmptyState
           icon={FileType2}
           title="文档库还是空的"
-          hint="导入 PDF / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
+          hint="导入 PDF / EPUB / Word / PPT / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
         >
           <div className="flex gap-2 justify-center">
             <Button variant="primary" size="sm" onClick={() => navigate('/docs/new')}>
@@ -105,29 +157,39 @@ export function DocsPage() {
             </Button>
           </div>
         </EmptyState>
-      ) : filtered.length === 0 ? (
-        <EmptyState icon={Search} title="没有匹配的文档" hint="换个关键词试试。" />
+      ) : filtered !== null && filtered.length === 0 ? (
+        <EmptyState icon={Search} title="没有匹配的文档" hint="换个关键词试试（全文搜索需 2 个字符以上）。" />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {filtered.map((d) => {
+          {(filtered ?? docs.map((d) => ({ doc: d, titleHit: true }))).map(({ doc: d }) => {
             const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
+            const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
             return (
               <button
                 key={d.id}
-                onClick={() => navigate(`/docs/${d.id}`)}
+                onClick={() => {
+                  // 全文命中且能定位分段 → 直接跳到对应页/章/片
+                  if (hit?.seg && d.kind === 'pdf') openDoc({ docId: d.id, anchor: `p${hit.seg}` })
+                  else navigate(`/docs/${d.id}`)
+                }}
                 className="card card-hover text-left px-4 py-3.5 flex gap-3.5 cursor-pointer"
               >
                 <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-                  {d.kind === 'pdf' ? <FileText size={20} /> : <FileType2 size={20} />}
+                  <KindIcon kind={d.kind} />
                 </span>
                 <span className="flex-1 min-w-0">
                   <span className="block text-[15px] font-semibold truncate">{d.title}</span>
                   <span className="block text-[12px] text-on-surface-2 mt-0.5">
-                    {d.kind === 'pdf' ? 'PDF' : 'Markdown'} · {formatSize(d.size)} ·{' '}
+                    {DOC_KIND_LABEL[d.kind]} · {formatSize(d.size)} ·{' '}
                     {d.lastOpenedAt
                       ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
                       : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
                   </span>
+                  {hit && (
+                    <span className="block text-[12px] text-on-surface mt-1.5 leading-snug line-clamp-2">
+                      <span className="text-primary font-medium">{hit.count} 处命中{hit.seg ? ` · ${segLabel(d.kind, hit.seg)}` : ''}：</span>                      {hit.snippet}
+                    </span>
+                  )}
                   <span className="flex items-center gap-2 mt-2">
                     <span className="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden">
                       <span className="block h-full w-full rounded-full bg-primary transition-transform duration-300 origin-left" style={{ transform: `scaleX(${pct / 100})` }} />
@@ -190,4 +252,23 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function KindIcon({ kind }: { kind: Doc['kind'] }) {
+  const size = 20
+  switch (kind) {
+    case 'pdf': return <FileText size={size} />
+    case 'epub': return <BookOpen size={size} />
+    case 'docx': return <FileSpreadsheet size={size} />
+    case 'pptx': return <Presentation size={size} />
+    case 'txt': return <AlignLeft size={size} />
+    default: return <FileType2 size={size} />
+  }
+}
+
+function segLabel(kind: Doc['kind'], seg: number): string {
+  if (kind === 'pdf') return `第${seg}页`
+  if (kind === 'pptx') return `第${seg}片`
+  if (kind === 'epub') return `第${seg}章`
+  return `#${seg}`
 }
