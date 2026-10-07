@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { History, Keyboard, Plus, Sparkles } from 'lucide-react'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
@@ -14,6 +14,17 @@ import { FocusTimer } from '@/modules/focus/FocusTimer'
 export function TodayPage() {
   const today = useDateTick()
   const all = useAllTasks()
+  const [params, setParams] = useSearchParams()
+  // 任务「开始专注」深链：/today?focus-task=<id> → 番茄钟自动绑定
+  const focusTaskParam = params.get('focus-task') ?? undefined
+  useEffect(() => {
+    if (!focusTaskParam) return
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('focus-task')
+      return next
+    }, { replace: true })
+  }, [focusTaskParam, setParams])
   const todayTasks = useMemo(() => sortTasks(deriveToday(all, today)), [all, today])
   const todayDone = useMemo(() => deriveTodayDone(all, today), [all, today])
   const weekDone = useMemo(() => all.filter((t) => t.status === 'done' && isThisWeek(t.doneAt ?? 0)).length, [all])
@@ -102,7 +113,7 @@ export function TodayPage() {
             </button>
           </div>
 
-          <FocusTimer />
+          <FocusTimer initialTaskId={focusTaskParam} />
           <RecentReads />
         </aside>
       </div>

@@ -159,26 +159,40 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
                 {cell.date.getDate()}
               </span>
               {dayTasks.length > 0 && (
-                <div className="mt-0.5 flex flex-col gap-0.5">
-                  {dayTasks.slice(0, 3).map((t) => (
-                    <span
-                      key={t.id}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData('text/task-id', t.id)
-                        e.dataTransfer.effectAllowed = 'move'
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className={cn(
-                        'text-[9px] leading-tight truncate px-0.5 rounded-sm cursor-grab active:cursor-grabbing',
-                        t.priority === 0 ? 'text-p0 font-medium' : t.priority === 1 ? 'text-p1' : 'text-on-surface-2',
-                      )}
-                    >
-                      {t.title}
-                    </span>
-                  ))}
-                  {dayTasks.length > 3 && <span className="text-[9px] text-on-surface-2">+{dayTasks.length - 3}</span>}
-                </div>
+                <>
+                  {/* 小屏：圆点计数 */}
+                  <div className="mt-1 flex sm:hidden items-center gap-0.5 pl-0.5">
+                    {dayTasks.slice(0, 4).map((t) => (
+                      <span
+                        key={t.id}
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ background: t.priority === 0 ? 'var(--p0)' : t.priority === 1 ? 'var(--p1)' : t.priority === 2 ? 'var(--p2)' : 'var(--p3)' }}
+                      />
+                    ))}
+                    {dayTasks.length > 4 && <span className="text-[8px] text-on-surface-2">+{dayTasks.length - 4}</span>}
+                  </div>
+                  {/* 大屏：文本条 */}
+                  <div className="mt-0.5 hidden sm:flex flex-col gap-0.5">
+                    {dayTasks.slice(0, 3).map((t) => (
+                      <span
+                        key={t.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/task-id', t.id)
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className={cn(
+                          'text-[9px] leading-tight truncate px-0.5 rounded-sm cursor-grab active:cursor-grabbing',
+                          t.priority === 0 ? 'text-p0 font-medium' : t.priority === 1 ? 'text-p1' : 'text-on-surface-2',
+                        )}
+                      >
+                        {t.title}
+                      </span>
+                    ))}
+                    {dayTasks.length > 3 && <span className="text-[9px] text-on-surface-2">+{dayTasks.length - 3}</span>}
+                  </div>
+                </>
               )}
             </button>
           )

@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn'
 
 interface PaletteItem {
   id: string
-  group: '动作' | '任务' | '文档' | '会话'
+  group: '动作' | '任务' | '文档' | '全文'
   label: string
   hint?: string
   icon: React.ReactNode
@@ -41,6 +41,46 @@ export function CommandPalette() {
     [] as import('@/db/db').Doc[],
   ) as import('@/db/db').Doc[]
 
+  // 全文命中（v1.3.1）：查询 ≥2 字符时检索 docText，直达命中页/章
+  const kw = query.trim().toLowerCase()
+  const fulltextHits = useLiveQuery(
+    async () => {
+      if (!open || kw.length < 2) return [] as { docId: string; kind: string; title: string; count: number; seg?: number; unit: string }[]
+      const rows = await db.docText.toArray()
+      const docByHash = new Map((await db.docs.toArray()).map((d) => [d.hash, d]))
+      const out: { docId: string; kind: string; title: string; count: number; seg?: number; unit: string }[] = []
+      for (const r of rows) {
+        const lower = r.text.toLowerCase()
+        let count = 0
+        let pos = lower.indexOf(kw)
+        if (pos === -1) continue
+        let firstSeg: number | undefined
+        if (r.segments?.length) {
+          let acc = 0
+          for (let i = 0; i < r.segments.length; i++) {
+            acc += r.segments[i].length + 1
+            if (firstSeg == null && acc > pos) firstSeg = i + 1
+          }
+        }
+        while (pos !== -1 && count < 999) { count++; pos = lower.indexOf(kw, pos + kw.length) }
+        const doc = docByHash.get(r.hash)
+        if (!doc) continue
+        out.push({
+          docId: doc.id,
+          kind: doc.kind,
+          title: doc.title,
+          count,
+          seg: firstSeg,
+          unit: doc.kind === 'pdf' ? '页' : doc.kind === 'pptx' ? '片' : doc.kind === 'epub' ? '章' : '段',
+        })
+        if (out.length >= 6) break
+      }
+      return out.sort((a, b) => b.count - a.count)
+    },
+    [open, kw],
+    [] as { docId: string; kind: string; title: string; count: number; seg?: number; unit: string }[],
+  )
+
   const items = useMemo<PaletteItem[]>(() => {
     const openTask = (id: string, tier: string) => {
       useTasksUi.getState().openDetail(id)
@@ -68,8 +108,16 @@ export function CommandPalette() {
       id: `d-${d.id}`, group: '文档', label: d.title, hint: d.kind.toUpperCase(),
       icon: <FileText size={15} />, run: () => navigate(`/docs/${d.id}`),
     }))
-    return [...actions, ...taskItems, ...docItems]
-  }, [tasks, docs, theme, navigate, setTheme])
+    const fulltextItems: PaletteItem[] = (kw.length >= 2 ? fulltextHits : []).map((h) => ({
+      id: `ft-${h.docId}`,
+      group: '全文' as const,
+      label: h.title,
+      hint: `${h.count} 处命中${h.seg ? ` · 第${h.seg}${h.unit}` : ''}`,
+      icon: <Search size={15} />,
+      run: () => navigate(h.seg && h.kind === 'pdf' ? `/docs/${h.docId}?p=p${h.seg}` : `/docs/${h.docId}`),
+    }))
+    return [...actions, ...taskItems, ...docItems, ...fulltextItems]
+  }, [tasks, docs, fulltextHits, kw, theme, navigate, setTheme])
 
   // 拼音搜索：惰性加载 pinyin-pro
   const [pinyinFn, setPinyinFn] = useState<((s: string) => string) | null>(null)
@@ -96,7 +144,7 @@ export function CommandPalette() {
       }
       return false
     }
-    return items.filter((i) => match(i.label) || (i.hint ?? '').toLowerCase().includes(q)).slice(0, 24)
+    return items.filter((i) => i.group === '全文' || match(i.label) || (i.hint ?? '').toLowerCase().includes(q)).slice(0, 24)
   }, [items, query, pinyinFn])
 
   // 打开时重置
@@ -163,7 +211,7 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="搜索任务、文档、会话，或输入动作…"
+            placeholder="搜索任务、文档、全文，或输入动作…"
             className="flex-1 bg-transparent outline-none text-[15px] placeholder:text-on-surface-2/70"
           />
           <kbd className="kbd">Esc</kbd>

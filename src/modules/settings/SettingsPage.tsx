@@ -199,6 +199,23 @@ function NotifyCard() {
     toast(!on ? '已开启到期提醒' : '已关闭到期提醒')
   }
 
+  const sendTest = async () => {
+    try {
+      const { LocalNotifications } = await import('@capacitor/local-notifications')
+      await LocalNotifications.schedule({
+        notifications: [{
+          id: 1999999999,
+          title: '测试通知',
+          body: '如果你看到这条通知，说明到期提醒已就绪 ✓',
+          schedule: { at: new Date(Date.now() + 1500) },
+        }],
+      })
+      toast('已发送，约 2 秒后弹出')
+    } catch {
+      toast('发送失败：请检查通知权限')
+    }
+  }
+
   return (
     <section className="card p-4">
       <div className="flex items-center justify-between gap-3">
@@ -228,6 +245,13 @@ function NotifyCard() {
           />
         </button>
       </div>
+      {on && (
+        <div className="mt-3">
+          <Button size="sm" variant="outline" onClick={() => void sendTest()}>
+            <Bell size={14} /> 发送测试通知
+          </Button>
+        </div>
+      )}
     </section>
   )
 }

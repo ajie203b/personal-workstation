@@ -1,7 +1,7 @@
 {
   "name": "personal-workstation",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.3.1",
   "type": "module",
   "description": "个人工作站：任务清单 × 文档工作站 × AI 助手面板（本地优先 PWA）",
   "scripts": {
