@@ -195,7 +195,10 @@ export function StatsPage() {
 
       {/* 周报对比 */}
       <div className="card p-4">
-        <h2 className="text-[14px] font-semibold mb-3">本周 vs 上周</h2>
+        <div className="flex items-center mb-3">
+          <h2 className="text-[14px] font-semibold">本周 vs 上周</h2>
+          <p className="ml-auto text-[11px] text-on-surface-2">本周数据截至今天</p>
+        </div>
         <div className="grid grid-cols-3 gap-3">
           {weekCompare.map(({ metric: m, thisWeek, lastWeek }) => {
             const delta = thisWeek - lastWeek

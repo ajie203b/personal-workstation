@@ -13,12 +13,12 @@ type Phase = 'work' | 'break'
 const DURATIONS: Record<Phase, number> = { work: 25 * 60, break: 5 * 60 }
 const TASK_KEY = 'ws-focus-task'
 
-/** 番茄钟 + 专注会话落库（v1.3：可绑定任务，统计页汇总） */
-export function FocusTimer() {
+/** 番茄钟 + 专注会话落库（v1.3：可绑定任务，统计页汇总；v1.3.1 支持从任务一键带入） */
+export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   const [phase, setPhase] = useState<Phase>('work')
   const [remaining, setRemaining] = useState(DURATIONS.work)
   const [running, setRunning] = useState(false)
-  const [taskId, setTaskId] = useState(() => localStorage.getItem(TASK_KEY) ?? '')
+  const [taskId, setTaskId] = useState(() => initialTaskId ?? localStorage.getItem(TASK_KEY) ?? '')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const today = new Date().toISOString().slice(0, 10)

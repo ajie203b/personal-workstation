@@ -1,4 +1,4 @@
-import { Clock, FileText, Flag, ListChecks, MoreHorizontal, Pin, Repeat } from 'lucide-react'
+import { Clock, FileText, Flag, ListChecks, MoreHorizontal, Pin, Repeat, Timer } from 'lucide-react'
 import { PRIORITY_VAR, TIER_LABEL, type Task } from '@/db/db'
 import { fmtDue } from '@/lib/date'
 import { cn } from '@/lib/cn'
@@ -171,6 +171,12 @@ export function TaskItem({ task, focused, overlay }: Props) {
                 <Pin size={14} />
                 {task.pinned ? '取消置顶' : '置顶'}
               </MenuItem>
+              {task.status !== 'done' && (
+                <MenuItem onSelect={() => { window.location.hash = `#/today?focus-task=${task.id}` }}>
+                  <Timer size={14} />
+                  开始专注
+                </MenuItem>
+              )}
               <MenuSeparator />
               {task.status !== 'done' && (
                 <MenuItem onSelect={() => void toggleDone(task)}>✓ 标记完成</MenuItem>

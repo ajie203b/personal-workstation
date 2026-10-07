@@ -229,8 +229,8 @@ export function MdReader({
   )
 }
 
-/** 在元素内找到目标文本（可跨文本节点）并包上 mark */
-function wrapText(root: HTMLElement, text: string, annId: string, color: string): void {
+/** 在元素内找到目标文本（可跨文本节点）并包上 mark（MD/Flow 阅读器共用） */
+export function wrapText(root: HTMLElement, text: string, annId: string, color: string): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const nodes: Text[] = []
   while (walker.nextNode()) nodes.push(walker.currentNode as Text)

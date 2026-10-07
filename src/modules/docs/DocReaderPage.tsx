@@ -28,11 +28,12 @@ import { exportAnnotationsToDoc } from './exportAnnotations'
 
 const FLOW_KINDS: readonly Doc['kind'][] = ['epub', 'docx', 'pptx', 'txt']
 
-const DEFAULT_SETTINGS: DocSettings = { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 72 }
-
 type Selection =
   | { kind: 'md'; text: string; blockIdx: number; popover: { left: number; y: number; below: boolean } }
   | { kind: 'pdf'; text: string; page: number; rects: { x: number; y: number; w: number; h: number }[]; popover: { left: number; y: number; below: boolean } }
+  | { kind: 'flow'; text: string; segIdx: number; popover: { left: number; y: number; below: boolean } }
+
+const DEFAULT_SETTINGS: DocSettings = { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 72 }
 
 const COLORS = ['yellow', 'green', 'blue', 'red'] as const
 
@@ -77,10 +78,13 @@ export function DocReaderPage() {
   const docContentId = doc?.id
   const docHash = doc?.hash
   const docKind = doc?.kind
+  const flowRef = useRef<FlowDoc | null>(null)
   useEffect(() => {
     if (!docContentId || !docHash || !docKind) return
     let alive = true
     setContent(null)
+    flowRef.current?.dispose?.()
+    flowRef.current = null
     void (async () => {
       const blob = await getDocBlob(docHash)
       if (!blob || !alive) return
@@ -92,7 +96,8 @@ export function DocReaderPage() {
         // EPUB/DOCX/PPTX/TXT：解析为流式段落
         try {
           const flow = await parseFlowDoc(docKind, blob)
-          if (!alive) return
+          if (!alive) { flow.dispose?.(); return }
+          flowRef.current = flow
           setToc(flow.segments.map((s, i) => ({ level: 0, title: s.title ?? `第 ${i + 1} 段`, page: i + 1 })))
           setContent({ kind: 'flow', data: flow })
         } catch {
@@ -106,6 +111,9 @@ export function DocReaderPage() {
       alive = false
     }
   }, [docContentId, docHash, docKind])
+
+  // 组件卸载时释放 flow 文档的 blob URL（EPUB 图片）
+  useEffect(() => () => flowRef.current?.dispose?.(), [])
 
   // 排版设置按文档记忆 + 双坐标恢复：深链参数 > 深度阅读进度
   const paramP = params.get('p')
@@ -210,7 +218,9 @@ export function DocReaderPage() {
       if (!doc || !selection) return
       const base = doc.kind === 'pdf'
         ? { docHash: doc.hash, page: (selection as Extract<Selection, { kind: 'pdf' }>).page, rects: (selection as Extract<Selection, { kind: 'pdf' }>).rects, text: selection.text, color }
-        : { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'md' }>).blockIdx, text: selection.text, color }
+        : doc.kind === 'md'
+          ? { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'md' }>).blockIdx, text: selection.text, color }
+          : { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'flow' }>).segIdx, text: selection.text, color }
       const ann = await addAnnotation(base)
       if (withTask) {
         setTaskFrom({ ann, doc })
@@ -398,7 +408,9 @@ export function DocReaderPage() {
               hash={doc.hash}
               flow={content.data}
               settings={settings}
+              annotations={annotations}
               jump={jump}
+              onSelection={(sel) => setSelection(sel ? { kind: 'flow', ...sel } : null)}
               onProgress={(seg, pct2) => onProgress(seg, pct2)}
               onRestored={onRestored}
               onLoaded={(n) => setNumPages(n)}
@@ -464,6 +476,7 @@ export function DocReaderPage() {
             onRecolor={(id, color) => void updateAnnotation(id, { color })}
             onComment={(id, comment) => void updateAnnotation(id, { comment })}
             docId={docId}
+            anchorFor={(a) => annotationAnchor(doc, a)}
           />
         </aside>
       </div>
@@ -554,6 +567,7 @@ export function DocReaderPage() {
           onRecolor={(id, color) => void updateAnnotation(id, { color })}
           onComment={(id, comment) => void updateAnnotation(id, { comment })}
           docId={docId}
+          anchorFor={(a) => annotationAnchor(doc, a)}
         />
       </Sheet>
     </div>
@@ -660,6 +674,13 @@ function anchorOf(progress: NonNullable<ReadingPosition['progress']>): string {
   return `b${progress.blockIdx}`
 }
 
+/** 批注定位锚点：pdf=p 页码；md=b 块号；flow(epub/docx/pptx/txt)=f 章节号（blockIdx 存 segIdx） */
+function annotationAnchor(doc: Doc, a: Annotation): string {
+  if (doc.kind === 'pdf') return `p${a.page}`
+  if (FLOW_KINDS.includes(doc.kind)) return `f${a.blockIdx}`
+  return `b${a.blockIdx}`
+}
+
 /* ---------- 左栏内容 ---------- */
 
 function TocContent({
@@ -724,7 +745,7 @@ function TocContent({
           {annotations.map((a) => (
             <button
               key={a.id}
-              onClick={() => onJump(doc.kind === 'pdf' ? `p${a.page}` : `b${a.blockIdx}`, a.id)}
+              onClick={() => onJump(annotationAnchor(doc, a), a.id)}
               className="w-full text-left px-2.5 py-2 rounded-[10px] hover:bg-surface-3 transition-colors flex gap-2 cursor-pointer"
             >
               <span className={`shrink-0 mt-0.5 w-2.5 h-2.5 rounded-full ${a.color === 'yellow' ? 'bg-yellow-400' : a.color === 'green' ? 'bg-green-400' : a.color === 'blue' ? 'bg-blue-400' : 'bg-red-400'}`} />
@@ -791,7 +812,7 @@ function MdToc({ doc, onJump }: { doc: Doc; onJump: (anchor: string, hl?: string
 /* ---------- 右栏内容 ---------- */
 
 function RightContent({
-  annotations, backlinks, rightTab, onJump, onToTask, onDelete, onRecolor, onComment, docId,
+  annotations, backlinks, rightTab, onJump, onToTask, onDelete, onRecolor, onComment, docId, anchorFor,
 }: {
   annotations: Annotation[]
   backlinks: Task[]
@@ -802,6 +823,7 @@ function RightContent({
   onRecolor: (id: string, color: Annotation['color']) => void
   onComment: (id: string, comment?: string) => void
   docId?: string
+  anchorFor: (a: Annotation) => string
 }) {
   const [editing, setEditing] = useState<string | null>(null)
 
@@ -848,7 +870,7 @@ function RightContent({
       {annotations.map((a) => (
         <div key={a.id} className="card px-3 py-2.5 mb-2">
           {a.kind === 'shot' && a.img && (
-            <img src={a.img} alt="区域截图" className="w-full rounded-[10px] border border-outline mb-2 cursor-zoom-in" onClick={() => onJump(docKindAnchor(a), a.id)} />
+            <img src={a.img} alt="区域截图" className="w-full rounded-[10px] border border-outline mb-2 cursor-zoom-in" onClick={() => onJump(anchorFor(a), a.id)} />
           )}
           <div className="flex items-start gap-2">
             <span className={`shrink-0 mt-1 w-2.5 h-2.5 rounded-full ${a.kind === 'shot' ? 'bg-primary' : a.color === 'yellow' ? 'bg-yellow-400' : a.color === 'green' ? 'bg-green-400' : a.color === 'blue' ? 'bg-blue-400' : 'bg-red-400'}`} />
@@ -879,7 +901,7 @@ function RightContent({
             ))}
             {a.kind !== 'shot' && <span className="w-px h-4 bg-outline mx-1" />}
             <MiniBtn label="评论" onClick={() => setEditing(editing === a.id ? null : a.id)}><MessageSquareText size={13} /></MiniBtn>
-            <MiniBtn label="定位" onClick={() => onJump(docKindAnchor(a), a.id)}><LocateFixed size={13} /></MiniBtn>
+            <MiniBtn label="定位" onClick={() => onJump(anchorFor(a), a.id)}><LocateFixed size={13} /></MiniBtn>
             <MiniBtn label="转任务" onClick={() => onToTask(a)}><Plus size={13} /></MiniBtn>
             <MiniBtn label="删除" danger onClick={() => onDelete(a.id)}><Trash2 size={13} /></MiniBtn>
             <span className="ml-auto text-[11px] text-on-surface-2 pr-1">
@@ -892,9 +914,6 @@ function RightContent({
   )
 }
 
-function docKindAnchor(a: Annotation): string {
-  return a.page != null ? `p${a.page}` : `b${a.blockIdx ?? 0}`
-}
 
 function MiniBtn({ children, label, onClick, danger = false }: { children: React.ReactNode; label: string; onClick: () => void; danger?: boolean }) {
   return (

@@ -19,6 +19,8 @@ export interface FlowDoc {
   segments: FlowSegment[]
   /** 全文纯文本（= segments.text 拼接） */
   text: string
+  /** 释放解析过程创建的 blob URL（文档关闭时调用，防内存泄漏） */
+  dispose?: () => void
 }
 
 function htmlBody(html: string): string {
@@ -48,10 +50,64 @@ export async function parseFlowDoc(kind: DocKind, blob: Blob): Promise<FlowDoc> 
   }
 }
 
-/* ---- EPUB：JSZip 按 spine 解析章节 ---- */
+/* ---- EPUB：JSZip 按 spine 解析章节（含图片内嵌为 blob URL） ---- */
+
+/** 以 zip 根为基准解析相对路径，并在 zip 内做大小写/URL 编码容错匹配 */
+function resolveZipPath(baseDir: string, src: string): string {
+  const clean = src.split('#')[0].split('?')[0]
+  const parts = (baseDir + clean).split('/')
+  const stack: string[] = []
+  for (const p of parts) {
+    if (!p || p === '.') continue
+    if (p === '..') stack.pop()
+    else stack.push(p)
+  }
+  return stack.join('/')
+}
+
+function findZipEntry(zip: { files: Record<string, unknown> }, path: string): string | null {
+  if (zip.files[path]) return path
+  const decoded = decodeURIComponent(path)
+  if (zip.files[decoded]) return decoded
+  const lower = decoded.toLowerCase()
+  const hit = Object.keys(zip.files).find((k) => k.toLowerCase() === lower)
+  return hit ?? null
+}
+
+type Zip = Awaited<ReturnType<typeof import('jszip')['loadAsync']>>
+
+/** 把章 HTML 中的 img/image 引用替换为 blob URL（懒抽取图片资源） */
+async function inlineEpubImages(html: string, chapterPath: string, zip: Zip, urls: string[]): Promise<string> {
+  const baseDir = chapterPath.includes('/') ? chapterPath.slice(0, chapterPath.lastIndexOf('/') + 1) : ''
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const imgs = doc.querySelectorAll('img[src], image[href]')
+  for (const el of Array.from(imgs)) {
+    const attr = el.tagName === 'IMG' ? 'src' : 'href'
+    const src = el.getAttribute(attr)
+    if (!src || /^(data:|https?:)/i.test(src)) continue
+    const path = findZipEntry(zip, resolveZipPath(baseDir, src))
+    if (!path) {
+      el.remove()
+      continue
+    }
+    try {
+      const file = zip.file(path)!
+      const mime = /\.png$/i.test(path) ? 'image/png' : /\.gif$/i.test(path) ? 'image/gif' : /\.svg$/i.test(path) ? 'image/svg+xml' : 'image/jpeg'
+      const blob = new Blob([await file.async('arraybuffer')], { type: mime })
+      const url = URL.createObjectURL(blob)
+      urls.push(url)
+      el.setAttribute(attr, url)
+    } catch {
+      el.remove()
+    }
+  }
+  return doc.body?.innerHTML ?? ''
+}
+
 async function parseEpub(blob: Blob): Promise<FlowDoc> {
   const JSZip = (await import('jszip')).default
   const zip = await JSZip.loadAsync(await blob.arrayBuffer())
+  const urls: string[] = []
 
   const container = await zip.file('META-INF/container.xml')?.async('string')
   let opfPath = ''
@@ -61,7 +117,6 @@ async function parseEpub(blob: Blob): Promise<FlowDoc> {
   }
 
   let chapterPaths: string[] = []
-  const titles = new Map<string, string>()
   if (opfPath && zip.file(opfPath)) {
     const opf = await zip.file(opfPath)!.async('string')
     const baseDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : ''
@@ -71,8 +126,6 @@ async function parseEpub(blob: Blob): Promise<FlowDoc> {
       const href = manifest.get(m[1])
       if (href) chapterPaths.push(baseDir + href.replace(/^\.\//, ''))
     }
-    // NCX/OPF 章节标题（尽力而为）
-    for (const m of opf.matchAll(/<docTitle>[\s\S]*?<text>([^<]*)<\/text>/g)) titles.set('__book', m[1].trim())
   }
   if (!chapterPaths.length) {
     chapterPaths = Object.keys(zip.files).filter((p) => /\.x?html?$/i.test(p)).sort()
@@ -80,20 +133,26 @@ async function parseEpub(blob: Blob): Promise<FlowDoc> {
 
   const segments: FlowSegment[] = []
   for (const path of chapterPaths) {
-    const file = zip.file(path) ?? zip.file(decodeURIComponent(path))
-    if (!file) continue
-    const raw = await file.async('string')
-    const html = htmlBody(raw)
+    const entry = findZipEntry(zip, path) ?? findZipEntry(zip, decodeURIComponent(path))
+    if (!entry) continue
+    const raw = await zip.file(entry)!.async('string')
     const text = htmlToText(raw)
     if (!text) continue
-    // 章节标题：第一个 h1-h3，退化为文件名
+    // 图片 → blob URL 内嵌
+    const html = await inlineEpubImages(raw, entry, zip, urls)
+    // 章节标题：第一个 h1-h3，退化为序号
     const doc = new DOMParser().parseFromString(raw, 'text/html')
     const h = doc.querySelector('h1,h2,h3')
     const title = h?.textContent?.trim() || `第 ${segments.length + 1} 章`
     segments.push({ title, html, text })
   }
   if (!segments.length) throw new Error('EPUB 解析为空')
-  return { unit: 'chapter', segments, text: segments.map((s) => s.text).join('\n') }
+  return {
+    unit: 'chapter',
+    segments,
+    text: segments.map((s) => s.text).join('\n'),
+    dispose: () => { for (const u of urls) { try { URL.revokeObjectURL(u) } catch { /* ignore */ } } },
+  }
 }
 
 /* ---- DOCX：mammoth 转 HTML ---- */

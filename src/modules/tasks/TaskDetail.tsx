@@ -303,6 +303,16 @@ export function TaskDetail() {
                 >
                   {task.pinned ? <PinOff size={16} /> : <Pin size={16} />}
                 </Button>
+                {!done && (
+                  <Button
+                    aria-label="开始专注"
+                    title="开始专注（番茄钟绑定本任务）"
+                    onClick={() => { openDetail(null); window.location.hash = `#/today?focus-task=${task.id}` }}
+                    className="shrink-0 w-10 px-0 justify-center"
+                  >
+                    <Timer size={16} />
+                  </Button>
+                )}
               </div>
 
               <div className="pt-2 border-t border-outline">
