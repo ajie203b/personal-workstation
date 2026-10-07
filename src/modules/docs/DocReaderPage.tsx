@@ -3,9 +3,10 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   ArrowLeft, BookmarkPlus, Copy, Crop, Highlighter, List, ListPlus,
-  MessageSquareText, PanelRight, Settings2, Trash2, LocateFixed, Plus, X,
+  MessageSquareText, BookDown, PanelRight, Settings2, Trash2, LocateFixed, Plus, X,
 } from 'lucide-react'
 import type { Annotation, Doc, DocSettings, Task } from '@/db/db'
+import { DOC_KIND_LABEL, type ReadingPosition } from '@/db/db'
 import { db } from '@/db/db'
 import {
   addAnnotation, addBookmark, deleteAnnotation, deleteBookmark,
@@ -21,6 +22,11 @@ import { Dialog } from '@/shared/ui/Sheet'
 import { Sheet } from '@/shared/ui/Sheet'
 import { MdReader, parseMdBlocks } from './MdReader'
 import { PdfReader, type TocItem } from './PdfReader'
+import { FlowReader } from './FlowReader'
+import { parseFlowDoc, type FlowDoc } from './flowDoc'
+import { exportAnnotationsToDoc } from './exportAnnotations'
+
+const FLOW_KINDS: readonly Doc['kind'][] = ['epub', 'docx', 'pptx', 'txt']
 
 const DEFAULT_SETTINGS: DocSettings = { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 72 }
 
@@ -41,15 +47,17 @@ export function DocReaderPage() {
   const backlinks = useDocBacklinks(docId)
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [content, setContent] = useState<{ kind: 'pdf'; data: ArrayBuffer } | { kind: 'md'; md: string } | null>(null)
+  const [content, setContent] = useState<
+    { kind: 'pdf'; data: ArrayBuffer } | { kind: 'md'; md: string } | { kind: 'flow'; data: FlowDoc } | null
+  >(null)
   const [settings, setSettings] = useState<DocSettings>(DEFAULT_SETTINGS)
   const [progressPct, setProgressPct] = useState(0)
-  const [currentLocator, setCurrentLocator] = useState('') // p3 / b7
+  const [currentLocator, setCurrentLocator] = useState('') // p3 / b7 / f2
   const [toc, setToc] = useState<TocItem[]>([])
   const [numPages, setNumPages] = useState(0)
   const [jump, setJump] = useState<{ anchor: string; hl?: string; ts: number } | null>(null)
   const [initialTarget, setInitialTarget] = useState<
-    { page: number; offsetRatio: number } | { blockIdx: number; ratio: number } | null
+    { page: number; offsetRatio: number } | { blockIdx: number; ratio: number } | { segIdx: number; ratio: number } | null
   >(null)
   const [selection, setSelection] = useState<Selection | null>(null)
   const [shotMode, setShotMode] = useState(false)
@@ -80,6 +88,16 @@ export function DocReaderPage() {
       if (docKind === 'pdf') {
         // PDF 由 PdfReader 自行加载 Blob（避免双份 ArrayBuffer 占用内存）
         setContent({ kind: 'pdf', data: new ArrayBuffer(0) })
+      } else if (FLOW_KINDS.includes(docKind)) {
+        // EPUB/DOCX/PPTX/TXT：解析为流式段落
+        try {
+          const flow = await parseFlowDoc(docKind, blob)
+          if (!alive) return
+          setToc(flow.segments.map((s, i) => ({ level: 0, title: s.title ?? `第 ${i + 1} 段`, page: i + 1 })))
+          setContent({ kind: 'flow', data: flow })
+        } catch {
+          if (alive) setContent(null)
+        }
       } else {
         setContent({ kind: 'md', md: await blob.text() })
       }
@@ -104,7 +122,11 @@ export function DocReaderPage() {
         else if (paramHl && pos) setJump({ anchor: pos.progress ? anchorOf(pos.progress) : 'p1', hl: paramHl, ts: Date.now() })
       } else if (pos?.progress) {
         const prog = pos.progress
-        setInitialTarget(prog.kind === 'pdf' ? { page: prog.page, offsetRatio: prog.offsetRatio } : { blockIdx: prog.blockIdx, ratio: prog.ratio })
+        setInitialTarget(
+          prog.kind === 'pdf' ? { page: prog.page, offsetRatio: prog.offsetRatio }
+          : prog.kind === 'flow' ? { segIdx: prog.segIdx, ratio: prog.ratio }
+          : { blockIdx: prog.blockIdx, ratio: prog.ratio },
+        )
       } else {
         // 无历史进度：不恢复也不提示
         setInitialTarget(null)
@@ -160,7 +182,11 @@ export function DocReaderPage() {
 
   const onProgress = useCallback((locator: number, pct: number) => {
     setProgressPct(pct)
-    setCurrentLocator(doc?.kind === 'pdf' ? `p${locator}` : `b${locator}`)
+    setCurrentLocator(
+      doc?.kind === 'pdf' ? `p${locator}`
+      : doc?.kind === 'md' ? `b${locator}`
+      : `f${locator}`,
+    )
   }, [doc?.kind])
 
   const doJump = useCallback((anchor: string, hl?: string) => {
@@ -199,10 +225,12 @@ export function DocReaderPage() {
 
   const addCurrentBookmark = useCallback(async () => {
     if (!doc) return
-    const label = doc.kind === 'pdf'
+    const unitLabel = doc.kind === 'pdf'
       ? `第 ${currentLocator.replace('p', '') || 1} 页`
-      : `第 ${Number(currentLocator.replace('b', '0')) + 1} 段`
-    await addBookmark(doc.hash, label, currentLocator || (doc.kind === 'pdf' ? 'p1' : 'b0'))
+      : doc.kind === 'md'
+        ? `第 ${Number(currentLocator.replace('b', '0')) + 1} 段`
+        : `第 ${Number(currentLocator.replace('f', '0')) + 1} ${doc.kind === 'pptx' ? '片' : doc.kind === 'epub' ? '章' : '节'}`
+    await addBookmark(doc.hash, unitLabel, currentLocator || (doc.kind === 'pdf' ? 'p1' : doc.kind === 'md' ? 'b0' : 'f0'))
     toast('已添加书签')
   }, [doc, currentLocator, toast])
 
@@ -237,7 +265,13 @@ export function DocReaderPage() {
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-semibold truncate leading-tight">{doc.title}</p>
           <p className="text-[11px] text-on-surface-2 leading-tight">
-            {doc.kind === 'pdf' ? (numPages ? `PDF · ${numPages} 页` : 'PDF') : 'Markdown'}
+            {doc.kind === 'pdf'
+              ? (numPages ? `PDF · ${numPages} 页` : 'PDF')
+              : doc.kind === 'pptx'
+                ? (numPages ? `PPT · ${numPages} 片` : 'PPT')
+                : doc.kind === 'epub'
+                  ? (numPages ? `EPUB · ${numPages} 章` : 'EPUB')
+                  : DOC_KIND_LABEL[doc.kind]}
             {progressPct > 0 && ` · 已读 ${pct}%`}
           </p>
         </div>
@@ -245,6 +279,14 @@ export function DocReaderPage() {
         {doc.kind === 'pdf' && (
           <IconBtn label={shotMode ? '退出截图模式' : '区域截图批注（拖拽框选）'} active={shotMode} onClick={() => setShotMode((v) => !v)}>
             <Crop size={18} />
+          </IconBtn>
+        )}
+        {annotations.length > 0 && (
+          <IconBtn label="导出批注为笔记" onClick={() => void exportAnnotationsToDoc(doc).then((id) => {
+            toast('批注笔记已生成')
+            navigate(`/docs/${id}`)
+          })}>
+            <BookDown size={18} />
           </IconBtn>
         )}
 
@@ -349,6 +391,19 @@ export function DocReaderPage() {
               }}
               scrollRef={scrollRef}
               initialTarget={(initialTarget as { page: number; offsetRatio: number } | null)?.page != null ? (initialTarget as { page: number; offsetRatio: number }) : null}
+            />
+          )}
+          {content?.kind === 'flow' && (
+            <FlowReader
+              hash={doc.hash}
+              flow={content.data}
+              settings={settings}
+              jump={jump}
+              onProgress={(seg, pct2) => onProgress(seg, pct2)}
+              onRestored={onRestored}
+              onLoaded={(n) => setNumPages(n)}
+              scrollRef={scrollRef}
+              initialTarget={(initialTarget as { segIdx: number; ratio: number } | null)?.segIdx != null ? (initialTarget as { segIdx: number; ratio: number }) : null}
             />
           )}
           {!content && (
@@ -599,8 +654,10 @@ function Stepper({ label, value, onMinus, onPlus }: { label: string; value: stri
   )
 }
 
-function anchorOf(progress: NonNullable<import('@/db/db').ReadingPosition['progress']>): string {
-  return progress.kind === 'pdf' ? `p${progress.page}` : `b${progress.blockIdx}`
+function anchorOf(progress: NonNullable<ReadingPosition['progress']>): string {
+  if (progress.kind === 'pdf') return `p${progress.page}`
+  if (progress.kind === 'flow') return `f${progress.segIdx}`
+  return `b${progress.blockIdx}`
 }
 
 /* ---------- 左栏内容 ---------- */
@@ -638,6 +695,23 @@ function TocContent({
             </nav>
           ) : (
             <p className="text-[12px] text-on-surface-2 px-3 py-6 text-center">此 PDF 没有书签大纲</p>
+          )
+        ) : FLOW_KINDS.includes(doc.kind) ? (
+          toc.length > 1 ? (
+            <nav className="py-1">
+              {toc.map((item, i) => (
+                <button
+                  key={i}
+                  onClick={() => onJump(`f${item.page - 1}`)}
+                  className="w-full text-left px-2.5 py-2 rounded-[10px] hover:bg-surface-3 transition-colors cursor-pointer"
+                >
+                  <span className="text-[13px] leading-snug line-clamp-2">{item.title}</span>
+                  <span className="ml-1.5 text-[11px] text-on-surface-2">{item.page}</span>
+                </button>
+              ))}
+            </nav>
+          ) : (
+            <p className="text-[12px] text-on-surface-2 px-3 py-6 text-center">此文档没有章节结构</p>
           )
         ) : (
           <MdToc doc={doc} onJump={onJump} />

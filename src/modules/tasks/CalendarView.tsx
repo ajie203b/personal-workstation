@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react'
+import { ChevronLeft, ChevronRight, GripVertical, Inbox } from 'lucide-react'
 import type { Task } from '@/db/db'
-import { sortTasks } from '@/db/tasks'
+import { TIERS, TIER_LABEL } from '@/db/db'
+import { sortTasks, updateTask } from '@/db/tasks'
+import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -16,12 +18,14 @@ function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** 日历视图（v1.2）：月视图网格 + 议程流 */
+/** 日历视图（v1.2 → v1.3 拖拽排期）：月视图网格 + 议程流 + 未排期池拖入日期即排期 */
 export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth()) // 0-11
   const [selectedDate, setSelectedDate] = useState<string | null>(toDateKey(today))
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  const toast = useUi((s) => s.toast)
 
   // 按到期日分组
   const byDate = useMemo(() => {
@@ -34,6 +38,15 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
     }
     return map
   }, [tasks])
+
+  // 未排期池：随时/将来清单里没有日期的任务
+  const unscheduled = useMemo(
+    () =>
+      sortTasks(
+        tasks.filter((t) => t.status !== 'done' && !t.due && (t.tier === 'anytime' || t.tier === 'someday')),
+      ).slice(0, 30),
+    [tasks],
+  )
 
   // 当月日历网格（含前后月补位）
   const grid = useMemo(() => {
@@ -78,6 +91,22 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
     setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelectedDate(toDateKey(today))
   }
 
+  /** 拖放排期：拖任务到日期格 = 设置 due 并归入对应清单 */
+  const scheduleTo = (taskId: string, dateKey: string) => {
+    const task = tasks.find((t) => t.id === taskId)
+    if (!task) return
+    const tier = dateKey <= toDateKey(today) ? 'today' : 'upcoming'
+    void updateTask(taskId, { due: dateKey, tier, dueTime: task.dueTime })
+    toast(`已排到 ${dateKey}${dateKey <= toDateKey(today) ? '（今日）' : ''}`)
+  }
+
+  const onCellDrop = (e: React.DragEvent, dateKey: string) => {
+    e.preventDefault()
+    setDragOverKey(null)
+    const taskId = e.dataTransfer.getData('text/task-id')
+    if (taskId) scheduleTo(taskId, dateKey)
+  }
+
   const monthLabel = `${viewYear} 年 ${viewMonth + 1} 月`
   const todayKey = toDateKey(today)
 
@@ -102,7 +131,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
         {WEEK_LABELS.map((w) => <span key={w} className="py-1">{w}</span>)}
       </div>
 
-      {/* 日历网格 */}
+      {/* 日历网格（接受拖放排期） */}
       <div className="grid grid-cols-7 gap-px bg-outline/40 rounded-[10px] overflow-hidden">
         {grid.map((cell, i) => {
           const key = toDateKey(cell.date)
@@ -114,10 +143,13 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
             <button
               key={i}
               onClick={() => setSelectedDate(key)}
+              onDragOver={(e) => { e.preventDefault(); setDragOverKey(key) }}
+              onDragLeave={() => setDragOverKey((k) => (k === key ? null : k))}
+              onDrop={(e) => onCellDrop(e, key)}
               className={cn(
                 'min-h-[64px] p-1.5 text-left bg-surface transition-colors cursor-pointer',
                 !cell.inMonth && 'opacity-30',
-                isSelected ? 'bg-primary-soft ring-1 ring-primary/50' : 'hover:bg-surface-2',
+                dragOverKey === key ? 'bg-primary-soft ring-2 ring-primary/60' : isSelected ? 'bg-primary-soft ring-1 ring-primary/50' : 'hover:bg-surface-2',
               )}
             >
               <span className={cn(
@@ -131,8 +163,14 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
                   {dayTasks.slice(0, 3).map((t) => (
                     <span
                       key={t.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/task-id', t.id)
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
                       className={cn(
-                        'text-[9px] leading-tight truncate px-0.5 rounded-sm',
+                        'text-[9px] leading-tight truncate px-0.5 rounded-sm cursor-grab active:cursor-grabbing',
                         t.priority === 0 ? 'text-p0 font-medium' : t.priority === 1 ? 'text-p1' : 'text-on-surface-2',
                       )}
                     >
@@ -162,8 +200,13 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
             {agenda.map((t) => (
               <button
                 key={t.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/task-id', t.id)
+                  e.dataTransfer.effectAllowed = 'move'
+                }}
                 onClick={() => onOpenTask(t.id)}
-                className="card card-hover px-3.5 py-2.5 flex items-center gap-2.5 text-left cursor-pointer w-full"
+                className="card card-hover px-3.5 py-2.5 flex items-center gap-2.5 text-left cursor-grab active:cursor-grabbing w-full"
               >
                 <span
                   className="w-1 h-8 rounded-full shrink-0"
@@ -182,9 +225,34 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
                 )}
               </button>
             ))}
+            <p className="text-[11px] text-on-surface-2/70 px-1">提示：按住任务拖到上方日期格，可直接改期</p>
           </div>
         )}
       </div>
+
+      {/* 未排期池：拖到日历即排期 */}
+      {unscheduled.length > 0 && (
+        <div>
+          <h3 className="text-[13px] font-semibold text-on-surface-2 mb-2 px-1">未排期（拖到上方日期安排时间）</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {unscheduled.map((t) => (
+              <span
+                key={t.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/task-id', t.id)
+                  e.dataTransfer.effectAllowed = 'move'
+                }}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full bg-surface-2 border border-outline text-[12.5px] cursor-grab active:cursor-grabbing select-none hover:border-primary/50 transition-colors"
+                title={`${TIER_LABEL[t.tier as typeof TIERS[number]]} · 拖到日期格排期`}
+              >
+                <GripVertical size={12} className="text-on-surface-2/60" />
+                {t.title.slice(0, 18)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

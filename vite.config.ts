@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
         manifest: {
           name: '个人工作站',
           short_name: '工作站',
-          description: '任务清单 × 文档工作站 × AI 助手面板的一体化个人工作台',
+          description: '任务清单 × 文档工作站的一体化个人工作台',
           lang: 'zh-CN',
           dir: 'ltr',
           start_url: './',
@@ -49,6 +49,17 @@ export default defineConfig(({ mode }) => {
             { src: './icons/icon-512.png', sizes: '512x512', type: 'image/png' },
             { src: './icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
+          // 系统分享接收（v1.3）：文本/链接分享进工作站 → /#/share 落地成 MD 文档
+          share_target: {
+            action: './#/share',
+            method: 'GET',
+            enctype: 'application/x-www-form-urlencoded',
+            params: {
+              title: 'title',
+              text: 'text',
+              url: 'url',
+            },
+          },
         },
         workbox: {
           navigateFallback: 'index.html',

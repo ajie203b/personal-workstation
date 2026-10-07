@@ -1,48 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Coffee, Pause, Play, RotateCcw, Timer } from 'lucide-react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { Coffee, Pause, Play, RotateCcw, Target, Timer } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { db } from '@/db/db'
+import type { Task } from '@/db/db'
+import { addFocusSession } from '@/db/focus'
+import { useAllTasks } from '@/db/hooks'
+import { sortTasks } from '@/db/tasks'
 
 type Phase = 'work' | 'break'
 
 const DURATIONS: Record<Phase, number> = { work: 25 * 60, break: 5 * 60 }
+const TASK_KEY = 'ws-focus-task'
 
-interface FocusRecord {
-  date: string
-  sessions: number
-  minutes: number
-}
-
-const STORE_KEY = 'ws-focus-records'
-
-function loadRecords(): Record<string, FocusRecord> {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}') } catch { return {} }
-}
-
-function saveRecord(date: string, minutes: number) {
-  const all = loadRecords()
-  const cur = all[date] ?? { date, sessions: 0, minutes: 0 }
-  all[date] = { date, sessions: cur.sessions + 1, minutes: cur.minutes + minutes }
-  localStorage.setItem(STORE_KEY, JSON.stringify(all))
-}
-
-function getTodayStats(): FocusRecord {
-  const today = new Date()
-  const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  return loadRecords()[key] ?? { date: key, sessions: 0, minutes: 0 }
-}
-
-/** 番茄钟 + 每日专注统计（v1.2） */
+/** 番茄钟 + 专注会话落库（v1.3：可绑定任务，统计页汇总） */
 export function FocusTimer() {
   const [phase, setPhase] = useState<Phase>('work')
   const [remaining, setRemaining] = useState(DURATIONS.work)
   const [running, setRunning] = useState(false)
-  const [todayStats, setTodayStats] = useState(getTodayStats)
+  const [taskId, setTaskId] = useState(() => localStorage.getItem(TASK_KEY) ?? '')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const todayStats = useLiveQuery(
+    async () => {
+      const rows = await db.focusSessions.where('day').equals(today).toArray()
+      return { sessions: rows.length, minutes: rows.reduce((s, r) => s + r.minutes, 0) }
+    },
+    [today],
+    { sessions: 0, minutes: 0 },
+  )
+
+  const all = useAllTasks()
+  const candidates: Task[] = sortTasks(all.filter((t) => t.status !== 'done')).slice(0, 50)
 
   const completePhase = useCallback(() => {
     if (phase === 'work') {
-      saveRecord(new Date().toISOString().slice(0, 10), 25)
-      setTodayStats(getTodayStats())
+      void addFocusSession(25, taskId || undefined)
       setPhase('break')
       setRemaining(DURATIONS.break)
     } else {
@@ -50,7 +44,7 @@ export function FocusTimer() {
       setRemaining(DURATIONS.work)
     }
     setRunning(false)
-  }, [phase])
+  }, [phase, taskId])
 
   useEffect(() => {
     if (!running) return
@@ -67,9 +61,16 @@ export function FocusTimer() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [running, completePhase])
 
+  const pickTask = (id: string) => {
+    setTaskId(id)
+    if (id) localStorage.setItem(TASK_KEY, id)
+    else localStorage.removeItem(TASK_KEY)
+  }
+
   const mm = String(Math.floor(remaining / 60)).padStart(2, '0')
   const ss = String(remaining % 60).padStart(2, '0')
   const progress = 1 - remaining / DURATIONS[phase]
+  const boundTask = all.find((t) => t.id === taskId)
 
   return (
     <div className="card p-5 flex flex-col items-center gap-4">
@@ -118,6 +119,27 @@ export function FocusTimer() {
           <RotateCcw size={16} />
         </button>
       </div>
+
+      {/* 绑定任务：完成一个番茄即计入该任务耗时 */}
+      <div className="w-full flex items-center gap-2">
+        <Target size={14} className="text-on-surface-2 shrink-0" />
+        <select
+          value={taskId}
+          onChange={(e) => pickTask(e.target.value)}
+          aria-label="专注绑定任务"
+          className="flex-1 h-8 px-2 rounded-[8px] bg-surface-2 border border-outline text-[12px] outline-none focus:border-primary/60 cursor-pointer min-w-0"
+        >
+          <option value="">不绑定任务</option>
+          {candidates.map((t) => (
+            <option key={t.id} value={t.id}>{t.title.slice(0, 24)}</option>
+          ))}
+        </select>
+      </div>
+      {boundTask && (
+        <p className="text-[11px] text-on-surface-2 -mt-2 text-center truncate w-full">
+          本次完成将计入「{boundTask.title.slice(0, 18)}」
+        </p>
+      )}
 
       {/* 今日专注统计 */}
       <div className="flex items-center gap-2 text-[12px] text-on-surface-2 w-full justify-center">

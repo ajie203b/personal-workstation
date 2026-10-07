@@ -29,6 +29,13 @@ export const PRIORITY_VAR: Record<Priority, string> = {
 export type TaskStatus = 'todo' | 'doing' | 'done'
 export type RepeatKind = 'daily' | 'weekly' | 'weekdays'
 
+/** 子任务/清单项（v1.3） */
+export interface SubTask {
+  id: string
+  title: string
+  done: boolean
+}
+
 export interface DocRef {
   docId: string
   /** 页码/块锚点定位串，如 `p3` / `b7`，可带 `#annId` 后缀闪烁批注 */
@@ -50,6 +57,8 @@ export interface Task {
   repeat?: RepeatKind
   docRef?: DocRef
   aiRef?: string
+  subtasks?: SubTask[] // v1.3 子任务清单
+  pinned?: boolean // v1.3 置顶（列表视图内沉顶）
   createdAt: number
   updatedAt: number
   doneAt?: number // 完成即入 Logbook
@@ -62,7 +71,16 @@ export interface SettingKV {
 
 /* ============ 文档工作站（M2） ============ */
 
-export type DocKind = 'pdf' | 'md'
+export type DocKind = 'pdf' | 'md' | 'epub' | 'docx' | 'pptx' | 'txt'
+
+export const DOC_KIND_LABEL: Record<DocKind, string> = {
+  pdf: 'PDF',
+  md: 'Markdown',
+  epub: 'EPUB',
+  docx: 'Word',
+  pptx: 'PPT',
+  txt: 'TXT',
+}
 
 /** 文档元信息；文件本体按 hash 存 blobs 表（重命名不丢进度） */
 export interface Doc {
@@ -95,6 +113,7 @@ export interface ReadingPosition {
   progress?:
     | { kind: 'pdf'; page: number; offsetRatio: number }
     | { kind: 'md'; blockIdx: number; ratio: number }
+    | { kind: 'flow'; segIdx: number; ratio: number } // epub/docx/pptx/txt
   /** 0~1 总进度，用于列表展示 */
   progressPct?: number
   settings?: DocSettings
@@ -126,6 +145,29 @@ export interface Bookmark {
   /** 与 Annotation 定位同构：pdf=p 页码；md=b 块号 */
   anchor: string
   createdAt: number
+}
+
+/* ============ v1.3 大更新 ============ */
+
+/** 全文索引（导入时抽取，支持标题/内容搜索与命中定位） */
+export interface DocText {
+  hash: string
+  kind: DocKind
+  /** 全文纯文本（搜索用） */
+  text: string
+  /** PDF/EPUB/PPTX：按页/章/片的分段文本，命中时可定位 */
+  segments?: string[]
+  segmentUnit?: 'page' | 'chapter' | 'slide'
+  indexedAt: number
+}
+
+/** 专注会话（番茄钟落库，可绑定任务 → 每任务耗时统计） */
+export interface FocusSession {
+  id: string
+  day: string // YYYY-MM-DD
+  ts: number // 完成时刻
+  minutes: number
+  taskId?: string
 }
 
 /* ============ AI 助手面板（M3） ============ */
@@ -219,6 +261,8 @@ class WorkstationDB extends Dexie {
   aiSessions!: Table<AiSession, string>
   aiMessages!: Table<AiMessage, string>
   aiUsage!: Table<AiUsageRow, string>
+  docText!: Table<DocText, string>
+  focusSessions!: Table<FocusSession, string>
 
   constructor() {
     super('workstation')
@@ -240,6 +284,11 @@ class WorkstationDB extends Dexie {
       aiSessions: 'id, updatedAt, sourceModule',
       aiMessages: 'id, sessionId, createdAt',
       aiUsage: 'id, ts, provider, model, module',
+    })
+    // v4（v1.3）：全文索引 + 专注会话（纯增表）
+    this.version(4).stores({
+      docText: 'hash',
+      focusSessions: 'id, day, taskId, ts',
     })
   }
 }

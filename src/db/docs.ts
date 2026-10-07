@@ -25,16 +25,16 @@ export interface ImportResult {
   duplicated: boolean
 }
 
-/** 导入文档：内容去重（同 hash 复用），文件本体存 blobs */
+/** 导入文档：内容去重（同 hash 复用），文件本体存 blobs；异步建全文索引 */
 export async function importDoc(file: File): Promise<ImportResult> {
   const buf = await file.arrayBuffer()
   const hash = await hashBuffer(buf)
   const existing = await db.docs.where('hash').equals(hash).first()
   if (existing) return { doc: existing, duplicated: true }
 
-  const ext = file.name.toLowerCase()
-  const kind: DocKind = ext.endsWith('.pdf') ? 'pdf' : 'md'
-  const title = file.name.replace(/\.(pdf|md|markdown|txt)$/i, '')
+  const { detectKind } = await import('@/lib/docTextIndex')
+  const kind: DocKind = detectKind(file.name)
+  const title = file.name.replace(/\.(pdf|md|markdown|txt|epub|docx|pptx)$/i, '')
   const doc: Doc = {
     id: uid(),
     hash,
@@ -43,13 +43,16 @@ export async function importDoc(file: File): Promise<ImportResult> {
     size: file.size,
     addedAt: Date.now(),
   }
+  const blob = new Blob([buf], { type: file.type || 'application/octet-stream' })
   await db.transaction('rw', db.docs, db.blobs, async () => {
     // 事务内复检（防并发导入同文件产生双行）
     const recheck = await db.docs.where('hash').equals(hash).first()
     if (recheck) return
-    await db.blobs.put({ hash, blob: new Blob([buf], { type: file.type || 'application/octet-stream' }) })
+    await db.blobs.put({ hash, blob })
     await db.docs.add(doc)
   })
+  // 全文索引异步抽取，不阻塞导入返回
+  void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(doc, blob))
   return { doc, duplicated: false }
 }
 
@@ -66,10 +69,13 @@ export async function touchDoc(id: string): Promise<void> {
 }
 
 export async function deleteDoc(doc: Doc): Promise<void> {
-  await db.transaction('rw', db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, async () => {
+  await db.transaction('rw', [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText], async () => {
     await db.docs.delete(doc.id)
     const otherRefs = await db.docs.where('hash').equals(doc.hash).count()
-    if (otherRefs === 0) await db.blobs.delete(doc.hash)
+    if (otherRefs === 0) {
+      await db.blobs.delete(doc.hash)
+      await db.docText.delete(doc.hash)
+    }
     await db.positions.delete(doc.hash)
     const anns = await db.annotations.where('docHash').equals(doc.hash).toArray()
     await db.annotations.bulkDelete(anns.map((a) => a.id))
