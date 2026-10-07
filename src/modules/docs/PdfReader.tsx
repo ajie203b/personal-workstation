@@ -413,7 +413,7 @@ export function PdfReader({
                                 top: `${r.y * 100}%`,
                                 width: `${r.w * 100}%`,
                                 height: `${r.h * 100}%`,
-                                ...(isShot ? { background: 'rgba(11, 87, 208, 0.08)' } : {}),
+                                ...(isShot ? { background: 'color-mix(in srgb, var(--primary) 8%, transparent)' } : {}),
                               }}
                             />
                           ))}

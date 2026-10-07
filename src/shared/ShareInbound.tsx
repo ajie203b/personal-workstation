@@ -45,7 +45,7 @@ export function ShareInbound() {
   return (
     <div className="h-full grid place-items-center px-6">
       <div className="card p-8 max-w-sm text-center flex flex-col items-center gap-3">
-        <span className="grid place-items-center w-12 h-12 rounded-full bg-primary-soft text-primary">
+        <span className="grid place-items-center w-12 h-12 rounded-full border border-outline bg-surface-2 text-on-surface-2/80">
           <Link2 size={22} />
         </span>
         <h1 className="text-[17px] font-bold">
