@@ -90,6 +90,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
             stroke={phase === 'work' ? 'var(--ok)' : 'var(--primary)'}
             strokeWidth="8" strokeLinecap="round"
             strokeDasharray={`${progress * 2 * Math.PI * 60} ${2 * Math.PI * 60}`}
+            style={{ transition: 'stroke-dasharray 1s linear, stroke var(--dur-2) var(--ease-standard)' }}
           />
         </svg>
         <div className="absolute inset-0 grid place-items-center">

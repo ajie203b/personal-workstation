@@ -30,7 +30,7 @@ export function Sheet({
             'max-md:inset-x-0 max-md:bottom-0 max-md:h-[85dvh] max-md:rounded-t-[20px] max-md:border-t max-md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]',
             'md:top-0 md:right-0 md:bottom-0 md:w-[min(440px,92vw)] md:border-l',
           )}
-          style={{ animation: 'fade-up var(--dur-2) var(--ease-emph)' }}
+          style={{ animation: 'slide-up var(--dur-2) var(--ease-emph)' }}
         >
           <div className="flex items-center justify-between px-5 h-14 shrink-0 border-b border-outline">
             <RadixDialog.Title className="text-[16px] font-semibold">{title}</RadixDialog.Title>
@@ -70,7 +70,7 @@ export function Dialog({
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
         <RadixDialog.Content
           className={cn('pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-5', widthClass)}
-          style={{ animation: 'fade-up var(--dur-1) var(--ease-standard)' }}
+          style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         >
           <RadixDialog.Title className="text-[17px] font-semibold">{title}</RadixDialog.Title>
           {description && (

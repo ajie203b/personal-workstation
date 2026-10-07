@@ -7,7 +7,7 @@ interface Props {
   label?: string
 }
 
-/** 圆形勾选框：完成态填充状态绿 + 对勾描边动画（150ms standard） */
+/** 圆形勾选框：完成态填充状态绿 + 对勾描边 + 涟漪扩散（对标 Things 3 的完成反馈） */
 export function CheckCircle({ checked, onChange, className, label }: Props) {
   return (
     <button
@@ -21,9 +21,9 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
       }}
       className={cn(
         'touch-target shrink-0 grid place-items-center w-[22px] h-[22px] mt-[2px] rounded-full border-[1.5px]',
-        'transition-all duration-150 ease-standard cursor-pointer',
+        'transition-all duration-150 ease-standard cursor-pointer active:scale-90',
         checked
-          ? 'bg-ok border-ok animate-pop'
+          ? 'bg-ok border-ok animate-pop check-ripple'
           : 'border-on-surface-2/60 hover:border-primary bg-transparent',
         className,
       )}

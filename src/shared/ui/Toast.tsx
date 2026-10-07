@@ -13,7 +13,7 @@ export function ToastHost() {
           role="status"
           aria-live="polite"
           className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-[16px] shadow-lg max-w-full md:max-w-sm"
-          style={{ background: 'var(--surface)', color: 'var(--on-surface)', border: '1px solid var(--outline)', boxShadow: 'var(--shadow-pop)', animation: 'fade-up var(--dur-2) var(--ease-standard)' }}
+          style={{ background: 'var(--surface)', color: 'var(--on-surface)', border: '1px solid var(--outline)', boxShadow: 'var(--shadow-pop)', animation: 'fade-up var(--dur-2) var(--ease-spring)' }}
         >
           <span className="text-[13px]">{t.message}</span>
           {t.action && (

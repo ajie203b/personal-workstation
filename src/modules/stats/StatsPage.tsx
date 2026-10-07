@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { CheckCircle2, Flame, Highlighter, Timer } from 'lucide-react'
 import { db } from '@/db/db'
@@ -139,10 +139,10 @@ export function StatsPage() {
 
       {/* 概览四卡 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard icon={<CheckCircle2 size={16} />} label="累计完成" value={String(doneTasks.length)} unit="件" />
-        <StatCard icon={<Flame size={16} />} label="连续打卡" value={String(streak)} unit="天" accent="var(--p0)" />
-        <StatCard icon={<Timer size={16} />} label="专注总时长" value={String(Math.round(totalFocus / 60 * 10) / 10)} unit="小时" accent="var(--ok)" />
-        <StatCard icon={<Highlighter size={16} />} label="批注总数" value={String(annotations.length)} unit="条" />
+        <StatCard icon={<CheckCircle2 size={16} />} label="累计完成" value={doneTasks.length} unit="件" />
+        <StatCard icon={<Flame size={16} />} label="连续打卡" value={streak} unit="天" accent="var(--p0)" />
+        <StatCard icon={<Timer size={16} />} label="专注总时长" value={Math.round((totalFocus / 60) * 10) / 10} unit="小时" accent="var(--ok)" decimals={1} />
+        <StatCard icon={<Highlighter size={16} />} label="批注总数" value={annotations.length} unit="条" />
       </div>
 
       {/* 热力图 */}
@@ -172,12 +172,16 @@ export function StatsPage() {
               ))}
             </div>
             {weeks.map((col, wi) => (
-              <div key={wi} className="flex flex-col gap-[3px]">
+              <div
+                key={wi}
+                className="flex flex-col gap-[3px]"
+                style={{ animation: `fade-in var(--dur-2) var(--ease-standard) both`, animationDelay: `${Math.min(wi * 14, 340)}ms` }}
+              >
                 {col.map((cell) => (
                   <span
                     key={cell.key}
                     title={`${cell.key} · ${cell.count} ${METRIC_LABEL[metric]}`}
-                    className="w-[13px] h-[13px] rounded-[3px] shrink-0"
+                    className="w-[13px] h-[13px] rounded-[3px] shrink-0 transition-[background] duration-200"
                     style={{
                       background:
                         cell.count === 0
@@ -267,7 +271,36 @@ export function StatsPage() {
   )
 }
 
-function StatCard({ icon, label, value, unit, accent }: { icon: React.ReactNode; label: string; value: string; unit: string; accent?: string }) {
+/** 数字滚动：500ms rAF 缓动到目标值（reduced-motion 时直接落定） */
+function useCountUp(target: number, decimals = 0): string {
+  const [val, setVal] = useState(target)
+  const fromRef = useRef(target)
+  useEffect(() => {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduced || target === fromRef.current) {
+      fromRef.current = target
+      setVal(target)
+      return
+    }
+    const from = fromRef.current
+    const start = performance.now()
+    const DUR = 500
+    let raf = 0
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / DUR)
+      const eased = 1 - Math.pow(1 - p, 3)
+      setVal(from + (target - from) * eased)
+      if (p < 1) raf = requestAnimationFrame(tick)
+      else fromRef.current = target
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target])
+  return val.toFixed(decimals)
+}
+
+function StatCard({ icon, label, value, unit, accent, decimals = 0 }: { icon: React.ReactNode; label: string; value: number; unit: string; accent?: string; decimals?: number }) {
+  const shown = useCountUp(value, decimals)
   return (
     <div className="card p-4 flex flex-col gap-1.5">
       <span className="inline-flex items-center gap-1.5 text-[12px] text-on-surface-2">
@@ -275,7 +308,7 @@ function StatCard({ icon, label, value, unit, accent }: { icon: React.ReactNode;
         {label}
       </span>
       <span className="text-[24px] font-bold tabular-nums leading-none">
-        {value}
+        {shown}
         <span className="text-[12px] font-normal text-on-surface-2 ml-1">{unit}</span>
       </span>
     </div>

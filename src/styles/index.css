@@ -110,6 +110,7 @@
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --ease-emph: cubic-bezier(0.05, 0.7, 0.1, 1);
+    --ease-spring: cubic-bezier(0.34, 1.36, 0.45, 1);
 
   --animate-fade-up: fade-up var(--dur-2) var(--ease-standard) both;
   --animate-pop: pop var(--dur-2) var(--ease-standard);
@@ -128,6 +129,22 @@
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes nav-pop {
+  0% { transform: scale(0.86); }
+  100% { transform: scale(1.05); }
+}
+@keyframes check-ripple {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent); }
+  100% { box-shadow: 0 0 0 12px transparent; }
+}
 @keyframes pop {
   0% { transform: scale(1); }
   55% { transform: scale(1.14); }
@@ -136,6 +153,16 @@
 @keyframes ai-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
+}
+
+/* 无障碍：系统开启“减弱动态效果”时压平全部动效（行业标配） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ============================================================
@@ -233,6 +260,9 @@ select:focus-visible {
   transition: stroke-dashoffset var(--dur-1) var(--ease-standard);
 }
 .check-path.on { stroke-dashoffset: 0; }
+
+/* 完成涟漪：绿色圆环向外扩散消散 */
+.check-ripple { animation: pop var(--dur-2) var(--ease-standard), check-ripple 0.5s ease-out; }
 
 /* 页面入场：300ms / 12px 上移淡入（MD3 medium2） */
 .enter { animation: fade-up var(--dur-2) var(--ease-standard) both; }

@@ -15,7 +15,7 @@ export function MenuContent({ children, className }: { children: ReactNode; clas
           'pop z-50 min-w-[168px] p-1.5',
           className,
         )}
-        style={{ animation: 'fade-up var(--dur-1) var(--ease-standard)' }}
+        style={{ animation: 'scale-in var(--dur-1) var(--ease-emph)', transformOrigin: 'top right' }}
       >
         {children}
       </RadixMenu.Content>
