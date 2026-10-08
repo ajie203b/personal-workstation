@@ -21,3 +21,7 @@ nlp-test.cjs
 
 # 站点部署临时目录
 .site-deploy
+
+# 签名口令只存本机（build.gradle 从这里读）
+android/keystore.properties
+keystore.properties

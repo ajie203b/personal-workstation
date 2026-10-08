@@ -2,13 +2,15 @@
 
 任务清单 × 文档工作站的一体化个人工作台。本地优先、数据不出本机、单人不设账号。
 
-> 依据《产品方案》（`docs/产品方案.html`）落地。当前版本 **v0.9.0（任务清单 / 文档工作站 / ⌘K / 截图批注 / 多标签 / MD 编辑器）**。
+> 个人工作站 v1.4.2 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 提供 **安卓 App**（Capacitor 封装，完全离线、无需服务器）与 **网页版 PWA** 两种形态。最新 APK 在 [Releases](../../releases) 页下载。
 
 ## 快速开始（网页版）
 
-**在线版（推荐，无需安装）**：<https://ajie203b.github.io/personal-workstation-site/>
-任何电脑打开即用；数据存在各自浏览器的 IndexedDB，GitHub 不存储任何用户数据。更新部署：`bash scripts/deploy-site.sh`（构建 `dist/` 后真实克隆站点仓库 `personal-workstation-site`，只做快进推送，远端分叉时会停下报错而不是覆盖历史；`--fast` 复用已有 `dist/` 省掉重新构建）。
+**在线版（推荐，无需安装）**：<https://ajie203b.github.io/personal-workstation/>
+任何电脑打开即用；数据存在各自浏览器的 IndexedDB，GitHub 不存储任何用户数据。更新部署：`bash scripts/deploy-gh-pages.sh`（构建 `dist/` 后发到 `gh-pages` 分支，只做快进推送，远端分叉时停下报错而不是覆盖历史；`--fast` 复用已有 `dist/` 省掉重新构建）。
+
+> 旧地址 <https://ajie203b.github.io/personal-workstation-site/> 随站点仓库一起停用。**浏览器里旧版 PWA 的数据不会自动搬过来**——IndexedDB 按域名隔离，新地址是一个全新的存储。请在旧版里先「设置 → 数据 → 导出备份」，再到新版「设置 → 数据 → 导入备份」恢复；已把旧版装到桌面/手机的，建议直接卸载后从新地址重新安装。
 
 本地开发：
 
@@ -54,7 +56,8 @@ cd android
 
 把 APK 传到手机（数据线 / 网盘 / 微信文件传输均可）→ 点击安装（允许「未知来源」）→ 桌面出现「个人工作站」图标，全屏独立运行。
 
-- 首次构建的签名 keystore：`android/app/workstation.keystore`（别名 `workstation`，密码 `workstation2026`）。**换手机重装、后续升级都用同一个 keystore 签名**，否则需要先卸载旧版（会丢数据，记得先在设置里导出备份）。
+- 签名密钥：`android/app/workstation.keystore`，口令写在**本机** `android/keystore.properties`（两个文件都已 gitignore，`build.gradle` 运行时读它，缺文件直接报错而不是回退到明文）。**换手机重装、后续升级都用同一个 keystore 签名**，否则需要先卸载旧版（会丢数据，记得先在设置里导出备份）。
+- ⚠️ 这个仓库曾长期私有，现已公开，而历史里带着旧签名口令。仓库公开后请把它当**已泄露**处理：要真正收紧，就得生成新 keystore 并让已安装设备卸载重装（同签名覆盖升级会失效）。口令不再出现在当前代码里，但 git 历史不改写。
 - 应用数据（任务等）保存在应用沙箱的 IndexedDB 中，卸载即清除；重要节点先到「设置 → 数据 → 导出备份」。
 - 连接 USB 后也可直接 `adb install app-debug.apk`。
 
