@@ -25,3 +25,7 @@ nlp-test.cjs
 # 签名口令只存本机（build.gradle 从这里读）
 android/keystore.properties
 keystore.properties
+
+# 签名口令只存本机（build.gradle 从这里读）
+android/keystore.properties
+keystore.properties
