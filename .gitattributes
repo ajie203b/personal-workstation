@@ -1,0 +1,9 @@
+# 本机 core.autocrlf=true：shell 脚本若被检出成 CRLF，Git Bash 会在 shebang/首行就报错
+*.sh text eol=lf
+# 构建产物与二进制不参与换行符规范化
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.wasm binary
+*.apk binary
+*.keystore binary
