@@ -21,26 +21,38 @@ interface Props<T extends string> {
 
 /**
  * 分段控件（v1.4 动效升级）：MD3 segmented button 气质 + 滑块跟随。
- * 滑块用 transform/left+width 过渡（--ease-emph），切换时平滑滑动而非瞬切。
+ * 滑块按 left/width 过渡（--ease-emph），切换时平滑滑动而非瞬切。
  */
 export function Segmented<T extends string>({ options, value, onChange, className, size = 'md', ariaLabel }: Props<T>) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRefs = useRef(new Map<string, HTMLButtonElement>())
   const [thumb, setThumb] = useState<{ left: number; width: number; ready: boolean }>({ left: 0, width: 0, ready: false })
 
-  const measure = () => {
-    const btn = btnRefs.current.get(value)
-    if (!btn) return
-    setThumb({ left: btn.offsetLeft, width: btn.offsetWidth, ready: true })
-  }
-
+  // badge 计数变化（如今日 3→4）、字体加载完成、容器宽度变化都会改变按钮尺寸，
+  // 只按 value/options.length/size 重测会让滑块宽度停留在旧值——改为观察按钮本身
   useLayoutEffect(() => {
+    const btn = btnRefs.current.get(value)
+    const wrap = wrapRef.current
+    if (!btn || !wrap) return
+    const measure = () => {
+      if (!btn.offsetWidth) return
+      const left = btn.getBoundingClientRect().left - wrap.getBoundingClientRect().left
+      const width = btn.getBoundingClientRect().width
+      setThumb((prev) =>
+        prev.ready && Math.abs(prev.left - left) < 0.5 && Math.abs(prev.width - width) < 0.5
+          ? prev
+          : { left, width, ready: true },
+      )
+    }
     measure()
-    // 字体加载完成后宽度可能变化，二次校正
-    const t = setTimeout(measure, 300)
+    const ro = new ResizeObserver(measure)
+    ro.observe(btn)
+    if (wrap) ro.observe(wrap)
     window.addEventListener('resize', measure)
-    return () => { clearTimeout(t); window.removeEventListener('resize', measure) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
   }, [value, options.length, size])
 
   return (
@@ -50,7 +62,7 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
       aria-label={ariaLabel}
       className={cn('relative inline-flex items-center gap-0.5 p-[3px] rounded-[12px] bg-surface-3/70', className)}
     >
-      {/* 滑块 */}
+      {/* 滑块：left/width 相对 tablist 边框测量 */}
       <span
         aria-hidden
         className={cn(

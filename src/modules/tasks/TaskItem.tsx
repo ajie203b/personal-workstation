@@ -6,7 +6,8 @@ import { CheckCircle } from '@/shared/ui/CheckCircle'
 import {
   DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuLabel, MenuSeparator,
 } from '@/shared/ui/Menu'
-import { toggleDone, moveTier, setPriority, updateTask, deleteTask, restoreTask } from '@/db/tasks'
+import { moveTier, setPriority, updateTask, deleteTask, restoreTask } from '@/db/tasks'
+import { toggleTaskWithUndo } from './taskActions'
 import { openDoc } from '@/shared/DeepLink'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
@@ -33,18 +34,11 @@ export function TaskItem({ task, focused, overlay }: Props) {
     })
   }
 
-  // 点击分区：左半边 = 完成/恢复；右半区 = 打开详情
-  const onCardClick = (e: React.MouseEvent) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const onLeft = e.clientX - rect.left < rect.width / 2
-    if (onLeft) void toggleDone(task)
-    else openDetail(task.id)
-  }
-
   return (
     <div
       id={`task-${task.id}`}
-      onClick={overlay ? undefined : onCardClick}
+      aria-current={focused ? 'true' : undefined}
+      onClick={overlay ? undefined : () => openDetail(task.id)}
       className={cn(
         'card card-hover relative px-4 py-3 cursor-pointer select-none hover:shadow-sm',
         'transition-shadow duration-150',
@@ -59,7 +53,7 @@ export function TaskItem({ task, focused, overlay }: Props) {
       }}
     >
       <div className="flex items-start gap-3">
-        <CheckCircle checked={done} onChange={() => void toggleDone(task)} label={done ? '恢复任务' : '完成任务'} />
+        <CheckCircle checked={done} onChange={() => void toggleTaskWithUndo(task)} label={done ? '恢复任务' : '完成任务'} />
 
         <div className="flex-1 min-w-0">
           <p
@@ -121,7 +115,7 @@ export function TaskItem({ task, focused, overlay }: Props) {
                 </span>
               )}
               {!!task.subtasks?.length && (
-                <span className={cn('inline-flex items-center gap-1 text-[12px] tabular-nums', done ? 'text-on-surface-2' : 'text-on-surface-2')}>
+                <span className="inline-flex items-center gap-1 text-[12px] tabular-nums text-on-surface-2">
                   <ListChecks size={12} />
                   {task.subtasks.filter((s) => s.done).length}/{task.subtasks.length}
                 </span>
@@ -179,7 +173,7 @@ export function TaskItem({ task, focused, overlay }: Props) {
               )}
               <MenuSeparator />
               {task.status !== 'done' && (
-                <MenuItem onSelect={() => void toggleDone(task)}>✓ 标记完成</MenuItem>
+                <MenuItem onSelect={() => void toggleTaskWithUndo(task)}>✓ 标记完成</MenuItem>
               )}
               <MenuItem danger onSelect={remove}>删除任务</MenuItem>
             </MenuContent>

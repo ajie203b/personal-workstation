@@ -3,7 +3,8 @@ import * as RadixDialog from '@radix-ui/react-dialog'
 import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type SubTask, type Task, type Tier } from '@/db/db'
 import { db } from '@/db/db'
-import { deleteTask, restoreTask, toggleDone, updateTask } from '@/db/tasks'
+import { deleteTask, restoreTask, updateTask } from '@/db/tasks'
+import { toggleTaskWithUndo } from './taskActions'
 import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
@@ -16,7 +17,7 @@ const FIELD = 'text-[12px] font-medium text-on-surface-2 mb-1.5 block'
 const INPUT =
   'w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/70 transition-colors'
 
-/** 任务详情：居中弹窗（点任务卡右半区打开） */
+/** 任务详情：居中弹窗（点任务卡任意位置打开；完成只走勾选框） */
 export function TaskDetail() {
   const { detailId, openDetail } = useTasksUi()
   const task = useAllTasks().find((t) => t.id === detailId) ?? null
@@ -29,18 +30,17 @@ export function TaskDetail() {
   const [notesDraft, setNotesDraft] = useState('')
   const pendingRef = useRef<{ id: string; title: string; notes: string } | null>(null)
 
-  const flushSave = useCallback(() => {
+  const flushSave = useCallback(async () => {
     const p = pendingRef.current
-    if (p) {
-      void updateTask(p.id, { title: p.title, notes: p.notes })
-      pendingRef.current = null
-    }
+    if (!p) return
+    pendingRef.current = null
+    await updateTask(p.id, { title: p.title, notes: p.notes })
   }, [])
 
   useEffect(() => {
-    if (!detailId) { flushSave(); setConfirmDelete(false) }
+    if (!detailId) void flushSave()
+    setConfirmDelete(false)
   }, [detailId, flushSave])
-
   useEffect(() => {
     if (task) {
       setTitleDraft(task.title)
@@ -56,7 +56,8 @@ export function TaskDetail() {
     void db.focusSessions.where('taskId').equals(task.id).toArray().then((rows) => {
       setFocusMinutes(rows.reduce((s, r) => s + r.minutes, 0))
     })
-  }, [task?.id, task?.id && detailId])
+    // detailId 参与依赖：同一任务重新打开时也要重算累计专注时长
+  }, [task?.id, detailId])
 
   useEffect(() => {
     if (!task || task.id !== detailId) return
@@ -82,6 +83,27 @@ export function TaskDetail() {
   if (!task) return null
 
   const patch = (p: Partial<Task>) => void updateTask(task.id, p)
+
+  /**
+   * 完成/恢复：先把未落盘的草稿写库并带进 toggleDone，
+   * 否则重复任务生成的下一次会沿用旧标题。完成即归档，顺带关闭详情。
+   */
+  const completeOrRestore = async () => {
+    const wasDone = task.status === 'done'
+    const merged: Task = {
+      ...task,
+      title: titleDraft.trim() || task.title,
+      notes: notesDraft.trim() ? notesDraft : undefined,
+    }
+    if (!wasDone && (merged.title !== task.title || merged.notes !== task.notes)) {
+      pendingRef.current = null
+      await updateTask(task.id, { title: merged.title, notes: merged.notes })
+    } else {
+      await flushSave()
+    }
+    await toggleTaskWithUndo(merged)
+    if (!wasDone) openDetail(null)
+  }
 
   const addTag = () => {
     const t = tagDraft.trim().replace(/^#/, '')
@@ -287,11 +309,11 @@ export function TaskDetail() {
 
               <div className="flex items-center gap-2 pt-1">
                 {done ? (
-                  <Button variant="primary" className="flex-1 justify-center" onClick={() => void toggleDone(task)}>
+                  <Button variant="primary" className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
                     恢复为未完成
                   </Button>
                 ) : (
-                  <Button variant="primary" className="flex-1 justify-center" onClick={() => void toggleDone(task)}>
+                  <Button variant="primary" className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
                     ✓ 完成并归档
                   </Button>
                 )}

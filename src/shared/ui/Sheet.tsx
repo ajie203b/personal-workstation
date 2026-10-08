@@ -69,7 +69,12 @@ export function Dialog({
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
         <RadixDialog.Content
-          className={cn('pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-5', widthClass)}
+          className={cn(
+            'pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-5',
+            // 矮视口/宽弹窗（添加任务 620px）时内容会顶出屏幕且无法滚动
+            'flex flex-col max-h-[min(86dvh,720px)] overflow-y-auto',
+            widthClass,
+          )}
           style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         >
           <RadixDialog.Title className="text-[17px] font-semibold">{title}</RadixDialog.Title>

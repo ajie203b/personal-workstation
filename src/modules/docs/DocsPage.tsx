@@ -11,7 +11,7 @@ import { useUi } from '@/stores/ui'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Button } from '@/shared/ui/Button'
-import { openDoc } from '@/shared/DeepLink'
+import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
@@ -23,6 +23,8 @@ export function DocsPage() {
   const [pendingDelete, setPendingDelete] = useState<Doc | null>(null)
   const [importing, setImporting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  /** 全文搜索用小写副本缓存（hash → {indexedAt, lower}），避免每次改关键词都整篇 toLowerCase */
+  const lowerCache = useRef(new Map<string, { at: number; lower: string }>())
 
   const progressMap = useLiveQuery(
     async () => {
@@ -60,7 +62,13 @@ export function DocsPage() {
     const rows = await db.docText.toArray()
     const map: Record<string, { count: number; snippet: string; seg?: number }> = {}
     for (const r of rows) {
-      const lower = r.text.toLowerCase()
+      // 小写副本按 indexedAt 缓存：全文搜索按 keyword 触发，逐字符整篇 toLowerCase 会让输入明显发涩
+      let entry = lowerCache.current.get(r.hash)
+      if (!entry || entry.at !== r.indexedAt) {
+        entry = { at: r.indexedAt, lower: r.text.toLowerCase() }
+        lowerCache.current.set(r.hash, entry)
+      }
+      const lower = entry.lower
       const idx = lower.indexOf(kw)
       if (idx === -1) continue
       // 统计命中次数（前 500 处封顶防长文卡顿）
@@ -168,8 +176,8 @@ export function DocsPage() {
               <button
                 key={d.id}
                 onClick={() => {
-                  // 全文命中且能定位分段 → 直接跳到对应页/章/片
-                  if (hit?.seg && d.kind === 'pdf') openDoc({ docId: d.id, anchor: `p${hit.seg}` })
+                  // 全文命中且能定位分段 → 直接跳到对应页/章/片（PDF 用页码，流式文档用段下标）
+                  if (hit?.seg) openDocAtHit(d, hit.seg)
                   else navigate(`/docs/${d.id}`)
                 }}
                 className="card card-hover text-left px-4 py-3.5 flex gap-3.5 cursor-pointer"

@@ -2,7 +2,8 @@ import { useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
 import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
-import { sortTasks, toggleDone } from '@/db/tasks'
+import { sortTasks } from '@/db/tasks'
+import { toggleTaskWithUndo } from './taskActions'
 import { useTasksUi } from '@/stores/tasks'
 import { QuickAdd } from './QuickAdd'
 import { TaskList } from './TaskList'
@@ -66,7 +67,7 @@ export function TasksPage() {
   }
 
   const openTask = (id: string) => { setFocusId(id); openDetail(id) }
-  const completeTask = (t: typeof all[number]) => { void toggleDone(t) }
+  const completeTask = (t: typeof all[number]) => { void toggleTaskWithUndo(t) }
 
   const emptyMap: Record<Tier, { title: string; hint: string }> = {
     today: { title: '今天没有安排', hint: '从「随时池」拖几件过来，或直接添加。完成的一天会自动归档进日志。' },

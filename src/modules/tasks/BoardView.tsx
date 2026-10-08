@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
+  DndContext, DragOverlay, MouseSensor, TouchSensor, useSensor, useSensors,
   useDraggable, useDroppable, type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
 import { CalendarCheck, CalendarDays, Hourglass, Inbox, type LucideIcon } from 'lucide-react'
@@ -20,7 +20,11 @@ const TIER_ICON: Record<Tier, LucideIcon> = {
 /** 同数据四视图之「看板」：按四清单分列，拖拽跨列移动（方案 2.1 增补） */
 export function BoardView({ tasks }: { tasks: Task[] }) {
   const [activeId, setActiveId] = useState<string | null>(null)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  // 桌面按下拖动 6px 起拖；移动端长按 200ms 起拖——轻点仍是「打开详情」，滑动仍能滚页
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  )
 
   const byTier = useMemo(() => {
     const map = {} as Record<Tier, Task[]>
