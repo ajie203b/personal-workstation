@@ -15,15 +15,13 @@ derive_site_url() {
   origin="$(git -C "$ROOT" remote get-url origin)"
   slug="${origin##*/}"
   slug="${slug%.git}"
-  if [[ "$origin" == *"@"*":"* ]]; then
-    owner="${origin#*:}"
-  else
-    owner="${origin#*://}"
-  fi
-  owner="${owner%%/*}"
+  origin="${origin#*://}"; origin="${origin#git@}"   # 去掉协议 / git@ 前缀
+  origin="${origin#*/}"                              # 去掉 host（github.com/）
+  owner="${origin%%/*}"                              # 剩下第一段即 owner
   echo "https://${owner}.github.io/${slug}/"
 }
 SITE_URL="${DEPLOY_SITE_URL:-$(derive_site_url)}"
+ORIGIN_URL="$(git -C "$ROOT" remote get-url origin | sed 's|\.git$||')"
 BRANCH=gh-pages
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -84,4 +82,3 @@ echo "==> 完成！已推送 $BRANCH"
 echo "    站点地址：$SITE_URL"
 echo "    线上版本核对（Pages 重建约需几十秒）："
 curl -fsS "$SITE_URL/version.json?cb=$(date +%s)" 2>/dev/null || echo "    暂时取不到 version.json，稍后手动确认"
-echo "    发布历史：$SITE_REPO/releases（版本号与网页版产物都在那里）"
