@@ -397,7 +397,9 @@ function AboutTab() {
               </Button>
             </div>
           ) : (
-            <p className="mt-3 text-[12.5px] text-ok">已是最新版本</p>
+            <p className="mt-3 text-[13px] text-on-surface-2">
+              {updateInfo.checked ? `已是最新版（v${updateInfo.currentVersion}）` : '暂时没查到版本信息（网络或 GitHub 接口限流），稍后再试'}
+            </p>
           )
         )}
       </section>

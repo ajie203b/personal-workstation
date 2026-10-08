@@ -13,8 +13,8 @@ android {
         applicationId "com.personal.workstation"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 28
-        versionName "1.4.1"
+        versionCode 29
+        versionName "1.4.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -24,10 +24,19 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file('workstation.keystore')
-            storePassword 'workstation2026'
-            keyAlias 'workstation'
-            keyPassword 'workstation2026'
+            // 口令一律从本机 android/keystore.properties 读取（已 gitignore）。
+            // 原先把口令硬编码在这里，而 APK 和这个文件一起公开过 —— 任何人拿到口令
+            // 就能伪造同签名包推给已安装用户，所以绝不再写明文，缺失时直接 fail。
+            def ksProps = new Properties()
+            def ksFile = rootProject.file('keystore.properties')
+            if (!ksFile.exists()) {
+                throw new GradleException('缺少 android/keystore.properties（签名口令只存本机，勿入库）')
+            }
+            ksFile.withInputStream { ksProps.load(it) }
+            storeFile file(ksProps.getProperty('storeFile', 'workstation.keystore'))
+            storePassword ksProps.getProperty('storePassword')
+            keyAlias ksProps.getProperty('keyAlias')
+            keyPassword ksProps.getProperty('keyPassword')
         }
     }
     buildTypes {
