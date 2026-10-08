@@ -1,6 +1,7 @@
 # 本机 core.autocrlf=true：shell 脚本若被检出成 CRLF，Git Bash 会在 shebang/首行就报错
 *.sh text eol=lf
-# 构建产物与二进制不参与换行符规范化
+# 构建产物与二进制不参与换行符规范化（与全局 .gitignore 的判定保持一致，
+# 否则 android/gradlew 这类被忽略的文件会因属性强制跟踪而重新入库）
 *.png binary
 *.jpg binary
 *.woff2 binary
