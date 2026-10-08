@@ -155,7 +155,7 @@ src/
 - [ ] **可选** Tauri 桌面包壳（需 Rust 工具链；当前 PWA 已覆盖桌面场景）
 - [ ] **可选** AI 附加：流式中的工具调用展开行、Provider 订阅额度自动同步
 
-> ⚠️ 安卓签名密钥 `android/app/workstation.keystore` 与密码只保存在本机（已加入 .gitignore）。换电脑构建前请先备份它——丢失后无法对已安装设备覆盖升级。
+> ⚠️ 安卓签名密钥 `android/app/workstation.keystore` 与口令只保存在本机（`android/keystore.properties`，两者都已 gitignore）。换电脑构建前请先备份它们——丢失后无法对已安装设备覆盖升级。
 
 ## 数据与隐私
 
