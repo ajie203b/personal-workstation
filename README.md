@@ -8,7 +8,7 @@
 ## 快速开始（网页版）
 
 **在线版（推荐，无需安装）**：<https://ajie203b.github.io/personal-workstation-site/>
-任何电脑打开即用；数据存在各自浏览器的 IndexedDB，GitHub 不存储任何用户数据。更新部署：`bash scripts/deploy-site.sh`。
+任何电脑打开即用；数据存在各自浏览器的 IndexedDB，GitHub 不存储任何用户数据。更新部署：`bash scripts/deploy-site.sh`（构建 `dist/` 后真实克隆站点仓库 `personal-workstation-site`，只做快进推送，远端分叉时会停下报错而不是覆盖历史；`--fast` 复用已有 `dist/` 省掉重新构建）。
 
 本地开发：
 
