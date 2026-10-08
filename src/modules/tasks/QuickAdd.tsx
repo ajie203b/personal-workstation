@@ -68,6 +68,13 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               submit()
+              return
+            }
+            // ↓ 交棒给下方列表的键盘流
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              e.currentTarget.blur()
+              window.dispatchEvent(new CustomEvent('ws:list-enter', { detail: { dir: 1 } }))
             }
           }}
           enterKeyHint="done"

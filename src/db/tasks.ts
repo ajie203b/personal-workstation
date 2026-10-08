@@ -51,8 +51,8 @@ export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | 'c
   }
 }
 
-/** 勾选完成 / 恢复。完成时事务内写 doneAt + 生成下一次；恢复时事务内回收已生成的下一次 */
-export async function toggleDone(task: Task): Promise<void> {
+/** 勾选完成 / 恢复。完成时事务内写 doneAt + 生成下一次（返回该新任务供撤销）；恢复时事务内回收已生成的下一次 */
+export async function toggleDone(task: Task): Promise<Task | null> {
   if (task.status === 'done') {
     await db.transaction('rw', db.tasks, async () => {
       await db.tasks.update(task.id, { status: 'todo', doneAt: undefined, updatedAt: Date.now() })
@@ -72,9 +72,10 @@ export async function toggleDone(task: Task): Promise<void> {
       if (spawned.length) await db.tasks.bulkDelete(spawned.map((t) => t.id))
     })
     void syncTaskNotification({ ...task, status: 'todo' })
-    return
+    return null
   }
-  let spawnedNext: Task | null = null
+  // 事务回调内的赋值需要非收窄载体
+  const spawnedRef: { next: Task | null } = { next: null }
   await db.transaction('rw', db.tasks, async () => {
     const now = Date.now()
     await db.tasks.update(task.id, { status: 'done', doneAt: now, updatedAt: now })
@@ -106,11 +107,23 @@ export async function toggleDone(task: Task): Promise<void> {
       createdAt: now,
       updatedAt: now,
     }
-    spawnedNext = next
+    spawnedRef.next = next
     await db.tasks.add(next)
   })
   void syncTaskNotification({ ...task, status: 'done' })
-  if (spawnedNext) void syncTaskNotification(spawnedNext)
+  const spawned = spawnedRef.next
+  if (spawned) void syncTaskNotification(spawned)
+  return spawned
+}
+
+/** 撤销「勾选完成」：回到原状态（含 doing），并删除完成时生成的下一次任务 */
+export async function undoToggleDone(task: Task, spawned: Task | null): Promise<void> {
+  await db.transaction('rw', db.tasks, async () => {
+    await db.tasks.update(task.id, { status: task.status, doneAt: undefined, updatedAt: Date.now() })
+    if (spawned) await db.tasks.delete(spawned.id)
+  })
+  void syncTaskNotification(task)
+  if (spawned) void syncTaskNotification({ ...spawned, status: 'done' })
 }
 
 export async function moveTier(id: string, tier: Tier): Promise<void> {

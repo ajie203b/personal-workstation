@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router'
 import {
   CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun,
 } from 'lucide-react'
-import { db } from '@/db/db'
+import { db, type Doc, type DocKind, type DocText, type Task } from '@/db/db'
 import { useUi, togglePalette } from '@/stores/ui'
 import { useTasksUi } from '@/stores/tasks'
+import { openDocAtHit } from '@/shared/DeepLink'
 import { cn } from '@/lib/cn'
 
 interface PaletteItem {
@@ -16,6 +17,16 @@ interface PaletteItem {
   hint?: string
   icon: React.ReactNode
   run: () => void
+}
+
+interface FulltextHit {
+  docId: string
+  kind: DocKind
+  title: string
+  count: number
+  /** 命中所在分段序号（1 基，来自索引 segments） */
+  seg?: number
+  unit: string
 }
 
 /** ⌘K 命令面板（方案 2.4/4.x）：跨模块统一检索直达 + 快捷动作 */
@@ -31,55 +42,63 @@ export function CommandPalette() {
   const listRef = useRef<HTMLDivElement>(null)
 
   const tasks = useLiveQuery(
-    () => (open ? db.tasks.filter((t) => t.status !== 'done').toArray() : Promise.resolve([] as import('@/db/db').Task[])),
+    () => (open ? db.tasks.filter((t) => t.status !== 'done').toArray() : Promise.resolve([] as Task[])),
     [open],
-    [] as import('@/db/db').Task[],
-  ) as import('@/db/db').Task[]
-  const docs = useLiveQuery(
-    () => (open ? db.docs.toArray() : Promise.resolve([] as import('@/db/db').Doc[])),
-    [open],
-    [] as import('@/db/db').Doc[],
-  ) as import('@/db/db').Doc[]
-
-  // 全文命中（v1.3.1）：查询 ≥2 字符时检索 docText，直达命中页/章
-  const kw = query.trim().toLowerCase()
-  const fulltextHits = useLiveQuery(
-    async () => {
-      if (!open || kw.length < 2) return [] as { docId: string; kind: string; title: string; count: number; seg?: number; unit: string }[]
-      const rows = await db.docText.toArray()
-      const docByHash = new Map((await db.docs.toArray()).map((d) => [d.hash, d]))
-      const out: { docId: string; kind: string; title: string; count: number; seg?: number; unit: string }[] = []
-      for (const r of rows) {
-        const lower = r.text.toLowerCase()
-        let count = 0
-        let pos = lower.indexOf(kw)
-        if (pos === -1) continue
-        let firstSeg: number | undefined
-        if (r.segments?.length) {
-          let acc = 0
-          for (let i = 0; i < r.segments.length; i++) {
-            acc += r.segments[i].length + 1
-            if (firstSeg == null && acc > pos) firstSeg = i + 1
-          }
-        }
-        while (pos !== -1 && count < 999) { count++; pos = lower.indexOf(kw, pos + kw.length) }
-        const doc = docByHash.get(r.hash)
-        if (!doc) continue
-        out.push({
-          docId: doc.id,
-          kind: doc.kind,
-          title: doc.title,
-          count,
-          seg: firstSeg,
-          unit: doc.kind === 'pdf' ? '页' : doc.kind === 'pptx' ? '片' : doc.kind === 'epub' ? '章' : '段',
-        })
-        if (out.length >= 6) break
-      }
-      return out.sort((a, b) => b.count - a.count)
-    },
-    [open, kw],
-    [] as { docId: string; kind: string; title: string; count: number; seg?: number; unit: string }[],
+    [] as Task[],
   )
+  const docs = useLiveQuery(
+    () => (open ? db.docs.toArray() : Promise.resolve([] as Doc[])),
+    [open],
+    [] as Doc[],
+  )
+
+  // 全文命中（v1.3.1）：≥2 字符时检索 docText，直达命中页/章/片。
+  // 索引行只在面板打开时读一次，小写副本按 indexedAt 缓存；
+  // 原来每次击键都全表重读并整篇 toLowerCase，文档一多输入就明显掉帧。
+  const kw = query.trim().toLowerCase()
+  const indexRows = useLiveQuery(
+    () => (open ? db.docText.toArray() : Promise.resolve([] as DocText[])),
+    [open],
+    [] as DocText[],
+  )
+  const lowerCache = useRef(new Map<string, { at: number; lower: string }>())
+  const fulltextHits = useMemo<FulltextHit[]>(() => {
+    if (!open || kw.length < 2) return []
+    const docByHash = new Map(docs.map((d) => [d.hash, d]))
+    const out: FulltextHit[] = []
+    for (const r of indexRows) {
+      let entry = lowerCache.current.get(r.hash)
+      if (!entry || entry.at !== r.indexedAt) {
+        entry = { at: r.indexedAt, lower: r.text.toLowerCase() }
+        lowerCache.current.set(r.hash, entry)
+      }
+      const lower = entry.lower
+      let pos = lower.indexOf(kw)
+      if (pos === -1) continue
+      let firstSeg: number | undefined
+      if (r.segments?.length) {
+        let acc = 0
+        for (let i = 0; i < r.segments.length; i++) {
+          acc += r.segments[i].length + 1
+          if (firstSeg == null && acc > pos) firstSeg = i + 1
+        }
+      }
+      let count = 0
+      while (pos !== -1 && count < 999) { count++; pos = lower.indexOf(kw, pos + kw.length) }
+      const doc = docByHash.get(r.hash)
+      if (!doc) continue
+      out.push({
+        docId: doc.id,
+        kind: doc.kind,
+        title: doc.title,
+        count,
+        seg: firstSeg,
+        unit: doc.kind === 'pdf' ? '页' : doc.kind === 'pptx' ? '片' : doc.kind === 'epub' ? '章' : '段',
+      })
+      if (out.length >= 6) break
+    }
+    return out.sort((a, b) => b.count - a.count)
+  }, [open, kw, indexRows, docs])
 
   const items = useMemo<PaletteItem[]>(() => {
     const openTask = (id: string, tier: string) => {
@@ -114,7 +133,7 @@ export function CommandPalette() {
       label: h.title,
       hint: `${h.count} 处命中${h.seg ? ` · 第${h.seg}${h.unit}` : ''}`,
       icon: <Search size={15} />,
-      run: () => navigate(h.seg && h.kind === 'pdf' ? `/docs/${h.docId}?p=p${h.seg}` : `/docs/${h.docId}`),
+      run: () => openDocAtHit({ id: h.docId, kind: h.kind }, h.seg),
     }))
     return [...actions, ...taskItems, ...docItems, ...fulltextItems]
   }, [tasks, docs, fulltextHits, kw, theme, navigate, setTheme])

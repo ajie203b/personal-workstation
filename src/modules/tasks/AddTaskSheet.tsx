@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, Flag, Hash, Repeat, Sparkles } from 'lucide-react'
+import { CalendarDays, Flag, Hash, Repeat } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { addTask } from '@/db/tasks'
 import { todayStr, fmtDue } from '@/lib/date'
@@ -103,7 +103,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           <div className="flex items-center gap-2 text-[13px]">
             {detectedRepeat ? (
               <>
-                <Sparkles size={14} className="text-primary" />
+                <Repeat size={14} className="text-primary" />
                 <span>检测到 <b className="text-primary">重复任务</b>（{REPEAT_LABEL[detectedRepeat]}），完成后自动生成下一次</span>
               </>
             ) : (

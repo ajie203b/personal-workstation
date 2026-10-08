@@ -72,8 +72,10 @@ async function extractEpub(blob: Blob): Promise<{ text: string; segments: string
   for (const path of chapters) {
     const file = zip.file(path) ?? zip.file(decodeURIComponent(path))
     if (!file) continue
-    const html = await file.async('string')
-    segments.push(htmlToText(html))
+    const text = htmlToText(await file.async('string'))
+    // 与 FlowReader 的 parseEpub 保持同一套分段：无文字章节（封面/插图页）也跳过，
+    // 否则索引 segments 比阅读器多几项，⌘K 全文命中按第 N 章定位会整体错位
+    if (text) segments.push(text)
   }
   return { text: segments.join('\n'), segments, segmentUnit: 'chapter' }
 }
