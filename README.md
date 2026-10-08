@@ -50,7 +50,7 @@ cd android
 
 **本机当前产物**（已生成，直接取用）：
 
-- `apk/personal-workstation-v0.8.1.apk` —— 正式签名包（6.4MB，安装这个）
+- `apk/personal-workstation-v1.4.2.apk` —— 正式签名包（6.9MB，versionCode 29，安装这个）
 
 ### 安装到手机 / 平板
 
