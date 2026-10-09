@@ -110,17 +110,21 @@ function DataTab() {
   const { state: exportState, run: runExport } = useAsyncButton()
 
   const doExport = async () => {
-    await runExport(async () => {
-      const json = await exportAll()
-      const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `个人工作站备份-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(url), 10000)
-      toast('备份已导出')
-    })
+    try {
+      await runExport(async () => {
+        const json = await exportAll()
+        const blob = new Blob([json], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `个人工作站备份-${new Date().toISOString().slice(0, 10)}.json`
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 10000)
+        toast('备份已导出')
+      })
+    } catch {
+      toast('导出失败，请重试')
+    }
   }
 
   const { state: importState, run: runImport } = useAsyncButton()
