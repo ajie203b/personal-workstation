@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router'
 import { NAV_ITEMS } from './nav'
 import { cn } from '@/lib/cn'
+import { haptic } from '@/lib/haptics'
 
-/** 手机/平板竖屏底部导航：玻璃材质 + 安全区适配 + MD3 药丸指示 */
+/** 手机/平板竖屏底部导航：玻璃材质 + 安全区适配 + MD3 药丸指示 + 触点水波纹 */
 export function BottomNav() {
   return (
     <nav className="glass md:hidden sticky bottom-0 z-20 flex border-t border-outline/70 pb-[env(safe-area-inset-bottom)]">
@@ -10,9 +11,10 @@ export function BottomNav() {
         <NavLink
           key={item.path}
           to={item.path}
+          onClick={() => haptic('selection')}
           className={({ isActive }) =>
             cn(
-              'flex-1 flex flex-col items-center justify-center gap-0.5 h-14 min-h-[56px] select-none pt-1.5',
+              'relative overflow-hidden flex-1 flex flex-col items-center justify-center gap-0.5 h-14 min-h-[56px] select-none pt-1.5',
               'transition-colors duration-150',
               isActive ? 'text-primary' : 'text-on-surface-2',
             )

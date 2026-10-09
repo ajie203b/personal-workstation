@@ -55,6 +55,35 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
     }
   }, [value, options.length, size])
 
+  // 切换时滑块先"拉长跨过中间距离"再收回到目标宽度（果冻开关的横向版）。
+  // 只在 value 真的变化时触发，首帧和 badge 宽度校正不走这条路。
+  const prevValue = useRef(value)
+  useLayoutEffect(() => {
+    const from = prevValue.current
+    prevValue.current = value
+    if (from === value) return
+    const a = btnRefs.current.get(from)
+    const b = btnRefs.current.get(value)
+    const wrap = wrapRef.current
+    if (!a || !b || !wrap) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const base = wrap.getBoundingClientRect().left
+    const ra = a.getBoundingClientRect()
+    const rb = b.getBoundingClientRect()
+    const left = Math.min(ra.left, rb.left) - base
+    const span = Math.max(ra.right, rb.right) - Math.min(ra.left, rb.left)
+    setThumb({ left, width: span, ready: true })
+    const t = window.setTimeout(() => {
+      // 重读一次矩形：150ms 内可能发生过滚动/缩放，缓存 rb 会算歪
+      const wrapNow = wrapRef.current
+      const btnNow = btnRefs.current.get(value)
+      if (!wrapNow || !btnNow) return
+      const r = btnNow.getBoundingClientRect()
+      setThumb({ left: r.left - wrapNow.getBoundingClientRect().left, width: r.width, ready: true })
+    }, 150)
+    return () => clearTimeout(t)
+  }, [value])
+
   return (
     <div
       ref={wrapRef}

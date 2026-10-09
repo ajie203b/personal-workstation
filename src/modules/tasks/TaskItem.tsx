@@ -19,9 +19,11 @@ interface Props {
   focused?: boolean
   /** 看板拖拽态：隐藏交互控件 */
   overlay?: boolean
+  /** 参与列表 FLIP 补位（只有列表视图的卡片需要） */
+  flip?: boolean
 }
 
-export function TaskItem({ task, focused, overlay }: Props) {
+export function TaskItem({ task, focused, overlay, flip }: Props) {
   const openDetail = useTasksUi((s) => s.openDetail)
   const toast = useUi((s) => s.toast)
   const done = task.status === 'done'
@@ -37,6 +39,7 @@ export function TaskItem({ task, focused, overlay }: Props) {
   return (
     <div
       id={`task-${task.id}`}
+      data-flip-id={flip ? `task-${task.id}` : undefined}
       aria-current={focused ? 'true' : undefined}
       onClick={overlay ? undefined : () => openDetail(task.id)}
       className={cn(

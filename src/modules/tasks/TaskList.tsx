@@ -5,6 +5,7 @@ import { useTasksUi } from '@/stores/tasks'
 import { toggleTaskWithUndo } from './taskActions'
 import { TaskItem } from './TaskItem'
 import { EmptyState } from '@/shared/ui/EmptyState'
+import { useFlipList } from '@/lib/useFlipList'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -39,6 +40,9 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
     // 列表内容变化后，聚焦项可能已不在列表中
     if (focusId && !tasks.some((t) => t.id === focusId)) setFocusId(null)
   }, [tasks, focusId, setFocusId])
+
+  // 完成/删除后兄弟卡片滑到新位置，而不是瞬跳
+  useFlipList(containerRef, tasks)
 
   useEffect(() => {
     /** 移动选中项；未选中时方向键都落到第一条 */
@@ -104,11 +108,13 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
       aria-label="任务列表（方向键选择，空格完成，回车详情）"
       // 点击卡片后把焦点收回列表，后续方向键/空格继续可用
       onClickCapture={() => containerRef.current?.focus({ preventScroll: true })}
-      className={cn('flex flex-col gap-2 rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary/30 cascade enter')}
+      // 入场不再用 nth-child 级联（删项后位置错位，会把卡片挪回旧坐标），
+      // 补位统一交给 FLIP
+      className={cn('flex flex-col gap-2 rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary/30')}
     >
       {tasks.map((t) => (
         <li key={t.id}>
-          <TaskItem task={t} focused={focusId === t.id} />
+          <TaskItem task={t} focused={focusId === t.id} flip />
         </li>
       ))}
     </ul>

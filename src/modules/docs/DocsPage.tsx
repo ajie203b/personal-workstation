@@ -9,8 +9,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { EmptyState } from '@/shared/ui/EmptyState'
-import { Dialog } from '@/shared/ui/Sheet'
-import { Button } from '@/shared/ui/Button'
+import { Button, useAsyncButton } from '@/shared/ui/Button'
+import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 
@@ -21,7 +21,6 @@ export function DocsPage() {
   const toast = useUi((s) => s.toast)
   const [keyword, setKeyword] = useState('')
   const [pendingDelete, setPendingDelete] = useState<Doc | null>(null)
-  const [importing, setImporting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   /** 全文搜索用小写副本缓存（hash → {indexedAt, lower}），避免每次改关键词都整篇 toLowerCase */
   const lowerCache = useRef(new Map<string, { at: number; lower: string }>())
@@ -96,23 +95,32 @@ export function DocsPage() {
     return results.filter((r) => r.titleHit || (textHits[r.doc.hash]?.count ?? 0) > 0)
   }, [results, textHits])
 
+  const { state: importState, run: runImport } = useAsyncButton({ successHoldMs: 900 })
+
   const onImport = async (files: FileList | null) => {
     if (!files?.length) return
-    setImporting(true)
     let added = 0
     let dup = 0
-    for (const file of Array.from(files)) {
-      try {
-        const r = await importDoc(file)
-        if (r.duplicated) dup++
-        else added++
-      } catch {
-        toast(`「${file.name}」导入失败`)
-      }
+    let failed = 0
+    try {
+      await runImport(async () => {
+        for (const file of Array.from(files)) {
+          try {
+            const r = await importDoc(file)
+            if (r.duplicated) dup++
+            else added++
+          } catch {
+            failed++
+            toast(`「${file.name}」导入失败`)
+          }
+        }
+        if (added) toast(`已导入 ${added} 个文档${dup ? `，${dup} 个重复已跳过` : ''}`)
+        else if (dup) toast('文档已存在（内容相同），无需重复导入')
+        if (!added && failed) throw new Error('导入失败')
+      })
+    } catch {
+      /* 失败态已由按钮呈现 */
     }
-    setImporting(false)
-    if (added) toast(`已导入 ${added} 个文档${dup ? `，${dup} 个重复已跳过` : ''}`)
-    else if (dup) toast('文档已存在（内容相同），无需重复导入')
   }
 
   return (
@@ -133,8 +141,8 @@ export function DocsPage() {
           <Button size="sm" onClick={() => navigate('/docs/new')}>
             <PenLine size={15} /> 写文档
           </Button>
-          <Button variant="primary" size="sm" onClick={() => fileRef.current?.click()} disabled={importing}>
-            <Import size={15} /> {importing ? '导入中…' : '导入'}
+          <Button variant="primary" size="sm" state={importState} onClick={() => fileRef.current?.click()}>
+            <Import size={15} /> 导入
           </Button>
           <input
             ref={fileRef}
@@ -233,25 +241,20 @@ export function DocsPage() {
         </div>
       )}
 
-      <Dialog
-        open={pendingDelete != null}
-        onOpenChange={(v) => !v && setPendingDelete(null)}
-        title="删除文档？"
-        description={`「${pendingDelete?.title ?? ''}」及其批注、进度将被删除，文件本体不可恢复。`}
-      >
-        <div className="flex justify-end gap-2">
-          <Button onClick={() => setPendingDelete(null)}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (pendingDelete) void deleteDoc(pendingDelete).then(() => toast('文档已删除'))
+      {/* 删除是不可逆操作：走长按蓄力（键盘/减弱动效自动降级为二次确认框） */}
+      {pendingDelete && (
+        <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50">
+          <HoldToConfirm
+            label="确认删除"
+            dialogTitle="删除文档？"
+            dialogDescription={`「${pendingDelete.title}」及其批注、进度将被删除，文件本体不可恢复。`}
+            onConfirm={() => {
+              void deleteDoc(pendingDelete).then(() => toast('文档已删除'))
               setPendingDelete(null)
             }}
-          >
-            确认删除
-          </Button>
+          />
         </div>
-      </Dialog>
+      )}
     </div>
   )
 }
