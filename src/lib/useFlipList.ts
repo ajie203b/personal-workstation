@@ -50,15 +50,14 @@ export function useFlipList<T extends HTMLElement>(
     rects.current = next
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const now = performance.now()
     for (const { el, dx, dy } of moving) {
       // 关键：Web Animations 会覆盖内联 style，动画结束后必须 cancel 释放，
-      // 否则同一元素上其它 transform（如按压 :active）会永久失效
+      // 否则同一元素上其它 transform（如按压 :active、拖拽位移）会永久失效
       const a = el.animate(
         [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
         { duration: 260, easing: 'cubic-bezier(.2, 0, 0, 1)' },
       )
-      a.finished.then(() => { if (performance.now() - now < 400) a.cancel() }).catch(() => {})
+      a.finished.then(() => a.cancel()).catch(() => {})
     }
   }, [items])
 }

@@ -56,15 +56,20 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
     let tier = inferTier(p, defaultTier)
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
     const due = p.due ?? (tier === 'today' && todayContext ? todayStr() : undefined)
-    await runSave(() => addTask({
-      title: p.title,
-      tier,
-      priority: p.priority,
-      due,
-      dueTime: p.dueTime,
-      tags: p.tags,
-      repeat: effectiveRepeat,
-    }))
+    try {
+      await runSave(() => addTask({
+        title: p.title,
+        tier,
+        priority: p.priority,
+        due,
+        dueTime: p.dueTime,
+        tags: p.tags,
+        repeat: effectiveRepeat,
+      }))
+    } catch {
+      /* 失败态由按钮呈现，这里不制造未处理的 Promise 拒绝 */
+      return
+    }
     // 成功打勾亮完再收场；中途被关掉就别抢用户的操作
     if (open) onOpenChange(false)
   }
