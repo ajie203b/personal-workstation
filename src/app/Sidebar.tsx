@@ -4,6 +4,7 @@ import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
+import { haptic } from '@/lib/haptics'
 import { ThemeButton } from './ThemeButton'
 
 /**
@@ -29,11 +30,15 @@ export function Sidebar() {
     <aside
       className={cn(
         'glass hidden md:flex flex-col shrink-0 border-r border-outline/70 z-30',
-        'transition-[width] duration-300 ease-standard',
-        collapsed ? 'w-16' : 'w-16 lg:w-60',
+        'w-16 lg:w-60 transition-transform duration-300 ease-standard',
+        collapsed && 'lg:-translate-x-[176px]',
       )}
     >
-      <div className="flex items-center gap-2.5 h-14 px-3.5 shrink-0">
+      <div
+        className="flex items-center gap-2.5 h-14 px-3.5 shrink-0 overflow-hidden"
+        // 折叠时标题区保持展开宽度：图标留在原位，只有标题淡出、抽屉从左边滑走
+        style={{ width: collapsed ? 'calc(100% + 176px)' : undefined }}
+      >
         <button
           type="button"
           aria-label="进入设置（再点返回）"
@@ -43,14 +48,13 @@ export function Sidebar() {
         >
           <img src="./brand.png" alt="" className="w-10 h-10 rounded-[10px] object-cover" draggable={false} />
         </button>
-        {!collapsed && (
-          <span className="hidden lg:block text-[15px] font-semibold tracking-wide overflow-hidden transition-opacity duration-150" style={{ opacity: collapsed ? 0 : 1 }}>个人工作站</span>
-        )}
+        <span className="hidden lg:block text-[15px] font-semibold tracking-wide overflow-hidden whitespace-nowrap transition-opacity duration-200" style={{ opacity: collapsed ? 0 : 1 }}>个人工作站</span>
         <button
           type="button"
           aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
+          aria-expanded={!collapsed}
           onClick={() => setCollapsed(!collapsed)}
-          className="hidden lg:grid place-items-center ml-auto w-8 h-8 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors"
+          className="hidden lg:grid place-items-center ml-auto w-8 h-8 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors shrink-0"
         >
           {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
         </button>
@@ -61,10 +65,11 @@ export function Sidebar() {
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={() => haptic('selection')}
             title={item.label}
             className={({ isActive }) =>
               cn(
-                'group relative flex items-center gap-3 h-11 px-2.5 rounded-[12px] shrink-0',
+                'group relative flex items-center gap-3 h-11 px-2.5 rounded-[12px] shrink-0 overflow-hidden',
                 'transition-colors duration-150',
                 isActive
                   ? 'bg-primary-soft text-primary font-medium'
@@ -75,16 +80,19 @@ export function Sidebar() {
             {({ isActive }) => (
               <>
                 <item.icon size={19} strokeWidth={isActive ? 2.2 : 1.9} className="shrink-0" />
-                <span className={cn('hidden lg:block text-[13px] truncate', collapsed && 'lg:hidden')}>
+                <span
+                  className="hidden lg:block text-[13px] truncate transition-opacity duration-200"
+                  style={{ opacity: collapsed ? 0 : 1 }}
+                >
                   {item.label}
                 </span>
                 {item.path === '/tasks' && counts.today > 0 && (
                   <span
                     className={cn(
-                      'hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px]',
-                      collapsed && 'lg:hidden',
+                      'hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] transition-opacity duration-200',
                       isActive ? 'bg-primary text-on-primary' : 'bg-surface-3 text-on-surface-2',
                     )}
+                    style={{ opacity: collapsed ? 0 : 1 }}
                   >
                     {counts.today}
                   </span>

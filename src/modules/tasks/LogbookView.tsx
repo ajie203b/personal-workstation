@@ -1,12 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { History, RotateCcw } from 'lucide-react'
 import { useAllTasks, deriveDone } from '@/db/hooks'
 import { deleteTask, restoreTask, toggleDone } from '@/db/tasks'
 import { TIER_LABEL, type Task } from '@/db/db'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { EmptyState } from '@/shared/ui/EmptyState'
-import { Button } from '@/shared/ui/Button'
-import { Dialog } from '@/shared/ui/Sheet'
+import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { useUi } from '@/stores/ui'
 import { parseDateStr, todayStr, toDateStr, WEEKDAY_CN } from '@/lib/date'
 
@@ -15,7 +14,6 @@ export function LogbookView() {
   const all = useAllTasks()
   const done = useMemo(() => deriveDone(all), [all])
   const toast = useUi((s) => s.toast)
-  const [clearOpen, setClearOpen] = useState(false)
 
   const groups = useMemo(() => {
     const map = new Map<string, Task[]>()
@@ -43,9 +41,15 @@ export function LogbookView() {
     <div className="flex flex-col gap-5 enter">
       <div className="flex items-center justify-between px-1">
         <p className="text-[13px] text-on-surface-2">共 {done.length} 条已完成 · 归档即安心</p>
-        <Button size="sm" variant="danger" onClick={() => setClearOpen(true)}>
-          清空日志
-        </Button>
+        <HoldToConfirm
+          size={26}
+          holdMs={1200}
+          label="清空日志"
+          className="h-8 px-2.5"
+          dialogTitle="清空日志？"
+          dialogDescription={`将永久删除 ${done.length} 条已完成记录，不可撤销。`}
+          onConfirm={() => void Promise.all(done.map((t) => deleteTask(t))).then(() => toast('日志已清空'))}
+        />
       </div>
 
       {groups.map(([day, tasks]) => (
@@ -82,27 +86,6 @@ export function LogbookView() {
         </section>
       ))}
 
-      <Dialog
-        open={clearOpen}
-        onOpenChange={setClearOpen}
-        title="清空日志？"
-        description={`将永久删除 ${done.length} 条已完成记录，不可撤销。`}
-      >
-        <div className="flex justify-end gap-2">
-          <Button onClick={() => setClearOpen(false)}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              void Promise.all(done.map((t) => deleteTask(t))).then(() => {
-                setClearOpen(false)
-                toast('日志已清空')
-              })
-            }}
-          >
-            确认清空
-          </Button>
-        </div>
-      </Dialog>
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { todayStr, fmtDue } from '@/lib/date'
 import { PRIORITY_VAR, type RepeatKind, type Tier } from '@/db/db'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
-import { Button } from '@/shared/ui/Button'
+import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -48,13 +48,15 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   const chips = value.trim() ? parseSummary(parsed) : []
   const hasContent = value.trim().length > 0
 
-  const submit = () => {
-    if (!hasContent) return
+  const { state: saveState, run: runSave } = useAsyncButton({ successHoldMs: 520 })
+
+  const submit = async () => {
+    if (!hasContent || saveState !== 'idle') return
     const p = parseQuickAdd(value)
     let tier = inferTier(p, defaultTier)
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
     const due = p.due ?? (tier === 'today' && todayContext ? todayStr() : undefined)
-    void addTask({
+    await runSave(() => addTask({
       title: p.title,
       tier,
       priority: p.priority,
@@ -62,8 +64,9 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       dueTime: p.dueTime,
       tags: p.tags,
       repeat: effectiveRepeat,
-    })
-    onOpenChange(false)
+    }))
+    // 成功打勾亮完再收场；中途被关掉就别抢用户的操作
+    if (open) onOpenChange(false)
   }
 
   return (
@@ -140,7 +143,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           </p>
         </div>
 
-        <Button variant="primary" disabled={!hasContent} onClick={submit} className="w-full justify-center">
+        <Button variant="primary" disabled={!hasContent} state={saveState} onClick={() => void submit()} className="w-full justify-center">
           {mode === 'repeat' ? '添加打卡任务' : '添加任务'}
         </Button>
       </div>

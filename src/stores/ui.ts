@@ -13,11 +13,14 @@ export interface ToastItem {
 interface UiState {
   theme: Theme
   sidebarCollapsed: boolean
+  /** 触觉/振动反馈（勾选、拖拽、长按确认等）。默认开，设置页可关。 */
+  haptics: boolean
   shortcutsOpen: boolean
   paletteOpen: boolean
   toasts: ToastItem[]
   setTheme: (t: Theme) => void
   setSidebarCollapsed: (v: boolean) => void
+  setHaptics: (v: boolean) => void
   setShortcutsOpen: (v: boolean) => void
   setPaletteOpen: (v: boolean) => void
   toast: (message: string, action?: ToastItem['action']) => void
@@ -29,11 +32,13 @@ export const useUi = create<UiState>()(
     (set, get) => ({
       theme: 'system',
       sidebarCollapsed: false,
+      haptics: true,
       shortcutsOpen: false,
       paletteOpen: false,
       toasts: [],
       setTheme: (theme) => set({ theme }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      setHaptics: (haptics) => set({ haptics }),
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       toast: (message, action) => {
@@ -45,7 +50,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'ws-ui',
-      partialize: (s) => ({ theme: s.theme, sidebarCollapsed: s.sidebarCollapsed }),
+      partialize: (s) => ({ theme: s.theme, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics }),
     },
   ),
 )

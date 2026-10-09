@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Bell, BellOff, Download, History, Monitor, Moon, Smartphone, Sun, Upload } from 'lucide-react'
 import { useUi, type Theme } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
-import { Button } from '@/shared/ui/Button'
-import { Dialog } from '@/shared/ui/Sheet'
+import { Button, useAsyncButton } from '@/shared/ui/Button'
+import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
+import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
+import { markOrigin } from '@/app/ThemeButton'
+import { setThemeWithTransition } from '@/shared/theme'
+import { haptic } from '@/lib/haptics'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { isNative } from '@/lib/native'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
@@ -47,7 +51,8 @@ export function SettingsPage() {
 }
 
 function AppearanceTab() {
-  const { theme, setTheme } = useUi()
+  const theme = useUi((s) => s.theme)
+  const { haptics, setHaptics } = useUi()
   return (
     <div className="flex flex-col gap-3 max-w-xl">
       <p className="text-[13px] text-on-surface-2 px-1">主题即时生效，仅保存在本机浏览器。</p>
@@ -56,7 +61,11 @@ function AppearanceTab() {
           <button
             key={c.value}
             type="button"
-            onClick={() => setTheme(c.value)}
+            onClick={(e) => {
+              markOrigin(e)
+              haptic('light')
+              setThemeWithTransition(c.value)
+            }}
             className={cn(
               'card card-hover p-3.5 flex flex-col items-center gap-2.5 cursor-pointer',
               theme === c.value && 'ring-2 ring-primary',
@@ -73,13 +82,22 @@ function AppearanceTab() {
           </button>
         ))}
       </div>
+
+      <section className="card p-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[14px] font-semibold mb-0.5">触感反馈</h2>
+          <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
+            勾选完成、拖拽落位、开关切换与长按确认时给一次轻震。安卓 App 内走系统触觉，网页端走振动 API（部分浏览器不支持）。
+          </p>
+        </div>
+        <JellySwitch checked={haptics} onChange={() => setHaptics(!haptics)} label="触感反馈" />
+      </section>
     </div>
   )
 }
 
 function DataTab() {
   const [usage, setUsage] = useState<string>('')
-  const [clearOpen, setClearOpen] = useState(false)
   const toast = useUi((s) => s.toast)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -89,27 +107,31 @@ function DataTab() {
     })
   }, [])
 
-  const [exporting, setExporting] = useState(false)
+  const { state: exportState, run: runExport } = useAsyncButton()
 
   const doExport = async () => {
-    setExporting(true)
-    const json = await exportAll()
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `个人工作站备份-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 10000)
-    toast('备份已导出')
-    setExporting(false)
+    await runExport(async () => {
+      const json = await exportAll()
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `个人工作站备份-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+      toast('备份已导出')
+    })
   }
+
+  const { state: importState, run: runImport } = useAsyncButton()
 
   const doImport = async (file: File) => {
     try {
-      const json = await file.text()
-      const r = await importAll(json)
-      toast(`已导入 ${r.tasks} 条任务`)
+      await runImport(async () => {
+        const json = await file.text()
+        const r = await importAll(json)
+        toast(`已导入 ${r.tasks} 条任务`)
+      })
     } catch (err) {
       toast(`导入失败：${err instanceof Error ? err.message : '文件无法解析'}`)
     }
@@ -127,10 +149,10 @@ function DataTab() {
           {usage && ` 当前占用约 ${usage}。`}
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => void doExport()} disabled={exporting}>
+          <Button variant="outline" size="sm" state={exportState} onClick={() => void doExport()}>
             <Download size={15} /> 导出备份
           </Button>
-          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+          <Button variant="outline" size="sm" state={importState} onClick={() => fileRef.current?.click()}>
             <Upload size={15} /> 导入备份
           </Button>
           <input
@@ -151,28 +173,14 @@ function DataTab() {
 
       <section className="card p-4" style={{ borderColor: 'color-mix(in srgb, var(--danger) 30%, var(--outline))' }}>
         <h2 className="text-[14px] font-semibold mb-1 text-danger">危险区</h2>
-        <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。</p>
-        <Button variant="danger" size="sm" onClick={() => setClearOpen(true)}>
-          清空所有数据
-        </Button>
+        <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。按住 1.5 秒才会执行（键盘用户会走二次确认）。</p>
+        <HoldToConfirm
+          label="清空所有数据"
+          dialogTitle="清空所有数据？"
+          dialogDescription="本机 IndexedDB 中的任务与设置将被永久删除。建议先导出备份。"
+          onConfirm={() => void clearAllData().then(() => toast('数据已清空'))}
+        />
       </section>
-
-      <Dialog open={clearOpen} onOpenChange={setClearOpen} title="清空所有数据？" description="本机 IndexedDB 中的任务与设置将被永久删除。建议先导出备份。">
-        <div className="flex justify-end gap-2">
-          <Button onClick={() => setClearOpen(false)}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              void clearAllData().then(() => {
-                setClearOpen(false)
-                toast('数据已清空')
-              })
-            }}
-          >
-            确认清空
-          </Button>
-        </div>
-      </Dialog>
     </div>
   )
 }
@@ -198,7 +206,6 @@ function NotifyCard() {
     setOn(!on)
     toast(!on ? '已开启到期提醒' : '已关闭到期提醒')
   }
-
   const sendTest = async () => {
     try {
       const { LocalNotifications } = await import('@capacitor/local-notifications')
@@ -227,23 +234,7 @@ function NotifyCard() {
             任务到期时发送系统通知（按截止时间，默认 09:00）。
           </p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          onClick={() => void toggle()}
-          className={cn(
-            'relative w-11 h-6 rounded-full shrink-0 cursor-pointer transition-colors',
-            on ? 'bg-primary' : 'bg-surface-3 border border-outline',
-          )}
-        >
-          <span
-            className={cn(
-              'absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all',
-              on ? 'left-[22px]' : 'left-0.5',
-            )}
-          />
-        </button>
+        <JellySwitch checked={on} onChange={() => void toggle()} label="到期提醒" />
       </div>
       {on && (
         <div className="mt-3">
@@ -260,7 +251,6 @@ function NotifyCard() {
 function AutoBackupCard() {
   const [on, setOn] = useState(true)
   const [backups, setBackups] = useState<BackupInfo[]>([])
-  const [restoring, setRestoring] = useState<string | null>(null)
   const toast = useUi((s) => s.toast)
 
   const refresh = () => {
@@ -284,10 +274,6 @@ function AutoBackupCard() {
     }
   }
 
-  const doRestore = (name: string) => {
-    setRestoring(name)
-  }
-
   return (
     <section className="card p-4">
       <div className="flex items-center justify-between gap-3">
@@ -297,23 +283,7 @@ function AutoBackupCard() {
             每 24 小时打开应用时静默快照到本机私有存储，保留最近 3 份。不上传任何服务器。
           </p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          onClick={() => void toggle()}
-          className={cn(
-            'relative w-11 h-6 rounded-full shrink-0 cursor-pointer transition-colors',
-            on ? 'bg-primary' : 'bg-surface-3 border border-outline',
-          )}
-        >
-          <span
-            className={cn(
-              'absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all',
-              on ? 'left-[22px]' : 'left-0.5',
-            )}
-          />
-        </button>
+        <JellySwitch checked={on} onChange={() => void toggle()} label="自动备份" />
       </div>
 
       {backups.length > 0 && (
@@ -327,35 +297,22 @@ function AutoBackupCard() {
                 {new Date(b.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 <span className="text-on-surface-2 ml-2">{(b.size / 1024).toFixed(0)} KB</span>
               </span>
-              <Button size="sm" variant="outline" onClick={() => doRestore(b.name)}>恢复</Button>
+              <HoldToConfirm
+                size={26}
+                holdMs={1200}
+                label="恢复"
+                className="h-8 px-2.5"
+                dialogTitle="恢复这份快照？"
+                dialogDescription="当前数据将与之合并（同 id 覆盖）。建议先手动导出一份备份再恢复。"
+                onConfirm={() => void restoreBackup(b.name).then(() => {
+                  toast('已恢复快照')
+                  refresh()
+                })}
+              />
             </div>
           ))}
         </div>
       )}
-
-      <Dialog
-        open={restoring != null}
-        onOpenChange={(v) => !v && setRestoring(null)}
-        title="恢复这份快照？"
-        description="当前数据将与之合并（同 id 覆盖）。建议先手动导出一份备份再恢复。"
-      >
-        <div className="flex justify-end gap-2">
-          <Button onClick={() => setRestoring(null)}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (restoring) {
-                void restoreBackup(restoring).then(() => {
-                  toast('已恢复快照')
-                  setRestoring(null)
-                })
-              }
-            }}
-          >
-            确认恢复
-          </Button>
-        </div>
-      </Dialog>
     </section>
   )
 }
@@ -363,15 +320,21 @@ function AutoBackupCard() {
 function AboutTab() {
   const [installable, setInstallable] = useState(canInstall())
   useEffect(() => onInstallAvailabilityChange(() => setInstallable(canInstall())), [])
-  const [checking, setChecking] = useState(false)
+  const { state: checkState, run: runCheck } = useAsyncButton({ successHoldMs: 900 })
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
 
   const doCheck = async () => {
-    setChecking(true)
     setUpdateInfo(null)
-    const info = await checkForUpdate()
-    setUpdateInfo(info)
-    setChecking(false)
+    try {
+      await runCheck(async () => {
+        const info = await checkForUpdate()
+        setUpdateInfo(info)
+        // 没真查到就别演成功，按钮落 error 态
+        if (!info.checked) throw new Error('版本信息不可用')
+      })
+    } catch {
+      /* 失败态已由按钮呈现 */
+    }
   }
 
   return (
@@ -381,8 +344,8 @@ function AboutTab() {
         <h2 className="text-[14px] font-semibold mb-1.5">软件更新</h2>
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-[13px] text-on-surface-2">当前版本 {getCurrentVersion()}</span>
-          <Button size="sm" variant="outline" onClick={() => void doCheck()} disabled={checking}>
-            {checking ? '检查中…' : '检查更新'}
+          <Button size="sm" variant="outline" state={checkState} onClick={() => void doCheck()}>
+            检查更新
           </Button>
         </div>
         {updateInfo && (

@@ -155,6 +155,80 @@
   50% { opacity: 0.55; }
 }
 
+/* ============================================================
+   动效层（docs/动效方案.md）：只用 transform / opacity，
+   时长取 --dur-* 令牌；reduced-motion 由下方全局兜底压平。
+   ============================================================ */
+
+/* 果冻开关：滑块位移走 transform（不再动 left，避免重排），挤压单独占一层 */
+@keyframes knob-squash {
+  0% { transform: scale(1, 1); }
+  32% { transform: scale(1.34, 0.8); }
+  64% { transform: scale(0.9, 1.1); }
+  100% { transform: scale(1, 1); }
+}
+.knob-slide { transition: transform var(--dur-3) var(--ease-spring); }
+.knob-squash { animation: knob-squash var(--dur-3) var(--ease-standard); }
+
+/* 触点水波纹：从指针坐标扩出再淡出（仅 primary 按钮与底部导航） */
+@keyframes ripple {
+  from { transform: scale(0); opacity: 0.32; }
+  to { transform: scale(2.6); opacity: 0; }
+}
+.ripple {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  pointer-events: none;
+  animation: ripple 460ms var(--ease-standard) forwards;
+}
+
+/* 完成时的 6 粒爆点（CheckCircle） */
+@keyframes burst {
+  0% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(2px) scale(0.6); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(17px) scale(0.25); opacity: 0; }
+}
+.burst-dot {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 3px; height: 3px;
+  border-radius: 9999px;
+  pointer-events: none;
+  animation: burst 600ms cubic-bezier(0.34, 1.36, 0.45, 1) forwards;
+}
+
+/* 长按确认走满后的轻震 */
+@keyframes nudge {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  45% { transform: translateX(3px); }
+  70% { transform: translateX(-2px); }
+}
+.nudge { animation: nudge 260ms var(--ease-standard); }
+
+/* 提交按钮三段变化：标签淡出 / 状态图标淡入，宽度不变（避免逐帧改 width） */
+@keyframes draw-check {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+.draw-check { stroke-dasharray: 24; animation: draw-check 320ms var(--ease-emph) forwards; }
+
+/* 删除塌缩：卡片先被挤一下再消失，兄弟随后 FLIP 补位 */
+@keyframes collapse-out {
+  0% { transform: scale(1); opacity: 1; }
+  35% { transform: scaleX(0.97) scaleY(0.99); opacity: 0.9; }
+  100% { transform: scaleX(0.9) scaleY(0.7); opacity: 0; }
+}
+.collapse-out { transform-origin: left center; animation: collapse-out var(--dur-2) var(--ease-standard) forwards; }
+
+/* 主题切换圆形扩散（View Transitions 可用时） */
+::view-transition-new(root) { animation: vt-circle 420ms var(--ease-emph); }
+@keyframes vt-circle {
+  from { clip-path: circle(0% at var(--vt-x, 50%) var(--vt-y, 50%)); }
+  to { clip-path: circle(150% at var(--vt-x, 50%) var(--vt-y, 50%)); }
+}
+
 /* 无障碍：系统开启“减弱动态效果”时压平全部动效（行业标配） */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -163,6 +237,8 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
+  .burst-dot, .ripple, ::view-transition-new(root) { display: none !important; animation: none !important; }
 }
 
 /* ============================================================
@@ -196,6 +272,12 @@ textarea:focus-visible,
 select:focus-visible {
   outline: none;
 }
+
+/* 按压下沉 + 阴影收缩：比单纯 active:scale 更像按进去了 */
+.press {
+  transition: transform var(--dur-1) var(--ease-standard), box-shadow var(--dur-1) var(--ease-standard);
+}
+.press:active { transform: translateY(1px) scale(0.985); box-shadow: 0 1px 2px rgba(32, 31, 29, 0.06); }
 
 /* 卡片内输入聚焦 → 卡片边框亮起（与外轮廓重合的反馈） */
 .card:focus-within {
