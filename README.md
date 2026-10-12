@@ -2,7 +2,7 @@
 
 任务清单 × 文档工作站的一体化个人工作台。本地优先、数据不出本机、单人不设账号。
 
-> 个人工作站 v1.5.2 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
+> 个人工作站 v1.5.3 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 提供 **安卓 App**（Capacitor 封装，完全离线、无需服务器）与 **网页版 PWA** 两种形态。最新 APK 在 [Releases](../../releases) 页下载。
 
 ## 快速开始（网页版）
@@ -50,7 +50,7 @@ cd android
 
 **本机当前产物**（已生成，直接取用）：
 
-- `apk/personal-workstation-v1.5.2.apk` —— 正式签名包（6.9MB，versionCode 32，安装这个）
+- `apk/personal-workstation-v1.5.3.apk` —— 正式签名包（6.9MB，versionCode 33，安装这个）
 
 ### 安装到手机 / 平板
 
@@ -155,6 +155,11 @@ cd android
 - **批注单击跳原文**：右栏批注卡片的色点与摘录整行可点（原来只有「定位」小按钮）；顺带修掉移动端抽屉丢掉高亮参数导致跳转不闪烁的问题
 - **书签带摘录**：书签在页码/段落号之外再显示该处第一句话，优先取已渲染的正文，PDF 页不在渲染窗口时退回全文索引
 - **PDF 划词不再卡顿**：选区预览层从页列表里拆成每页自带的独立组件，拖拽选区时不再带着整页列表重渲染
+
+## 功能（v1.5.3 · 更新检测与设置页）
+
+- **检查更新改以 Pages 上的 `version.json` 为主数据源**：静态文件、带 `Access-Control-Allow-Origin: *`，网页版与安卓壳内都能读，且不吃 GitHub API 的按 IP 限流；Releases API 退到只在「确有新版」时取 APK 直链，取不到就用 Release 页面兜底
+- 设置 → 关于 里立项期写的「技术栈 / 路线图」卡片整块删除
 
 ## 技术栈
 
