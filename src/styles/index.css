@@ -408,11 +408,17 @@ select:focus-visible {
 }
 .pdf-dark .textLayer { opacity: 0.9; }
 
-/* 文本层重影修复：全局 ::selection 的 color 会把文本层透明 span 染色，
-   选中时 canvas 文字与文本层文字同时可见（重影）。
-   恢复 pdf.js 默认行为：仅显示选区底色，文字保持透明。 */
+/* 文本层选区底色关掉：pdf.js 同一行会因字体切换产出互相覆盖的 span（整行一段，其中的拉丁词与标点又单独成段），
+   原生 ::selection 在重叠处叠两层就深浅斑驳，标点单独成段处还会断开。
+   选区改由 .sel-preview 承载：JS 拿到矩形按行并块后统一绘制，只有一层色。
+   !important 是必需的：react-pdf 的 Page/TextLayer.css 在本文件之后加载，
+   同特异度的 .textLayer ::selection { background: … } 会盖回来。
+   color 仍需透明，否则文本层文字与 canvas 文字重影。 */
 .textLayer ::selection {
   color: transparent;
+  background: transparent !important;
+}
+.sel-preview {
   background: color-mix(in srgb, AccentColor, transparent 75%);
 }
 

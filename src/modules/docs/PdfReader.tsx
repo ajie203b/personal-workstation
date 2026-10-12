@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -10,10 +10,53 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
+interface NormRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * 按行并块。pdf.js 文本层同一行会因字体切换产出互相覆盖的 span（整行一段，拉丁词与标点又单独成段），
+ * Range.getClientRects() 因此拿到重叠矩形：半透明底色叠两处深浅不一，标点单独成段处还断开。
+ * 规则：垂直重叠过半算同一行；同行内水平间隙小于 0.9 倍行高的并成一块——够吞下词间空格，不至于跨过双栏栏距。
+ * aspect = 页高 / 页宽，把行高换算到与 x 同一量纲。
+ */
+function mergeLineRects(rects: NormRect[], aspect: number): NormRect[] {
+  const out: NormRect[] = []
+  for (const r of [...rects].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    let hit: NormRect | null = null
+    let hitGap = Infinity
+    for (const m of out) {
+      const overlapY = Math.min(m.y + m.h, r.y + r.h) - Math.max(m.y, r.y)
+      if (overlapY < Math.min(m.h, r.h) * 0.5) continue
+      const gap = Math.max(m.x, r.x) - Math.min(m.x + m.w, r.x + r.w)
+      if (gap < hitGap) {
+        hitGap = gap
+        hit = m
+      }
+    }
+    if (hit && hitGap <= Math.max(hit.h, r.h) * aspect * 0.9) {
+      const x = Math.min(hit.x, r.x)
+      const y = Math.min(hit.y, r.y)
+      const right = Math.max(hit.x + hit.w, r.x + r.w)
+      const bottom = Math.max(hit.y + hit.h, r.y + r.h)
+      hit.x = x
+      hit.y = y
+      hit.w = right - x
+      hit.h = bottom - y
+    } else {
+      out.push({ ...r })
+    }
+  }
+  return out
+}
+
 export interface PdfSelectionInfo {
   text: string
   page: number
-  rects: { x: number; y: number; w: number; h: number }[]
+  rects: NormRect[]
   /** 浮条锚点（容器坐标）：below=true 表示应显示在选区下方 */
   popover: { left: number; y: number; below: boolean }
 }
@@ -60,6 +103,8 @@ export function PdfReader({
   const [containerW, setContainerW] = useState(0)
   const [center, setCenter] = useState(1) // 当前视口中心页
   const [flashId, setFlashId] = useState<string | null>(null)
+  // 选区预览：原生 ::selection 在文本层会叠色，改由本组件按行合并后统一绘制
+  const [preview, setPreview] = useState<{ page: number; rects: NormRect[] } | null>(null)
   // 截图框选状态
   const [drag, setDrag] = useState<{ page: number; x0: number; y0: number; x1: number; y1: number } | null>(null)
   const lastScrollTop = useRef(0)
@@ -228,14 +273,17 @@ export function PdfReader({
     if (!text) return null
     const range = sel.getRangeAt(0)
     const wRect = wrapper.getBoundingClientRect()
-    const rects = Array.from(range.getClientRects())
-      .map((r) => ({
-        x: (r.left - wRect.left) / wRect.width,
-        y: (r.top - wRect.top) / wRect.height,
-        w: r.width / wRect.width,
-        h: r.height / wRect.height,
-      }))
-      .filter((r) => r.w > 0.001 && r.h > 0.001)
+    const rects = mergeLineRects(
+      Array.from(range.getClientRects())
+        .map((r) => ({
+          x: (r.left - wRect.left) / wRect.width,
+          y: (r.top - wRect.top) / wRect.height,
+          w: r.width / wRect.width,
+          h: r.height / wRect.height,
+        }))
+        .filter((r) => r.w > 0.001 && r.h > 0.001),
+      wRect.height / wRect.width,
+    )
     if (!rects.length) return null
     const last = rects[rects.length - 1]
     const firstTop = rects[0].y * wRect.height + wRect.top
@@ -253,41 +301,52 @@ export function PdfReader({
     }
   }, [scrollRef])
 
-  const onPageMouseUp = useCallback(
-    (page: number, wrapper: HTMLElement) => {
-      onSelection(computePageSelection(page, wrapper))
+  // 选区归属页：移动端长按选词没有 mouseup，只能从 anchorNode 反查
+  const resolveSelectionTarget = useCallback(() => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed) return null
+    const node = sel.anchorNode
+    const el = (node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null
+    return el ? { page: Number(el.dataset.page), el } : null
+  }, [])
+
+  const applySelection = useCallback(
+    (target: { page: number; el: HTMLElement } | null, withPopover: boolean) => {
+      const info = target ? computePageSelection(target.page, target.el) : null
+      setPreview(info && target ? { page: target.page, rects: info.rects } : null)
+      if (withPopover) onSelection(info)
     },
-    [onSelection, computePageSelection],
+    [computePageSelection, onSelection],
   )
 
-  // 移动端：长按选择后无 mouseup，用 selectionchange / touchend 触发
+  const onPageMouseUp = useCallback(
+    (page: number, wrapper: HTMLElement) => applySelection({ page, el: wrapper }, true),
+    [applySelection],
+  )
+
+  // 预览矩形逐帧跟随（拖拽时不断色），浮条 250ms 防抖（避免拖拽中反复跳动）
   useEffect(() => {
+    let raf = 0
     let timer: ReturnType<typeof setTimeout> | undefined
-    const debounced = () => {
+    const onSel = () => {
+      if (!raf) {
+        raf = requestAnimationFrame(() => {
+          raf = 0
+          applySelection(resolveSelectionTarget(), false)
+        })
+      }
       clearTimeout(timer)
-      timer = setTimeout(() => {
-        const sel = window.getSelection()
-        if (!sel || sel.isCollapsed) {
-          onSelection(null)
-          return
-        }
-        const node = sel.anchorNode
-        const pageEl = (node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null
-        if (!pageEl) {
-          onSelection(null)
-          return
-        }
-        onSelection(computePageSelection(Number(pageEl.dataset.page), pageEl))
-      }, 250)
+      timer = setTimeout(() => applySelection(resolveSelectionTarget(), true), 250)
     }
-    document.addEventListener('selectionchange', debounced)
-    document.addEventListener('touchend', debounced)
+    document.addEventListener('selectionchange', onSel)
+    document.addEventListener('touchend', onSel)
     return () => {
+      cancelAnimationFrame(raf)
       clearTimeout(timer)
-      document.removeEventListener('selectionchange', debounced)
-      document.removeEventListener('touchend', debounced)
+      document.removeEventListener('selectionchange', onSel)
+      document.removeEventListener('touchend', onSel)
     }
-  }, [computePageSelection, onSelection])
+  }, [applySelection, resolveSelectionTarget])
 
   // —— 区域截图（M2.5）：从渲染画布裁剪矩形区域 ——
   const cropCanvas = useCallback((wrapper: HTMLElement, rect: { x: number; y: number; w: number; h: number }): string | null => {
@@ -347,6 +406,16 @@ export function PdfReader({
   const hi = Math.min(numPages, center + RENDER_WINDOW)
   const dark = settings.theme === 'night' || settings.theme === 'dusk'
 
+  // 历史批注存的是逐 span 的碎矩形，渲染前同样并一次块（并块幂等，新批注无副作用）
+  const annRects = useMemo(() => {
+    const m = new Map<string, NormRect[]>()
+    for (const a of annotations) {
+      if (!a.rects?.length) continue
+      m.set(a.id, mergeLineRects(a.rects, ratios[(a.page ?? 1) - 1] ?? 1.414))
+    }
+    return m
+  }, [annotations, ratios])
+
   return (
     <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto bg-surface-3/50">
       <Document
@@ -404,7 +473,7 @@ export function PdfReader({
                           className={`absolute inset-0 pointer-events-none ${flashId === a.id ? 'ann-flash' : ''}`}
                           style={{ ['--ann-opacity' as string]: '0.4' }}
                         >
-                          {a.rects!.map((r, ri) => (
+                          {(annRects.get(a.id) ?? a.rects!).map((r, ri) => (
                             <span
                               key={ri}
                               className={cn('absolute', isShot ? 'border-2 border-primary' : colorCls)}
@@ -420,6 +489,23 @@ export function PdfReader({
                         </div>
                       )
                     })}
+                  {/* 选区预览：与最终高亮同一套并块矩形，颜色单一、按行连续 */}
+                  {!shotMode && preview?.page === p && (
+                    <div className="absolute inset-0 pointer-events-none">
+                      {preview.rects.map((r, i) => (
+                        <span
+                          key={i}
+                          className="sel-preview absolute"
+                          style={{
+                            left: `${r.x * 100}%`,
+                            top: `${r.y * 100}%`,
+                            width: `${r.w * 100}%`,
+                            height: `${r.h * 100}%`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <span className="text-[11px] text-on-surface-2 select-none">
                   {p} / {numPages}
