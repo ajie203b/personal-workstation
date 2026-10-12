@@ -2,7 +2,7 @@
 
 任务清单 × 文档工作站的一体化个人工作台。本地优先、数据不出本机、单人不设账号。
 
-> 个人工作站 v1.5.0 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
+> 个人工作站 v1.5.1 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 提供 **安卓 App**（Capacitor 封装，完全离线、无需服务器）与 **网页版 PWA** 两种形态。最新 APK 在 [Releases](../../releases) 页下载。
 
 ## 快速开始（网页版）
@@ -50,7 +50,7 @@ cd android
 
 **本机当前产物**（已生成，直接取用）：
 
-- `apk/personal-workstation-v1.5.0.apk` —— 正式签名包（6.9MB，versionCode 30，安装这个）
+- `apk/personal-workstation-v1.5.1.apk` —— 正式签名包（6.9MB，versionCode 31，安装这个）
 
 ### 安装到手机 / 平板
 
@@ -61,13 +61,30 @@ cd android
 - 应用数据（任务等）保存在应用沙箱的 IndexedDB 中，卸载即清除；重要节点先到「设置 → 数据 → 导出备份」。
 - 连接 USB 后也可直接 `adb install app-debug.apk`。
 
-### 日常改动流程
+### 日常改动与发布新版本
 
-```bash
-# 改完 src/ 里的代码后：
-npm run build && npx cap sync android
-# 再用 Android Studio / gradlew 出包
-```
+改完 `src/` 只想本地看效果：`npm run build && npx cap sync android`，再出包即可。
+
+**要把一次改动真正发出去（网页和手机都生效），下面六步一步都不能省。** 原因是网页版与安卓 App 的「检查更新」读的是两个不同来源：网页版读同源 `version.json`（`gh-pages` 分支），安卓壳内同源指向安装包里的 localhost、读不到它，只能降级查 GitHub Releases API 的 `releases/latest`。只推 Pages 不发 Release，手机永远收不到更新提示；只发 Release 不推 Pages，网页版还是旧的。
+
+1. **升版本号**：`npm version 1.5.2 --no-git-tag-version`（一次改好 `package.json` 与 `package-lock.json`）；再手改 `android/app/build.gradle` 的 `versionCode`（**每发一版 +1**，Android 只认它判断能否覆盖安装）与 `versionName`（跟 npm 版本保持一致）。
+2. **提交并推送 main**：功能改动与版本号改动进同一个提交，`git push origin main`。
+3. **发网页版**：`bash scripts/deploy-gh-pages.sh`（构建 `dist/` → 快进推 `gh-pages` → 按 package.json 写 `version.json`）。跑完自己核对一次 `curl -fsS https://ajie203b.github.io/personal-workstation/version.json`——Pages 重建有几十秒延迟，脚本末尾那次 curl 很可能仍打印旧值。
+4. **出安卓包**：`npx cap sync android` → `cd android && JAVA_HOME="%LOCALAPPDATA%\jdk-21" ./gradlew assembleRelease`。JAVA_HOME 用反斜杠形式，正斜杠写法会让 Gradle 找不到签名配置。
+5. **验包**（构建成功不等于包是对的，三查缺一不可）：
+   - `aapt2 dump badging app-release.apk | grep ^package` → versionCode / versionName 是新版；
+   - `keytool -printcert -jarfile app-release.apk` 的 SHA256 指纹必须与上一版一致，不一致说明换了 keystore，已装设备只能卸载重装、数据会丢；
+   - `unzip -p app-release.apk assets/public/assets/<本次改动的资源文件>` 确认改动真的进了包。
+
+   然后复制成 `apk/personal-workstation-v<版本>.apk`，并更新 README 顶部版本行与上面「本机当前产物」行。
+6. **发 Release**（手机更新提示的唯一来源）：
+
+   ```bash
+   gh release create v1.5.2 apk/personal-workstation-v1.5.2.apk \
+     --title "v1.5.2 · <一句话>" --notes "<改动清单 + 在线版链接>"
+   ```
+
+   资产名带版本号，App 内按接口返回的 `browser_download_url` 取下载地址，不拼死路径。
 
 ## 网页版 PWA（备用形态）
 
