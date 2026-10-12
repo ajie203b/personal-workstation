@@ -28,6 +28,34 @@ import { exportAnnotationsToDoc } from './exportAnnotations'
 
 const FLOW_KINDS: readonly Doc['kind'][] = ['epub', 'docx', 'pptx', 'txt']
 
+/** 折叠空白后从第一个句末标点截断，最长 48 字；pdf.js 字距排版的中文会带空格，这里一并收紧 */
+function firstSentence(raw: string): string {
+  const s = raw.replace(/\s+/g, ' ').replace(/([\u4e00-\u9fff]) (?=[\u4e00-\u9fff])/g, '$1').trim()
+  if (!s) return ''
+  const hit = s.match(/^.{2,48}?(?:[。！？；]|[.!?](?=\s|$))/)
+  return hit ? hit[0].trim() : s.slice(0, 48)
+}
+
+/**
+ * 书签摘录：取该位置的第一句话。
+ * 先读已渲染的 DOM（书签总是加在当前看到的页/块上），PDF 页不在渲染窗口时退回全文索引的分页文本。
+ */
+async function quoteAtLocator(doc: Doc, anchor: string): Promise<string | undefined> {
+  const m = anchor.match(/^([pbf])(\d+)$/)
+  if (!m) return undefined
+  const idx = Number(m[2])
+  let raw = ''
+  if (m[1] === 'p') {
+    raw = document.querySelector(`[data-page="${idx}"] .textLayer`)?.textContent ?? ''
+    if (!raw.trim()) raw = (await db.docText.get(doc.hash))?.segments?.[idx - 1] ?? ''
+  } else if (m[1] === 'b') {
+    raw = document.getElementById(`b${idx}`)?.textContent ?? ''
+  } else {
+    raw = document.querySelector(`[data-seg="${idx}"]`)?.textContent ?? ''
+  }
+  return firstSentence(raw) || undefined
+}
+
 type Selection =
   | { kind: 'md'; text: string; blockIdx: number; popover: { left: number; y: number; below: boolean } }
   | { kind: 'pdf'; text: string; page: number; rects: { x: number; y: number; w: number; h: number }[]; popover: { left: number; y: number; below: boolean } }
@@ -240,7 +268,8 @@ export function DocReaderPage() {
       : doc.kind === 'md'
         ? `第 ${Number(currentLocator.replace('b', '0')) + 1} 段`
         : `第 ${Number(currentLocator.replace('f', '0')) + 1} ${doc.kind === 'pptx' ? '片' : doc.kind === 'epub' ? '章' : '节'}`
-    await addBookmark(doc.hash, unitLabel, currentLocator || (doc.kind === 'pdf' ? 'p1' : doc.kind === 'md' ? 'b0' : 'f0'))
+    const anchor = currentLocator || (doc.kind === 'pdf' ? 'p1' : doc.kind === 'md' ? 'b0' : 'f0')
+    await addBookmark(doc.hash, unitLabel, anchor, await quoteAtLocator(doc, anchor))
     toast('已添加书签')
   }, [doc, currentLocator, toast])
 
@@ -545,8 +574,8 @@ export function DocReaderPage() {
           toc={toc}
           annotations={annotations}
           leftTab={leftTab}
-          onJump={(a) => {
-            doJump(a)
+          onJump={(a, hl) => {
+            doJump(a, hl)
             setMobilePanel(null)
           }}
           onDeleteBookmark={(id) => void deleteBookmark(id)}
@@ -558,8 +587,8 @@ export function DocReaderPage() {
           annotations={annotations}
           backlinks={backlinks}
           rightTab={rightTab}
-          onJump={(a) => {
-            doJump(a)
+          onJump={(a, hl) => {
+            doJump(a, hl)
             setMobilePanel(null)
           }}
           onToTask={(ann) => setTaskFrom({ ann, doc })}
@@ -760,9 +789,13 @@ function TocContent({
         <div className="mt-3 border-t border-outline pt-2">
           <p className="text-[11px] font-medium text-on-surface-2 px-2.5 py-1">书签</p>
           {marks.map((b) => (
-            <div key={b.id} className="group flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] hover:bg-surface-3">
-              <button className="flex-1 text-left text-[13px] cursor-pointer" onClick={() => onJump(b.anchor)}>
-                {b.label}
+            <div key={b.id} className="group flex items-start gap-1 px-2.5 py-1.5 rounded-[10px] hover:bg-surface-3">
+              <button
+                className="flex-1 min-w-0 text-left cursor-pointer flex flex-col items-start gap-0.5"
+                onClick={() => onJump(b.anchor)}
+              >
+                <span className="text-[13px]">{b.label}</span>
+                {b.quote && <span className="text-[11.5px] leading-snug text-on-surface-2 line-clamp-2">{b.quote}</span>}
               </button>
               <button aria-label="删除书签" onClick={() => onDeleteBookmark(b.id)} className="opacity-0 group-hover:opacity-100 text-on-surface-2 hover:text-danger cursor-pointer">
                 <X size={13} />
@@ -872,10 +905,15 @@ function RightContent({
           {a.kind === 'shot' && a.img && (
             <img src={a.img} alt="区域截图" className="w-full rounded-[10px] border border-outline mb-2 cursor-zoom-in" onClick={() => onJump(anchorFor(a), a.id)} />
           )}
-          <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={() => onJump(anchorFor(a), a.id)}
+            title="跳到原文位置"
+            className="w-full flex items-start gap-2 text-left cursor-pointer"
+          >
             <span className={`shrink-0 mt-1 w-2.5 h-2.5 rounded-full ${a.kind === 'shot' ? 'bg-primary' : a.color === 'yellow' ? 'bg-yellow-400' : a.color === 'green' ? 'bg-green-400' : a.color === 'blue' ? 'bg-blue-400' : 'bg-red-400'}`} />
-            <p className="flex-1 text-[13px] leading-snug text-on-surface">{a.text}</p>
-          </div>
+            <span className="flex-1 text-[13px] leading-snug text-on-surface">{a.text}</span>
+          </button>
           {a.comment && !editing && <p className="text-[12px] text-on-surface-2 mt-1.5 pl-[18px]">{a.comment}</p>}
           {editing === a.id ? (
             <textarea
@@ -934,7 +972,7 @@ function useLiveQueryBookmarks(docHash: string) {
     useLiveQuery(
       () => db.bookmarks.where('docHash').equals(docHash).reverse().sortBy('createdAt'),
       [docHash],
-      [] as { id: string; label: string; anchor: string; createdAt: number }[],
+      [] as { id: string; label: string; anchor: string; quote?: string; createdAt: number }[],
     ) ?? []
   )
 }

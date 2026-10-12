@@ -144,6 +144,8 @@ export interface Bookmark {
   label: string
   /** 与 Annotation 定位同构：pdf=p 页码；md=b 块号 */
   anchor: string
+  /** 添加书签时该处的第一句话，只作列表摘要用（不参与索引，无需建表版本） */
+  quote?: string
   createdAt: number
 }
 
