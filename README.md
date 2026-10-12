@@ -65,7 +65,7 @@ cd android
 
 改完 `src/` 只想本地看效果：`npm run build && npx cap sync android`，再出包即可。
 
-**要把一次改动真正发出去（网页和手机都生效），下面六步一步都不能省。** 原因是网页版与安卓 App 的「检查更新」读的是两个不同来源：网页版读同源 `version.json`（`gh-pages` 分支），安卓壳内同源指向安装包里的 localhost、读不到它，只能降级查 GitHub Releases API 的 `releases/latest`。只推 Pages 不发 Release，手机永远收不到更新提示；只发 Release 不推 Pages，网页版还是旧的。
+**要把一次改动真正发出去（网页和手机都生效），下面六步一步都不能省。** 本仓库的约定是：**每完成一个功能或修掉一个 bug，收尾就走这六步发一个新版本**，不用等谁来催——只提交代码不发版，等于改动没交付。原因是网页版与安卓 App 的「检查更新」读的是两个不同来源：网页版读同源 `version.json`（`gh-pages` 分支），安卓壳内同源指向安装包里的 localhost、读不到它，只能降级查 GitHub Releases API 的 `releases/latest`。只推 Pages 不发 Release，手机永远收不到更新提示；只发 Release 不推 Pages，网页版还是旧的。
 
 1. **升版本号**：`npm version 1.5.2 --no-git-tag-version`（一次改好 `package.json` 与 `package-lock.json`）；再手改 `android/app/build.gradle` 的 `versionCode`（**每发一版 +1**，Android 只认它判断能否覆盖安装）与 `versionName`（跟 npm 版本保持一致）。
 2. **提交并推送 main**：功能改动与版本号改动进同一个提交，`git push origin main`。
