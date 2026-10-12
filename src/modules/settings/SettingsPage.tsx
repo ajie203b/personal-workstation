@@ -391,16 +391,6 @@ function AboutTab() {
           </Button>
         </section>
       )}
-
-      <section className="card p-4 text-[13px] text-on-surface-2 leading-relaxed">
-        <h2 className="text-[14px] font-semibold text-on-surface mb-1.5">关于</h2>
-        {/* define 只替换代码里的标识符，JSX 文本节点不会被处理，必须用表达式插值 */}
-        <p>个人工作站 v{getCurrentVersion()} · 本地优先 · 数据不出本机</p>
-        <p className="mt-1">
-          技术栈：React 18 + TypeScript + Vite + Tailwind CSS 4 + Zustand + Dexie（IndexedDB）+ PWA
-        </p>
-        <p className="mt-1">路线：M1 任务清单 ✅ → M2 文档工作站 ✅ → M3 互跳与打磨</p>
-      </section>
     </div>
   )
 }

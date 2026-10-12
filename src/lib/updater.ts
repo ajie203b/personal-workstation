@@ -8,10 +8,12 @@ export interface UpdateInfo {
 }
 
 /**
- * 网页版查同源 version.json（由 deploy-gh-pages.sh 写入 Pages），浏览器环境一定拿得到 CORS；
- * 安卓壳内同源是 app 包内的 localhost，读不到该文件，降级到 Releases API。
- * 不再依赖任何写死的 Pages 域名。
+ * 版本号的权威来源是 Pages 上的 version.json（由 deploy-gh-pages.sh 按 package.json 写入 gh-pages）。
+ * 它是静态文件、带 Access-Control-Allow-Origin: *，网页版和安卓壳内（https://localhost）都能直接读，
+ * 且不吃 GitHub API 的按 IP 限流——所以放主位。Releases API 只用来在「确实有新版」时取 APK 直链，
+ * 取不到就退回 Release 页面，用户照样能下载。
  */
+const PAGES_VERSION_URL = 'https://ajie203b.github.io/personal-workstation/version.json'
 const LATEST_RELEASE_API = 'https://api.github.com/repos/ajie203b/personal-workstation/releases/latest'
 export const RELEASE_PAGE = 'https://github.com/ajie203b/personal-workstation/releases/latest'
 
@@ -36,18 +38,18 @@ function normalizeVersion(raw: string): string {
 
 export async function checkForUpdate(): Promise<UpdateInfo> {
   const current = getCurrentVersion()
-  const fromJson = await readVersionJson(current)
-  if (fromJson?.checked) return fromJson
-  const fromApi = await readLatestRelease(current)
-  return fromApi ?? NOT_CHECKED(current)
+  const fromPages = await readVersionJson(current)
+  if (fromPages?.checked) {
+    if (!fromPages.hasUpdate) return fromPages
+    const withApk = await readLatestRelease(current)
+    return withApk?.checked ? { ...fromPages, apkUrl: withApk.apkUrl } : fromPages
+  }
+  return (await readLatestRelease(current)) ?? NOT_CHECKED(current)
 }
 
 async function readVersionJson(current: string): Promise<UpdateInfo | null> {
   try {
-    // 只在 http(s) 环境试同源；安卓壳内（capacitor://localhost 等）协议不同，直接走 Releases API
-    const base = document.baseURI
-    if (!/^https?:/i.test(base)) return null
-    const res = await fetch(new URL('version.json', base).href + `?t=${Date.now()}`, { cache: 'no-store' })
+    const res = await fetch(`${PAGES_VERSION_URL}?t=${Date.now()}`, { cache: 'no-store' })
     if (!res.ok) return null
     const data = (await res.json()) as { version?: string }
     const latest = normalizeVersion(data.version ?? '')
