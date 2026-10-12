@@ -136,8 +136,8 @@ export async function deleteAnnotation(id: string): Promise<void> {
   await db.annotations.delete(id)
 }
 
-export async function addBookmark(docHash: string, label: string, anchor: string): Promise<void> {
-  await db.bookmarks.add({ id: uid(), docHash, label, anchor, createdAt: Date.now() })
+export async function addBookmark(docHash: string, label: string, anchor: string, quote?: string): Promise<void> {
+  await db.bookmarks.add({ id: uid(), docHash, label, anchor, quote, createdAt: Date.now() })
 }
 
 export async function deleteBookmark(id: string): Promise<void> {
