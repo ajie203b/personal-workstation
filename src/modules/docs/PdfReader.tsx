@@ -53,6 +53,77 @@ function mergeLineRects(rects: NormRect[], aspect: number): NormRect[] {
   return out
 }
 
+/** 选区 Range → 页内归一化并块矩形（wRect 为该页 wrapper 的矩形，换算成页的百分比） */
+function collectPageRects(range: Range, wRect: DOMRect): NormRect[] {
+  return mergeLineRects(
+    Array.from(range.getClientRects())
+      .map((r) => ({
+        x: (r.left - wRect.left) / wRect.width,
+        y: (r.top - wRect.top) / wRect.height,
+        w: r.width / wRect.width,
+        h: r.height / wRect.height,
+      }))
+      .filter((r) => r.w > 0.001 && r.h > 0.001),
+    wRect.height / wRect.width,
+  )
+}
+
+/**
+ * 选区预览层：每页挂一个，自己订阅选区变化。
+ * 刻意不放在 PdfReader 的 state 里——拖拽选区时 selectionchange 每帧都来，
+ * 状态挂在页列表上会连带 5 个 <Page> 一起重渲染，向右拖动就能感到卡顿。
+ * 矩形存成页内百分比，所以滚动也不失配，无需跟 scroll。
+ */
+function SelectionLayer({ page }: { page: number }) {
+  const [rects, setRects] = useState<NormRect[] | null>(null)
+
+  useEffect(() => {
+    // 16ms 合并：与一帧同量级。刻意不用 rAF——页面不可见时 rAF 挂起，选区反馈会整个丢掉
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const sync = () => {
+      timer = undefined
+      const sel = window.getSelection()
+      const node = sel?.anchorNode
+      const owner = sel && !sel.isCollapsed && sel.rangeCount
+        ? ((node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null)
+        : null
+      if (!owner || Number(owner.dataset.page) !== page) {
+        setRects((prev) => (prev ? null : prev))
+        return
+      }
+      const next = collectPageRects(sel!.getRangeAt(0), owner.getBoundingClientRect())
+      setRects(next.length ? next : null)
+    }
+    const onSel = () => {
+      if (timer) return
+      timer = setTimeout(sync, 16)
+    }
+    document.addEventListener('selectionchange', onSel)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('selectionchange', onSel)
+    }
+  }, [page])
+
+  if (!rects) return null
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      {rects.map((r, i) => (
+        <span
+          key={i}
+          className="sel-preview absolute"
+          style={{
+            left: `${r.x * 100}%`,
+            top: `${r.y * 100}%`,
+            width: `${r.w * 100}%`,
+            height: `${r.h * 100}%`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 export interface PdfSelectionInfo {
   text: string
   page: number
@@ -103,8 +174,6 @@ export function PdfReader({
   const [containerW, setContainerW] = useState(0)
   const [center, setCenter] = useState(1) // 当前视口中心页
   const [flashId, setFlashId] = useState<string | null>(null)
-  // 选区预览：原生 ::selection 在文本层会叠色，改由本组件按行合并后统一绘制
-  const [preview, setPreview] = useState<{ page: number; rects: NormRect[] } | null>(null)
   // 截图框选状态
   const [drag, setDrag] = useState<{ page: number; x0: number; y0: number; x1: number; y1: number } | null>(null)
   const lastScrollTop = useRef(0)
@@ -273,17 +342,7 @@ export function PdfReader({
     if (!text) return null
     const range = sel.getRangeAt(0)
     const wRect = wrapper.getBoundingClientRect()
-    const rects = mergeLineRects(
-      Array.from(range.getClientRects())
-        .map((r) => ({
-          x: (r.left - wRect.left) / wRect.width,
-          y: (r.top - wRect.top) / wRect.height,
-          w: r.width / wRect.width,
-          h: r.height / wRect.height,
-        }))
-        .filter((r) => r.w > 0.001 && r.h > 0.001),
-      wRect.height / wRect.width,
-    )
+    const rects = collectPageRects(range, wRect)
     if (!rects.length) return null
     const last = rects[rects.length - 1]
     const firstTop = rects[0].y * wRect.height + wRect.top
@@ -301,52 +360,36 @@ export function PdfReader({
     }
   }, [scrollRef])
 
-  // 选区归属页：移动端长按选词没有 mouseup，只能从 anchorNode 反查
-  const resolveSelectionTarget = useCallback(() => {
-    const sel = window.getSelection()
-    if (!sel || sel.isCollapsed) return null
-    const node = sel.anchorNode
-    const el = (node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null
-    return el ? { page: Number(el.dataset.page), el } : null
-  }, [])
-
-  const applySelection = useCallback(
-    (target: { page: number; el: HTMLElement } | null, withPopover: boolean) => {
-      const info = target ? computePageSelection(target.page, target.el) : null
-      setPreview(info && target ? { page: target.page, rects: info.rects } : null)
-      if (withPopover) onSelection(info)
-    },
-    [computePageSelection, onSelection],
-  )
-
   const onPageMouseUp = useCallback(
-    (page: number, wrapper: HTMLElement) => applySelection({ page, el: wrapper }, true),
-    [applySelection],
+    (page: number, wrapper: HTMLElement) => {
+      onSelection(computePageSelection(page, wrapper))
+    },
+    [onSelection, computePageSelection],
   )
 
-  // 预览矩形逐帧跟随（拖拽时不断色），浮条 250ms 防抖（避免拖拽中反复跳动）
+  // 移动端长按选词没有 mouseup，靠 selectionchange / touchend 补一次；
+  // 250ms 防抖让浮条不在拖拽过程中反复跳动（拖拽中的视觉反馈由 SelectionLayer 逐帧给）
   useEffect(() => {
-    let raf = 0
     let timer: ReturnType<typeof setTimeout> | undefined
-    const onSel = () => {
-      if (!raf) {
-        raf = requestAnimationFrame(() => {
-          raf = 0
-          applySelection(resolveSelectionTarget(), false)
-        })
-      }
+    const debounced = () => {
       clearTimeout(timer)
-      timer = setTimeout(() => applySelection(resolveSelectionTarget(), true), 250)
+      timer = setTimeout(() => {
+        const sel = window.getSelection()
+        const node = sel?.anchorNode
+        const pageEl = sel && !sel.isCollapsed
+          ? ((node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null)
+          : null
+        onSelection(pageEl ? computePageSelection(Number(pageEl.dataset.page), pageEl) : null)
+      }, 250)
     }
-    document.addEventListener('selectionchange', onSel)
-    document.addEventListener('touchend', onSel)
+    document.addEventListener('selectionchange', debounced)
+    document.addEventListener('touchend', debounced)
     return () => {
-      cancelAnimationFrame(raf)
       clearTimeout(timer)
-      document.removeEventListener('selectionchange', onSel)
-      document.removeEventListener('touchend', onSel)
+      document.removeEventListener('selectionchange', debounced)
+      document.removeEventListener('touchend', debounced)
     }
-  }, [applySelection, resolveSelectionTarget])
+  }, [computePageSelection, onSelection])
 
   // —— 区域截图（M2.5）：从渲染画布裁剪矩形区域 ——
   const cropCanvas = useCallback((wrapper: HTMLElement, rect: { x: number; y: number; w: number; h: number }): string | null => {
@@ -489,23 +532,8 @@ export function PdfReader({
                         </div>
                       )
                     })}
-                  {/* 选区预览：与最终高亮同一套并块矩形，颜色单一、按行连续 */}
-                  {!shotMode && preview?.page === p && (
-                    <div className="absolute inset-0 pointer-events-none">
-                      {preview.rects.map((r, i) => (
-                        <span
-                          key={i}
-                          className="sel-preview absolute"
-                          style={{
-                            left: `${r.x * 100}%`,
-                            top: `${r.y * 100}%`,
-                            width: `${r.w * 100}%`,
-                            height: `${r.h * 100}%`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  {/* 选区预览：独立组件，拖拽时只有它自己重渲染 */}
+                  {!shotMode && <SelectionLayer page={p} />}
                 </div>
                 <span className="text-[11px] text-on-surface-2 select-none">
                   {p} / {numPages}
