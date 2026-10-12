@@ -7,19 +7,73 @@ import type { Task } from '@/db/db'
 import { addFocusSession } from '@/db/focus'
 import { useAllTasks } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
+import { haptic } from '@/lib/haptics'
+import { useUi } from '@/stores/ui'
+import { Segmented } from '@/shared/ui/Segmented'
 
 type Phase = 'work' | 'break'
 
-const DURATIONS: Record<Phase, number> = { work: 25 * 60, break: 5 * 60 }
+const WORK_PRESETS = ['15', '25', '45', '60']
+const BREAK_MIN = 5
+const STORE_KEY = 'ws-focus-timer'
 const TASK_KEY = 'ws-focus-task'
 
-/** 番茄钟 + 专注会话落库（v1.3：可绑定任务，统计页汇总；v1.3.1 支持从任务一键带入） */
+interface TimerStore {
+  phase: Phase
+  running: boolean
+  /**
+   * 运行中 = 本轮结束的绝对时间戳，剩余秒数一律由 Date.now() 推算，
+   * 所以刷新、关标签页、后台被节流都不漂移；暂停/待机时不用它。
+   */
+  endsAt: number
+  /** 暂停/待机 = 本轮剩余秒数 */
+  left: number
+  workMin: number
+}
+
+const phaseSeconds = (phase: Phase, workMin: number) => (phase === 'work' ? workMin : BREAK_MIN) * 60
+const storeSeconds = (s: TimerStore) => phaseSeconds(s.phase, s.workMin)
+
+const idleStore = (): TimerStore => ({ phase: 'work', running: false, endsAt: 0, left: 25 * 60, workMin: 25 })
+
+/** 读回上次没跑完的番茄；字段缺失或值不合法一律回默认，不让计时器进入半吊子状态 */
+function loadStore(): TimerStore {
+  try {
+    const raw = localStorage.getItem(STORE_KEY)
+    if (!raw) return idleStore()
+    const s = JSON.parse(raw) as Partial<TimerStore>
+    if (s.phase !== 'work' && s.phase !== 'break') return idleStore()
+    const workMin = Number(s.workMin) > 0 ? Number(s.workMin) : 25
+    const endsAt = Number(s.endsAt)
+    const running = !!s.running && endsAt > 0
+    const left = Number(s.left)
+    return {
+      phase: s.phase,
+      workMin,
+      running,
+      endsAt: Number.isFinite(endsAt) ? endsAt : 0,
+      left: Number.isFinite(left) ? Math.max(0, Math.min(left, phaseSeconds(s.phase, workMin))) : phaseSeconds(s.phase, workMin),
+    }
+  } catch {
+    return idleStore()
+  }
+}
+
+function remainingOf(s: TimerStore, now: number): number {
+  const total = storeSeconds(s)
+  if (!s.running) return Math.min(s.left, total)
+  return Math.max(0, Math.min(total, Math.ceil((s.endsAt - now) / 1000)))
+}
+
+/** 番茄钟：按墙上时钟计时（跨刷新/后台继续跑）+ 可选专注时长 + 会话落库（可绑定任务） */
 export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
-  const [phase, setPhase] = useState<Phase>('work')
-  const [remaining, setRemaining] = useState(DURATIONS.work)
-  const [running, setRunning] = useState(false)
-  const [taskId, setTaskId] = useState(() => initialTaskId ?? localStorage.getItem(TASK_KEY) ?? '')
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [store, setStore] = useState<TimerStore>(loadStore)
+  const [now, setNow] = useState(() => Date.now())
+  const toast = useUi((s) => s.toast)
+  // StrictMode 会把 effect 吊两次，落库靠这个 ref 兜住，只记一次
+  const settledRef = useRef(0)
+
+  const remaining = remainingOf(store, now)
 
   const today = new Date().toISOString().slice(0, 10)
   const todayStats = useLiveQuery(
@@ -33,43 +87,58 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
 
   const all = useAllTasks()
   const candidates: Task[] = sortTasks(all.filter((t) => t.status !== 'done')).slice(0, 50)
-
-  const completePhase = useCallback(() => {
-    if (phase === 'work') {
-      void addFocusSession(25, taskId || undefined)
-      setPhase('break')
-      setRemaining(DURATIONS.break)
-    } else {
-      setPhase('work')
-      setRemaining(DURATIONS.work)
-    }
-    setRunning(false)
-  }, [phase, taskId])
+  const [taskId, pickTask] = useFocusTaskId(initialTaskId)
 
   useEffect(() => {
-    if (!running) return
-    intervalRef.current = setInterval(() => {
-      setRemaining((r) => {
-        if (r <= 1) {
-          clearInterval(intervalRef.current!)
-          completePhase()
-          return 0
-        }
-        return r - 1
-      })
-    }, 1000)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [running, completePhase])
+    localStorage.setItem(STORE_KEY, JSON.stringify(store))
+  }, [store])
 
-  const pickTask = (id: string) => {
-    setTaskId(id)
-    if (id) localStorage.setItem(TASK_KEY, id)
-    else localStorage.removeItem(TASK_KEY)
-  }
+  // 250ms 对齐一次时钟：即使后台把 interval 节流到 1 分钟，回到前台也会立刻补算
+  useEffect(() => {
+    if (!store.running) return
+    const id = setInterval(() => setNow(Date.now()), 250)
+    const onVis = () => setNow(Date.now())
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [store.running])
+
+  // 到期（含离开期间就已到期）：落库 → 进入下一阶段停住等用户，不自动续跑
+  useEffect(() => {
+    if (!store.running || remaining > 0 || settledRef.current === store.endsAt) return
+    settledRef.current = store.endsAt
+    const finishedWork = store.phase === 'work'
+    if (finishedWork) void addFocusSession(store.workMin, taskId || undefined)
+    toast(finishedWork ? `专注 ${store.workMin} 分钟完成，休息 ${BREAK_MIN} 分钟` : '休息结束，可以开始下一个番茄')
+    haptic('success')
+    setStore((s) => {
+      const phase: Phase = s.phase === 'work' ? 'break' : 'work'
+      return { ...s, phase, running: false, endsAt: 0, left: phaseSeconds(phase, s.workMin) }
+    })
+  }, [store.running, store.phase, store.endsAt, store.workMin, remaining, taskId, toast])
+
+  const toggle = useCallback(() => {
+    setStore((s) => {
+      if (s.running) return { ...s, running: false, left: remainingOf(s, Date.now()), endsAt: 0 }
+      const sec = remainingOf(s, Date.now()) || storeSeconds(s)
+      return { ...s, running: true, endsAt: Date.now() + sec * 1000, left: sec }
+    })
+  }, [])
+
+  const reset = useCallback(() => {
+    setStore((s) => ({ phase: 'work', running: false, endsAt: 0, left: s.workMin * 60, workMin: s.workMin }))
+  }, [])
+
+  const pickMinutes = useCallback((min: number) => {
+    setStore((s) => ({ ...s, workMin: min, left: s.phase === 'work' ? min * 60 : s.left }))
+  }, [])
 
   const mm = String(Math.floor(remaining / 60)).padStart(2, '0')
   const ss = String(remaining % 60).padStart(2, '0')
-  const progress = 1 - remaining / DURATIONS[phase]
+  const total = storeSeconds(store)
+  const progress = total > 0 ? 1 - remaining / total : 0
   const boundTask = all.find((t) => t.id === taskId)
 
   return (
@@ -77,7 +146,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
       <div className="flex items-center gap-2">
         <Timer size={16} className="text-on-surface-2" />
         <span className="text-[13px] font-semibold text-on-surface-2">
-          {phase === 'work' ? '专注中' : '休息中'}
+          {store.phase === 'work' ? '专注中' : '休息中'}
         </span>
       </div>
 
@@ -87,33 +156,47 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
           <circle cx="70" cy="70" r="60" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
           <circle
             cx="70" cy="70" r="60" fill="none"
-            stroke={phase === 'work' ? 'var(--ok)' : 'var(--primary)'}
+            stroke={store.phase === 'work' ? 'var(--ok)' : 'var(--primary)'}
             strokeWidth="8" strokeLinecap="round"
             strokeDasharray={`${progress * 2 * Math.PI * 60} ${2 * Math.PI * 60}`}
             style={{ transition: 'stroke-dasharray 1s linear, stroke var(--dur-2) var(--ease-standard)' }}
           />
         </svg>
         <div className="absolute inset-0 grid place-items-center">
-          <span className={cn('text-[28px] font-bold tabular-nums', phase === 'work' ? 'text-ok' : 'text-primary')}>
+          <span className={cn('text-[28px] font-bold tabular-nums', store.phase === 'work' ? 'text-ok' : 'text-primary')}>
             {mm}:{ss}
           </span>
         </div>
       </div>
 
+      {/* 专注时长：计时中不可改，改了会打断正在跑的这一个番茄 */}
+      <div
+        className={cn('w-full flex justify-center', store.running && 'opacity-50 pointer-events-none')}
+        aria-disabled={store.running || undefined}
+      >
+        <Segmented
+          ariaLabel="专注时长"
+          size="sm"
+          options={WORK_PRESETS.map((m) => ({ value: m, label: `${m}分` }))}
+          value={String(store.workMin)}
+          onChange={(v) => pickMinutes(Number(v))}
+        />
+      </div>
+
       {/* 控制 */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => setRunning((r) => !r)}
+          onClick={toggle}
           className={cn(
             'grid place-items-center w-12 h-12 rounded-full cursor-pointer transition-all',
-            running ? 'bg-surface-3 text-on-surface' : 'bg-ok text-white shadow-sm hover:brightness-110',
+            store.running ? 'bg-surface-3 text-on-surface' : 'bg-ok text-white shadow-sm hover:brightness-110',
           )}
-          aria-label={running ? '暂停' : '开始'}
+          aria-label={store.running ? '暂停' : '开始'}
         >
-          {running ? <Pause size={20} /> : <Play size={20} className="ml-0.5" />}
+          {store.running ? <Pause size={20} /> : <Play size={20} className="ml-0.5" />}
         </button>
         <button
-          onClick={() => { setRunning(false); setPhase('work'); setRemaining(DURATIONS.work) }}
+          onClick={reset}
           className="grid place-items-center w-10 h-10 rounded-full bg-surface-3 text-on-surface-2 hover:text-on-surface cursor-pointer"
           aria-label="重置"
         >
@@ -149,4 +232,18 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
       </div>
     </div>
   )
+}
+
+/** 绑定任务：初值来自深链或本机记忆，切换即写回本机 */
+function useFocusTaskId(initialTaskId?: string): [string, (id: string) => void] {
+  const [id, setId] = useState(() => initialTaskId ?? localStorage.getItem(TASK_KEY) ?? '')
+  useEffect(() => {
+    if (initialTaskId) setId(initialTaskId)
+  }, [initialTaskId])
+  const pick = useCallback((next: string) => {
+    setId(next)
+    if (next) localStorage.setItem(TASK_KEY, next)
+    else localStorage.removeItem(TASK_KEY)
+  }, [])
+  return [id, pick]
 }
