@@ -432,6 +432,76 @@ select:focus-visible {
   transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease !important;
 }
 
+/* ============================================================
+   三态主题开关（拟物）
+   质感取自 Uiverse bright-dolphin-91（Yaya12085，MIT）：内阴影凹槽轨道 + 金属旋钮 + hover 3D 倾斜，
+   原组件是二态 checkbox，这里按本站的浅色 / 深色 / 跟随系统改造成三档滑块。
+   ============================================================ */
+.theme-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 168px;
+  height: 56px;
+  padding: 6px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--surface) 55%, var(--surface-3));
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.32),
+    inset 0 -1px 0 color-mix(in srgb, var(--surface) 85%, transparent),
+    0 1px 0 color-mix(in srgb, var(--surface) 70%, transparent),
+    0 10px 22px rgba(0, 0, 0, 0.10);
+  transition: transform var(--dur-3) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+}
+.theme-switch:hover {
+  transform: perspective(320px) rotateX(5deg) rotateY(-4deg);
+}
+
+.theme-switch-knob {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: var(--surface);
+  background-image: linear-gradient(130deg,
+    color-mix(in srgb, var(--surface) 55%, #ffffff) 8%,
+    var(--surface) 42%,
+    color-mix(in srgb, var(--surface-3) 82%, #000000) 96%);
+  box-shadow:
+    0 2px 1px rgba(0, 0, 0, 0.30),
+    0 9px 16px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 color-mix(in srgb, var(--surface) 60%, #ffffff);
+  transition: transform 420ms var(--ease-spring);
+}
+.theme-switch-knob[data-pos='1'] { transform: translateX(52px); }
+.theme-switch-knob[data-pos='2'] { transform: translateX(104px); }
+
+.theme-switch-slot {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--on-surface-2);
+  opacity: 0.62;
+  transition: opacity var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard);
+}
+.theme-switch-slot:hover { opacity: 0.9; }
+.theme-switch-slot[aria-checked='true'] { color: var(--primary); opacity: 1; }
+.theme-switch-slot:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -4px;
+  border-radius: 12px;
+}
+
 /* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */
 .sel-popover {
   position: fixed;

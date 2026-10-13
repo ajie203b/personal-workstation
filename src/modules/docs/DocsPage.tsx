@@ -8,11 +8,16 @@ import { useDocs } from '@/db/hooks'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { useUi } from '@/stores/ui'
+import { cn } from '@/lib/cn'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
-import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
+import { Dialog } from '@/shared/ui/Sheet'
+import { useHoldToConfirm } from '@/shared/ui/useHoldToConfirm'
 import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
+
+/** 绕卡片蓄力的时长：文案与计时共用这一个值 */
+const DELETE_HOLD_MS = 1500
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
 export function DocsPage() {
@@ -181,82 +186,212 @@ export function DocsPage() {
             const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
             const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
             return (
-              <button
+              <DocCard
                 key={d.id}
-                onClick={() => {
-                  // 全文命中且能定位分段 → 直接跳到对应页/章/片（PDF 用页码，流式文档用段下标）
-                  if (hit?.seg) openDocAtHit(d, hit.seg)
-                  else navigate(`/docs/${d.id}`)
+                doc={d}
+                pct={pct}
+                hit={hit}
+                onOpen={() => (hit?.seg ? openDocAtHit(d, hit.seg) : navigate(`/docs/${d.id}`))}
+                onEdit={() => navigate(`/docs/edit/${d.id}`)}
+                onRead={() => openDoc({ docId: d.id })}
+                onRequestConfirm={() => setPendingDelete(d)}
+                onDelete={() => {
+                  void deleteDoc(d).then(() => toast('文档已删除'))
                 }}
-                className="card card-hover text-left px-4 py-3.5 flex gap-3.5 cursor-pointer"
-              >
-                <span className="grid place-items-center w-11 h-11 rounded-[12px] text-on-surface-2/80 shrink-0">
-                  <KindIcon kind={d.kind} />
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-[15px] font-semibold truncate">{d.title}</span>
-                  <span className="block text-[12px] text-on-surface-2 mt-0.5">
-                    {DOC_KIND_LABEL[d.kind]} · {formatSize(d.size)} ·{' '}
-                    {d.lastOpenedAt
-                      ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
-                      : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
-                  </span>
-                  {hit && (
-                    <span className="block text-[12px] text-on-surface mt-1.5 leading-snug line-clamp-2">
-                      <span className="text-primary font-medium">{hit.count} 处命中{hit.seg ? ` · ${segLabel(d.kind, hit.seg)}` : ''}：</span>                      {hit.snippet}
-                    </span>
-                  )}
-                  <span className="flex items-center gap-2 mt-2">
-                    <span className="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden">
-                      <span className="block h-full w-full rounded-full bg-primary transition-transform duration-300 origin-left" style={{ transform: `scaleX(${pct / 100})` }} />
-                    </span>
-                    <span className="text-[11px] text-on-surface-2 tabular-nums">{pct}%</span>
-                  </span>
-                </span>
-                <span className="flex flex-col gap-1 self-start">
-                  <span role="button" tabIndex={0} aria-label="继续阅读"
-                    title="继续阅读"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      openDoc({ docId: d.id })
-                    }}
-                    className="grid place-items-center w-8 h-8 rounded-[10px] text-primary hover:bg-primary-soft cursor-pointer"
-                  >
-                    <Import size={15} className="rotate-180" />
-                  </span>
-                  <span role="button" tabIndex={0} aria-label="删除文档"
-                    title="删除"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setPendingDelete(d)
-                    }}
-                    className="grid place-items-center w-8 h-8 rounded-[10px] text-on-surface-2 hover:bg-danger/10 hover:text-danger cursor-pointer"
-                  >
-                    <Trash2 size={15} />
-                  </span>
-                </span>
-              </button>
+              />
             )
           })}
         </div>
       )}
 
-      {/* 删除是不可逆操作：走长按蓄力（键盘/减弱动效自动降级为二次确认框） */}
-      {pendingDelete && (
-        <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50">
-          <HoldToConfirm
-            label="确认删除"
-            dialogTitle="删除文档？"
-            dialogDescription={`「${pendingDelete.title}」及其批注、进度将被删除，文件本体不可恢复。`}
-            onConfirm={() => {
-              void deleteDoc(pendingDelete).then(() => toast('文档已删除'))
+      {/* 删除的正常路径是按住垃圾桶让光绕卡片一周；键盘与减弱动效走这个兜底二次确认 */}
+      <Dialog
+        open={!!pendingDelete}
+        onOpenChange={(v) => !v && setPendingDelete(null)}
+        title="删除文档？"
+        description={`「${pendingDelete?.title ?? ''}」及其批注、进度将被删除，文件本体不可恢复。`}
+      >
+        <div className="flex justify-end gap-2">
+          <Button onClick={() => setPendingDelete(null)}>取消</Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              const d = pendingDelete
               setPendingDelete(null)
+              if (d) void deleteDoc(d).then(() => toast('文档已删除'))
             }}
-          />
+          >
+            确认删除
+          </Button>
         </div>
-      )}
+      </Dialog>
     </div>
   )
+}
+
+interface CardProps {
+  doc: Doc
+  pct: number
+  hit?: { count: number; snippet: string; seg?: number }
+  onOpen: () => void
+  onEdit: () => void
+  onRead: () => void
+  /** 键盘 / 减弱动效时请求父级弹出二次确认框 */
+  onRequestConfirm: () => void
+  onDelete: () => void
+}
+
+/** 文档卡：整卡可点开，右上角行内动作分别负责阅读 / 写作 / 删除 */
+function DocCard({ doc: d, pct, hit, onOpen, onEdit, onRead, onRequestConfirm, onDelete }: CardProps) {
+  const { progress, bind } = useHoldToConfirm({
+    holdMs: DELETE_HOLD_MS,
+    onComplete: onDelete,
+    onFallback: onRequestConfirm,
+  })
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="card card-hover relative overflow-hidden text-left px-4 py-3.5 flex gap-3.5 cursor-pointer"
+    >
+      <span className="grid place-items-center w-11 h-11 rounded-[12px] text-on-surface-2/80 shrink-0">
+        <KindIcon kind={d.kind} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[15px] font-semibold truncate">{d.title}</span>
+        <span className="block text-[12px] text-on-surface-2 mt-0.5">
+          {DOC_KIND_LABEL[d.kind]} · {formatSize(d.size)} ·{' '}
+          {d.lastOpenedAt
+            ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
+            : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
+        </span>
+        {hit && (
+          <span className="block text-[12px] text-on-surface mt-1.5 leading-snug line-clamp-2">
+            <span className="text-primary font-medium">{hit.count} 处命中{hit.seg ? ` · ${segLabel(d.kind, hit.seg)}` : ''}：</span>            {hit.snippet}
+          </span>
+        )}
+        <span className="flex items-center gap-2 mt-2">
+          <span className="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden">
+            <span className="block h-full w-full rounded-full bg-primary transition-transform duration-300 origin-left" style={{ transform: `scaleX(${pct / 100})` }} />
+          </span>
+          <span className="text-[11px] text-on-surface-2 tabular-nums">{pct}%</span>
+        </span>
+      </span>
+      <span className="flex flex-col gap-1 self-start">
+        <CardAction label="继续阅读" primary onClick={onRead}>
+          <Import size={15} className="rotate-180" />
+        </CardAction>
+        {d.kind === 'md' && (
+          <CardAction label="继续写作" onClick={onEdit}>
+            <PenLine size={15} />
+          </CardAction>
+        )}
+        <CardAction
+          label={`删除文档（按住 ${DELETE_HOLD_MS / 1000} 秒，光绕卡片一周后删除）`}
+          danger
+          actionBind={bind}
+          onClick={() => undefined}
+        >
+          <Trash2 size={15} />
+        </CardAction>
+      </span>
+      <HoldRing progress={progress} />
+    </button>
+  )
+}
+
+/** 卡片行内动作：外层已是 button，嵌套 button 不合法，用 span[role=button] 并补键盘激活 */
+function CardAction({
+  label, onClick, danger = false, primary = false, actionBind, children,
+}: {
+  label: string
+  onClick: () => void
+  danger?: boolean
+  primary?: boolean
+  /** 长按蓄力的指针/键盘处理器（删除用） */
+  actionBind?: React.HTMLAttributes<HTMLSpanElement> & Record<string, unknown>
+  children: React.ReactNode
+}) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        e.stopPropagation()
+        onClick()
+      }}
+      {...actionBind}
+      className={cn(
+        'grid place-items-center w-8 h-8 rounded-[10px] cursor-pointer transition-colors touch-manipulation',
+        danger ? 'text-on-surface-2 hover:bg-danger/10 hover:text-danger'
+        : primary ? 'text-primary hover:bg-primary-soft'
+        : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
+ * 蓄力光：沿文档卡的圆角边框走满一周即执行删除。
+ * pathLength=1 让描边进度与卡片实际周长无关；尺寸靠 ResizeObserver 量，
+ * 避免用 SVG 的 CSS 几何属性（老内核会整条不画，等于删除没了反馈）。
+ */
+function HoldRing({ progress }: { progress: number }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [box, setBox] = useState({ w: 0, h: 0 })
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => setBox({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const w = box.w - 3
+  const h = box.h - 3
+  if (progress <= 0 || w <= 0 || h <= 0) return null
+
+  return (
+    <span ref={ref} className="absolute inset-0 pointer-events-none" aria-hidden>
+      <svg width={box.w} height={box.h}>
+        <rect
+          x={1.5}
+          y={1.5}
+          width={w}
+          height={h}
+          rx={15}
+          fill="none"
+          stroke={ringColor(progress)}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray="1"
+          strokeDashoffset={1 - progress}
+          transform={`rotate(90 ${box.w / 2} ${box.h / 2})`}
+        />
+      </svg>
+    </span>
+  )
+}
+
+/** 越接近走满越实：淡红 → 纯红 */
+function ringColor(p: number): string {
+  if (p < 0.5) return `color-mix(in srgb, var(--danger) ${Math.round(35 + p * 60)}, transparent)`
+  return 'var(--danger)'
 }
 
 function formatSize(bytes: number): string {
