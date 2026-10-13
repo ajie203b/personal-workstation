@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import {
-  ArrowLeft, BookmarkPlus, Copy, Crop, Highlighter, List, ListPlus,
+  ArrowLeft, BookmarkPlus, Copy, Crop, Highlighter, List, ListPlus, PenLine,
   MessageSquareText, BookDown, PanelRight, Settings2, Trash2, LocateFixed, Plus, X,
 } from 'lucide-react'
 import type { Annotation, Doc, DocSettings, Task } from '@/db/db'
@@ -315,6 +315,11 @@ export function DocReaderPage() {
           </p>
         </div>
         <IconBtn label="添加书签" onClick={() => void addCurrentBookmark()}><BookmarkPlus size={18} /></IconBtn>
+        {doc.kind === 'md' && (
+          <IconBtn label="继续写作" onClick={() => navigate(`/docs/edit/${doc.id}`)}>
+            <PenLine size={18} />
+          </IconBtn>
+        )}
         {doc.kind === 'pdf' && (
           <IconBtn label={shotMode ? '退出截图模式' : '区域截图批注（拖拽框选）'} active={shotMode} onClick={() => setShotMode((v) => !v)}>
             <Crop size={18} />

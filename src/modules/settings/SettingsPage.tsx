@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, BellOff, Download, History, Monitor, Moon, Smartphone, Sun, Upload } from 'lucide-react'
-import { useUi, type Theme } from '@/stores/ui'
+import { Bell, BellOff, Download, History, Smartphone, Upload } from 'lucide-react'
+import { useUi } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
-import { markOrigin } from '@/app/ThemeButton'
-import { setThemeWithTransition } from '@/shared/theme'
-import { haptic } from '@/lib/haptics'
+import { ThemeSwitch } from '@/shared/ui/ThemeSwitch'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { isNative } from '@/lib/native'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
@@ -17,15 +15,8 @@ import {
   getAutoBackupEnabled, listBackups, restoreBackup, setAutoBackupEnabled, writeSnapshot,
   type BackupInfo,
 } from '@/lib/autoBackup'
-import { cn } from '@/lib/cn'
 
 type Tab = 'appearance' | 'data' | 'about'
-
-const THEME_CARDS: { value: Theme; label: string; icon: typeof Sun; preview: [string, string] }[] = [
-  { value: 'light', label: '浅色', icon: Sun, preview: ['#FFFFFF', '#2C55B8'] },
-  { value: 'dark', label: '深色', icon: Moon, preview: ['#1E1F24', '#A8C7FA'] },
-  { value: 'system', label: '跟随系统', icon: Monitor, preview: ['#EDEDF0', '#1E1F24'] },
-]
 
 export function SettingsPage() {
   const [tab, setTab] = useState<Tab>('appearance')
@@ -51,47 +42,10 @@ export function SettingsPage() {
 }
 
 function AppearanceTab() {
-  const theme = useUi((s) => s.theme)
-  const { haptics, setHaptics } = useUi()
+  // 极简：这一屏只留主题开关本身，说明文字与触感反馈开关都去掉（触感默认开启）
   return (
-    <div className="flex flex-col gap-3 max-w-xl">
-      <p className="text-[13px] text-on-surface-2 px-1">主题即时生效，仅保存在本机浏览器。</p>
-      <div className="grid grid-cols-3 gap-3">
-        {THEME_CARDS.map((c) => (
-          <button
-            key={c.value}
-            type="button"
-            onClick={(e) => {
-              markOrigin(e)
-              haptic('light')
-              setThemeWithTransition(c.value)
-            }}
-            className={cn(
-              'card card-hover p-3.5 flex flex-col items-center gap-2.5 cursor-pointer',
-              theme === c.value && 'ring-2 ring-primary',
-            )}
-            aria-pressed={theme === c.value}
-          >
-            <span className="flex gap-1 h-10 items-center justify-center w-full">
-              <span className="w-7 h-7 rounded-lg border border-outline" style={{ background: c.preview[0] }} />
-              <span className="w-7 h-7 rounded-lg -ml-3" style={{ background: c.preview[1] }} />
-            </span>
-            <span className="text-[13px] font-medium flex items-center gap-1.5">
-              <c.icon size={14} /> {c.label}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <section className="card p-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[14px] font-semibold mb-0.5">触感反馈</h2>
-          <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
-            勾选完成、拖拽落位、开关切换与长按确认时给一次轻震。安卓 App 内走系统触觉，网页端走振动 API（部分浏览器不支持）。
-          </p>
-        </div>
-        <JellySwitch checked={haptics} onChange={() => setHaptics(!haptics)} label="触感反馈" />
-      </section>
+    <div className="max-w-xl px-1 pt-1">
+      <ThemeSwitch />
     </div>
   )
 }
