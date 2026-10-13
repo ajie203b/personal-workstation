@@ -2,7 +2,7 @@
 
 任务清单 × 文档工作站的一体化个人工作台。本地优先、数据不出本机、单人不设账号。
 
-> 个人工作站 v1.5.3 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
+> 个人工作站 v1.5.4 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 提供 **安卓 App**（Capacitor 封装，完全离线、无需服务器）与 **网页版 PWA** 两种形态。最新 APK 在 [Releases](../../releases) 页下载。
 
 ## 快速开始（网页版）
@@ -50,7 +50,7 @@ cd android
 
 **本机当前产物**（已生成，直接取用）：
 
-- `apk/personal-workstation-v1.5.3.apk` —— 正式签名包（6.9MB，versionCode 33，安装这个）
+- `apk/personal-workstation-v1.5.4.apk` —— 正式签名包（6.9MB，versionCode 34，安装这个）
 
 ### 安装到手机 / 平板
 
@@ -160,6 +160,12 @@ cd android
 
 - **检查更新改以 Pages 上的 `version.json` 为主数据源**：静态文件、带 `Access-Control-Allow-Origin: *`，网页版与安卓壳内都能读，且不吃 GitHub API 的按 IP 限流；Releases API 退到只在「确有新版」时取 APK 直链，取不到就用 Release 页面兜底
 - 设置 → 关于 里立项期写的「技术栈 / 路线图」卡片整块删除
+
+## 功能（v1.5.4 · 写作入口与极简外观）
+
+- **Markdown 可继续写作**：阅读页顶栏与文档卡都加了「继续写作」，写完再点进去能接着写
+- **删除文档改为绕卡片蓄力光**：按住垃圾桶时一圈光沿卡片圆角边框走满一周即删除，去掉原来悬浮在列表底部的「确认删除」胶囊；键盘 Enter 与减弱动效仍走二次确认框
+- **主题开关收成三档滑块**：浅色 / 深色 / 跟随系统合成一个拟物开关（内阴影轨道 + 金属旋钮 + hover 3D 倾斜），设置 → 外观 只留这一个控件；触感反馈开关移除，默认开启
 
 ## 技术栈
 
