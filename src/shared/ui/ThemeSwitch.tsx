@@ -1,19 +1,18 @@
-import { Monitor, Moon, Sun } from 'lucide-react'
+import { Moon, Sun } from 'lucide-react'
 import { useUi, type Theme } from '@/stores/ui'
 import { markOrigin } from '@/app/ThemeButton'
 import { setThemeWithTransition } from '@/shared/theme'
 import { haptic } from '@/lib/haptics'
 
 /**
- * 三态主题开关（拟物）。质感取自 Uiverse 的 bright-dolphin-91（Yaya12085，MIT）：
- * 内阴影凹槽轨道 + 金属渐变旋钮 + hover 轻微 3D 倾斜。原组件是二态 checkbox，
- * 这里按本站的浅色 / 深色 / 跟随系统三档重做成一个滑块，颜色全部走设计令牌，深浅主题都成立。
+ * 二态主题开关（拟物）。质感取自 Uiverse 的 bright-dolphin-91（Yaya12085，MIT）：
+ * 内阴影凹槽轨道 + 金属渐变旋钮 + hover 轻微 3D 倾斜。
+ * 只保留 浅色 / 深色 两档，不再提供「跟随系统」——两档语义清晰，切换即所得。
  */
-const ORDER: Theme[] = ['light', 'dark', 'system']
+const ORDER: Theme[] = ['light', 'dark']
 const META: Record<Theme, { icon: typeof Sun; label: string }> = {
   light: { icon: Sun, label: '浅色' },
   dark: { icon: Moon, label: '深色' },
-  system: { icon: Monitor, label: '跟随系统' },
 }
 
 export function ThemeSwitch() {

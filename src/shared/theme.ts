@@ -1,10 +1,13 @@
 import { useEffect } from 'react'
 import { useUi, type Theme } from '@/stores/ui'
 
-const media = window.matchMedia('(prefers-color-scheme: dark)')
+/** 主题只保留 浅色 / 深色 两档：本地持久化里的 'system' 旧值统一收敛为浅色 */
+function resolveTheme(): 'light' | 'dark' {
+  return useUi.getState().theme === 'dark' ? 'dark' : 'light'
+}
 
-function apply(theme: Theme) {
-  const dark = theme === 'dark' || (theme === 'system' && media.matches)
+function apply() {
+  const dark = resolveTheme() === 'dark'
   document.documentElement.classList.add('theme-transition')
   document.documentElement.classList.toggle('dark', dark)
   setTimeout(() => document.documentElement.classList.remove('theme-transition'), 300)
@@ -36,14 +39,10 @@ export function setThemeWithTransition(next: Theme) {
   }
 }
 
-/** 主题应用：跟随系统时监听系统切换 */
+/** 主题应用：仅 浅色 / 深色 两档，不再监听系统主题变化 */
 export function useThemeEffect() {
   const theme = useUi((s) => s.theme)
   useEffect(() => {
-    apply(theme)
-    if (theme !== 'system') return
-    const onChange = () => apply('system')
-    media.addEventListener('change', onChange)
-    return () => media.removeEventListener('change', onChange)
+    apply()
   }, [theme])
 }

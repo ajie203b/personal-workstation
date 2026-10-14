@@ -1,12 +1,13 @@
-import { Moon, Sun, SunMoon } from 'lucide-react'
+import { Moon, Sun } from 'lucide-react'
 import { useUi, type Theme } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { setThemeWithTransition } from '@/shared/theme'
 import { haptic } from '@/lib/haptics'
 
-const NEXT: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
-const ICONS: Record<Theme, typeof Sun> = { system: SunMoon, light: Sun, dark: Moon }
-const LABELS: Record<Theme, string> = { system: '跟随系统', light: '浅色', dark: '深色' }
+/** 只有 浅色 / 深色 两档：点击在两者之间往返，不再有「跟随系统」 */
+const NEXT: Record<Theme, Theme> = { light: 'dark', dark: 'light' }
+const ICONS: Record<Theme, typeof Sun> = { light: Sun, dark: Moon }
+const LABELS: Record<Theme, string> = { light: '浅色', dark: '深色' }
 
 /** 从按钮位置记下扩散原点，CSS 的 ::view-transition-new(root) 用它画圆（多处共用） */
 export function markOrigin(e: React.MouseEvent<HTMLElement>) {

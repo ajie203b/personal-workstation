@@ -351,7 +351,9 @@ function CardAction({
 }
 
 /**
- * 蓄力光：沿文档卡的圆角边框走满一周即执行删除。
+ * 蓄力光点：一个光点沿文档卡的圆角外轮廓跑满一周即执行删除。
+ * 光点跑过的段落描边加重成危险色（越走越实），未跑到的段落保持微弱底轨提示路线。
+ * 光点位置与描边进度共用同一套周长分段换算，保证光点永远压在已染色描边的头部。
  * pathLength=1 让描边进度与卡片实际周长无关；尺寸靠 ResizeObserver 量，
  * 避免用 SVG 的 CSS 几何属性（老内核会整条不画，等于删除没了反馈）。
  */
@@ -369,36 +371,108 @@ function HoldRing({ progress }: { progress: number }) {
     return () => ro.disconnect()
   }, [])
 
-  const w = box.w - 3
-  const h = box.h - 3
+  // 光路向内收 4px：光点晕光半径 4px，外缘恰好贴到卡片边界，不会被卡片的 overflow-hidden 裁切
+  const inset = 4
+  const w = box.w - inset * 2
+  const h = box.h - inset * 2
   if (progress <= 0 || w <= 0 || h <= 0) return null
+
+  const r = Math.max(2, Math.min(15, w / 2 - 1, h / 2 - 1))
+  const path = perimeterPath(w, h, r)
+  const pt = perimeterPoint(w, h, r, progress)
 
   return (
     <span ref={ref} className="absolute inset-0 pointer-events-none" aria-hidden>
       <svg width={box.w} height={box.h}>
-        <rect
-          x={1.5}
-          y={1.5}
-          width={w}
-          height={h}
-          rx={15}
-          fill="none"
-          stroke={ringColor(progress)}
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          pathLength={1}
-          strokeDasharray="1"
-          strokeDashoffset={1 - progress}
-          transform={`rotate(90 ${box.w / 2} ${box.h / 2})`}
-        />
+        <g transform={`translate(${inset} ${inset})`}>
+          {/* 底轨：微亮的完整外轮廓，提示光点要跑的路线 */}
+          <path
+            d={path}
+            fill="none"
+            stroke="var(--danger)"
+            strokeOpacity={0.18}
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+          {/* 光点已跑过的段落：颜色加重、越走越实 */}
+          <path
+            d={path}
+            fill="none"
+            stroke={trailColor(progress)}
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            pathLength={1}
+            strokeDasharray="1"
+            strokeDashoffset={1 - progress}
+          />
+          {/* 光点本体：外层晕光 + 内层实心核 */}
+          <circle cx={pt.x} cy={pt.y} r={4} fill="var(--danger)" opacity={0.25} />
+          <circle cx={pt.x} cy={pt.y} r={2.2} fill="var(--danger)" />
+        </g>
       </svg>
     </span>
   )
 }
 
-/** 越接近走满越实：淡红 → 纯红 */
-function ringColor(p: number): string {
-  if (p < 0.5) return `color-mix(in srgb, var(--danger) ${Math.round(35 + p * 60)}, transparent)`
+/** 卡片外轮廓（圆角矩形）路径：从顶边中点起顺时针一圈回到起点，描边进度 0→1 与光点位置一一对应 */
+function perimeterPath(w: number, h: number, r: number): string {
+  return [
+    `M ${w / 2} 0`,
+    `H ${w - r}`,
+    `A ${r} ${r} 0 0 1 ${w} ${r}`,
+    `V ${h - r}`,
+    `A ${r} ${r} 0 0 1 ${w - r} ${h}`,
+    `H ${r}`,
+    `A ${r} ${r} 0 0 1 0 ${h - r}`,
+    `V ${r}`,
+    `A ${r} ${r} 0 0 1 ${r} 0`,
+    `H ${w / 2}`,
+  ].join(' ')
+}
+
+/** 外轮廓上 t（0→1，从顶边中点顺时针）处的坐标：与 perimeterPath 的分段一一对应 */
+function perimeterPoint(w: number, h: number, r: number, t: number): { x: number; y: number } {
+  // 路径分段：顶边右半 → 右上圆角 → 右边 → 右下圆角 → 底边 → 左下圆角 → 左边 → 左上圆角 → 顶边左半
+  const topHalf = w / 2 - r
+  const top = w - 2 * r
+  const side = h - 2 * r
+  const arc = (Math.PI * r) / 2
+  const segs = [topHalf, arc, side, arc, top, arc, side, arc, topHalf]
+  const total = 2 * topHalf + top + 2 * side + 4 * arc
+  let d = Math.min(Math.max(t, 0), 1) * total
+
+  for (let i = 0; i < segs.length; i++) {
+    if (d > segs[i]) { d -= segs[i]; continue }
+    switch (i) {
+      case 0: return { x: w / 2 + d, y: 0 } // 顶边右半 →
+      case 1: { // 右上圆角
+        const a = -Math.PI / 2 + d / r
+        return { x: w - r + r * Math.cos(a), y: r + r * Math.sin(a) }
+      }
+      case 2: return { x: w, y: r + d } // 右边 ↓
+      case 3: { // 右下圆角
+        const a = d / r
+        return { x: w - r + r * Math.cos(a), y: h - r + r * Math.sin(a) }
+      }
+      case 4: return { x: w - r - d, y: h } // 底边 ←
+      case 5: { // 左下圆角
+        const a = Math.PI / 2 + d / r
+        return { x: r + r * Math.cos(a), y: h - r + r * Math.sin(a) }
+      }
+      case 6: return { x: 0, y: h - r - d } // 左边 ↑
+      case 7: { // 左上圆角
+        const a = Math.PI + d / r
+        return { x: r + r * Math.cos(a), y: r + r * Math.sin(a) }
+      }
+      default: return { x: r + d, y: 0 } // 顶边左半 →（回到中点）
+    }
+  }
+  return { x: w / 2, y: 0 }
+}
+
+/** 光轨颜色：淡红 → 纯红，越接近走满越实 */
+function trailColor(p: number): string {
+  if (p < 0.5) return `color-mix(in srgb, var(--danger) ${Math.round(35 + p * 60)}%, transparent)`
   return 'var(--danger)'
 }
 

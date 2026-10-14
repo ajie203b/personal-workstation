@@ -9,16 +9,17 @@ interface Props {
   label?: string
 }
 
-const ANGLES = [-90, -30, 30, 90, 150, 210]
-const DOT_COLORS = ['var(--p1)', 'var(--ok)', 'var(--primary)', 'var(--p0)', 'var(--p2)', 'var(--ok)']
+/** 微光点角度：不对称分布，比均匀放射更克制 */
+const SPARK_ANGLES = [-90, -18, 54, 126, 198, 262]
 
 const prefersReduced = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /**
- * 圆形勾选框：完成态填充状态绿 + 对勾描边 + 涟漪扩散（对标 Things 3 的完成反馈）。
- * 勾选瞬间补 6 粒爆点（动效方案 01 的拆用）：只在"未完成→完成"放，
- * 取消完成不放——反向撒花语义上很怪。减弱动效下整层跳过。
+ * 圆形勾选框：完成特效走「低调简洁、有高级感」的路线——
+ * 对勾描边画上的同时，一圈同色细光环从圆点外缘扩散淡出，6 粒同色微光点轻轻晕开。
+ * 单色（状态绿）、短促、不撒花：只在「未完成→完成」播放，取消完成不放。
+ * 减弱动效下整层跳过。
  */
 export function CheckCircle({ checked, onChange, className, label }: Props) {
   const [burst, setBurst] = useState(0)
@@ -45,8 +46,10 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
         'touch-target relative shrink-0 grid place-items-center w-[22px] h-[22px] mt-[2px] rounded-full border-[1.5px]',
         'transition-all duration-150 ease-standard cursor-pointer active:scale-90',
         checked
-          ? 'bg-ok border-ok animate-pop check-ripple'
+          ? 'bg-ok border-ok'
           : 'border-on-surface-2/60 hover:border-primary bg-transparent',
+        // 弹跳只在完成瞬间播，挂在 burst 窗口上：列表里已完成项进场不再逐个乱蹦
+        burst > 0 && 'animate-pop',
         className,
       )}
     >
@@ -64,11 +67,12 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
 
       {burst > 0 && (
         <span key={burst} aria-hidden className="absolute inset-0 pointer-events-none">
-          {ANGLES.map((a, i) => (
+          <span className="done-halo" />
+          {SPARK_ANGLES.map((a, i) => (
             <span
               key={a}
-              className="burst-dot"
-              style={{ ['--a' as string]: `${a}deg`, background: DOT_COLORS[i] }}
+              className="spark-dot"
+              style={{ '--a': `${a}deg` } as React.CSSProperties}
               onAnimationEnd={i === 0 ? () => setBurst(0) : undefined}
             />
           ))}
