@@ -114,9 +114,9 @@ export function CommandPalette() {
       { id: 'a-settings', group: '动作', label: '设置', icon: <Settings2 size={15} />, run: () => navigate('/settings') },
       {
         id: 'a-theme', group: '动作',
-        label: theme === 'dark' ? '切换到浅色主题' : theme === 'light' ? '切换到深色主题' : '切换主题（当前跟随系统）',
+        label: theme === 'dark' ? '切换到浅色主题' : '切换到深色主题',
         icon: theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />,
-        run: () => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark'),
+        run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
       },
     ]
     const taskItems: PaletteItem[] = (tasks ?? []).slice(0, 40).map((t) => ({

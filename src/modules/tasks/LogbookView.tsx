@@ -42,10 +42,9 @@ export function LogbookView() {
       <div className="flex items-center justify-between px-1">
         <p className="text-[13px] text-on-surface-2">共 {done.length} 条已完成 · 归档即安心</p>
         <HoldToConfirm
-          size={26}
           holdMs={1200}
           label="清空日志"
-          className="h-8 px-2.5"
+          className="h-8 px-3"
           dialogTitle="清空日志？"
           dialogDescription={`将永久删除 ${done.length} 条已完成记录，不可撤销。`}
           onConfirm={() => void Promise.all(done.map((t) => deleteTask(t))).then(() => toast('日志已清空'))}

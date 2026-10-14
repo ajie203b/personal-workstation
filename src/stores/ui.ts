@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type Theme = 'system' | 'light' | 'dark'
+export type Theme = 'light' | 'dark'
 
 export interface ToastItem {
   id: string
@@ -30,7 +30,7 @@ interface UiState {
 export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
-      theme: 'system',
+      theme: 'light',
       sidebarCollapsed: false,
       haptics: true,
       shortcutsOpen: false,
@@ -51,6 +51,15 @@ export const useUi = create<UiState>()(
     {
       name: 'ws-ui',
       partialize: (s) => ({ theme: s.theme, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics }),
+      // 主题只保留 浅色 / 深色：旧版本存过 'system' 的用户统一收敛到浅色
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<UiState>
+        return {
+          ...current,
+          ...p,
+          theme: p.theme === 'dark' ? 'dark' : 'light',
+        }
+      },
     },
   ),
 )

@@ -134,6 +134,7 @@ function DataTab() {
         <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。按住 1.5 秒才会执行（键盘用户会走二次确认）。</p>
         <HoldToConfirm
           label="清空所有数据"
+          className="h-10 px-5"
           dialogTitle="清空所有数据？"
           dialogDescription="本机 IndexedDB 中的任务与设置将被永久删除。建议先导出备份。"
           onConfirm={() => void clearAllData().then(() => toast('数据已清空'))}
@@ -256,10 +257,10 @@ function AutoBackupCard() {
                 <span className="text-on-surface-2 ml-2">{(b.size / 1024).toFixed(0)} KB</span>
               </span>
               <HoldToConfirm
-                size={26}
+                variant="neutral"
                 holdMs={1200}
                 label="恢复"
-                className="h-8 px-2.5"
+                className="h-8 px-3"
                 dialogTitle="恢复这份快照？"
                 dialogDescription="当前数据将与之合并（同 id 覆盖）。建议先手动导出一份备份再恢复。"
                 onConfirm={() => void restoreBackup(b.name).then(() => {

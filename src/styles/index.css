@@ -162,10 +162,6 @@
   0% { transform: scale(0.86); }
   100% { transform: scale(1.05); }
 }
-@keyframes check-ripple {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent); }
-  100% { box-shadow: 0 0 0 12px transparent; }
-}
 @keyframes pop {
   0% { transform: scale(1); }
   55% { transform: scale(1.14); }
@@ -204,19 +200,31 @@
   animation: ripple 460ms var(--ease-standard) forwards;
 }
 
-/* 完成时的 6 粒爆点（CheckCircle） */
-@keyframes burst {
-  0% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(2px) scale(0.6); opacity: 1; }
-  70% { opacity: 1; }
-  100% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(17px) scale(0.25); opacity: 0; }
+/* 完成特效（低调高级感）：一圈同色细光环向外扩散淡出 + 6 粒同色微光点晕开。
+   单色（状态绿）、短促、不撒花：克制但有仪式感。 */
+@keyframes done-halo {
+  0% { transform: scale(0.72); opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
 }
-.burst-dot {
+.done-halo {
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--ok);
+  animation: done-halo 560ms var(--ease-standard) forwards;
+}
+@keyframes spark-fade {
+  0% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(9px) scale(1); opacity: 0.85; }
+  100% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(15px) scale(0.3); opacity: 0; }
+}
+.spark-dot {
   position: absolute;
   left: 50%; top: 50%;
-  width: 3px; height: 3px;
+  width: 2px; height: 2px;
   border-radius: 9999px;
+  background: var(--ok);
   pointer-events: none;
-  animation: burst 600ms cubic-bezier(0.34, 1.36, 0.45, 1) forwards;
+  animation: spark-fade 640ms var(--ease-standard) forwards;
 }
 
 /* 长按确认走满后的轻震 */
@@ -259,7 +267,7 @@
     scroll-behavior: auto !important;
   }
   /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
-  .burst-dot, .ripple, ::view-transition-new(root) { display: none !important; animation: none !important; }
+  .spark-dot, .done-halo, .ripple, ::view-transition-new(root) { display: none !important; animation: none !important; }
   /* 新增氛围特效同样静默降级 */
   body::before { display: none !important; }
   .focus-breathe, .drop-settle { animation: none !important; }
@@ -388,9 +396,6 @@ select:focus-visible {
   transition: stroke-dashoffset var(--dur-1) var(--ease-standard);
 }
 .check-path.on { stroke-dashoffset: 0; }
-
-/* 完成涟漪：绿色圆环向外扩散消散 */
-.check-ripple { animation: pop var(--dur-2) var(--ease-standard), check-ripple 0.5s ease-out; }
 
 /* 页面入场：300ms / 12px 上移淡入（MD3 medium2） */
 .enter { animation: fade-up var(--dur-2) var(--ease-standard) both; }
@@ -551,15 +556,15 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
 }
 
 /* ============================================================
-   三态主题开关（拟物）
-   质感取自 Uiverse bright-dolphin-91（Yaya12085，MIT）：内阴影凹槽轨道 + 金属旋钮 + hover 3D 倾斜，
-   原组件是二态 checkbox，这里按本站的浅色 / 深色 / 跟随系统改造成三档滑块。
+   二态主题开关（拟物）
+   质感取自 Uiverse bright-dolphin-91（Yaya12085，MIT）：内阴影凹槽轨道 + 金属旋钮 + hover 3D 倾斜。
+   只保留 浅色 / 深色 两档：两枚图标槽位 + 一颗滑动旋钮，不再有「跟随系统」。
    ============================================================ */
 .theme-switch {
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 168px;
+  width: 116px;
   height: 56px;
   padding: 6px;
   border-radius: 28px;
@@ -595,7 +600,6 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
   transition: transform 420ms var(--ease-spring);
 }
 .theme-switch-knob[data-pos='1'] { transform: translateX(52px); }
-.theme-switch-knob[data-pos='2'] { transform: translateX(104px); }
 
 .theme-switch-slot {
   position: relative;
