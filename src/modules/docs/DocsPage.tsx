@@ -15,6 +15,7 @@ import { Dialog } from '@/shared/ui/Sheet'
 import { useHoldToConfirm } from '@/shared/ui/useHoldToConfirm'
 import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
+import { morphOpen } from '@/lib/viewTransition'
 
 /** 绕卡片蓄力的时长：文案与计时共用这一个值 */
 const DELETE_HOLD_MS = 1500
@@ -191,7 +192,13 @@ export function DocsPage() {
                 doc={d}
                 pct={pct}
                 hit={hit}
-                onOpen={() => (hit?.seg ? openDocAtHit(d, hit.seg) : navigate(`/docs/${d.id}`))}
+                onOpen={() =>
+                  // 共享元素转场：文档卡片 → 阅读页连续生长（不支持时自动退化为直接跳转）
+                  morphOpen(
+                    () => document.getElementById(`doc-${d.id}`),
+                    () => (hit?.seg ? openDocAtHit(d, hit.seg) : navigate(`/docs/${d.id}`)),
+                  )
+                }
                 onEdit={() => navigate(`/docs/edit/${d.id}`)}
                 onRead={() => openDoc({ docId: d.id })}
                 onRequestConfirm={() => setPendingDelete(d)}
@@ -252,6 +259,7 @@ function DocCard({ doc: d, pct, hit, onOpen, onEdit, onRead, onRequestConfirm, o
   return (
     <button
       type="button"
+      id={`doc-${d.id}`}
       onClick={onOpen}
       className="card card-hover relative overflow-hidden text-left px-4 py-3.5 flex gap-3.5 cursor-pointer"
     >

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
+import { durMs, prefersReducedMotion } from '@/lib/motion'
 
 export interface SegmentOption<T extends string> {
   value: T
@@ -66,7 +67,9 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
     const b = btnRefs.current.get(value)
     const wrap = wrapRef.current
     if (!a || !b || !wrap) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (prefersReducedMotion()) return
+    // 拉伸→收回的间隔与滑块过渡时长共用同一令牌（P1 统一时长）
+    const settle = durMs('--dur-1', 150)
     const base = wrap.getBoundingClientRect().left
     const ra = a.getBoundingClientRect()
     const rb = b.getBoundingClientRect()
@@ -74,13 +77,13 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
     const span = Math.max(ra.right, rb.right) - Math.min(ra.left, rb.left)
     setThumb({ left, width: span, ready: true })
     const t = window.setTimeout(() => {
-      // 重读一次矩形：150ms 内可能发生过滚动/缩放，缓存 rb 会算歪
+      // 重读一次矩形：过渡期间可能发生过滚动/缩放，缓存 rb 会算歪
       const wrapNow = wrapRef.current
       const btnNow = btnRefs.current.get(value)
       if (!wrapNow || !btnNow) return
       const r = btnNow.getBoundingClientRect()
       setThumb({ left: r.left - wrapNow.getBoundingClientRect().left, width: r.width, ready: true })
-    }, 150)
+    }, settle)
     return () => clearTimeout(t)
   }, [value])
 
@@ -98,7 +101,7 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
           'absolute top-[3px] bottom-[3px] rounded-[10px] bg-surface shadow-sm pointer-events-none',
           thumb.ready && 'transition-[left,width] ease-emph',
         )}
-        style={{ left: thumb.left, width: thumb.width, transitionDuration: thumb.ready ? '250ms' : undefined }}
+        style={{ left: thumb.left, width: thumb.width, transitionDuration: thumb.ready ? 'var(--dur-2)' : undefined }}
       />
       {options.map((o) => {
         const active = o.value === value

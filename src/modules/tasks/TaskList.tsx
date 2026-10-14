@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
-import { Inbox } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Inbox, Check } from 'lucide-react'
 import type { Task } from '@/db/db'
 import { useTasksUi } from '@/stores/tasks'
 import { toggleTaskWithUndo } from './taskActions'
 import { TaskItem } from './TaskItem'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { useFlipList } from '@/lib/useFlipList'
+import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -114,9 +115,97 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
     >
       {tasks.map((t) => (
         <li key={t.id}>
-          <TaskItem task={t} focused={focusId === t.id} flip />
+          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} disabled={t.status === 'done'}>
+            <TaskItem task={t} focused={focusId === t.id} flip />
+          </SwipeRow>
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * 手机端横向滑动完成（P1）：右滑露出绿色对勾底色，过阈值松手即完成，否则回弹。
+ * 仅触摸设备启用；纵向滚动/点击/看板拖拽不受影响——只有横向意图明确时才接管。
+ */
+function SwipeRow({ children, onComplete, disabled }: { children: React.ReactNode; onComplete: () => void; disabled?: boolean }) {
+  const [dx, setDx] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const start = useRef({ x: 0, y: 0, t: 0, active: false })
+  const moved = useRef(false)
+
+  const enabled = () =>
+    !disabled &&
+    typeof window !== 'undefined' &&
+    window.matchMedia('(pointer: coarse)').matches
+
+  const onDown = (e: React.PointerEvent) => {
+    if (!enabled()) return
+    start.current = { x: e.clientX, y: e.clientY, t: performance.now(), active: true }
+    moved.current = false
+  }
+  const onMove = (e: React.PointerEvent) => {
+    if (!start.current.active) return
+    const rawX = e.clientX - start.current.x
+    const rawY = e.clientY - start.current.y
+    if (!moved.current) {
+      // 只认向右的横向意图（+容差），否则交还给纵向滚动
+      if (rawX < 8 || rawX < Math.abs(rawY)) return
+      moved.current = true
+      setDragging(true)
+    }
+    setDx(Math.max(0, Math.min(rawX * 0.9, 104)))
+  }
+  const onUp = (e: React.PointerEvent) => {
+    if (!start.current.active) return
+    start.current.active = false
+    setDragging(false)
+    if (!moved.current) {
+      setDx(0)
+      return
+    }
+    const rawX = e.clientX - start.current.x
+    const velocity = rawX / Math.max(1, performance.now() - start.current.t)
+    if (rawX > 72 || velocity > 0.5) {
+      haptic('light')
+      onComplete()
+    }
+    setDx(0)
+  }
+
+  return (
+    <div className="swipe-row rounded-[16px]">
+      <span
+        aria-hidden
+        className="swipe-underlay rounded-[16px]"
+        style={{ background: 'color-mix(in srgb, var(--ok) 88%, #000)' }}
+      >
+        <span />
+        <span className="inline-flex items-center gap-1">
+          <Check size={15} /> 完成
+        </span>
+      </span>
+      <div
+        className="swipe-content rounded-[16px]"
+        style={{
+          transform: dx ? `translateX(${dx}px)` : undefined,
+          transition: dragging ? 'none' : 'transform var(--dur-1) var(--ease-standard)',
+        }}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        onClickCapture={(e) => {
+          // 刚滑完就吞掉紧随其后的 click，避免误开详情
+          if (moved.current) {
+            moved.current = false
+            e.preventDefault()
+            e.stopPropagation()
+          }
+        }}
+      >
+        {children}
+      </div>
+    </div>
   )
 }

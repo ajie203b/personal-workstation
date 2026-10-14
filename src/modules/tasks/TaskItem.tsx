@@ -12,6 +12,7 @@ import { openDoc } from '@/shared/DeepLink'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
 import { TIERS } from '@/db/db'
+import { morphOpen } from '@/lib/viewTransition'
 
 interface Props {
   task: Task
@@ -41,10 +42,12 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
       id={`task-${task.id}`}
       data-flip-id={flip ? `task-${task.id}` : undefined}
       aria-current={focused ? 'true' : undefined}
-      onClick={overlay ? undefined : () => openDetail(task.id)}
+      // 共享元素转场：这张卡在旧快照里带转场名，详情容器在新快照里带同名，
+      // 于是「卡片 → 详情」在空间上连续生长（不支持时自动退化为直接打开）
+      onClick={overlay ? undefined : () => morphOpen(() => document.getElementById(`task-${task.id}`), () => openDetail(task.id))}
       className={cn(
-        'card card-hover relative px-4 py-3 cursor-pointer select-none hover:shadow-sm',
-        'transition-shadow duration-150',
+        // 悬停/按压反馈统一由 .card-hover 的 transform + 描边承担，不再逐帧改阴影
+        'card card-hover relative px-4 py-3 cursor-pointer select-none',
         focused && 'ring-2 ring-primary/50',
         done && 'opacity-60',
       )}

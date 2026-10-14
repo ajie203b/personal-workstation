@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>个人工作站 · UI / 动效 / 操作体验评审报告（对标 macOS）</title>
+<style>
+  :root{
+    --ink:#201F1D; --ink-2:#6B675F; --ink-3:#8B887F;
+    --paper:#FFFFFF; --paper-2:#F7F6F3; --paper-3:#EFEDE8;
+    --line:#E6E4DE; --line-2:#EFEDE8;
+    --primary:#2C55B8; --primary-soft:#EAEFF9;
+    --ok:#22A06B; --warn:#F5A623; --danger:#E5484D; --p2:#4E7ACF;
+    --radius:16px; --radius-sm:10px;
+    --shadow:0 1px 2px rgba(32,31,29,.04), 0 24px 64px rgba(32,31,29,.10);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"SF Pro Text","PingFang SC","Segoe UI",Roboto,"Noto Sans SC",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--paper-2); color:var(--ink);
+    font-family:var(--sans); font-size:15px; line-height:1.7;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:960px; margin:0 auto; padding:0 22px 96px}
+  a{color:var(--primary)}
+  code,.mono{font-family:var(--mono); font-size:.86em; background:var(--paper-3); padding:.12em .42em; border-radius:6px}
+  h1,h2,h3{line-height:1.32; letter-spacing:-.01em}
+  h2{font-size:24px; margin:0 0 4px}
+  .eyebrow{font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--primary)}
+
+  /* ---- hero ---- */
+  .hero{
+    background:
+      radial-gradient(1200px 380px at 88% -10%, rgba(44,85,184,.10), transparent 60%),
+      linear-gradient(180deg,#FFFFFF, #FBFAF7);
+    border-bottom:1px solid var(--line);
+  }
+  .hero-in{max-width:960px; margin:0 auto; padding:54px 22px 40px; display:flex; flex-wrap:wrap; gap:36px; align-items:center; justify-content:space-between}
+  .hero h1{font-size:38px; margin:10px 0 12px; max-width:600px}
+  .hero p.lede{color:var(--ink-2); max-width:560px; margin:0 0 18px; font-size:16px}
+  .meta{display:flex; flex-wrap:wrap; gap:8px}
+  .tag{font-size:12px; color:var(--ink-2); background:var(--paper); border:1px solid var(--line); padding:4px 10px; border-radius:999px}
+  .tag b{color:var(--ink); font-weight:600}
+
+  /* score dial */
+  .dial{position:relative; width:200px; height:200px; flex:0 0 auto}
+  .dial svg{transform:rotate(-90deg)}
+  .dial .val{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center}
+  .dial .num{font-size:52px; font-weight:800; letter-spacing:-.03em; line-height:1}
+  .dial .of{font-size:13px; color:var(--ink-3); margin-top:6px}
+
+  section{padding-top:52px}
+  .sec-head{margin-bottom:20px}
+  .sec-head p{color:var(--ink-2); margin:6px 0 0; font-size:14.5px; max-width:640px}
+
+  /* cards */
+  .card{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px}
+  .grid{display:grid; gap:14px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:760px){.g3,.g4{grid-template-columns:repeat(2,1fr)} .g2{grid-template-columns:1fr}}
+
+  /* score bars */
+  .score-row{display:flex; align-items:center; gap:14px; padding:11px 0; border-bottom:1px dashed var(--line)}
+  .score-row:last-child{border-bottom:0}
+  .score-row .lbl{flex:0 0 148px; font-weight:600; font-size:14px}
+  .bar{flex:1; height:9px; border-radius:999px; background:var(--paper-3); overflow:hidden}
+  .bar span{display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--p2),var(--primary))}
+  .score-row .num{flex:0 0 44px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums}
+  @media(max-width:560px){.score-row .lbl{flex-basis:104px; font-size:13px}}
+
+  /* finding list */
+  ul.clean{list-style:none; padding:0; margin:0}
+  ul.clean li{position:relative; padding:7px 0 7px 26px; font-size:14.5px; border-bottom:1px solid var(--line-2)}
+  ul.clean li:last-child{border-bottom:0}
+  ul.clean li::before{content:""; position:absolute; left:6px; top:16px; width:7px; height:7px; border-radius:2px; background:var(--primary); transform:rotate(45deg)}
+  ul.good li::before{background:var(--ok)}
+  ul.bad li::before{background:var(--warn)}
+
+  .pill{display:inline-block; font-size:11px; font-weight:700; letter-spacing:.03em; padding:2px 9px; border-radius:999px; vertical-align:middle}
+  .pill.ok{background:#E4F4EC; color:#12724A}
+  .pill.part{background:#FDF1DC; color:#8A5B00}
+  .pill.no{background:#FBE6E7; color:#9E2024}
+  .pill.p0{background:#FBE6E7; color:#9E2024}
+  .pill.p1{background:#FDF1DC; color:#8A5B00}
+  .pill.p2{background:#E7EEF9; color:#2C55B8}
+
+  table{width:100%; border-collapse:collapse; font-size:14px; margin-top:6px}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--line)}
+  th{font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3); font-weight:700}
+  tr:last-child td{border-bottom:0}
+  td.num,th.num{font-variant-numeric:tabular-nums; white-space:nowrap}
+
+  .kv{display:flex; gap:10px; align-items:baseline; padding:6px 0; font-size:14.5px}
+  .kv .k{flex:0 0 132px; color:var(--ink-3)}
+
+  .callout{border-left:4px solid var(--primary); background:var(--primary-soft); border-radius:0 12px 12px 0; padding:14px 18px; font-size:14.5px; color:#243a63}
+  .callout.warn{border-color:var(--warn); background:#FDF6E9; color:#6b4a00}
+  .callout.ok{border-color:var(--ok); background:#E9F6F0; color:#0f5b3b}
+
+  .fix{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px}
+  .fix h4{margin:0 0 6px; font-size:15px; display:flex; gap:8px; align-items:center}
+  .fix p{margin:0; font-size:13.5px; color:var(--ink-2)}
+  .fix .impl{margin-top:8px; font-size:12.5px; color:var(--ink-3)}
+  .fix .impl b{color:var(--ink-2); font-weight:600}
+
+  footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--line); color:var(--ink-3); font-size:12.5px}
+  .toc{display:flex; flex-wrap:wrap; gap:8px; margin-top:18px}
+  .toc a{font-size:13px; text-decoration:none; color:var(--ink-2); background:var(--paper); border:1px solid var(--line); padding:5px 12px; border-radius:999px}
+  .toc a:hover{color:var(--primary); border-color:var(--primary)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-in">
+    <div>
+      <div class="eyebrow">体验评审报告 · v1.5.4</div>
+      <h1>个人工作站：UI / 动效 / 操作流畅性评审<br/>（对标 macOS / Apple HIG）</h1>
+      <p class="lede">对线上站点 <b>ajie203b.github.io/personal-workstation</b> 做了全模块实测，并结合 <code>src/</code> 源码逐条核对动效实现。结论：这是一套<strong>完成度相当高、克制且系统化</strong>的界面，动效已经用设计令牌统一收口；短板集中在<strong>空间连续性、手感的物理精度、以及少量性能隐患</strong>。</p>
+      <div class="meta">
+        <span class="tag">技术栈 <b>React 18 · Vite 6 · Tailwind 4</b></span>
+        <span class="tag">动效层 <b>CSS 令牌 + WAAPI</b></span>
+        <span class="tag">端 <b>Web / PWA / Android(Capacitor)</b></span>
+        <span class="tag">评审日期 <b>2026-10-14</b></span>
+      </div>
+      <div class="toc">
+        <a href="#overview">总评</a><a href="#scores">分项评分</a><a href="#ui">UI 视觉</a>
+        <a href="#motion">动效与流畅性</a><a href="#flow">操作便捷性</a>
+        <a href="#mac">macOS 对标</a><a href="#fix">改进清单</a><a href="#redline">红线与验证</a>
+      </div>
+    </div>
+    <div class="dial">
+      <svg width="200" height="200" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="86" fill="none" stroke="#EFEDE8" stroke-width="14"/>
+        <circle cx="100" cy="100" r="86" fill="none" stroke="url(#g)" stroke-width="14"
+          stroke-linecap="round" stroke-dasharray="540.3" stroke-dashoffset="97.3"/>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#4E7ACF"/><stop offset="1" stop-color="#2C55B8"/>
+        </linearGradient></defs>
+      </svg>
+      <div class="val"><div class="num">8.2</div><div class="of">综合 8.2 / 10</div></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- OVERVIEW -->
+  <section id="overview">
+    <div class="sec-head">
+      <div class="eyebrow">01 · 总评</div>
+      <h2>一句话结论</h2>
+      <p>视觉语言与 macOS「克制、材质分明、层次轻」的方向高度一致，动效已做到令牌化、只用 transform/opacity、并有 reduced-motion 兜底——工程素养高于多数同类个人项目。<strong>它现在的差距不再是「有没有动效」，而是「动效的物理精度与空间连续性」</strong>：缺共享元素转场、缺弹簧的真实阻尼手感、个别高频区域仍在逐帧改阴影/大面积模糊。</p>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <div class="eyebrow" style="color:var(--ok)">做得好的</div>
+        <ul class="clean good">
+          <li>全站设计令牌化，零硬编码色值；深浅色双套完整</li>
+          <li>动效时长/缓动统一走 <code>--dur-*</code> / <code>--ease-*</code></li>
+          <li>完成勾选 = 缩放 + 描边画勾 + 涟漪 + 6 粒爆点</li>
+          <li>果冻开关、Segmented 挤压、长按蓄力环已落地</li>
+          <li>主题切换用 View Transitions 从按钮位置圆形扩散</li>
+          <li>跨端触觉反馈 + 全局减弱动效兜底</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow" style="color:var(--warn)">主要短板</div>
+        <ul class="clean bad">
+          <li>无共享元素转场：列表 → 详情是「开一个新面板」而非「同一元素长过去」</li>
+          <li>弹簧用 cubic-bezier 近似，缺少真实阻尼/响应手感</li>
+          <li>数字变化是瞬跳，缺 odometer 滚动 + tabular-nums</li>
+          <li>玻璃模糊、阴影过渡存在掉帧隐患</li>
+          <li>移动端缺滑动完成/删除这类高收益手势</li>
+          <li>路由切换会重放整页级联入场，反复切换略显「晃」</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">评审方法</div>
+        <div class="kv"><span class="k">实测</span><span>今日 / 任务四视图 / 文档 / 统计 / 设置 / ⌘K / 主题 / 专注钟</span></div>
+        <div class="kv"><span class="k">源码核对</span><span><code>index.css</code>、<code>shared/ui/*</code>、<code>useFlipList</code>、<code>theme.ts</code></span></div>
+        <div class="kv"><span class="k">基准</span><span>Apple HIG / macOS 动效（材质、弹簧、空间连续）</span></div>
+        <div class="kv"><span class="k">范围</span><span>仅只读测试与源码审阅，未改动生产数据</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCORES -->
+  <section id="scores">
+    <div class="sec-head">
+      <div class="eyebrow">02 · 分项评分</div>
+      <h2>六个维度打分</h2>
+      <p>分数对照 macOS 原生动效的完成度：9 分以上=接近原生手感；7 分=方向正确但有可见差距；6 分以下=明显偏「网页感」。</p>
+    </div>
+    <div class="card">
+      <div class="score-row"><span class="lbl">视觉设计 (UI)</span><span class="bar"><span style="width:88%"></span></span><span class="num">8.8</span></div>
+      <div class="score-row"><span class="lbl">操作便捷性</span><span class="bar"><span style="width:86%"></span></span><span class="num">8.6</span></div>
+      <div class="score-row"><span class="lbl">细节一致性</span><span class="bar"><span style="width:85%"></span></span><span class="num">8.5</span></div>
+      <div class="score-row"><span class="lbl">动效美观度</span><span class="bar"><span style="width:80%"></span></span><span class="num">8.0</span></div>
+      <div class="score-row"><span class="lbl">动效流畅性 / 性能</span><span class="bar"><span style="width:73%"></span></span><span class="num">7.3</span></div>
+      <div class="score-row"><span class="lbl">macOS 契合度</span><span class="bar"><span style="width:70%"></span></span><span class="num">7.0</span></div>
+    </div>
+    <div class="callout" style="margin-top:14px">
+      <b>阅读方式：</b>「视觉设计 / 便捷性」已经接近 macOS 水准；拉低总分的主要是<strong>动效的物理真实感（弹簧、空间连续）</strong>与<strong>性能余量</strong>这两项——也正是下面改进清单收益最高的部分。
+    </div>
+  </section>
+
+  <!-- UI -->
+  <section id="ui">
+    <div class="sec-head">
+      <div class="eyebrow">03 · UI 视觉</div>
+      <h2>暖纸中性 + 墨蓝主色，克制而有主张</h2>
+      <p>没有落入「默认蓝模板」的俗套，配色定位清晰：<code>--surface-2 #F7F6F3</code> 的暖纸灰 + <code>--primary #2C55B8</code> 的墨蓝，整体质感偏「数字文具 / 编辑台」，与 macOS 的冷静中性色系不同，但同样克制。</p>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">亮点</h3>
+        <ul class="clean good">
+          <li>语义令牌完整（surface/outline/on-surface 三级），Tailwind v4 <code>@theme inline</code> 映射，主题切换零成本</li>
+          <li>卡片 16px 圆角 + 1px 描边、<strong>刻意不加阴影</strong>，符合 HIG 的「平面 + 描边」克制感</li>
+          <li>玻璃材质边界规则明确：只给顶栏 / 侧栏 / ⌘K 用</li>
+          <li>弹层统一 20px 圆角 + 单层大柔和阴影（<code>--shadow-pop</code>）</li>
+          <li>优先级四档色（红/橙/钢蓝/灰）与状态绿语义分离，避免配色打架</li>
+          <li>文档阅读提供 日间/夜间/羊皮纸/暮色 四主题，编辑气质拉满</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">可改进</h3>
+        <ul class="clean bad">
+          <li><b>卡片边界偏弱</b>：暖纸灰 card 与白底对比度低，弱光屏上分区不清晰——可给 card 加 0.5–1% 的极浅投影，或用更细但更深的描边</li>
+          <li><b>信息密度略高</b>：侧栏图标行距、列表项节奏偏紧，与 macOS 侧栏更宽的呼吸感有差距</li>
+          <li><b>原生控件一致性</b>：主题开关（拟物）风格独树一帜，但和其余扁平控件不是同一套质感语言，属于「惊喜点」也属于「破谐」风险</li>
+          <li><b>字体回退</b>依赖系统 SF/PingFang，跨到非苹果设备（安卓/Windows）字形落差明显</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout ok" style="margin-top:14px">
+      <b>结论：</b>UI 是这份作品最强的部分。视觉主张明确、系统化程度高，唯一的「减法」建议是把 card 的分层做得再明确一档，让深浅两种环境下都有稳定的空间层次。
+    </div>
+  </section>
+
+  <!-- MOTION -->
+  <section id="motion">
+    <div class="sec-head">
+      <div class="eyebrow">04 · 动效与流畅性</div>
+      <h2>令牌化到位，缺的是「物理」</h2>
+      <p>逐条核对了 <code>index.css</code> 与各组件，已落地的动效列表如下。整体判断：<strong>规范遵守得好，但缺少 macOS 那种「有质量、有阻尼」的连续感</strong>。</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <table>
+        <thead><tr><th>动效</th><th>实现位置</th><th class="num">状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>完成勾选反馈</td><td><code>CheckCircle</code></td><td class="num"><span class="pill ok">已实现</span></td><td>pop 缩放 + 描边画勾 + 绿色涟漪 + 6 粒爆点（对应方案 01）</td></tr>
+          <tr><td>果冻开关</td><td><code>JellySwitch</code></td><td class="num"><span class="pill ok">已实现</span></td><td>translateX 位移 + <code>knob-squash</code> 挤压，运行时不改 <code>left</code></td></tr>
+          <tr><td>分段控件挤压</td><td><code>Segmented</code></td><td class="num"><span class="pill ok">已实现</span></td><td>滑块先拉长跨过中间距离再收回</td></tr>
+          <tr><td>长按确认蓄力环</td><td><code>HoldToConfirm</code></td><td class="num"><span class="pill ok">已实现</span></td><td>rAF 计时、松手倒退、走满 nudge 轻震</td></tr>
+          <tr><td>提交按钮三态</td><td><code>Button</code> + <code>useAsyncButton</code></td><td class="num"><span class="pill ok">已实现</span></td><td>idle→loading→success/error，失败必落 error 不打假勾</td></tr>
+          <tr><td>列表 FLIP 补位</td><td><code>useFlipList</code></td><td class="num"><span class="pill ok">已实现</span></td><td>WAAPI 播放后 cancel，避免占用内联 transform</td></tr>
+          <tr><td>抽屉跟手关闭</td><td><code>Sheet</code></td><td class="num"><span class="pill part">部分</span></td><td>仅 <code>&lt;md</code> 手机形态生效，速度阈值判定</td></tr>
+          <tr><td>主题圆形扩散</td><td><code>theme.ts</code></td><td class="num"><span class="pill ok">已实现</span></td><td>View Transitions <code>clip-path: circle()</code>，有降级</td></tr>
+          <tr><td>触点水波纹</td><td><code>Button</code> / <code>useRipple</code></td><td class="num"><span class="pill part">部分</span></td><td>默认只给 primary 按钮，守住克制基调</td></tr>
+          <tr><td>跨端触觉反馈</td><td><code>lib/haptics.ts</code></td><td class="num"><span class="pill ok">已实现</span></td><td>Capacitor Haptics / Web 回退 navigator.vibrate</td></tr>
+          <tr><td>数字滚动 odometer</td><td>—</td><td class="num"><span class="pill no">缺失</span></td><td>统计卡数值变化仍是瞬跳</td></tr>
+          <tr><td>共享元素转场</td><td>—</td><td class="num"><span class="pill no">缺失</span></td><td>列表 → 详情无 <code>view-transition-name</code></td></tr>
+          <tr><td>骨架屏 / 滑动完成</td><td>—</td><td class="num"><span class="pill no">缺失</span></td><td>方案已规划、尚未落地</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">流畅性亮点</h3>
+        <ul class="clean good">
+          <li>时长全部取 <code>--dur-1/2/3</code>，缓动取 <code>--ease-standard/emph/spring</code>，无散落魔法数字</li>
+          <li>动画基本只用 <code>transform</code> / <code>opacity</code>，避开重排</li>
+          <li><code>reduced-motion</code> 下粒子/涟漪/圆形扩散是<strong>直接隐藏</strong>而非「加速播完」——正确的无障碍做法</li>
+          <li>FLIP 用 WAAPI 且动画结束 <code>cancel()</code>，释放内联 transform，避免与按压态打架</li>
+          <li>果冻开关用 <code>transform</code> 位移替代 <code>left</code>，避开逐帧重排</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">流畅性风险</h3>
+        <ul class="clean bad">
+          <li><b>大面积玻璃模糊</b>：<code>.glass</code> 用 <code>backdrop-filter: blur(20px) saturate(1.6)</code>，低端 Android WebView 上滚动/切页易掉帧</li>
+          <li><b>逐帧改阴影</b>：<code>.press:active</code> 与 <code>.card-hover:hover</code> 过渡 <code>box-shadow</code>，与方案「不用阴影做逐帧过渡」的红线相悖</li>
+          <li><b>弹簧不真实</b>：<code>--ease-spring cubic-bezier(.34,1.36,.45,1)</code> 是固定曲线，无法表达质量/阻尼，手感偏「数字」</li>
+          <li><b>路由级联重放</b>：<code>.enter</code> / <code>.cascade</code> 在每次页面挂载都重播，反复切页会持续「淡入晃」</li>
+          <li><b>硬编码时长</b>：<code>Segmented</code> 挤压用 <code>setTimeout(…,150)</code>，未走令牌</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout warn" style="margin-top:14px">
+      <b>关键判断：</b>当前动效「做对了方法，但差在物理」。macOS 的核心手感来自<strong>连续的弹簧积分</strong>与<strong>空间连续性</strong>——同一元素从来源位置长到目标位置。本站大量动效是「原地缩放 + 淡入」，因此单点精致、但整体仍偏「网页过渡」而非「原生运动」。
+    </div>
+  </section>
+
+  <!-- FLOW -->
+  <section id="flow">
+    <div class="sec-head">
+      <div class="eyebrow">05 · 操作便捷性</div>
+      <h2>效率工程扎实，键盘流是隐藏王牌</h2>
+      <p>实测了完整操作链路：任务新增/完成/撤销、四视图切换、⌘K、主题、专注钟、文档导入。整体交互<strong>上手快、路径短</strong>，主要增益来自键盘与自然语言。</p>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">亮点</h3>
+        <ul class="clean good">
+          <li><b>全键盘工作流</b>：⌘K 命令面板、<code>?</code> 快捷键、<code>N</code> 快速添加</li>
+          <li><b>自然语言录入</b>：输入「评审报告测试 明天14:00 P1 #工作」自动解析出时间/优先级/清单 chips，实时可视</li>
+          <li>四视图（列表/看板/日历/四象限）共享同一数据，切换成本低</li>
+          <li>危险操作走长按蓄力 + 键盘兜底弹窗，防误触且不牺牲无障碍</li>
+          <li>完成→撤销 toast、触控热区 ≥40px、安卓返回键接管</li>
+          <li>本地优先（IndexedDB + Dexie），无网络也能用，响应无延迟</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">可改进</h3>
+        <ul class="clean bad">
+          <li>部分纯图标按钮（继续阅读/写作/删除）依赖悬停提示，触屏上不可发现</li>
+          <li>缺移动端「滑动完成 / 滑动删除」——任务类 App 收益最高的手势</li>
+          <li>空状态与「今天没有安排」引导较简短，可加更明确的下一步动作</li>
+          <li>列表项拖拽与点击的分界（长按 200ms）在快速操作时偶有误触可能</li>
+          <li>「继续写作」等动作按钮的视觉层级与主操作区分度可再明确</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAC -->
+  <section id="mac">
+    <div class="sec-head">
+      <div class="eyebrow">06 · macOS 对标</div>
+      <h2>九个维度逐项对表</h2>
+      <p>以 Apple HIG 与 macOS 原生动效为基准，逐项给出契合度与差距说明。</p>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>维度</th><th>macOS 基准</th><th>本站现状</th><th class="num">契合</th></tr></thead>
+        <tbody>
+          <tr><td>材质 / 层次</td><td>玻璃 + 明确的前中后景</td><td>玻璃仅用于导航层，弹层单层阴影，层次偏平</td><td class="num"><span class="pill part">中高</span></td></tr>
+          <tr><td>缓动曲线</td><td>标准/强调/减速三族</td><td>三族齐备且令牌化</td><td class="num"><span class="pill ok">高</span></td></tr>
+          <tr><td>弹簧手感</td><td>真实阻尼 + 响应参数</td><td>单一 cubic-bezier 近似</td><td class="num"><span class="pill no">低中</span></td></tr>
+          <tr><td>圆角体系</td><td>连续圆角（squircle）</td><td>6/10/12/16/20px 阶梯，普通圆角</td><td class="num"><span class="pill part">中高</span></td></tr>
+          <tr><td>阴影层次</td><td>多层柔和阴影表达高度</td><td>弹层单层大柔和，刻意克制</td><td class="num"><span class="pill part">中</span></td></tr>
+          <tr><td>动效时长</td><td>交互 ≤400ms、页面 ≤450ms</td><td>150/300/400ms，符合规范</td><td class="num"><span class="pill ok">高</span></td></tr>
+          <tr><td>空间连续性</td><td>从来源位置连续运动到目标</td><td>多为原地缩放/淡入，无共享元素转场</td><td class="num"><span class="pill no">低</span></td></tr>
+          <tr><td>反馈（触觉/声音）</td><td>精准触觉 + 克制音效</td><td>跨端触觉已做，无音效（可接受）</td><td class="num"><span class="pill part">中高</span></td></tr>
+          <tr><td>无障碍 / 减弱动效</td><td>系统级尊重减弱动效</td><td>全局兜底 + 粒子直接隐藏</td><td class="num"><span class="pill ok">高</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:14px">
+      <b>差距聚焦：</b>三个「低/中」维度——<strong>弹簧手感、空间连续性、阴影层次</strong>——正是把观感从「精致网页」推到「原生 App」的关键。它们不是靠更多特效填补，而是靠更精确的运动模型。
+    </div>
+  </section>
+
+  <!-- FIX -->
+  <section id="fix">
+    <div class="sec-head">
+      <div class="eyebrow">07 · 改进清单</div>
+      <h2>按收益/成本排序的落地建议</h2>
+      <p>每条都标明「做什么」「为什么」「怎么接」——引用实际文件与位置，便于直接实施。P0 = 半天内、收益最高；P1 = 1 天量级；P2 = 锦上添花。</p>
+    </div>
+
+    <h3 style="margin:8px 0 12px; font-size:16px"><span class="pill p0">P0</span> 高性价比，优先做</h3>
+    <div class="grid g2">
+      <div class="fix">
+        <h4>① 统计卡数字滚动（odometer）</h4>
+        <p>累计完成/连续打卡/专注时长等数值变化改为竖排数字滚动对齐，并给容器加 <code>tabular-nums</code> 防抖动。这是「一眼看到质感提升」的最低成本项。</p>
+        <div class="impl"><b>落点：</b><code>StatsPage.tsx</code> 的 <code>StatCard</code>；<b>注意：</b>小数位需单独对齐，减弱动效时直接落值。</div>
+      </div>
+      <div class="fix">
+        <h4>② 路由入场只播一次</h4>
+        <p>把 <code>.enter</code> / <code>.cascade</code> 的播放限制为「会话内首次进入该视图」，避免反复切页持续淡入造成的「晃」感。</p>
+        <div class="impl"><b>落点：</b>各页面根容器；用会话级标记或路由级动画状态机控制在 <code>AppShell</code>。</div>
+      </div>
+      <div class="fix">
+        <h4>③ 消除逐帧阴影过渡</h4>
+        <p><code>.press:active</code> 与 <code>.card-hover:hover</code> 改为切换类名 + 短过渡，或直接去掉阴影变化只保留位移。符合方案红线，也减少低端设备掉帧。</p>
+        <div class="impl"><b>落点：</b><code>index.css</code> 的 <code>.press</code> / <code>.card-hover</code>。</div>
+      </div>
+      <div class="fix">
+        <h4>④ 收敛玻璃模糊面积</h4>
+        <p>为低端 Android WebView 提供降级：降低 <code>backdrop-filter</code> 的 blur 半径，或在设置里提供「性能优先」开关直接禁用玻璃。</p>
+        <div class="impl"><b>落点：</b><code>.glass</code>；可加 <code>@media (prefers-reduced-transparency)</code> 或特性探测。</div>
+      </div>
+    </div>
+
+    <h3 style="margin:26px 0 12px; font-size:16px"><span class="pill p1">P1</span> 手感升级</h3>
+    <div class="grid g2">
+      <div class="fix">
+        <h4>⑤ 引入真实弹簧</h4>
+        <p>把固定 <code>cubic-bezier</code> 弹簧换成可调 damping/response 的弹簧（如 motion/Framer 的 spring 或 WAAPI 弹簧求解），让果冻开关、拖起落位、弹层出现具备「质量感」。</p>
+        <div class="impl"><b>落点：</b>统一到一套 spring 工具，替换 <code>--ease-spring</code> 使用处。</div>
+      </div>
+      <div class="fix">
+        <h4>⑥ 共享元素转场</h4>
+        <p>列表卡片 → 文档/任务详情用 <code>view-transition-name</code> 做空间连续，替代现在的「新开面板」。这是最接近 macOS 观感的一步。</p>
+        <div class="impl"><b>落点：</b><code>DocsPage</code>/<code>TaskItem</code> → 详情；不支持时降级淡入。</div>
+      </div>
+      <div class="fix">
+        <h4>⑦ 看板落位回弹</h4>
+        <p><code>DragOverlay</code> 拖完落位从硬贴改为带回弹的落位动画，列容器 <code>isOver</code> 时轻微 scale。</p>
+        <div class="impl"><b>落点：</b><code>BoardView.tsx</code>；dnd-kit 默认落位动画或自写 spring。</div>
+      </div>
+      <div class="fix">
+        <h4>⑧ 抽屉跟手覆盖全端</h4>
+        <p>把 <code>Sheet</code> 的跟手下拉从「仅手机」扩展到桌面侧滑面板，并补齐骨架屏 shimmer 让等待更「快」。</p>
+        <div class="impl"><b>落点：</b><code>Sheet.tsx</code> 的 <code>isNarrow()</code> 分支与列表加载态。</div>
+      </div>
+      <div class="fix">
+        <h4>⑨ 移动端滑动完成 / 删除</h4>
+        <p>任务卡片横向拖出露底色图标，过阈值执行、否则回弹。任务类 App 收益最高的手势，需与纵向滚动/点击/dnd 协调。</p>
+        <div class="impl"><b>落点：</b><code>TaskList</code> 手机端；建议先只做「滑动完成」单一动作。</div>
+      </div>
+      <div class="fix">
+        <h4>⑩ 统一硬编码时长</h4>
+        <p><code>Segmented</code> 挤压的 150ms 等散落数值收进 <code>--dur-*</code> 令牌，保证「系统减弱动效」时一并压平。</p>
+        <div class="impl"><b>落点：</b><code>Segmented.tsx</code>。</div>
+      </div>
+    </div>
+
+    <h3 style="margin:26px 0 12px; font-size:16px"><span class="pill p2">P2</span> 氛围与惊喜</h3>
+    <div class="grid g3">
+      <div class="fix"><h4>⑪ 噪点/纸纹叠加</h4><p>2–3% 透明度的平铺噪点，去掉「AI 塑料感」，与暖纸配色天然契合。</p></div>
+      <div class="fix"><h4>⑫ 番茄钟呼吸光晕</h4><p>运行中进度环外圈做 2–3s 极缓 opacity 呼吸，暂停即停（同屏只保留一个循环动画）。</p></div>
+      <div class="fix"><h4>⑬ 进度环渐变描边</h4><p>专注接近完成时描边色往绿走，用 <code>&lt;linearGradient&gt;</code> 描边。</p></div>
+      <div class="fix"><h4>⑭ 主题圆形扩散降级优化</h4><p>非 View Transitions 环境保留全站 200ms 过渡即可，避免闪白。</p></div>
+      <div class="fix"><h4>⑮ 里程碑撒花</h4><p>仅「今日全部完成」这类真实成就触发 12 粒 DOM 粒子，日常单任务不撒。</p></div>
+      <div class="fix"><h4>⑯ 卡片分层增强</h4><p>给 card 加极浅投影或更深细描边，提升弱光环境下的空间层次。</p></div>
+    </div>
+  </section>
+
+  <!-- REDLINE -->
+  <section id="redline">
+    <div class="sec-head">
+      <div class="eyebrow">08 · 红线与验证</div>
+      <h2>别让动效变成噪音</h2>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">必须守住的约束</h3>
+        <ul class="clean">
+          <li>交互反馈 ≤400ms、页面级 ≤450ms；时长一律取 <code>--dur-*</code></li>
+          <li>只给「有后果的操作」加特效（完成/删除/提交/切换/拖拽），纯浏览元素不加</li>
+          <li>同屏最多一个循环动画；番茄钟呼吸在暂停时必须停</li>
+          <li>只用 <code>transform</code> / <code>opacity</code>；粒子上限 12；避免阴影/模糊逐帧过渡</li>
+          <li>新增特效必须走 <code>--dur-*</code>，粒子类在 reduced-motion 下直接跳过</li>
+          <li>危险操作不可牺牲键盘/Esc 路径</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px; font-size:16px">验收清单（每项改进自测）</h3>
+        <ul class="clean good">
+          <li>用 DevTools Performance 录制，确认无长任务、无强制重排</li>
+          <li>开启「减弱动态效果」后，所有新动效降级正常、功能完整</li>
+          <li>低端安卓真机（或 4× CPU 降速）验证滚动/切页帧率</li>
+          <li>纯键盘走完全流程（Tab/Enter/Esc/⌘K）</li>
+          <li>深/浅两套主题下动效均成立，无硬编码颜色</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout ok" style="margin-top:14px">
+      <b>总建议：</b>先做 P0 四项（半天内可完成），观感与性能会立刻改善；再用 P1 的「真实弹簧 + 共享元素转场」把整站运动质感从「网页级」提升到「接近原生」。这两步做完，本站在动效上就基本达到对标 macOS 的目标区间了。
+    </div>
+  </section>
+
+  <footer>
+    <p>本报告基于 2026-10-14 对线上站点 <b>ajie203b.github.io/personal-workstation</b>（v1.5.4）的只读实测与 <code>src/</code> 源码审阅生成，未改动任何生产数据。评分与建议为体验评审意见，非官方结论。对标基准为 Apple HIG / macOS 动效设计。</p>
+  </footer>
+
+</main>
+</body>
+</html>
