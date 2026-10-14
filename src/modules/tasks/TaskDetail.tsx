@@ -340,10 +340,20 @@ export function TaskDetail() {
                     ✓ 完成并归档
                   </Button>
                 )}
+                {!done && (
+                  <Button
+                    aria-label={task.status === 'doing' ? '停止进行中' : '标记进行中'}
+                    title={task.status === 'doing' ? '停止进行中' : '标记为进行中'}
+                    onClick={() => patch({ status: task.status === 'doing' ? 'todo' : 'doing' })}
+                    className="shrink-0 w-10 px-0 justify-center"
+                  >
+                    <span className={cn('w-2.5 h-2.5 rounded-full', task.status === 'doing' ? 'bg-ok animate-ai-pulse' : 'bg-on-surface-2/40')} />
+                  </Button>
+                )}
                 <Button
                   aria-label={task.pinned ? '取消置顶' : '置顶'}
                   title={task.pinned ? '取消置顶' : '置顶到列表顶部'}
-                  onClick={() => patch({ pinned: !task.pinned || undefined })}
+                  onClick={() => { patch({ pinned: !task.pinned || undefined }); openDetail(null) }}
                   className="shrink-0 w-10 px-0 justify-center"
                 >
                   {task.pinned ? <PinOff size={16} /> : <Pin size={16} />}
@@ -352,7 +362,12 @@ export function TaskDetail() {
                   <Button
                     aria-label="开始专注"
                     title="开始专注（番茄钟绑定本任务）"
-                    onClick={() => { openDetail(null); window.location.hash = `#/today?focus-task=${task.id}` }}
+                    onClick={() => {
+                      // 写「待开始专注」指令：FocusTimer 挂载后消费它，弹出选时小框并自动开始
+                      try { localStorage.setItem('ws-focus-start', JSON.stringify({ taskId: task.id, at: Date.now() })) } catch { /* ignore */ }
+                      openDetail(null)
+                      window.location.hash = `#/today?focus-task=${task.id}`
+                    }}
                     className="shrink-0 w-10 px-0 justify-center"
                   >
                     <Timer size={16} />
