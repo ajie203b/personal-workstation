@@ -16,15 +16,16 @@ gradle-build.log
 # APK 走 GitHub Release 发布，不入库
 apk
 
-# 测试脚手架
+# 测试脚手架与临时样本
 nlp-test.cjs
+test-e2e.mjs
+testdata-sample.*
 
 # 站点部署临时目录
 .site-deploy
 
-# 签名口令只存本机（build.gradle 从这里读）
-android/keystore.properties
-keystore.properties
+# IDE 本地状态
+.idea/
 
 # 签名口令只存本机（build.gradle 从这里读）
 android/keystore.properties
