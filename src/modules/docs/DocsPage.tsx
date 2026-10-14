@@ -375,14 +375,16 @@ function HoldRing({ progress }: { progress: number }) {
   const inset = 4
   const w = box.w - inset * 2
   const h = box.h - inset * 2
-  if (progress <= 0 || w <= 0 || h <= 0) return null
+  const ready = progress > 0 && w > 0 && h > 0
 
-  const r = Math.max(2, Math.min(15, w / 2 - 1, h / 2 - 1))
-  const path = perimeterPath(w, h, r)
-  const pt = perimeterPoint(w, h, r, progress)
+  const r = ready ? Math.max(2, Math.min(15, w / 2 - 1, h / 2 - 1)) : 0
+  const path = ready ? perimeterPath(w, h, r) : ''
+  const pt = ready ? perimeterPoint(w, h, r, progress) : { x: 0, y: 0 }
 
   return (
-    <span ref={ref} className="absolute inset-0 pointer-events-none" aria-hidden>
+    // 关键：覆盖层必须始终挂载——提前 return null 会让 ref 绑不上、尺寸量不到，光效永远不显示
+    <span ref={ref} className="absolute inset-0 z-10 pointer-events-none" aria-hidden>
+      {ready && (
       <svg width={box.w} height={box.h}>
         <g transform={`translate(${inset} ${inset})`}>
           {/* 底轨：微亮的完整外轮廓，提示光点要跑的路线 */}
@@ -410,6 +412,7 @@ function HoldRing({ progress }: { progress: number }) {
           <circle cx={pt.x} cy={pt.y} r={2.2} fill="var(--danger)" />
         </g>
       </svg>
+      )}
     </span>
   )
 }

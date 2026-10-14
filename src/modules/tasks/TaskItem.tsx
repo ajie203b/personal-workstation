@@ -1,17 +1,11 @@
-import { Clock, FileText, Flag, ListChecks, MoreHorizontal, Pin, Repeat, Timer } from 'lucide-react'
-import { PRIORITY_VAR, TIER_LABEL, type Task } from '@/db/db'
+import { Clock, FileText, Flag, ListChecks, Pin, Repeat } from 'lucide-react'
+import { PRIORITY_VAR, type Task } from '@/db/db'
 import { fmtDue } from '@/lib/date'
 import { cn } from '@/lib/cn'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
-import {
-  DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuLabel, MenuSeparator,
-} from '@/shared/ui/Menu'
-import { moveTier, setPriority, updateTask, deleteTask, restoreTask } from '@/db/tasks'
 import { toggleTaskWithUndo } from './taskActions'
 import { openDoc } from '@/shared/DeepLink'
 import { useTasksUi } from '@/stores/tasks'
-import { useUi } from '@/stores/ui'
-import { TIERS } from '@/db/db'
 import { morphOpen } from '@/lib/viewTransition'
 
 interface Props {
@@ -26,16 +20,9 @@ interface Props {
 
 export function TaskItem({ task, focused, overlay, flip }: Props) {
   const openDetail = useTasksUi((s) => s.openDetail)
-  const toast = useUi((s) => s.toast)
   const done = task.status === 'done'
   const due = task.due ? fmtDue(task.due, task.dueTime) : null
   const overdue = due?.overdue && !done
-
-  const remove = () => {
-    void deleteTask(task).then(() => {
-      toast('已删除任务', { label: '撤销', run: () => void restoreTask(task) })
-    })
-  }
 
   return (
     <div
@@ -129,62 +116,6 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
             </div>
           )}
         </div>
-
-        {!overlay && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="任务操作"
-                onClick={(e) => e.stopPropagation()}
-                className="grid place-items-center w-8 h-8 -mr-1.5 rounded-lg text-on-surface-2/70 hover:bg-surface-3 hover:text-on-surface transition-colors"
-              >
-                <MoreHorizontal size={17} />
-              </button>
-            </DropdownMenuTrigger>
-            <MenuContent>
-              {task.status !== 'done' && (
-                <MenuItem
-                  active={task.status === 'doing'}
-                  onSelect={() => void updateTask(task.id, { status: task.status === 'doing' ? 'todo' : 'doing' })}
-                >
-                  <span className={cn('w-2 h-2 rounded-full bg-ok', task.status === 'doing' && 'animate-ai-pulse')} />
-                  {task.status === 'doing' ? '停止进行中' : '标记进行中'}
-                </MenuItem>
-              )}
-              <MenuLabel>优先级</MenuLabel>
-              {([0, 1, 2, 3] as const).map((p) => (
-                <MenuItem key={p} active={task.priority === p} onSelect={() => void setPriority(task.id, p)}>
-                  <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_VAR[p] }} />
-                  {['P0 紧急', 'P1 重要', 'P2 常规', 'P3 低'][p]}
-                </MenuItem>
-              ))}
-              <MenuSeparator />
-              <MenuLabel>移至清单</MenuLabel>
-              {TIERS.map((t) => (
-                <MenuItem key={t} active={task.tier === t} onSelect={() => void moveTier(task.id, t)}>
-                  {TIER_LABEL[t]}
-                </MenuItem>
-              ))}
-              <MenuSeparator />
-              <MenuItem active={!!task.pinned} onSelect={() => void updateTask(task.id, { pinned: !task.pinned || undefined })}>
-                <Pin size={14} />
-                {task.pinned ? '取消置顶' : '置顶'}
-              </MenuItem>
-              {task.status !== 'done' && (
-                <MenuItem onSelect={() => { window.location.hash = `#/today?focus-task=${task.id}` }}>
-                  <Timer size={14} />
-                  开始专注
-                </MenuItem>
-              )}
-              <MenuSeparator />
-              {task.status !== 'done' && (
-                <MenuItem onSelect={() => void toggleTaskWithUndo(task)}>✓ 标记完成</MenuItem>
-              )}
-              <MenuItem danger onSelect={remove}>删除任务</MenuItem>
-            </MenuContent>
-          </DropdownMenu>
-        )}
       </div>
     </div>
   )

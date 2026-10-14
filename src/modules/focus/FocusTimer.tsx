@@ -10,6 +10,7 @@ import { sortTasks } from '@/db/tasks'
 import { haptic } from '@/lib/haptics'
 import { useUi } from '@/stores/ui'
 import { Segmented } from '@/shared/ui/Segmented'
+import { Dialog } from '@/shared/ui/Sheet'
 
 type Phase = 'work' | 'break'
 
@@ -17,6 +18,8 @@ const WORK_PRESETS = ['15', '25', '45', '60']
 const BREAK_MIN = 5
 const STORE_KEY = 'ws-focus-timer'
 const TASK_KEY = 'ws-focus-task'
+/** 任务详情「开始专注」写入的一次性指令：进入今日页后弹出选时小框 */
+const START_KEY = 'ws-focus-start'
 
 interface TimerStore {
   phase: Phase
@@ -88,10 +91,27 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   const all = useAllTasks()
   const candidates: Task[] = sortTasks(all.filter((t) => t.status !== 'done')).slice(0, 50)
   const [taskId, pickTask] = useFocusTaskId(initialTaskId)
+  // 从任务详情点「开始专注」进来时，待选时的小框（值为任务 id）
+  const [askTaskId, setAskTaskId] = useState<string | null>(null)
 
   useEffect(() => {
     localStorage.setItem(STORE_KEY, JSON.stringify(store))
   }, [store])
+
+  // 消费任务详情写入的一次性「开始专注」指令：绑定任务（useFocusTaskId 负责）并弹出选时小框。
+  // 依赖 initialTaskId 而非空数组：已在今日页时 hash 变化不会重挂本组件，参数变化才是可靠时机。
+  useEffect(() => {
+    if (!initialTaskId) return
+    try {
+      const raw = localStorage.getItem(START_KEY)
+      if (!raw) return
+      localStorage.removeItem(START_KEY)
+      const p = JSON.parse(raw) as { taskId?: string; at?: number }
+      if (p.taskId !== initialTaskId) return
+      if (!p.at || Date.now() - p.at > 60_000) return // 陈旧指令忽略
+      setAskTaskId(initialTaskId)
+    } catch { /* 忽略坏数据 */ }
+  }, [initialTaskId])
 
   // 250ms 对齐一次时钟：即使后台把 interval 节流到 1 分钟，回到前台也会立刻补算
   useEffect(() => {
@@ -135,11 +155,19 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
     setStore((s) => ({ ...s, workMin: min, left: s.phase === 'work' ? min * 60 : s.left }))
   }, [])
 
+  /** 选时小框确认：设定时长并立即开跑（覆盖当前未跑的计时状态） */
+  const startWithMinutes = useCallback((min: number) => {
+    haptic('medium')
+    setAskTaskId(null)
+    setStore({ phase: 'work', running: true, endsAt: Date.now() + min * 60_000, left: min * 60, workMin: min })
+  }, [])
+
   const mm = String(Math.floor(remaining / 60)).padStart(2, '0')
   const ss = String(remaining % 60).padStart(2, '0')
   const total = storeSeconds(store)
   const progress = total > 0 ? 1 - remaining / total : 0
   const boundTask = all.find((t) => t.id === taskId)
+  const askTask = askTaskId ? all.find((t) => t.id === askTaskId) : undefined
 
   return (
     <div className="card p-5 flex flex-col items-center gap-4">
@@ -250,6 +278,27 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
         <Coffee size={14} />
         <span>今日 {todayStats.sessions} 个番茄 · {todayStats.minutes} 分钟</span>
       </div>
+
+      {/* 「开始专注」选时小框：选好立即开跑；关掉小框则只保留任务绑定 */}
+      <Dialog
+        open={askTaskId != null}
+        onOpenChange={(v) => { if (!v) setAskTaskId(null) }}
+        title="选择专注时长"
+        description={askTask ? `「${askTask.title.slice(0, 20)}」选好立即开始` : '选好立即开始'}
+      >
+        <div className="grid grid-cols-2 gap-2.5 mt-1">
+          {WORK_PRESETS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => startWithMinutes(Number(m))}
+              className="h-12 rounded-[12px] bg-surface-2 border border-outline text-[15px] font-semibold hover:border-ok/60 hover:bg-ok/10 hover:text-ok active:scale-95 transition-all cursor-pointer"
+            >
+              {m} 分钟
+            </button>
+          ))}
+        </div>
+      </Dialog>
     </div>
   )
 }
