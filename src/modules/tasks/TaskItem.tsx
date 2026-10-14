@@ -38,15 +38,18 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
         focused && 'ring-2 ring-primary/50',
         done && 'opacity-60',
       )}
-      // 优先级闭合边框：整卡外轮廓按红→橙黄→蓝→灰包裹，一眼识别档次
-      style={{
-        borderColor: PRIORITY_VAR[task.priority],
-        borderWidth: task.priority === 3 ? 1 : 1.5,
-        borderStyle: 'solid',
-      }}
     >
       <div className="flex items-start gap-3">
         <CheckCircle checked={done} onChange={() => void toggleTaskWithUndo(task)} label={done ? '恢复任务' : '完成任务'} />
+        {/* macOS 提醒事项式优先级圆点：取代整卡彩色描边，克制不吵 */}
+        {task.priority < 3 && (
+          <span
+            className="mt-2 w-2 h-2 rounded-full shrink-0"
+            style={{ background: PRIORITY_VAR[task.priority], opacity: done ? 0.45 : 1 }}
+            title={task.priority === 0 ? '紧急' : task.priority === 1 ? '重要' : '普通'}
+            aria-hidden
+          />
+        )}
 
         <div className="flex-1 min-w-0">
           <p

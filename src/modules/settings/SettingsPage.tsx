@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, BellOff, Download, History, Smartphone, Upload } from 'lucide-react'
-import { useUi } from '@/stores/ui'
+import { useUi, type Accent, type Density, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
-import { ThemeSwitch } from '@/shared/ui/ThemeSwitch'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { isNative } from '@/lib/native'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
@@ -41,11 +40,86 @@ export function SettingsPage() {
   )
 }
 
+/** macOS 系统设置同款强调色（与 index.css 中 data-accent 调板的浅色值一致） */
+const ACCENTS: { value: Accent; color: string; label: string }[] = [
+  { value: 'blue', color: '#0A6CFE', label: '蓝色' },
+  { value: 'purple', color: '#7D4FBE', label: '紫色' },
+  { value: 'pink', color: '#D6417B', label: '粉色' },
+  { value: 'red', color: '#D63C41', label: '红色' },
+  { value: 'orange', color: '#E07B1F', label: '橙色' },
+  { value: 'green', color: '#2F9E5F', label: '绿色' },
+]
+
 function AppearanceTab() {
-  // 极简：这一屏只留主题开关本身，说明文字与触感反馈开关都去掉（触感默认开启）
+  const themeMode = useUi((s) => s.themeMode)
+  const setThemeMode = useUi((s) => s.setThemeMode)
+  const accent = useUi((s) => s.accent)
+  const setAccent = useUi((s) => s.setAccent)
+  const density = useUi((s) => s.density)
+  const setDensity = useUi((s) => s.setDensity)
+  const motion = useUi((s) => s.motion)
+  const setMotion = useUi((s) => s.setMotion)
+
   return (
-    <div className="max-w-xl px-1 pt-1">
-      <ThemeSwitch />
+    <div className="flex flex-col gap-4 max-w-xl">
+      <section className="card p-4">
+        <h2 className="text-[14px] font-semibold mb-1">主题</h2>
+        <p className="text-[13px] text-on-surface-2 mb-3">跟随系统会在系统切换深浅色时自动变化。</p>
+        <Segmented
+          ariaLabel="主题模式"
+          value={themeMode}
+          onChange={(v) => setThemeMode(v as ThemeMode)}
+          options={[
+            { value: 'system', label: '跟随系统' },
+            { value: 'light', label: '浅色' },
+            { value: 'dark', label: '深色' },
+          ]}
+        />
+      </section>
+
+      <section className="card p-4">
+        <h2 className="text-[14px] font-semibold mb-1">强调色</h2>
+        <p className="text-[13px] text-on-surface-2 mb-3">用于按钮、链接与高亮元素。</p>
+        <div className="flex flex-wrap gap-2.5">
+          {ACCENTS.map((a) => (
+            <button
+              key={a.value}
+              type="button"
+              title={a.label}
+              aria-label={`强调色：${a.label}`}
+              aria-pressed={accent === a.value}
+              onClick={() => setAccent(a.value)}
+              className="w-7 h-7 rounded-full press transition-transform duration-150 hover:scale-110"
+              style={{
+                background: a.color,
+                boxShadow: accent === a.value ? '0 0 0 2px var(--surface), 0 0 0 4px var(--on-surface-2)' : undefined,
+              }}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="text-[14px] font-semibold mb-3">界面密度</h2>
+        <Segmented
+          ariaLabel="界面密度"
+          value={density}
+          onChange={(v) => setDensity(v as Density)}
+          options={[
+            { value: 'compact', label: '紧凑' },
+            { value: 'default', label: '默认' },
+            { value: 'large', label: '宽松' },
+          ]}
+        />
+      </section>
+
+      <section className="card p-4 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-[14px] font-semibold">动效</h2>
+          <p className="text-[13px] text-on-surface-2 mt-0.5">关闭后应用内动画减至最弱。</p>
+        </div>
+        <JellySwitch checked={motion} onChange={() => setMotion(!motion)} label="动效" />
+      </section>
     </div>
   )
 }

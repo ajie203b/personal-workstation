@@ -104,6 +104,30 @@
   }
 }
 
+/* 应用内动效总开关（设置页可关，独立于系统 prefers-reduced-motion） */
+.no-motion *, .no-motion *::before, .no-motion *::after {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+.no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot { animation: none !important; display: none !important; }
+
+/* 界面密度（对应 macOS 字号档） */
+:root[data-density='compact'] body { font-size: 13px; }
+:root[data-density='large'] body { font-size: 17px; }
+
+/* 强调色（macOS 系统设置同款）：覆盖 --primary 系令牌，全站零硬编码随之换色 */
+:root[data-accent='purple'] { --primary: #7D4FBE; --primary-soft: #F1EAF9; }
+.dark[data-accent='purple'] { --primary: #C4A4EC; --primary-soft: #33284A; }
+:root[data-accent='pink'] { --primary: #D6417B; --primary-soft: #FAE9F1; }
+.dark[data-accent='pink'] { --primary: #F191B6; --primary-soft: #452438; }
+:root[data-accent='red'] { --primary: #D63C41; --primary-soft: #FAE9EA; }
+.dark[data-accent='red'] { --primary: #F08085; --primary-soft: #462224; }
+:root[data-accent='orange'] { --primary: #E07B1F; --primary-soft: #FBF0E2; }
+.dark[data-accent='orange'] { --primary: #F2AC60; --primary-soft: #47301A; }
+:root[data-accent='green'] { --primary: #2F9E5F; --primary-soft: #E7F4EC; }
+.dark[data-accent='green'] { --primary: #5FC78C; --primary-soft: #1E3527; }
+
 /* Tailwind v4：把语义变量映射为工具类（inline = 直接引用 var，随主题切换） */
 @theme inline {
   --color-primary: var(--primary);
@@ -187,18 +211,7 @@
 .knob-slide { transition: transform var(--dur-3) var(--ease-spring); }
 .knob-squash { animation: knob-squash var(--dur-3) var(--ease-standard); }
 
-/* 触点水波纹：从指针坐标扩出再淡出（仅 primary 按钮与底部导航） */
-@keyframes ripple {
-  from { transform: scale(0); opacity: 0.32; }
-  to { transform: scale(2.6); opacity: 0; }
-}
-.ripple {
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  pointer-events: none;
-  animation: ripple 460ms var(--ease-standard) forwards;
-}
+/* macOS 风格按压反馈：轻微缩小，不用 MD 水波纹（.press 已有全局定义） */
 
 /* 完成特效（低调高级感）：一圈同色细光环向外扩散淡出 + 6 粒同色微光点晕开。
    单色（状态绿）、短促、不撒花：克制但有仪式感。 */
@@ -251,12 +264,11 @@
 }
 .collapse-out { transform-origin: left center; animation: collapse-out var(--dur-2) var(--ease-standard) forwards; }
 
-/* 主题切换圆形扩散（View Transitions 可用时） */
-::view-transition-new(root) { animation: vt-circle 420ms var(--ease-emph); }
-@keyframes vt-circle {
-  from { clip-path: circle(0% at var(--vt-x, 50%) var(--vt-y, 50%)); }
-  to { clip-path: circle(150% at var(--vt-x, 50%) var(--vt-y, 50%)); }
-}
+/* 主题切换交叉淡入（View Transitions 可用时）：macOS 气质，不做 Android 式圆形扩散 */
+::view-transition-old(root) { animation: vt-fade-out 240ms var(--ease-standard) both; }
+::view-transition-new(root) { animation: vt-fade-in 240ms var(--ease-standard) both; }
+@keyframes vt-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* 无障碍：系统开启“减弱动态效果”时压平全部动效（行业标配） */
 @media (prefers-reduced-motion: reduce) {
@@ -267,7 +279,7 @@
     scroll-behavior: auto !important;
   }
   /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
-  .spark-dot, .done-halo, .ripple, ::view-transition-new(root) { display: none !important; animation: none !important; }
+  .spark-dot, .done-halo, ::view-transition-new(root) { display: none !important; animation: none !important; }
   /* 新增氛围特效同样静默降级 */
   body::before { display: none !important; }
   .focus-breathe, .drop-settle { animation: none !important; }
@@ -418,12 +430,13 @@ select:focus-visible {
    动效增强（评审改进项）
    ============================================================ */
 
-/* P2 纸纹/噪点：2.5% 透明度平铺噪点，去掉纯色塑料感。纯装饰、不接收事件。 */
+/* P2 纸纹/噪点：2.5% 透明度平铺噪点，去掉纯色塑料感。纯装饰、不接收事件。
+   层级压在模态遮罩（z-40/50）之下，避免弹窗打开时背景像蒙灰点（对齐 macOS 干净遮罩）。 */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: 1;
   pointer-events: none;
   opacity: 0.025;
   mix-blend-mode: multiply;
@@ -560,68 +573,57 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
    质感取自 Uiverse bright-dolphin-91（Yaya12085，MIT）：内阴影凹槽轨道 + 金属旋钮 + hover 3D 倾斜。
    只保留 浅色 / 深色 两档：两枚图标槽位 + 一颗滑动旋钮，不再有「跟随系统」。
    ============================================================ */
+/* 扁平主题开关（macOS 式分段控件）：取消拟物凹槽/金属旋钮/3D 倾斜 */
 .theme-switch {
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 116px;
-  height: 56px;
-  padding: 6px;
-  border-radius: 28px;
-  background: color-mix(in srgb, var(--surface) 55%, var(--surface-3));
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.32),
-    inset 0 -1px 0 color-mix(in srgb, var(--surface) 85%, transparent),
-    0 1px 0 color-mix(in srgb, var(--surface) 70%, transparent),
-    0 10px 22px rgba(0, 0, 0, 0.10);
-  transition: transform var(--dur-3) var(--ease-standard);
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--outline);
   -webkit-tap-highlight-color: transparent;
-}
-.theme-switch:hover {
-  transform: perspective(320px) rotateX(5deg) rotateY(-4deg);
 }
 
 .theme-switch-knob {
   position: absolute;
-  top: 6px;
-  left: 10px;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background-color: var(--surface);
-  background-image: linear-gradient(130deg,
-    color-mix(in srgb, var(--surface) 55%, #ffffff) 8%,
-    var(--surface) 42%,
-    color-mix(in srgb, var(--surface-3) 82%, #000000) 96%);
-  box-shadow:
-    0 2px 1px rgba(0, 0, 0, 0.30),
-    0 9px 16px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 color-mix(in srgb, var(--surface) 60%, #ffffff);
-  transition: transform 420ms var(--ease-spring);
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 4px);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.08));
+  transition: transform var(--dur-2) var(--ease-emph);
 }
-.theme-switch-knob[data-pos='1'] { transform: translateX(52px); }
+.theme-switch-knob[data-pos='1'] { transform: translateX(calc(100% + 2px)); }
 
 .theme-switch-slot {
   position: relative;
   z-index: 1;
   flex: 1 1 0;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  padding: 0;
+  min-width: 64px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
   border: 0;
+  border-radius: 9px;
   background: transparent;
   cursor: pointer;
   color: var(--on-surface-2);
-  opacity: 0.62;
-  transition: opacity var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard);
+  font-size: 13px;
+  font-weight: 500;
+  transition: color var(--dur-1) var(--ease-standard);
 }
-.theme-switch-slot:hover { opacity: 0.9; }
-.theme-switch-slot[aria-checked='true'] { color: var(--primary); opacity: 1; }
+.theme-switch-slot[aria-checked='true'] { color: var(--on-surface); }
 .theme-switch-slot:focus-visible {
   outline: 2px solid var(--primary);
-  outline-offset: -4px;
-  border-radius: 12px;
+  outline-offset: -2px;
+  border-radius: 9px;
 }
 
 /* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */

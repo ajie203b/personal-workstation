@@ -268,7 +268,7 @@ export function CommandPalette() {
         <div className="flex items-center gap-3 px-4 py-2 border-t border-outline text-[11px] text-on-surface-2">
           <span><kbd className="kbd">↑↓</kbd> 选择</span>
           <span><kbd className="kbd">↵</kbd> 打开</span>
-          <span className="ml-auto"><kbd className="kbd">Ctrl K</kbd> 呼出/关闭</span>
+          <span className="ml-auto"><kbd className="kbd">{typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd> 呼出/关闭</span>
         </div>
       </div>
     </div>

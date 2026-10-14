@@ -1,6 +1,6 @@
 import {
   forwardRef, useCallback, useEffect, useRef, useState,
-  type ButtonHTMLAttributes, type PointerEvent as ReactPointerEvent,
+  type ButtonHTMLAttributes,
 } from 'react'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
@@ -15,8 +15,6 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size
   /** 不传即 idle；受控用法配 useAsyncButton 自动流转 */
   state?: ButtonState
-  /** 触点水波纹（MD3 语义）。primary 默认开，其余默认关以守住 HIG 克制基调 */
-  ripple?: boolean
 }
 
 const variantCls: Record<Variant, string> = {
@@ -25,61 +23,45 @@ const variantCls: Record<Variant, string> = {
   outline: 'border border-outline text-on-surface hover:bg-surface-3',
   danger: 'text-danger hover:bg-danger/10',
 }
-
 const sizeCls: Record<Size, string> = {
-  sm: 'h-8 px-3 text-[13px] rounded-[10px] gap-1.5',
-  md: 'h-10 px-4 text-[14px] rounded-[10px] gap-2',
-  icon: 'h-10 w-10 rounded-[10px] justify-center',
+  sm: 'h-8 px-3 rounded-[9px] text-[13px] gap-1.5',
+  md: 'h-10 px-4 rounded-[10px] text-[14px] gap-2',
+  icon: 'w-9 h-9 rounded-[9px] justify-center',
 }
-
-/** 状态态下的底色：成功走 --ok，失败走 --danger，加载保持原色 */
 const stateCls: Record<ButtonState, string> = {
   idle: '',
-  loading: '',
-  success: 'bg-ok text-on-primary border-transparent',
-  error: 'bg-danger text-on-primary border-transparent',
+  loading: 'bg-surface-3 text-on-surface-2 border border-outline shadow-none',
+  success: 'bg-success text-white hover:opacity-100 shadow-none',
+  error: 'bg-danger text-white hover:opacity-100 shadow-none',
 }
 
-/** 状态图标：纯 SVG，成功态带描边画勾动画 */
-function StateIcon({ state }: { state: ButtonState }) {
+function StateIcon({ state }: { state: Exclude<ButtonState, 'idle'> }) {
   if (state === 'loading') {
-    return <span aria-hidden className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+    return (
+      <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+        <path d="M21 12a9 9 0 1 1-6.2-8.56" />
+      </svg>
+    )
   }
   if (state === 'success') {
     return (
-      <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" aria-hidden>
-        <path d="M4 12.5 L9.5 18 L20 6.5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" className="draw-check" />
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M4 12.5 9.5 18 20 6.5" />
       </svg>
     )
   }
   return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" aria-hidden>
-      <path d="M6 6 L18 18 M18 6 L6 18" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M6 6l12 12M18 6 6 18" />
     </svg>
   )
 }
 
-interface Ripple { id: number; x: number; y: number; size: number }
-
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant = 'ghost', size = 'md', type = 'button', state = 'idle', ripple, disabled, children, onPointerDown, ...rest },
+  { className, variant = 'ghost', size = 'md', type = 'button', state = 'idle', disabled, children, ...rest },
   ref,
 ) {
-  const [ripples, setRipples] = useState<Ripple[]>([])
-  const seed = useRef(0)
-  const showRipple = ripple ?? variant === 'primary'
   const busy = state !== 'idle'
-
-  const spawnRipple = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
-    onPointerDown?.(e)
-    if (!showRipple || busy) return
-    const el = e.currentTarget
-    const rect = el.getBoundingClientRect()
-    const d = Math.max(rect.width, rect.height)
-    const id = ++seed.current
-    setRipples((prev) => [...prev, { id, x: e.clientX - rect.left - d / 2, y: e.clientY - rect.top - d / 2, size: d }])
-    setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 480)
-  }, [onPointerDown, showRipple, busy])
 
   return (
     <button
@@ -88,7 +70,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       data-state={state}
-      onPointerDown={spawnRipple}
       className={cn(
         'press relative overflow-hidden inline-flex items-center font-medium select-none',
         'transition-all duration-150 ease-standard',
@@ -101,71 +82,54 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
       {...rest}
     >
-      {ripples.map((r) => (
-        <span
-          key={r.id}
-          className="ripple"
-          style={{ left: r.x, top: r.y, width: r.size, height: r.size }}
-          aria-hidden
-        />
-      ))}
       {/* 标签与状态图标叠在同一格：宽度由标签撑住，切换时不触发重排 */}
       <span className="grid place-items-center w-full [&>span]:col-start-1 [&>span]:row-start-1">
-        <span
-          className={cn(
-            'inline-flex items-center gap-2 transition-opacity duration-150',
-            busy && 'opacity-0',
-          )}
-        >
+        <span className={cn('inline-flex items-center gap-1.5 transition-opacity duration-100', busy && 'opacity-0')}>
           {children}
         </span>
-        {busy && (
-          <span className="inline-flex items-center justify-center animate-pop">
-            <StateIcon state={state} />
-          </span>
-        )}
+        <span
+          className={cn(
+            'inline-flex items-center justify-center transition-[opacity,transform] duration-150',
+            busy ? 'opacity-100 scale-100' : 'opacity-0 scale-75',
+          )}
+          aria-hidden={!busy}
+        >
+          {busy && <StateIcon state={state} />}
+        </span>
       </span>
     </button>
   )
 })
 
 /**
- * 把一次异步操作驱动成三段变化：loading → success/error，短暂停留后回 idle。
- * 失败一定落到 error，不能骗人打勾。
+ * 触发即进 loading，Promise 完成后展示结果态再归位（默认 700ms，可按调用点覆盖）。
+ * 用法：
+ *   const backup = useAsyncButton()
+ *   <Button state={backup.state} onClick={() => backup.run(() => backupNow())}>立即备份</Button>
  */
 export function useAsyncButton(opts?: { successHoldMs?: number; errorHoldMs?: number }) {
   const [state, setState] = useState<ButtonState>('idle')
-  const timers = useRef<number[]>([])
-  const alive = useRef(true)
+  const timerRef = useRef(0)
+  useEffect(() => () => clearTimeout(timerRef.current), [])
 
-  useEffect(() => () => {
-    alive.current = false
-    timers.current.forEach((t) => clearTimeout(t))
+  const holdThenIdle = useCallback((ms: number) => {
+    clearTimeout(timerRef.current)
+    timerRef.current = window.setTimeout(() => setState('idle'), ms)
   }, [])
 
-  const later = (ms: number, fn: () => void) => {
-    timers.current.push(window.setTimeout(() => alive.current && fn(), ms))
-  }
-
-  const run = useCallback(
-    async <T,>(fn: () => Promise<T> | T): Promise<T | undefined> => {
-      setState('loading')
-      haptic('light')
-      try {
-        const out = await fn()
-        setState('success')
-        haptic('success')
-        later(opts?.successHoldMs ?? 1100, () => setState('idle'))
-        return out
-      } catch (err) {
-        setState('error')
-        haptic('error')
-        later(opts?.errorHoldMs ?? 1400, () => setState('idle'))
-        throw err
-      }
-    },
-    [opts?.successHoldMs, opts?.errorHoldMs],
-  )
+  const run = useCallback(async (fn: () => Promise<unknown> | void) => {
+    setState('loading')
+    try {
+      await fn()
+      setState('success')
+      haptic('success')
+      holdThenIdle(opts?.successHoldMs ?? 700)
+    } catch (e) {
+      setState('error')
+      console.error(e)
+      holdThenIdle(opts?.errorHoldMs ?? 700)
+    }
+  }, [holdThenIdle, opts?.successHoldMs, opts?.errorHoldMs])
 
   return { state, run }
 }

@@ -19,7 +19,7 @@ export function ToastHost() {
           {t.action && (
             <button
               type="button"
-              className="text-[13px] font-semibold px-2 py-1 rounded-lg hover:bg-white/10 shrink-0"
+              className="text-[13px] font-semibold px-2 py-1 rounded-lg hover:bg-primary-soft shrink-0 transition-colors"
               style={{ color: 'var(--primary)', fontWeight: 600 }}
               onClick={() => {
                 t.action!.run()

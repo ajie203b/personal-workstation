@@ -171,10 +171,10 @@ export function DocsPage() {
           hint="导入 PDF / EPUB / Word / PPT / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
         >
           <div className="flex gap-2 justify-center">
-            <Button variant="primary" size="sm" onClick={() => navigate('/docs/new')}>
+            <Button variant="primary" size="sm" className="rounded-[9px]" onClick={() => navigate('/docs/new')}>
               <PenLine size={15} /> 写文档
             </Button>
-            <Button size="sm" onClick={() => fileRef.current?.click()}>
+            <Button variant="outline" size="sm" className="rounded-[9px]" onClick={() => fileRef.current?.click()}>
               <Import size={15} /> 选择文件
             </Button>
           </div>
