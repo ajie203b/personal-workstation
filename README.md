@@ -69,8 +69,9 @@ cd android
 
 1. **升版本号**：`npm version 1.5.2 --no-git-tag-version`（一次改好 `package.json` 与 `package-lock.json`）；再手改 `android/app/build.gradle` 的 `versionCode`（**每发一版 +1**，Android 只认它判断能否覆盖安装）与 `versionName`（跟 npm 版本保持一致）。
 2. **提交并推送 main**：功能改动与版本号改动进同一个提交，`git push origin main`。
-3. **发网页版**：`bash scripts/deploy-gh-pages.sh`（构建 `dist/` → 快进推 `gh-pages` → 按 package.json 写 `version.json`）。跑完自己核对一次 `curl -fsS https://ajie203b.github.io/personal-workstation/version.json`——Pages 重建有几十秒延迟，脚本末尾那次 curl 很可能仍打印旧值。
+3. **发网页版**：`bash scripts/deploy-gh-pages.sh`（构建 `dist/` → 快进推 `gh-pages` → 按 package.json 写 `version.json`）。跑完自己核对一次 `curl -fsS https://ajie203b.github.io/personal-workstation/version.json`——Pages 重建有几十秒延迟，脚本末尾那次 curl 很可能仍打印旧值。`dist/` 只存在于 `gh-pages` 分支，main 已不再跟踪它（`.gitignore` 忽略 `dist`），所以构建产物的增删不会让 `git status` 变脏。
 4. **出安卓包**：`npx cap sync android` → `cd android && JAVA_HOME="%LOCALAPPDATA%\jdk-21" ./gradlew assembleRelease`。JAVA_HOME 用反斜杠形式，正斜杠写法会让 Gradle 找不到签名配置。
+   - 增量构建约 20 秒，首次全量约 3.5 分钟。若 `gradlew` 报 `SocketTimeoutException: Connect timed out` 且栈顶是 `org.gradle.wrapper.Install.forceFetch`，那是 wrapper 在下 Gradle 发行版而不是项目坏了：本机 `GRADLE_USER_HOME=D:\gradle-home` 一旦被清空，就要重新下约 230MB 的 `gradle-8.11.1-all.zip`，而官方源只有约 250KB/s，撑不过 wrapper 写死的 10s 超时。处理办法是先把发行版预置进 `$GRADLE_USER_HOME/wrapper/dists/gradle-8.11.1-all/<hash>/gradle-8.11.1-all.zip`（删掉残留的 `.part` / `.lck`），国内镜像约 46MB/s，再**用官方 `gradle-8.11.1-all.zip.sha256` 校验一致**后重跑构建。别改仓库里的 `gradle-wrapper.properties`，也别反复重跑碰运气。
 5. **验包**（构建成功不等于包是对的，三查缺一不可）：
    - `aapt2 dump badging app-release.apk | grep ^package` → versionCode / versionName 是新版；
    - `keytool -printcert -jarfile app-release.apk` 的 SHA256 指纹必须与上一版一致，不一致说明换了 keystore，已装设备只能卸载重装、数据会丢；
