@@ -14,16 +14,14 @@
     <title>个人工作站</title>
     <style>html.dark{background:#1E1F24}</style>
     <script>
-      // 主题预置：React 挂载前设置 dark 类，避免暗色用户启动时闪白
+      // 主题预置：React 挂载前设置 dark 类，避免暗色用户启动时闪白（仅 浅色/深色 两档，旧的 system 值按浅色处理）
       try {
         var saved = JSON.parse(localStorage.getItem('ws-ui') || '{}');
-        var theme = (saved.state && saved.state.theme) || 'system';
-        var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.classList.add('dark');
+        if (saved.state && saved.state.theme === 'dark') document.documentElement.classList.add('dark');
       } catch (e) { /* 忽略 */ }
     </script>
-    <script type="module" crossorigin src="./assets/index-DRU27AIH.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-B0MdrzW-.css">
+    <script type="module" crossorigin src="./assets/index-CDrTICsc.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Bpr54pFo.css">
   <link rel="manifest" href="./manifest.webmanifest"></head>
   <body>
     <div id="root"></div>
