@@ -12,6 +12,7 @@ import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
 import { uid } from '@/lib/id'
+import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
 const FIELD = 'text-[12px] font-medium text-on-surface-2 mb-1.5 block'
 const INPUT =
@@ -80,6 +81,16 @@ export function TaskDetail() {
     return () => { window.removeEventListener('beforeunload', onBeforeUnload); flushSave() }
   }, [flushSave])
 
+  // 在「打开详情」这一刻消费一次性标记：morphOpen/morphClose 在调用前已置位，
+  // 据此决定详情容器是否挂转场名（挂名后浏览器的共享元素转场才能接管）。
+  // 用 ref 记住上次的 detailId，保证同一次打开只判定一次（StrictMode 双渲染也安全）。
+  const morphSeen = useRef<string | null>(null)
+  const morphFromCard = useRef(false)
+  if (detailId !== morphSeen.current) {
+    morphSeen.current = detailId
+    morphFromCard.current = detailId ? consumeMorph() : false
+  }
+
   if (!task) return null
 
   const patch = (p: Partial<Task>) => void updateTask(task.id, p)
@@ -132,12 +143,24 @@ export function TaskDetail() {
   const done = task.status === 'done'
 
   return (
-    <RadixDialog.Root open onOpenChange={(v) => !v && openDetail(null)}>
+    <RadixDialog.Root
+      open
+      onOpenChange={(v) =>
+        // 关闭时让详情「长回」列表卡片（ESC / 点遮罩 / 关闭按钮都走这里）
+        !v && morphClose(() => document.getElementById(`task-${task.id}`), () => openDetail(null))
+      }
+    >
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
         <RadixDialog.Content
           className="pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(600px,92vw)] max-h-[86dvh] flex flex-col rounded-[20px]"
-          style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
+          style={{
+            // 常挂转场名：打开时若来自卡片则浏览器自动插值形变，关闭时也能「长回」卡片；
+            // 不支持 View Transitions 时该属性无副作用。
+            viewTransitionName: MORPH_NAME,
+            // 由卡片形变而来时抑制自身 scale-in，避免与转场打架；直接打开保留弹簧入场
+            animation: morphFromCard.current ? undefined : 'scale-in var(--dur-2) var(--ease-spring)',
+          }}
         >
           {/* 标题栏 */}
           <div className="flex items-center justify-between px-5 h-14 shrink-0 border-b border-outline">

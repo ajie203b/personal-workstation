@@ -78,7 +78,7 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
       </div>
       <DragOverlay>
         {activeTask && (
-          <div className="rotate-[0.6deg] scale-[1.02] drop-shadow-lg">
+          <div className="drop-settle rotate-[0.6deg] scale-[1.02] drop-shadow-lg">
             <TaskItem task={activeTask} overlay />
           </div>
         )}
@@ -94,7 +94,8 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
     <div
       ref={setNodeRef}
       className={cn(
-        'flex flex-col rounded-[16px] border p-2 min-h-[220px] transition-all duration-150 ease-standard',
+        // 只过渡 transform / 边框 / 背景，避免 transition-all 连带阴影逐帧重算
+        'flex flex-col rounded-[16px] border p-2 min-h-[220px] transition-[transform,border-color,background-color] duration-150 ease-standard',
         isOver ? 'border-primary/60 bg-primary-soft/40 scale-[1.004]' : 'border-outline bg-surface-2/50',
       )}
     >
@@ -121,7 +122,11 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
 
 /** sortable 卡片自带 droppable，所以落点可能是别的卡片 id；列容器另外注册成整列落点兜底 */
 function SortableCard({ task }: { task: Task }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
+  // 落位/让位用弹簧缓动，落点不再是硬贴（P1 看板落位回弹）
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+    transition: { duration: 300, easing: 'cubic-bezier(.34, 1.32, .5, 1)' },
+  })
   return (
     <div
       ref={setNodeRef}

@@ -152,14 +152,34 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
 
       {/* 圆形进度 + 时间 */}
       <div className="relative w-[140px] h-[140px]">
-        <svg viewBox="0 0 140 140" className="w-full h-full -rotate-90">
+        {/* 呼吸光晕：仅运行中显示，暂停即停（同屏只保留一个循环动画） */}
+        {store.running && (
+          <span
+            aria-hidden
+            className="focus-breathe absolute inset-1 rounded-full"
+            style={{
+              background:
+                store.phase === 'work'
+                  ? 'radial-gradient(circle, color-mix(in srgb, var(--ok) 24%, transparent) 0%, transparent 68%)'
+                  : 'radial-gradient(circle, color-mix(in srgb, var(--primary) 24%, transparent) 0%, transparent 68%)',
+            }}
+          />
+        )}
+        <svg viewBox="0 0 140 140" className="relative w-full h-full -rotate-90">
+          {/* 渐变描边：运行中更「活」，休息态换暖蓝 */}
+          <defs>
+            <linearGradient id="focus-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor={store.phase === 'work' ? 'var(--ok)' : 'var(--primary)'} />
+              <stop offset="1" stopColor={store.phase === 'work' ? '#1F9E6B' : '#6E97DB'} />
+            </linearGradient>
+          </defs>
           <circle cx="70" cy="70" r="60" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
           <circle
             cx="70" cy="70" r="60" fill="none"
-            stroke={store.phase === 'work' ? 'var(--ok)' : 'var(--primary)'}
+            stroke="url(#focus-grad)"
             strokeWidth="8" strokeLinecap="round"
             strokeDasharray={`${progress * 2 * Math.PI * 60} ${2 * Math.PI * 60}`}
-            style={{ transition: 'stroke-dasharray 1s linear, stroke var(--dur-2) var(--ease-standard)' }}
+            style={{ transition: 'stroke-dasharray 1s linear' }}
           />
         </svg>
         <div className="absolute inset-0 grid place-items-center">

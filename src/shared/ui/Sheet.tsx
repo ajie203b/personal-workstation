@@ -4,16 +4,16 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 
-/** 只在手机形态（<md）下跟手 */
-const isNarrow = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+const NARROW_Q = '(max-width: 767px)'
 
 /**
  * 侧滑详情面板：桌面/平板横屏=右侧滑入（440px），手机=底部抽屉（85dvh）。
  * Radix Dialog 保证焦点圈定、Esc 关闭等无障碍行为。
  *
- * 手机抽屉跟手下拉关闭（动效方案 5.D）：
- * - 内容已滚到顶且向下拖时才接管，否则让给列表滚动；
- * - 松手按「位移 > 90px 或 速度 > 0.5px/ms」判定关闭，否则回弹；
+ * 跟手侧滑关闭（动效方案 5.D，全端生效）：
+ * - 手机：内容已滚到顶且向下拖时才接管，否则让给列表滚动；
+ * - 桌面：右侧面板横向向右拖关闭；
+ * - 松手按「位移阈值 或 速度 > 0.5px/ms」判定关闭，否则回弹；
  * - 判定成立才关，所以内部按钮的 click 仍会正常触发（不会误吞点击）。
  */
 export function Sheet({
@@ -28,68 +28,98 @@ export function Sheet({
   children: ReactNode
 }) {
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [dragY, setDragY] = useState(0)
+  const [narrow, setNarrow] = useState(false)
+  const [drag, setDrag] = useState(0)
   const [dragging, setDragging] = useState(false)
   const moved = useRef(false)
-  const start = useRef({ y: 0, t: 0 })
+  const start = useRef({ x: 0, y: 0, t: 0 })
   const active = useRef(false)
 
+  // 形态感知：手机=纵向抽屉，桌面=右侧面板
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_Q)
+    const on = () => setNarrow(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+
+  // 不跟手时保持 0，避免卸载重挂后残留位移
   useEffect(() => {
     if (!open) {
       active.current = false
       moved.current = false
       setDragging(false)
-      setDragY(0)
+      setDrag(0)
     }
   }, [open])
 
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (!isNarrow()) return
-    const body = bodyRef.current
-    if (!body || body.scrollTop > 1) return
-    active.current = true
-    moved.current = false
-    start.current = { y: e.clientY, t: performance.now() }
-    setDragging(true)
-  }, [])
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (narrow) {
+        // 手机：内容滚到顶才接管下拉
+        const body = bodyRef.current
+        if (!body || body.scrollTop > 1) return
+      }
+      active.current = true
+      moved.current = false
+      start.current = { x: e.clientX, y: e.clientY, t: performance.now() }
+      setDragging(true)
+    },
+    [narrow],
+  )
 
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!active.current) return
-    const dy = e.clientY - start.current.y
-    // 只有真的向下拖够距离才进入跟手态：轻点/微抖不动画，
-    // 否则 Content 上的 transform 会让落点偏移，Radix 可能连点击都吞掉
-    if (dy < 6) return
-    moved.current = true
-    // 只跟下拉，上滑留给内容滚动
-    setDragY(dy * 0.86)
-  }, [])
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!active.current) return
+      const dx = e.clientX - start.current.x
+      const dy = e.clientY - start.current.y
+      if (narrow) {
+        // 只有真的向下拖够距离才进入跟手态，避免微抖吞掉点击
+        if (dy < 6) return
+        if (Math.abs(dx) > Math.abs(dy)) return
+        moved.current = true
+        setDrag(dy * 0.86)
+      } else {
+        // 桌面：只跟向右拖关闭
+        if (dx < 6) return
+        if (Math.abs(dy) > Math.abs(dx)) return
+        moved.current = true
+        setDrag(dx * 0.86)
+      }
+    },
+    [narrow],
+  )
 
-  const endDrag = useCallback((e: React.PointerEvent) => {
-    if (!active.current) return
-    active.current = false
-    setDragging(false)
-    // 没真的拖起来就当普通点击处理，别抢按钮的事件序列
-    if (!moved.current) {
-      setDragY(0)
-      return
-    }
-    const dy = e.clientY - start.current.y
-    const velocity = dy / Math.max(1, performance.now() - start.current.t)
-    if (dy > 90 || velocity > 0.5) {
-      haptic('light')
-      setDragY(0)
-      onOpenChange(false)
-    } else {
-      setDragY(0)
-    }
-  }, [onOpenChange])
+  const endDrag = useCallback(
+    (e: React.PointerEvent) => {
+      if (!active.current) return
+      active.current = false
+      setDragging(false)
+      if (!moved.current) {
+        setDrag(0)
+        return
+      }
+      const delta = narrow ? e.clientY - start.current.y : e.clientX - start.current.x
+      const velocity = delta / Math.max(1, performance.now() - start.current.t)
+      const limit = narrow ? 90 : 110
+      if (delta > limit || velocity > 0.5) {
+        haptic('light')
+        setDrag(0)
+        onOpenChange(false)
+      } else {
+        setDrag(0)
+      }
+    },
+    [narrow, onOpenChange],
+  )
 
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay
           className="fixed inset-0 z-40 bg-black/30 overlay-fade"
-          style={dragY > 0 ? { opacity: Math.max(0.3, 1 - dragY / 460) } : undefined}
+          style={drag > 0 ? { opacity: Math.max(0.3, 1 - drag / 460) } : undefined}
         />
         <RadixDialog.Content
           onPointerDown={onPointerDown}
@@ -102,9 +132,9 @@ export function Sheet({
             'md:top-0 md:right-0 md:bottom-0 md:w-[min(440px,92vw)] md:border-l',
           )}
           style={{
-            transform: dragY ? `translateY(${dragY}px)` : undefined,
-            transition: dragging ? 'none' : 'transform 260ms cubic-bezier(.2, 0, 0, 1)',
-            ...(dragY || dragging ? {} : { animation: 'slide-up var(--dur-2) var(--ease-emph)' }),
+            transform: drag ? (narrow ? `translateY(${drag}px)` : `translateX(${drag}px)`) : undefined,
+            transition: dragging ? 'none' : 'transform var(--dur-2) var(--ease-standard)',
+            ...(drag || dragging ? {} : { animation: `${narrow ? 'slide-up' : 'slide-left'} var(--dur-2) var(--ease-emph)` }),
           }}
         >
           {/* 抽屉把手（手机）：明示可往下拽 */}

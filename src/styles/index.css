@@ -40,6 +40,7 @@
   --dur-1: 150ms;
   --dur-2: 300ms;
   --dur-3: 400ms;
+  --dur-4: 1000ms;
   --radius-xs: 6px;
   --radius-sm: 10px;
   --radius-md: 12px;
@@ -52,6 +53,13 @@
   --fs-lg: 17px;
   --ease-standard: cubic-bezier(.2, 0, 0, 1);
   --ease-emph: cubic-bezier(.05, .7, .1, 1);
+  --ease-spring: cubic-bezier(.34, 1.32, .5, 1);
+
+  /* 卡片静态层次：极浅双层阴影，弱光环境也能分清区块（P2 分层增强） */
+  --elev-card: 0 1px 2px rgba(32, 31, 29, .04), 0 10px 24px -18px rgba(32, 31, 29, .22);
+  /* 玻璃模糊半径集中管理，便于低端设备与减弱透明度时收敛 */
+  --glass-blur: 20px;
+  --glass-sat: 1.6;
 }
 
 .dark {
@@ -76,10 +84,19 @@
 
   --glass-bg: rgba(31, 30, 33, 0.72);
   --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --elev-card: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 28px -18px rgba(0, 0, 0, .65);
+}
+
+/* 真实弹簧：支持 linear() 的浏览器用弹簧积分曲线替换固定 cubic-bezier。
+   旧浏览器自动忽略，回退到 :root 的 -ease-spring 近似值，行为一致。 */
+@supports (animation-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(0, 0.013 1%, 0.05 2.4%, 0.146 4.4%, 0.285 6.7%, 0.474 9.5%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163 26.7%, 1.161, 1.154 29.2%, 1.129 32.6%, 1.058 41%, 1.017 47.4%, 1.002 55.3%, 0.999 66.2%, 1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --dur-1: 80ms; --dur-2: 80ms; --dur-3: 80ms; }
+  :root { --dur-1: 80ms; --dur-2: 80ms; --dur-3: 80ms; --dur-4: 80ms; }
   *, *::before, *::after {
     transition-duration: 80ms !important;
     animation-duration: 80ms !important;
@@ -110,7 +127,7 @@
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --ease-emph: cubic-bezier(0.05, 0.7, 0.1, 1);
-    --ease-spring: cubic-bezier(0.34, 1.36, 0.45, 1);
+    --ease-spring: linear(0, 0.013 1%, 0.05 2.4%, 0.146 4.4%, 0.285 6.7%, 0.474 9.5%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163 26.7%, 1.161, 1.154 29.2%, 1.129 32.6%, 1.058 41%, 1.017 47.4%, 1.002 55.3%, 0.999 66.2%, 1);
 
   --animate-fade-up: fade-up var(--dur-2) var(--ease-standard) both;
   --animate-pop: pop var(--dur-2) var(--ease-standard);
@@ -136,6 +153,10 @@
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(100%); }
   to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-left {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
 }
 @keyframes nav-pop {
   0% { transform: scale(0.86); }
@@ -239,6 +260,10 @@
   }
   /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
   .burst-dot, .ripple, ::view-transition-new(root) { display: none !important; animation: none !important; }
+  /* 新增氛围特效同样静默降级 */
+  body::before { display: none !important; }
+  .focus-breathe, .drop-settle { animation: none !important; }
+  .milestone-dot { display: none !important; }
 }
 
 /* ============================================================
@@ -273,11 +298,12 @@ select:focus-visible {
   outline: none;
 }
 
-/* 按压下沉 + 阴影收缩：比单纯 active:scale 更像按进去了 */
+/* 按压下沉：只用 transform（合成层），不再逐帧改 box-shadow（性能红线） */
 .press {
-  transition: transform var(--dur-1) var(--ease-standard), box-shadow var(--dur-1) var(--ease-standard);
+  transition: transform var(--dur-1) var(--ease-standard);
+  will-change: transform;
 }
-.press:active { transform: translateY(1px) scale(0.985); box-shadow: 0 1px 2px rgba(32, 31, 29, 0.06); }
+.press:active { transform: translateY(1px) scale(0.985); }
 
 /* 卡片内输入聚焦 → 卡片边框亮起（与外轮廓重合的反馈） */
 .card:focus-within {
@@ -307,13 +333,17 @@ select:focus-visible {
   background: var(--surface-2);
   border: 1px solid var(--outline);
   border-radius: 16px;
+  box-shadow: var(--elev-card);
 }
+/* 悬停不再逐帧改阴影：用位移 + 描边变色表达（合成层友好） */
 .card-hover {
-  transition: box-shadow var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-standard);
+  transition: transform var(--dur-1) var(--ease-standard), border-color var(--dur-1) var(--ease-standard);
 }
-.card-hover:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06); }
+.card-hover:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--outline));
+}
 .card-hover:active { transform: scale(0.995); }
-.dark .card-hover:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
 
 /* 弹层：20px 圆角 + 单层大柔和阴影 */
 .overlay-fade {
@@ -331,8 +361,24 @@ select:focus-visible {
    边界规则：玻璃层 outline/70（半透）、弹层 outline（实色） */
 .glass {
   background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+/* 不支持模糊的环境退化为实色，避免半透明「糊底」 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--surface); }
+}
+/* 移动端收敛模糊半径，降低 GPU 填充压力（性能红线） */
+@media (max-width: 767px) {
+  :root { --glass-blur: 14px; --glass-sat: 1.5; }
+}
+/* 系统「降低透明度」时关闭玻璃，尊重无障碍设置 */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* 完成勾选描边动画 */
@@ -359,6 +405,78 @@ select:focus-visible {
 .cascade > *:nth-child(6) { animation-delay: 225ms; }
 .cascade > *:nth-child(7) { animation-delay: 270ms; }
 .cascade > *:nth-child(8) { animation-delay: 315ms; }
+/* 重访同一视图时不再重放入场（由 AppShell 挂 .enter-once） */
+.enter-once .enter,
+.enter-once .cascade > * { animation: none; }
+
+/* ============================================================
+   动效增强（评审改进项）
+   ============================================================ */
+
+/* P2 纸纹/噪点：2.5% 透明度平铺噪点，去掉纯色塑料感。纯装饰、不接收事件。 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.dark body::before,
+body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
+
+/* P2 番茄钟呼吸光晕：运行中极缓呼吸，暂停即停（同屏只保留一个循环动画） */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50% { transform: scale(1.06); opacity: 0.9; }
+}
+.focus-breathe {
+  animation: breathe 4s var(--ease-standard) infinite;
+  transform-origin: center;
+}
+
+/* P1 看板拖拽落位回弹：落位用弹簧，不再是硬贴 */
+@keyframes drop-settle {
+  0% { transform: scale(1.03); }
+  55% { transform: scale(0.99); }
+  100% { transform: scale(1); }
+}
+.drop-settle { animation: drop-settle var(--dur-3) var(--ease-spring); }
+
+/* P1 列表滑动完成/删除：底色由 transform 驱动，滑出过程零重排 */
+.swipe-row { position: relative; overflow: hidden; touch-action: pan-y; }
+.swipe-row > .swipe-underlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+.swipe-row > .swipe-content {
+  position: relative;
+  z-index: 1;
+  background: var(--surface-2);
+  will-change: transform;
+}
+
+/* P2 里程碑撒花：仅「今日全部完成」这类真实成就触发，日常单任务不撒 */
+@keyframes confetti-fly {
+  0% { transform: translate(0, 0) rotate(0) scale(0.5); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(1); opacity: 0; }
+}
+.milestone-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  animation: confetti-fly var(--dur-4) var(--ease-standard) forwards;
+}
 
 
 

@@ -13,6 +13,7 @@ import {
   getDocBlob, getPosition, saveDocSettings, touchDoc, updateAnnotation,
 } from '@/db/docs'
 import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
+import { MORPH_NAME, morphClose } from '@/lib/viewTransition'
 import { useDocTabs } from '@/stores/tabs'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
@@ -291,11 +292,13 @@ export function DocReaderPage() {
   const pct = Math.round(progressPct * 100)
 
   return (
-    <div className="h-full flex flex-col bg-surface">
+    // 共享元素转场的「详情侧」：根容器常挂转场名，打开时与文档卡片插值生长、
+    // 返回时再「长回」卡片。不支持时该属性无副作用。
+    <div className="h-full flex flex-col bg-surface" style={{ viewTransitionName: MORPH_NAME }}>
       {/* 顶栏 */}
       <header className="glass relative z-30 shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70">
         <button
-          onClick={() => navigate('/docs')}
+          onClick={() => morphClose(() => document.getElementById(`doc-${doc.id}`), () => navigate('/docs'))}
           aria-label="返回文档库"
           className="grid place-items-center w-10 h-10 rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors"
         >

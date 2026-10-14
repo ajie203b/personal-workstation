@@ -4,6 +4,7 @@ import { CheckCircle2, Flame, Highlighter, Timer } from 'lucide-react'
 import { db } from '@/db/db'
 import { migrateLegacyFocusRecords } from '@/db/focus'
 import { cn } from '@/lib/cn'
+import { durMs, prefersReducedMotion } from '@/lib/motion'
 
 /** 统计页（v1.3）：完成热力图 + 周报 + 标签分布 + 专注排行。全部本地数据。 */
 
@@ -276,7 +277,7 @@ function useCountUp(target: number, decimals = 0): string {
   const [val, setVal] = useState(target)
   const fromRef = useRef(target)
   useEffect(() => {
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const reduced = prefersReducedMotion()
     if (reduced || target === fromRef.current) {
       fromRef.current = target
       setVal(target)
@@ -284,7 +285,8 @@ function useCountUp(target: number, decimals = 0): string {
     }
     const from = fromRef.current
     const start = performance.now()
-    const DUR = 500
+    // 时长取自令牌，随「减弱动效」一并压平
+    const DUR = durMs('--dur-3', 400)
     let raf = 0
     const tick = (t: number) => {
       const p = Math.min(1, (t - start) / DUR)

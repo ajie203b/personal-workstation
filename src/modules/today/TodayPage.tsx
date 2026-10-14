@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { Clock3, History, Keyboard, Plus } from 'lucide-react'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
@@ -9,6 +9,7 @@ import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
+import { prefersReducedMotion } from '@/lib/motion'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
 export function TodayPage() {
@@ -41,6 +42,7 @@ export function TodayPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">
+      <Milestone total={todayTasks.length} done={todayDone.length} />
       <header className="pt-1">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
@@ -221,6 +223,52 @@ function Kpi({ value, label, tone }: { value: number; label: string; tone?: 'ok'
     <div className="rounded-[12px] bg-surface px-3 py-2.5 border border-outline/60">
       <b className={`block text-[22px] leading-7 font-bold ${tone === 'ok' ? 'text-ok' : 'text-primary'}`}>{value}</b>
       <span className="text-[12px] text-on-surface-2">{label}</span>
+    </div>
+  )
+}
+
+/**
+ * 里程碑撒花（P2）：仅当「今日待办全部完成」这一真实成就出现「未满→满」跃迁时触发一次，
+ * 日常单任务完成不撒。粒子为纯装饰，减弱动效下不渲染。
+ */
+function Milestone({ total, done }: { total: number; done: number }) {
+  const [bursting, setBursting] = useState(false)
+  const prevAllDone = useRef(false)
+  const timer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const allDone = total > 0 && done === total
+    if (allDone && !prevAllDone.current && !prefersReducedMotion()) {
+      setBursting(true)
+      timer.current = window.setTimeout(() => setBursting(false), 1000)
+    }
+    prevAllDone.current = allDone
+    return () => window.clearTimeout(timer.current)
+  }, [total, done])
+
+  if (!bursting) return null
+  const COLORS = ['var(--ok)', 'var(--primary)', 'var(--p1)', '#E9C46A']
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center" aria-hidden>
+      <div className="relative w-0 h-0">
+        {Array.from({ length: 12 }).map((_, i) => {
+          const angle = (Math.PI * 2 * i) / 12
+          const dist = 70 + (i % 3) * 26
+          return (
+            <span
+              key={i}
+              className="milestone-dot"
+              style={{
+                background: COLORS[i % COLORS.length],
+                ['--dx' as string]: `${Math.cos(angle) * dist}px`,
+                ['--dy' as string]: `${Math.sin(angle) * dist + 40}px`,
+                ['--rot' as string]: `${(i % 2 ? 1 : -1) * (180 + i * 20)}deg`,
+                animationDelay: `${i * 12}ms`,
+              }}
+            />
+          )
+        })}
+      </div>
     </div>
   )
 }
