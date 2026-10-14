@@ -2,7 +2,7 @@
 
 任务清单 × 文档工作站的一体化个人工作台。本地优先、数据不出本机、单人不设账号。
 
-> 个人工作站 v1.5.4 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
+> 个人工作站 v1.5.5 · 本地优先 · 数据不出本机 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 提供 **安卓 App**（Capacitor 封装，完全离线、无需服务器）与 **网页版 PWA** 两种形态。最新 APK 在 [Releases](../../releases) 页下载。
 
 ## 快速开始（网页版）
@@ -50,7 +50,7 @@ cd android
 
 **本机当前产物**（已生成，直接取用）：
 
-- `apk/personal-workstation-v1.5.4.apk` —— 正式签名包（6.9MB，versionCode 34，安装这个）
+- `apk/personal-workstation-v1.5.5.apk` —— 正式签名包（6.9MB，versionCode 35，安装这个）
 
 ### 安装到手机 / 平板
 
