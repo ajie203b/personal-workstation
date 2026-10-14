@@ -5,9 +5,8 @@ import { setThemeWithTransition } from '@/shared/theme'
 import { haptic } from '@/lib/haptics'
 
 /**
- * 二态主题开关（拟物）。质感取自 Uiverse 的 bright-dolphin-91（Yaya12085，MIT）：
- * 内阴影凹槽轨道 + 金属渐变旋钮 + hover 轻微 3D 倾斜。
- * 只保留 浅色 / 深色 两档，不再提供「跟随系统」——两档语义清晰，切换即所得。
+ * 扁平主题开关（macOS 式）：分段控件 + 滑块跟随，取消拟物金属/3D 倾斜。
+ * 只保留 浅色 / 深色 两档（跟随系统在设置页外观分区单独选）。
  */
 const ORDER: Theme[] = ['light', 'dark']
 const META: Record<Theme, { icon: typeof Sun; label: string }> = {
@@ -42,7 +41,8 @@ export function ThemeSwitch() {
               setThemeWithTransition(v)
             }}
           >
-            <Icon size={18} strokeWidth={1.9} />
+            <Icon size={15} strokeWidth={2} />
+            <span>{META[v].label}</span>
           </button>
         )
       })}

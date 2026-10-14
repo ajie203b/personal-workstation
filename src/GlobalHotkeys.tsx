@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useUi, togglePalette } from '@/stores/ui'
+import { consumeUndo } from '@/lib/undo'
 
 function isTyping(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false
@@ -9,17 +10,30 @@ function isTyping(el: EventTarget | null): boolean {
 /**
  * 全局键盘流（M1 验收：全键盘完成录入-勾选-归档循环）：
  * - Ctrl/Cmd+K → 命令面板
+ * - Ctrl/Cmd+Z → 撤销最近一次可撤销操作（macOS 肌肉记忆）
  * - n /  → 聚焦快速添加（通过自定义事件解耦页面）
  * - ?    → 快捷键帮助
  */
 export function GlobalHotkeys() {
   const setShortcutsOpen = useUi((s) => s.setShortcutsOpen)
+  const toast = useUi((s) => s.toast)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Ctrl/Cmd+K 全局呼出命令面板（输入框内也响应）
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         togglePalette()
+        return
+      }
+      // Ctrl/Cmd+Z 撤销（不拦截输入框内的文本撤销）
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+        if (isTyping(e.target) || e.isComposing) return
+        const undo = consumeUndo()
+        if (undo) {
+          e.preventDefault()
+          undo.run()
+          toast(`已撤销：${undo.label}`)
+        }
         return
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -34,6 +48,6 @@ export function GlobalHotkeys() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setShortcutsOpen])
+  }, [setShortcutsOpen, toast])
   return null
 }

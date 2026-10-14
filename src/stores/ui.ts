@@ -2,6 +2,12 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type Theme = 'light' | 'dark'
+/** 主题档位：跟随系统 / 固定浅色 / 固定深色 */
+export type ThemeMode = 'system' | 'light' | 'dark'
+/** 强调色（macOS 系统设置同款 6 色） */
+export type Accent = 'blue' | 'purple' | 'pink' | 'red' | 'orange' | 'green'
+/** 界面密度（对应 macOS 字号档） */
+export type Density = 'compact' | 'default' | 'large'
 
 export interface ToastItem {
   id: string
@@ -12,6 +18,11 @@ export interface ToastItem {
 
 interface UiState {
   theme: Theme
+  themeMode: ThemeMode
+  accent: Accent
+  density: Density
+  /** 应用内动效总开关（独立于系统 prefers-reduced-motion） */
+  motion: boolean
   sidebarCollapsed: boolean
   /** 触觉/振动反馈（勾选、拖拽、长按确认等）。默认开，设置页可关。 */
   haptics: boolean
@@ -19,6 +30,10 @@ interface UiState {
   paletteOpen: boolean
   toasts: ToastItem[]
   setTheme: (t: Theme) => void
+  setThemeMode: (m: ThemeMode) => void
+  setAccent: (a: Accent) => void
+  setDensity: (d: Density) => void
+  setMotion: (v: boolean) => void
   setSidebarCollapsed: (v: boolean) => void
   setHaptics: (v: boolean) => void
   setShortcutsOpen: (v: boolean) => void
@@ -31,12 +46,20 @@ export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
       theme: 'light',
+      themeMode: 'light',
+      accent: 'blue',
+      density: 'default',
+      motion: true,
       sidebarCollapsed: false,
       haptics: true,
       shortcutsOpen: false,
       paletteOpen: false,
       toasts: [],
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => set({ theme, themeMode: theme }),
+      setThemeMode: (themeMode) => set({ themeMode }),
+      setAccent: (accent) => set({ accent }),
+      setDensity: (density) => set({ density }),
+      setMotion: (motion) => set({ motion }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setHaptics: (haptics) => set({ haptics }),
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
@@ -50,14 +73,22 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'ws-ui',
-      partialize: (s) => ({ theme: s.theme, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics }),
-      // 主题只保留 浅色 / 深色：旧版本存过 'system' 的用户统一收敛到浅色
+      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics }),
+      // 旧版本 theme 曾允许 'system'，现在收敛进 themeMode 并保留合法值
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<UiState>
+        const p = (persisted ?? {}) as Partial<UiState> & { theme?: string }
+        const mode = (['system', 'light', 'dark'] as ThemeMode[]).includes(p.themeMode as ThemeMode)
+          ? (p.themeMode as ThemeMode)
+          : p.theme === 'dark' ? 'dark' : 'light'
         return {
           ...current,
           ...p,
-          theme: p.theme === 'dark' ? 'dark' : 'light',
+          themeMode: mode,
+          theme: mode === 'system' ? current.theme : mode,
+          accent: p.accent ?? 'blue',
+          density: p.density ?? 'default',
+          motion: p.motion !== false,
+          haptics: p.haptics !== false,
         }
       },
     },

@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router'
-import { ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight, Settings } from 'lucide-react'
 import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
 import { useUi } from '@/stores/ui'
@@ -8,7 +8,7 @@ import { haptic } from '@/lib/haptics'
 import { ThemeButton } from './ThemeButton'
 
 /**
- * 左侧导航（设置入口在左上角品牌图标：单击进入 / 再点退出）：
+ * 左侧导航（设置入口：底部齿轮按钮 / 左上角品牌图标，单击进入 / 再点退出）：
  * - ≥lg：完整侧栏（可折叠成图标栏，状态持久化）
  * - md（平板竖屏 / 窄窗口）：图标栏
  * - <md：隐藏，由底部导航接管
@@ -104,6 +104,18 @@ export function Sidebar() {
       </nav>
 
       <div className="flex items-center gap-1 px-2.5 py-3 shrink-0">
+        <button
+          type="button"
+          aria-label={pathname.startsWith('/settings') ? '返回' : '设置'}
+          title={pathname.startsWith('/settings') ? '返回' : '设置'}
+          onClick={onBrandClick}
+          className={cn(
+            'grid place-items-center w-10 h-10 rounded-[10px] shrink-0 transition-colors cursor-pointer',
+            pathname.startsWith('/settings') ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+          )}
+        >
+          <Settings size={18} strokeWidth={1.9} />
+        </button>
         <ThemeButton compact={collapsed} />
       </div>
     </aside>
