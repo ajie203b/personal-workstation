@@ -102,21 +102,19 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   }, [annotations, flow])
 
   // 恢复进度：优先深度进度
+  // layout effect 让定位发生在绘制这一帧之前（否则先闪一下顶部再瞬移）；
+  // 进度是从库里异步读的、可能比正文晚到，所以没拿到目标前不能把自己标成已完成
   const didInit = useRef(false)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (didInit.current) return
     const container = scrollRef.current
-    if (!container) return
-    const target = initialTarget
-    if (target) {
-      const el = segRefs.current[target.segIdx]
-      if (el) {
-        container.scrollTop = el.offsetTop + el.offsetHeight * target.ratio
-        restoredRef.current = true
-        onRestored()
-      }
-    }
+    if (!container || !initialTarget) return
+    const el = segRefs.current[initialTarget.segIdx]
+    if (!el) return
+    container.scrollTop = el.offsetTop + el.offsetHeight * initialTarget.ratio
+    restoredRef.current = true
     didInit.current = true
+    onRestored()
   }, [initialTarget, onRestored, scrollRef])
 
   // 跳转锚点 f{n} / 批注闪烁
@@ -198,7 +196,9 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   const themeCls = `theme-${settings.theme}`
 
   return (
-    <div className={cn('h-full overflow-y-auto overscroll-contain', themeCls)}>
+    // ref 必须挂在这个根节点上：滚动监听、进度上报、位置恢复、目录跳转全走 scrollRef，
+    // 漏挂时这些路径会静默空转（容器是真的能滚，只是没人听见它的 scroll 事件）
+    <div ref={scrollRef} className={cn('h-full overflow-y-auto overscroll-contain', themeCls)}>
       <div
         className="mx-auto px-4 py-8"
         style={{ width: `${settings.widthPct}%`, maxWidth: 860, minWidth: 300 }}
