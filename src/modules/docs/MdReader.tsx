@@ -98,7 +98,8 @@ export function MdReader({
   }, [jump, annotations])
 
   // 首次挂载：恢复深度阅读进度（保存以视口上 1/3 为阅读点，恢复用同一基准）
-  useEffect(() => {
+  // layout effect：定位要在绘制之前，避免先闪一下顶部再瞬移到上次阅读处
+  useLayoutEffect(() => {
     if (restoredRef.current || !initialTarget) return
     const container = scrollRef.current
     const block = bodyRef.current?.querySelector(`#b${initialTarget.blockIdx}`) as HTMLElement | null

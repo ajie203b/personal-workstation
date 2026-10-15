@@ -405,8 +405,8 @@ export function DocReaderPage() {
           />
         </aside>
 
-        {/* 中：阅读画布 */}
-        <div className="flex-1 min-w-0 relative min-h-[60vh]">
+        {/* 中：阅读画布（高度由上面的确定链给，min-h-0 让 flex 子项可以收缩，滚动落在阅读器自己身上） */}
+        <div className="flex-1 min-w-0 relative min-h-0">
           {content?.kind === 'md' && (
             <MdReader
               hash={doc.hash}

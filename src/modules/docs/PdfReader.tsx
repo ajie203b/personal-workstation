@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -218,15 +218,32 @@ export function PdfReader({
   const onLoad = useCallback(
     async (pdf: import('pdfjs-dist').PDFDocumentProxy) => {
       const n = pdf.numPages
-      setNumPages(n)
-      // 全量取页面宽高比（仅元数据，不渲染），占位零漂移
-      const rs: number[] = []
-      for (let i = 1; i <= n; i++) {
+      const ratioOf = async (i: number) => {
         const page = await pdf.getPage(i)
         const vp = page.getViewport({ scale: 1 })
-        rs.push(vp.height / vp.width)
+        return vp.height / vp.width
       }
-      setRatios(rs)
+      // 页宽高比（仅元数据，不渲染）必须和 numPages 一次性提交：分两次 setState 会先用猜想的
+      // 1.414 画一遍全部占位，真实比例到达后整篇重排 —— 实测 14 页文档每页挪 44px、总高 7794→7178，
+      // 而恢复阅读位置又排在重排之后，于是打开文件先看见首页再瞬移到上次阅读处，就是那下抖动。
+      // 但 300 页逐个 getPage 要 1.2s，所以先抽样：全篇同尺寸（绝大多数 PDF）就立刻出首帧，
+      // 后台再量全篇，真出现混合尺寸才补一次提交；抽样不一致时宁可等量完，保证首帧版面就是对的。
+      const same = (a: number, b: number) => Math.abs(a - b) < 1e-3
+      const allIdx = Array.from({ length: n }, (_, i) => i + 1)
+      const probe = [...new Set([1, n, Math.round(n * 0.25), Math.round(n * 0.5), Math.round(n * 0.75)])].sort((a, b) => a - b)
+      const prs = await Promise.all(probe.map(ratioOf))
+      const commit = (rs: number[]) => {
+        setNumPages(n)
+        setRatios(rs)
+      }
+      const uniform = prs.every((r) => same(r, prs[0]))
+      if (uniform) {
+        commit(Array.from({ length: n }, () => prs[0]))
+        const full = await Promise.all(allIdx.map(ratioOf))
+        if (full.some((r) => !same(r, prs[0]))) commit(full)
+      } else {
+        commit(await Promise.all(allIdx.map(ratioOf)))
+      }
 
       // 大纲解析：dest → 页码
       const outlineItems: TocItem[] = []
@@ -303,7 +320,8 @@ export function PdfReader({
   }, [hash, numPages, onProgress, scrollRef, layout, pageH])
 
   // 首次挂载：恢复深度进度（与保存基准一致：视口上 1/3）
-  useEffect(() => {
+  // 用 layout effect：滚动必须在浏览器绘制这一帧之前落位，否则先闪一下首页再瞬移到上次阅读处
+  useLayoutEffect(() => {
     if (restoredRef.current || !initialTarget || !numPages || !ratios.length) return
     const container = scrollRef.current
     if (!container) return

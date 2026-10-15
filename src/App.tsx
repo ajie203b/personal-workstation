@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Navigate, Route, Routes } from 'react-router'
+import { Navigate, Route, Routes, useParams } from 'react-router'
 import { AppShell } from './app/AppShell'
 import { KeyboardShortcutsDialog } from '@/shared/KeyboardShortcuts'
 import { CommandPalette } from '@/shared/CommandPalette'
@@ -26,6 +26,23 @@ const RouteLoader = (
   </div>
 )
 
+/**
+ * 按文档重挂载阅读器 / 编辑器。
+ * 同一路由换 :docId 时 React 会复用组件实例，而 PdfReader 的 numPages / ratios / center /
+ * restoredRef 和滚动容器的 scrollTop 都是「这一篇」的状态 —— 复用就会拿上一篇的版面先画一帧
+ * （实测：打开 300 页时首帧总高还是上一篇的 7178、scrollTop 停在 4182，1.4s 后才重排成 153494），
+ * 这就是连续开文件时那下抖动。给 key 让每篇从干净状态挂载，顺带把排版设置、目录、进度一起归零。
+ */
+function DocReaderRoute() {
+  const { docId } = useParams()
+  return <DocReaderPage key={docId} />
+}
+
+function MdEditorRoute() {
+  const { docId } = useParams()
+  return <MdEditorPage key={docId ?? 'new'} />
+}
+
 export default function App() {
   // 提醒开关打开时，启动即全量重排通知（覆盖导入备份/离线变更的场景）
   const all = useAllTasks()
@@ -49,9 +66,9 @@ export default function App() {
             <Route path="tasks" element={<TasksPage />} />
             <Route path="stats" element={<StatsPage />} />
             <Route path="docs" element={<DocsPage />} />
-            <Route path="docs/new" element={<MdEditorPage />} />
-            <Route path="docs/edit/:docId" element={<MdEditorPage />} />
-            <Route path="docs/:docId" element={<DocReaderPage />} />
+            <Route path="docs/new" element={<MdEditorRoute />} />
+            <Route path="docs/edit/:docId" element={<MdEditorRoute />} />
+            <Route path="docs/:docId" element={<DocReaderRoute />} />
             {/* AI 助手已移除：旧链接跳设置（资产仍在设置的「AI 资产」页） */}
             <Route path="ai" element={<Navigate to="/settings" replace />} />
             <Route path="settings" element={<SettingsPage />} />
