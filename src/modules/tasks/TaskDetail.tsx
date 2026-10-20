@@ -34,6 +34,10 @@ const INPUT =
 export function TaskDetail() {
   const { detailId, openDetail } = useTasksUi()
   const task = useAllTasks().find((t) => t.id === detailId) ?? null
+  // 断点必须在任何 early return 之前算：下面 `if (!task) return null` 之后再调 hook，
+  // 会让「有任务 / 无任务」两种渲染的 hook 数量不一致，React 直接抛
+  // "Rendered more hooks than during the previous render"，详情整块打不开。
+  const isDesktop = useMediaQuery('(min-width: 768px)')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
   const [subDraft, setSubDraft] = useState('')
@@ -157,8 +161,6 @@ export function TaskDetail() {
     openDetail(null)
     useUi.getState().toast('已删除任务', { label: '撤销', run: () => void restoreTask(task) })
   }
-
-  const isDesktop = useMediaQuery('(min-width: 768px)')
 
   const done = task.status === 'done'
 

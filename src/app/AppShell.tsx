@@ -7,7 +7,7 @@ import { TopBar } from './TopBar'
 import { PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
 import { RouteProgress } from '@/shared/ui/RouteProgress'
-import { FocusMiniBar, useFocusTicker } from '@/shared/FocusMiniBar'
+import { FocusMiniBar, useFocusActive } from '@/shared/FocusMiniBar'
 import { useUi } from '@/stores/ui'
 import { TIERS, type Tier } from '@/db/db'
 import { haptic } from '@/lib/haptics'
@@ -33,7 +33,7 @@ export function AppShell() {
   const { pathname } = useLocation()
   const [params] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
-  const focus = useFocusTicker()
+  const focusActive = useFocusActive()
   const title = PAGE_TITLE[`/${pathname.split('/')[1]}`] ?? '个人工作站'
   const section = `/${pathname.split('/')[1] || ''}`
 
@@ -49,6 +49,8 @@ export function AppShell() {
 
   const selfScrolling = SELF_SCROLLING.test(pathname)
   const immersive = IMMERSIVE.some((re) => re.test(pathname))
+  // 设置页是配置页，不摆「加任务」的悬浮按钮（在那儿它只会挡内容）
+  const showFab = !immersive && section !== '/settings'
 
   // 悬浮按钮的默认归属：今日页进「今日」，任务页跟随当前页签，其余落「随时」
   const onAdd = () => {
@@ -82,10 +84,10 @@ export function AppShell() {
       </div>
 
       {/* 计时中：迷你条目常驻底栏上方，切到任何页都看得到 */}
-      {!immersive && focus && <FocusMiniBar state={focus} />}
+      {!immersive && <FocusMiniBar />}
 
       {/* 手机统一添加入口：右下角、底栏上方，拇指够得着；桌面用输入框与 N 快捷键 */}
-      {!immersive && (
+      {showFab && (
         <button
           type="button"
           id="fab-add"
@@ -97,7 +99,7 @@ export function AppShell() {
             'bg-primary text-on-primary shadow-lg shadow-primary/25',
             'active:scale-95 transition-[transform,bottom] duration-200',
           )}
-          style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${focus ? '8.25rem' : '4.25rem'})` }}
+          style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${focusActive ? '8.25rem' : '4.25rem'})` }}
         >
           <Plus size={26} strokeWidth={2.4} />
         </button>

@@ -57,7 +57,14 @@ export function Spotlight() {
     if (!current) return
     const measure = () => {
       if (!current.target) { setRect(null); return }
-      const el = document.querySelector(current.target)
+      // 选择器是「a, b」这种多候选时，取第一个真正可见的：
+      // 桌面端 #quick-add-input 在、手机端它在 hidden 容器里，量出来会是 0×0，
+      // 圈一个左上角的小方框比不圈还糟
+      const nodes = Array.from(document.querySelectorAll(current.target)) as HTMLElement[]
+      const el = nodes.find((n) => {
+        const r = n.getBoundingClientRect()
+        return r.width > 0 && r.height > 0
+      })
       setRect(el ? el.getBoundingClientRect() : null)
     }
     measure()
@@ -77,11 +84,19 @@ export function Spotlight() {
   const cardStyle = useMemo(() => {
     if (!rect) return undefined
     const gap = 14
-    const below = rect.bottom + gap
+    const width = Math.min(340, window.innerWidth - 24)
+    const left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12)
+    // 估计卡片高度，用来判断「放下面会不会被屏幕切掉」
+    const CARD_H = 200
+    const belowTop = rect.bottom + gap
     const preferBelow = current?.place !== 'above'
-    const top = preferBelow ? below : Math.max(12, rect.top - 190)
-    const left = Math.min(Math.max(12, rect.left), window.innerWidth - 340)
-    return { top, left, width: 320 }
+    let top = preferBelow ? belowTop : rect.top - CARD_H - gap
+    if (top + CARD_H > window.innerHeight - 12 || top < 12) {
+      // 下面放不下就翻到上方；上方也放不下就贴着顶部
+      const above = rect.top - CARD_H - gap
+      top = above >= 12 ? above : Math.max(12, window.innerHeight - CARD_H - 12)
+    }
+    return { top, left, width }
   }, [rect, current])
 
   if (!current) return null
