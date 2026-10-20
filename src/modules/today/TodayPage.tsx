@@ -102,7 +102,7 @@ export function TodayPage() {
             scope="today"
             tasks={todayTasks}
             emptyTitle="今天没有安排"
-            emptyHint="点右上角加号添加任务；写「每天」可创建打卡任务。"
+            emptyHint="点右下角加号添加任务；写「每天」可创建打卡任务。"
           />
 
           {anytimeTasks.length > 0 && (
@@ -162,7 +162,9 @@ export function TodayPage() {
  * 环的进度用 stroke-dashoffset 过渡，减少动效时由全局兜底压平。
  */
 function ProgressRing({ done, total, className }: { done: number; total: number; className?: string }) {
-  const pct = total > 0 ? done / total : 0
+  // 今天一件都没有时不画环：0/0 的圆环看着像出错
+  if (total === 0) return null
+  const pct = done / total
   const R = 15
   const C = 2 * Math.PI * R
   return (

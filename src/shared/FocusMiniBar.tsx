@@ -51,11 +51,34 @@ export function useFocusTicker(): FocusTicker | null {
   return state
 }
 
-export function FocusMiniBar({ state }: { state: FocusTicker }) {
+/**
+ * 只回答「有没有在计时」。
+ *
+ * 外壳（AppShell）需要它来给悬浮按钮让位，但外壳每秒重渲染会把整页（包括几百页的 PDF）一起带走。
+ * 这里每秒读一次存储，只有 true/false 真的翻转时 setState 才会触发渲染。
+ */
+export function useFocusActive(): boolean {
+  const [active, setActive] = useState(() => readState() !== null)
+  useEffect(() => {
+    const tick = () => setActive(readState() !== null)
+    const id = window.setInterval(tick, 1000)
+    window.addEventListener('storage', tick)
+    window.addEventListener('focus', tick)
+    return () => {
+      window.clearInterval(id)
+      window.removeEventListener('storage', tick)
+      window.removeEventListener('focus', tick)
+    }
+  }, [])
+  return active
+}
+
+export function FocusMiniBar() {
+  const state = useFocusTicker()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   // 已经在今日页就不用这条了（完整番茄钟就在页面上）
-  if (pathname === '/today' || pathname.startsWith('/docs/') || pathname === '/review') return null
+  if (!state || pathname === '/today' || pathname.startsWith('/docs/') || pathname === '/review') return null
   const mm = Math.floor(state.left / 60)
   const ss = state.left % 60
   return (

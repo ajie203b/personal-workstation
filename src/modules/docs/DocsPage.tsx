@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { AlignLeft, BookOpen, ChevronRight, FileText, FileSpreadsheet, FileType2, FolderInput, FolderPlus, Import, PenLine, Plus, Presentation, Search, Sparkles, Trash2 } from 'lucide-react'
+import { AlignLeft, BookOpen, ChevronRight, FileText, FileSpreadsheet, FileType2, FolderInput, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Presentation, Search, Sparkles, Trash2 } from 'lucide-react'
 import type { Doc, Folder } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
 import { deleteDoc, importDoc } from '@/db/docs'
@@ -243,11 +243,11 @@ export function DocsPage() {
         <div className="relative shrink-0">
           <button
             type="button"
-            aria-label="新建 / 导入"
+            aria-label="更多操作（写文档 / 导入 / 新建文件夹）"
             onClick={() => setMenuOpen((v) => !v)}
-            className="w-9 h-9 grid place-items-center rounded-[10px] bg-primary text-on-primary cursor-pointer active:scale-95 transition-transform"
+            className="w-9 h-9 grid place-items-center rounded-[10px] bg-surface-2 border border-outline text-on-surface cursor-pointer active:scale-95 transition-transform"
           >
-            <Plus size={19} strokeWidth={2.4} />
+            <MoreHorizontal size={19} />
           </button>
           {menuOpen && (
             <>
@@ -261,21 +261,11 @@ export function DocsPage() {
             </>
           )}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          accept=".pdf,.md,.markdown,.txt,.epub,.docx,.pptx"
-          className="hidden"
-          onChange={(e) => {
-            void onImport(e.target.files)
-            e.target.value = ''
-          }}
-        />
       </div>
 
-      {/* 打开最多的几篇：比「本地优先 · 按内容指纹去重」那句开发者注释有用 */}
-      <ContinueReading />
+      {/* 打开最多的几篇：比「本地优先 · 按内容指纹去重」那句开发者注释有用。
+          在某个文件夹里时先不显示 —— 这里横跨全部文档，会和「只看这个夹」的语境打架 */}
+      {!activeFolder && <ContinueReading />}
 
       <div className="flex items-start gap-5">
         {/* 桌面：文件夹变成左侧一列目录树；手机仍在顶部横滑 */}
@@ -319,22 +309,22 @@ export function DocsPage() {
           </div>
 
       {pending.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
           {pending.map((p) => <ImportingCard key={p.id} name={p.name} at={p.at} />)}
         </div>
       )}
 
       {docsLive === undefined ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
           {Array.from({ length: 6 }).map((_, i) => <DocCardSkeleton key={i} />)}
         </div>
       ) : docsInView.length === 0 && activeFolder ? (
         <EmptyState
           icon={FileType2}
           title="这个文件夹还是空的"
-          hint="点右上角「导入」把资料放进来；在这里导入的文件会自动归入当前文件夹。"
+          hint="用右上角「⋯」菜单导入，文件会自动归入当前文件夹。"
         />
-      ) : docs.length === 0 ? (
+      ) : docs.length === 0 && pending.length === 0 ? (
         <EmptyState
           icon={FileType2}
           title="文档库还是空的"
@@ -352,7 +342,7 @@ export function DocsPage() {
       ) : filtered !== null && filtered.length === 0 ? (
         <EmptyState icon={Search} title="没有匹配的文档" hint="换个关键词试试（全文搜索需 2 个字符以上）。" />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
           {(filtered ?? docsInView.map((d) => ({ doc: d, titleHit: true }))).map(({ doc: d }) => {
             const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
             const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
@@ -384,6 +374,19 @@ export function DocsPage() {
       )}
         </div>
       </div>
+
+      {/* 文件选择器挂在根节点：桌面和手机的入口（含空状态里的按钮）共用同一个 ref */}
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept=".pdf,.md,.markdown,.txt,.epub,.docx,.pptx"
+        className="hidden"
+        onChange={(e) => {
+          void onImport(e.target.files)
+          e.target.value = ''
+        }}
+      />
 
       <Dialog
         open={folderDialog != null}

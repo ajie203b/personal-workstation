@@ -322,10 +322,14 @@ export function DocReaderPage() {
     // 共享元素转场的「详情侧」：根容器常挂转场名，打开时与文档卡片插值生长、
     // 返回时再「长回」卡片。不支持时该属性无副作用。
     <div className="h-full flex flex-col bg-surface" style={{ viewTransitionName: MORPH_NAME }}>
-      {/* 顶栏：手机上轻点正文可收起，把 56px 还给正文（再点一下回来） */}
+      {/* 顶栏：手机上轻点正文可收起，把 56px 真正还给正文（再点一下回来）。
+          用高度过渡而不是 translateY —— transform 不回收布局空间，收起来也白收 */}
       <header
-        className="glass relative z-30 shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70 transition-transform duration-300 ease-standard"
-        style={{ transform: chromeHidden ? 'translateY(-100%)' : 'none' }}
+        className={cn(
+          'glass relative z-30 shrink-0 flex items-center gap-2 px-3 md:px-4 border-b border-outline/70 overflow-hidden',
+          'transition-[height,opacity] duration-300 ease-standard',
+          chromeHidden ? 'h-0 opacity-0 border-transparent pointer-events-none' : 'h-14 opacity-100',
+        )}
       >
         <button
           onClick={() => morphClose(() => document.getElementById(`doc-${doc.id}`), () => navigate('/docs'))}

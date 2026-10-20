@@ -157,8 +157,11 @@ export function MdEditorPage() {
       })
       savedHashRef.current = hash
       toast('文档已创建')
+      // 建完立刻切到「编辑这篇」的路由：否则留在 /docs/new 上再按一次保存，
+      // existing 还是空，会再新建一篇一模一样的文档（连按两下就是两篇）
+      navigate(`/docs/edit/${doc.id}`, { replace: true })
     }
-  }, [editor, existing, title, toast])
+  }, [editor, existing, title, toast, navigate])
   saveRef.current = save
 
   useEffect(() => {

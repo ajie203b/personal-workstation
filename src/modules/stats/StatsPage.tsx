@@ -252,10 +252,17 @@ export function StatsPage() {
                 <p className={cn('text-[11px] mt-0.5 tabular-nums', delta > 0 ? 'text-ok' : 'text-on-surface-2/70')}>
                   {delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '— 持平'} · 上期 {previous}
                 </p>
-                {/* 两根柱子：本期高亮、上期弱化，入场时从 0 长到各自高度 */}
+                {/* 两根柱子：本期高亮、上期弱化，入场时从 0 长到各自高度；
+                    两边都是 0 时不画柱子，免得空轨道看着像「已经满了」 */}
                 <div className="flex items-end justify-center gap-1.5 h-14 mt-2">
-                  <CompareBar value={current} max={Math.max(current, previous, 1)} delay={i * 60} />
-                  <CompareBar value={previous} max={Math.max(current, previous, 1)} delay={i * 60 + 90} muted />
+                  {current + previous > 0 ? (
+                    <>
+                      <CompareBar value={current} max={Math.max(current, previous, 1)} delay={i * 60} />
+                      <CompareBar value={previous} max={Math.max(current, previous, 1)} delay={i * 60 + 90} muted />
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-on-surface-2/50 self-center">暂无数据</span>
+                  )}
                 </div>
               </div>
             )

@@ -205,11 +205,20 @@ export function PdfReader({
   const [drawn, setDrawn] = useState<Set<number>>(() => new Set())
 
   useEffect(() => {
+    let alive = true
     void getDocBlob(hash).then(async (blob) => {
-      if (!blob) return
-      setData(await blob.arrayBuffer())
+      if (!alive) return
+      if (!blob) {
+        // 文件本体不在（被系统清理 / 换了设备只同步了元信息）：给可重试的错误，别让细条一直停在 8%
+        setLoadError('找不到这个 PDF 的文件本体，可能已被系统清理。重新导入一份即可。')
+        return
+      }
+      const buf = await blob.arrayBuffer()
+      // 重试时组件可能已切到别篇，别把旧文件的 buffer 塞进去
+      if (alive) setData(buf)
     })
-  }, [hash])
+    return () => { alive = false }
+  }, [hash, reloadKey])
 
   const fitW = Math.max(280, Math.min(containerW - 24, 860))
   const dispW = Math.max(240, Math.min(Math.round(fitW * zoom), 2600))
@@ -276,63 +285,71 @@ export function PdfReader({
 
   const onLoad = useCallback(
     async (pdf: import('pdfjs-dist').PDFDocumentProxy) => {
-      const n = pdf.numPages
-      const ratioOf = async (i: number) => {
-        const page = await pdf.getPage(i)
-        const vp = page.getViewport({ scale: 1 })
-        return vp.height / vp.width
-      }
-      // 页宽高比（仅元数据，不渲染）必须和 numPages 一次性提交：分两次 setState 会先用猜想的
-      // 1.414 画一遍全部占位，真实比例到达后整篇重排 —— 实测 14 页文档每页挪 44px、总高 7794→7178，
-      // 而恢复阅读位置又排在重排之后，于是打开文件先看见首页再瞬移到上次阅读处，就是那下抖动。
-      // 但 300 页逐个 getPage 要 1.2s，所以先抽样：全篇同尺寸（绝大多数 PDF）就立刻出首帧，
-      // 后台再量全篇，真出现混合尺寸才补一次提交；抽样不一致时宁可等量完，保证首帧版面就是对的。
-      const same = (a: number, b: number) => Math.abs(a - b) < 1e-3
-      const allIdx = Array.from({ length: n }, (_, i) => i + 1)
-      const probe = [...new Set([1, n, Math.round(n * 0.25), Math.round(n * 0.5), Math.round(n * 0.75)])].sort((a, b) => a - b)
-      const prs = await Promise.all(probe.map(ratioOf))
-      const commit = (rs: number[]) => {
-        setNumPages(n)
-        setRatios(rs)
-      }
-      const uniform = prs.every((r) => same(r, prs[0]))
-      if (uniform) {
-        commit(Array.from({ length: n }, () => prs[0]))
-        const full = await Promise.all(allIdx.map(ratioOf))
-        if (full.some((r) => !same(r, prs[0]))) commit(full)
-      } else {
-        commit(await Promise.all(allIdx.map(ratioOf)))
-      }
-
-      // 大纲解析：dest → 页码
-      const outlineItems: TocItem[] = []
+      // 整个结构解析都包在 try 里：文档能打开但页面读不出来（扫描件缺对象、页码表坏了）时，
+      // pdf.getPage 会抛「Invalid page request」。以前这个异常没人接，界面就永远是空白的一页，
+      // 既不报错也没法重试。现在统一收成可重试的错误卡。
       try {
-        const outline = await pdf.getOutline()
-        const walk = async (items: Awaited<ReturnType<typeof pdf.getOutline>> | undefined, level: number) => {
-          if (!items) return
-          for (const it of items) {
-            let pageNumber = 1
-            try {
-              let dest = it.dest
-              if (typeof dest === 'string') dest = await pdf.getDestination(dest)
-              if (Array.isArray(dest)) {
-                const ref = dest[0]
-                if (ref && typeof ref === 'object') pageNumber = (await pdf.getPageIndex(ref as never)) + 1
-              }
-            } catch {
-              /* 无法解析的目录项 */
-            }
-            outlineItems.push({ level, title: it.title || '未命名', page: pageNumber })
-            await walk(it.items as never, level + 1)
-          }
+        const n = pdf.numPages
+        if (!n || n < 1) throw new Error('这份 PDF 里没有可显示的页面')
+        const ratioOf = async (i: number) => {
+          const page = await pdf.getPage(i)
+          const vp = page.getViewport({ scale: 1 })
+          return vp.height / vp.width
         }
-        await walk(outline, 0)
-      } catch {
-        /* 无大纲 */
+        // 页宽高比（仅元数据，不渲染）必须和 numPages 一次性提交：分两次 setState 会先用猜想的
+        // 1.414 画一遍全部占位，真实比例到达后整篇重排 —— 实测 14 页文档每页挪 44px、总高 7794→7178，
+        // 而恢复阅读位置又排在重排之后，于是打开文件先看见首页再瞬移到上次阅读处，就是那下抖动。
+        // 但 300 页逐个 getPage 要 1.2s，所以先抽样：全篇同尺寸（绝大多数 PDF）就立刻出首帧，
+        // 后台再量全篇，真出现混合尺寸才补一次提交；抽样不一致时宁可等量完，保证首帧版面就是对的。
+        const same = (a: number, b: number) => Math.abs(a - b) < 1e-3
+        const allIdx = Array.from({ length: n }, (_, i) => i + 1)
+        const probe = [...new Set([1, n, Math.round(n * 0.25), Math.round(n * 0.5), Math.round(n * 0.75)])].sort((a, b) => a - b)
+        const prs = await Promise.all(probe.map(ratioOf))
+        const commit = (rs: number[]) => {
+          setNumPages(n)
+          setRatios(rs)
+        }
+        const uniform = prs.every((r) => same(r, prs[0]))
+        if (uniform) {
+          commit(Array.from({ length: n }, () => prs[0]))
+          const full = await Promise.all(allIdx.map(ratioOf))
+          if (full.some((r) => !same(r, prs[0]))) commit(full)
+        } else {
+          commit(await Promise.all(allIdx.map(ratioOf)))
+        }
+
+        // 大纲解析：dest → 页码
+        const outlineItems: TocItem[] = []
+        try {
+          const outline = await pdf.getOutline()
+          const walk = async (items: Awaited<ReturnType<typeof pdf.getOutline>> | undefined, level: number) => {
+            if (!items) return
+            for (const it of items) {
+              let pageNumber = 1
+              try {
+                let dest = it.dest
+                if (typeof dest === 'string') dest = await pdf.getDestination(dest)
+                if (Array.isArray(dest)) {
+                  const ref = dest[0]
+                  if (ref && typeof ref === 'object') pageNumber = (await pdf.getPageIndex(ref as never)) + 1
+                }
+              } catch {
+                /* 无法解析的目录项 */
+              }
+              outlineItems.push({ level, title: it.title || '未命名', page: pageNumber })
+              await walk(it.items as never, level + 1)
+            }
+          }
+          await walk(outline, 0)
+        } catch {
+          /* 无大纲 */
+        }
+        // 结构量完了：细条走到头再收
+        setLoadPct(1)
+        onLoaded(n, outlineItems)
+      } catch (e) {
+        setLoadError(e instanceof Error && e.message ? `解析失败：${e.message}` : '这份 PDF 解析失败，可能已损坏。')
       }
-      // 结构量完了：细条走到头再收
-      setLoadPct(1)
-      onLoaded(n, outlineItems)
     },
     [onLoaded],
   )
