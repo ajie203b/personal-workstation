@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, Flag, Hash, Repeat } from 'lucide-react'
+import { CalendarDays, Clock3, Flag, Hash, Repeat } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { addTask } from '@/db/tasks'
 import { todayStr, fmtDue } from '@/lib/date'
@@ -29,6 +29,9 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   const [value, setValue] = useState('')
   const [modeOverride, setModeOverride] = useState<Mode | null>(null)
   const [freqOverride, setFreqOverride] = useState<RepeatKind>('daily')
+  // 手动时间：datetime-local 的值（'' = 没选，沿用文本里解析出来的）
+  const [startInput, setStartInput] = useState('')
+  const [dueInput, setDueInput] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -36,6 +39,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       setValue('')
       setModeOverride(null)
       setFreqOverride('daily')
+      setStartInput('')
+      setDueInput('')
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [open])
@@ -55,14 +60,19 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
     const p = parseQuickAdd(value)
     let tier = inferTier(p, defaultTier)
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
-    const due = p.due ?? (tier === 'today' && todayContext ? todayStr() : undefined)
+    // 手动选的时间优先于文本解析
+    const due = dueInput ? dueInput.slice(0, 10) : (p.due ?? (tier === 'today' && todayContext ? todayStr() : undefined))
+    const dueTime = dueInput ? dueInput.slice(11, 16) : p.dueTime
+    // 只填截止时，开始时间默认为现在（需求：不填开始就从现在开始）
+    const startAt = startInput ? new Date(startInput).getTime() : due ? Date.now() : undefined
     try {
       await runSave(() => addTask({
         title: p.title,
         tier,
         priority: p.priority,
         due,
-        dueTime: p.dueTime,
+        dueTime,
+        startAt,
         tags: p.tags,
         repeat: effectiveRepeat,
       }))
@@ -105,6 +115,35 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
             {parsed.tags.map((t) => <Chip key={t} icon={Hash} text={t} />)}
           </div>
         )}
+
+        {/* 时间：开始默认现在，可只选截止，也可两个都选 */}
+        <div className="card px-4 py-3.5 flex flex-col gap-2.5">
+          <div className="flex items-center gap-2 text-[13px]">
+            <Clock3 size={14} className="text-on-surface-2" />
+            <span>时间</span>
+            <span className="text-[11px] text-on-surface-2">只选截止时，开始时间默认为现在</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <label className="block">
+              <span className="block text-[12px] font-medium text-on-surface-2 mb-1">开始时间</span>
+              <input
+                type="datetime-local"
+                value={startInput}
+                onChange={(e) => setStartInput(e.target.value)}
+                className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[12px] font-medium text-on-surface-2 mb-1">截止时间</span>
+              <input
+                type="datetime-local"
+                value={dueInput}
+                onChange={(e) => setDueInput(e.target.value)}
+                className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+              />
+            </label>
+          </div>
+        </div>
 
         {/* 流程分支：自动检测 + 手动选择兜底 */}
         <div className="card px-4 py-3.5 flex flex-col gap-3">

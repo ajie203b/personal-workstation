@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn'
 import { db } from '@/db/db'
 import type { Task } from '@/db/db'
 import { addFocusSession } from '@/db/focus'
+import { cancelFocusEnd, scheduleFocusEnd } from '@/lib/notify'
 import { useAllTasks } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
 import { todayStr } from '@/lib/date'
@@ -171,6 +172,16 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   const progress = total > 0 ? 1 - remaining / total : 0
   const boundTask = all.find((t) => t.id === taskId)
   const askTask = askTaskId ? all.find((t) => t.id === askTaskId) : undefined
+
+  // 专注结束提醒：按 endsAt 排一条本地通知（锁屏/后台也能收到）；暂停、重置、结束时撤销
+  useEffect(() => {
+    if (!store.running || store.phase !== 'work') {
+      void cancelFocusEnd()
+      return
+    }
+    const body = boundTask ? `「${boundTask.title}」完成一轮专注` : `专注 ${store.workMin} 分钟结束`
+    void scheduleFocusEnd(store.endsAt, body)
+  }, [store.running, store.phase, store.endsAt, store.workMin, boundTask])
 
   return (
     <div className="card p-5 flex flex-col items-center gap-4">

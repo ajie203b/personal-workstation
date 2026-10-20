@@ -58,7 +58,7 @@ export async function syncTaskNotification(task: Task): Promise<void> {
         body: task.title + (task.dueTime ? ` · ${task.dueTime}` : ''),
         schedule: { at, allowWhileIdle: true },
         ongoing: false,
-        extra: { taskId: task.id },
+        extra: { taskId: task.id, tier: task.tier },
       },
     ],
   })
@@ -84,7 +84,7 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
             title: t.dueTime ? '任务提醒' : '今天有任务到期',
             body: t.title + (t.dueTime ? ` · ${t.dueTime}` : ''),
             schedule: { at, allowWhileIdle: true },
-            extra: { taskId: t.id },
+            extra: { taskId: t.id, tier: t.tier },
           },
         ],
       })
@@ -106,4 +106,51 @@ export async function requestNotifyPermission(): Promise<boolean> {
   const { LocalNotifications: LN } = await import('@capacitor/local-notifications')
   const res = await LN.requestPermissions()
   return res.display === 'granted'
+}
+
+/* ============ 番茄钟结束提醒（v2.0） ============ */
+
+/** 专注结束通知用固定 id，避开任务通知的哈希区间 */
+const FOCUS_NOTIF_ID = 2_147_480_000
+
+async function canNotify(): Promise<boolean> {
+  if (!isNative()) return false
+  try {
+    const perm = await LocalNotifications.checkPermissions()
+    return perm.display === 'granted'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 按 endsAt 排一条本地通知：锁屏 / 切后台也能收到。
+ * 网页端没有后台能力，静默跳过；权限没给也跳过。
+ */
+export async function scheduleFocusEnd(at: number, body: string): Promise<void> {
+  if (!isNative() || at <= Date.now()) return
+  if (!(await canNotify())) return
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: FOCUS_NOTIF_ID }] })
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: FOCUS_NOTIF_ID,
+          title: '专注结束',
+          body,
+          schedule: { at: new Date(at), allowWhileIdle: true },
+          ongoing: false,
+          extra: { focus: true },
+        },
+      ],
+    })
+  } catch { /* 单次调度失败不影响计时 */ }
+}
+
+/** 暂停 / 重置 / 完成时撤销未发出的专注提醒 */
+export async function cancelFocusEnd(): Promise<void> {
+  if (!isNative()) return
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: FOCUS_NOTIF_ID }] })
+  } catch { /* ignore */ }
 }

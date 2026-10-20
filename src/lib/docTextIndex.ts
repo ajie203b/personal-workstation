@@ -6,6 +6,9 @@ import { db } from '@/db/db'
  * DocsPage 搜索按 标题 + 内容 命中，PDF/EPUB/PPTX 保留分段用于定位。
  */
 
+/** 全文索引单篇上限：再长的 PDF 也只留前 200 万字符，防止搜索时整篇字符串把内存打满 */
+const MAX_INDEX_CHARS = 2_000_000
+
 /** 按扩展名/类型判 kind（与 importDoc 一致） */
 export function detectKind(name: string): DocKind {
   const n = name.toLowerCase()
@@ -23,8 +26,9 @@ export async function extractDocText(kind: DocKind, blob: Blob): Promise<{ text:
   if (kind === 'epub') return extractEpub(blob)
   if (kind === 'docx') return extractDocx(blob)
   if (kind === 'pptx') return extractPptx(blob)
-  const text = await blob.text()
-  return { text }
+  const raw = await blob.text()
+  // 正文里的 data URL 图片不是可搜索内容：去掉再建索引，否则 base64 会把索引撑爆
+  return { text: raw.replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').slice(0, MAX_INDEX_CHARS) }
 }
 
 /* ---- PDF：pdf.js 按页 getTextContent ---- */
@@ -118,7 +122,7 @@ async function extractPptx(blob: Blob): Promise<{ text: string; segments: string
 export async function indexDoc(doc: Doc, blob: Blob): Promise<void> {
   try {
     const { text, segments, segmentUnit } = await extractDocText(doc.kind, blob)
-    await db.docText.put({ hash: doc.hash, kind: doc.kind, text, segments, segmentUnit, indexedAt: Date.now() })
+    await db.docText.put({ hash: doc.hash, kind: doc.kind, text: text.slice(0, MAX_INDEX_CHARS), segments, segmentUnit, indexedAt: Date.now() })
   } catch {
     // 抽取失败不阻塞导入；下次打开搜索时回填重试
   }

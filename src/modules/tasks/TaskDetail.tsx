@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as RadixDialog from '@radix-ui/react-dialog'
-import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer } from 'lucide-react'
+import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type SubTask, type Task, type Tier } from '@/db/db'
 import { db } from '@/db/db'
-import { deleteTask, restoreTask, updateTask } from '@/db/tasks'
+import { deleteTask, postponeTask, restoreTask, updateTask } from '@/db/tasks'
+import { createFolder, linkTaskFolder } from '@/db/folders'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { toggleTaskWithUndo } from './taskActions'
 import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
@@ -15,6 +17,14 @@ import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
 const FIELD = 'text-[12px] font-medium text-on-surface-2 mb-1.5 block'
+
+/** 时间戳 → datetime-local 的本地值（YYYY-MM-DDTHH:mm） */
+function localDateTimeValue(ts?: number): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
 const INPUT =
   'w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/70 transition-colors'
 
@@ -26,6 +36,12 @@ export function TaskDetail() {
   const [tagDraft, setTagDraft] = useState('')
   const [subDraft, setSubDraft] = useState('')
   const [focusMinutes, setFocusMinutes] = useState<number | null>(null)
+  const folders = useLiveQuery(() => db.folders.toArray(), [], [])
+  const folderDocCount = useLiveQuery(
+    () => (task?.folderId ? db.docs.where('folderId').equals(task.folderId).count() : 0),
+    [task?.folderId],
+    0,
+  )
   // 标题/笔记本地态 + 400ms 防抖写库 + 关闭/切任务时立即 flush（防丢最后输入）
   const [titleDraft, setTitleDraft] = useState('')
   const [notesDraft, setNotesDraft] = useState('')
@@ -221,6 +237,25 @@ export function TaskDetail() {
                 />
               </div>
 
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className={cn(FIELD, 'mb-0')}><span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> 开始时间</span></label>
+                  <button
+                    type="button"
+                    onClick={() => void postponeTask(task)}
+                    className="text-[12px] text-primary hover:underline cursor-pointer"
+                  >
+                    截止顺延一天
+                  </button>
+                </div>
+                <input
+                  type="datetime-local"
+                  value={localDateTimeValue(task.startAt)}
+                  onChange={(e) => patch({ startAt: e.target.value ? new Date(e.target.value).getTime() : undefined })}
+                  className={INPUT}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={FIELD}>截止日期</label>
@@ -240,6 +275,54 @@ export function TaskDetail() {
                     className={INPUT}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className={FIELD}><span className="inline-flex items-center gap-1.5"><FolderOpen size={13} /> 资料文件夹</span></label>
+                {task.folderId ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openDetail(null)
+                        window.location.hash = `#/docs?folder=${task.folderId}`
+                      }}
+                      className="flex-1 min-w-0 h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-left text-[13px] hover:border-primary/50 transition-colors cursor-pointer flex items-center gap-2"
+                    >
+                      <FolderOpen size={14} className="text-on-surface-2 shrink-0" />
+                      <span className="truncate">{folders.find((f) => f.id === task.folderId)?.name ?? '文件夹'}</span>
+                      <span className="ml-auto text-[11px] text-on-surface-2 shrink-0">{folderDocCount} 篇</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void linkTaskFolder(task.id, undefined)}
+                      className="shrink-0 text-[12px] text-on-surface-2 hover:text-danger cursor-pointer px-1"
+                    >
+                      解除
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => void createFolder(task.title, task.id)}
+                    >
+                      新建文件夹并关联
+                    </Button>
+                    {folders.length > 0 && (
+                      <select
+                        aria-label="关联已有文件夹"
+                        value=""
+                        onChange={(e) => { if (e.target.value) void linkTaskFolder(task.id, e.target.value) }}
+                        className={cn(INPUT, 'h-9 flex-1 min-w-0')}
+                      >
+                        <option value="">关联已有文件夹…</option>
+                        {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>

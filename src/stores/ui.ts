@@ -8,6 +8,8 @@ export type ThemeMode = 'system' | 'light' | 'dark'
 export type Accent = 'blue' | 'purple' | 'pink' | 'red' | 'orange' | 'green'
 /** 界面密度（对应 macOS 字号档） */
 export type Density = 'compact' | 'default' | 'large'
+/** 模型智能排名卡的位置（v2.1） */
+export type IntelPlacement = 'today' | 'stats' | 'hidden'
 
 export interface ToastItem {
   id: string
@@ -26,6 +28,7 @@ interface UiState {
   sidebarCollapsed: boolean
   /** 触觉/振动反馈（勾选、拖拽、长按确认等）。默认开，设置页可关。 */
   haptics: boolean
+  intelPlacement: IntelPlacement
   shortcutsOpen: boolean
   paletteOpen: boolean
   toasts: ToastItem[]
@@ -36,6 +39,7 @@ interface UiState {
   setMotion: (v: boolean) => void
   setSidebarCollapsed: (v: boolean) => void
   setHaptics: (v: boolean) => void
+  setIntelPlacement: (p: IntelPlacement) => void
   setShortcutsOpen: (v: boolean) => void
   setPaletteOpen: (v: boolean) => void
   toast: (message: string, action?: ToastItem['action']) => void
@@ -52,6 +56,7 @@ export const useUi = create<UiState>()(
       motion: true,
       sidebarCollapsed: false,
       haptics: true,
+      intelPlacement: 'today',
       shortcutsOpen: false,
       paletteOpen: false,
       toasts: [],
@@ -62,6 +67,7 @@ export const useUi = create<UiState>()(
       setMotion: (motion) => set({ motion }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setHaptics: (haptics) => set({ haptics }),
+      setIntelPlacement: (intelPlacement) => set({ intelPlacement }),
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       toast: (message, action) => {
@@ -73,7 +79,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'ws-ui',
-      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics }),
+      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, intelPlacement: s.intelPlacement }),
       // 旧版本 theme 曾允许 'system'，现在收敛进 themeMode 并保留合法值
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UiState> & { theme?: string }
@@ -89,6 +95,9 @@ export const useUi = create<UiState>()(
           density: p.density ?? 'default',
           motion: p.motion !== false,
           haptics: p.haptics !== false,
+          intelPlacement: (['today', 'stats', 'hidden'] as IntelPlacement[]).includes(p.intelPlacement as IntelPlacement)
+            ? (p.intelPlacement as IntelPlacement)
+            : 'today',
         }
       },
     },

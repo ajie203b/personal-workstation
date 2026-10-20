@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, BellOff, Download, History, Smartphone, Upload } from 'lucide-react'
-import { useUi, type Accent, type Density, type ThemeMode } from '@/stores/ui'
+import { useUi, type Accent, type Density, type IntelPlacement, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
@@ -10,11 +10,16 @@ import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pw
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { todayStr } from '@/lib/date'
 import { isNative } from '@/lib/native'
+import { cn } from '@/lib/cn'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
 import {
   getAutoBackupEnabled, listBackups, restoreBackup, setAutoBackupEnabled, writeSnapshot,
   type BackupInfo,
 } from '@/lib/autoBackup'
+import {
+  getLastSyncAt, getWebdavConfig, setWebdavConfig, syncNow, testWebdav,
+  type WebdavConfig,
+} from '@/lib/sync'
 
 type Tab = 'appearance' | 'data' | 'about'
 
@@ -60,6 +65,8 @@ function AppearanceTab() {
   const setDensity = useUi((s) => s.setDensity)
   const motion = useUi((s) => s.motion)
   const setMotion = useUi((s) => s.setMotion)
+  const intelPlacement = useUi((s) => s.intelPlacement)
+  const setIntelPlacement = useUi((s) => s.setIntelPlacement)
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
@@ -110,6 +117,21 @@ function AppearanceTab() {
             { value: 'compact', label: '紧凑' },
             { value: 'default', label: '默认' },
             { value: 'large', label: '宽松' },
+          ]}
+        />
+      </section>
+
+      <section className="card p-4">
+        <h2 className="text-[14px] font-semibold mb-1">模型智能排名</h2>
+        <p className="text-[13px] text-on-surface-2 mb-3">Artificial Analysis 榜单卡片放在哪一页；数据每日自动更新。</p>
+        <Segmented
+          ariaLabel="模型智能排名位置"
+          value={intelPlacement}
+          onChange={(v) => setIntelPlacement(v as IntelPlacement)}
+          options={[
+            { value: 'today', label: '今日页' },
+            { value: 'stats', label: '统计页' },
+            { value: 'hidden', label: '隐藏' },
           ]}
         />
       </section>
@@ -205,6 +227,8 @@ function DataTab() {
 
       <AutoBackupCard />
 
+      <WebdavCard />
+
       <section className="card p-4" style={{ borderColor: 'color-mix(in srgb, var(--danger) 30%, var(--outline))' }}>
         <h2 className="text-[14px] font-semibold mb-1 text-danger">危险区</h2>
         <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。按住 1.5 秒才会执行（键盘用户会走二次确认）。</p>
@@ -278,6 +302,130 @@ function NotifyCard() {
           </Button>
         </div>
       )}
+    </section>
+  )
+}
+
+
+/** WebDAV 同步（v2.0）：可选、本地优先；口令只存本机，不随同步/备份导出 */
+function WebdavCard() {
+  const toast = useUi((s) => s.toast)
+  const [cfg, setCfg] = useState<WebdavConfig>({ url: '', username: '', password: '', auto: false })
+  const [last, setLast] = useState<number | null>(null)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const [busy, setBusy] = useState<'test' | 'sync' | null>(null)
+
+  useEffect(() => {
+    void Promise.all([getWebdavConfig(), getLastSyncAt()]).then(([c, l]) => {
+      if (c) setCfg(c)
+      setLast(l)
+    })
+  }, [])
+
+  const persist = async (next: WebdavConfig) => {
+    setCfg(next)
+    await setWebdavConfig(next)
+  }
+  const patch = (p: Partial<WebdavConfig>) => void persist({ ...cfg, ...p })
+
+  const test = async () => {
+    if (busy) return
+    setBusy('test')
+    setNote(null)
+    const r = await testWebdav(cfg)
+    setNote({ ok: r.ok, text: r.message })
+    setBusy(null)
+  }
+
+  const sync = async () => {
+    if (busy) return
+    setBusy('sync')
+    setNote(null)
+    await setWebdavConfig(cfg)
+    try {
+      const r = await syncNow()
+      setLast(r.at)
+      setNote({ ok: true, text: `已同步：${r.tasks} 条任务、${r.docs} 篇文档（上传 ${r.blobsUp} / 下载 ${r.blobsDown} 个文件）` })
+      toast('同步完成')
+    } catch (e) {
+      const text = e instanceof Error ? e.message : '同步失败'
+      setNote({ ok: false, text })
+      toast(text)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="card p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[14px] font-semibold mb-0.5">WebDAV 同步（可选）</h2>
+          <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
+            用坚果云等 WebDAV 目录在手机和电脑之间共用同一份数据。本地优先，不同步也能照常用；
+            口令只存在本机，不随同步或备份导出。
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2">
+        <label className="block">
+          <span className="block text-[12px] font-medium text-on-surface-2 mb-1">目录地址</span>
+          <input
+            value={cfg.url}
+            onChange={(e) => setCfg({ ...cfg, url: e.target.value })}
+            onBlur={() => patch({ url: cfg.url })}
+            placeholder="https://dav.jianguoyun.com/dav/个人工作站/"
+            className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">用户名</span>
+            <input
+              value={cfg.username}
+              onChange={(e) => setCfg({ ...cfg, username: e.target.value })}
+              onBlur={() => patch({ username: cfg.username })}
+              autoComplete="username"
+              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">应用密码</span>
+            <input
+              value={cfg.password}
+              onChange={(e) => setCfg({ ...cfg, password: e.target.value })}
+              onBlur={() => patch({ password: cfg.password })}
+              type="password"
+              autoComplete="current-password"
+              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <label className="flex items-center gap-2 text-[12.5px] text-on-surface-2">
+          <JellySwitch checked={cfg.auto} onChange={() => patch({ auto: !cfg.auto })} label="自动同步" />
+          打开应用时自动同步（间隔 ≥ 10 分钟）
+        </label>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" state={busy === 'test' ? 'loading' : 'idle'} onClick={() => void test()}>
+            测试连接
+          </Button>
+          <Button variant="primary" size="sm" state={busy === 'sync' ? 'loading' : 'idle'} onClick={() => void sync()}>
+            立即同步
+          </Button>
+        </div>
+      </div>
+
+      {note && (
+        <p className={cn('text-[12px] leading-relaxed', note.ok ? 'text-ok' : 'text-danger')}>{note.text}</p>
+      )}
+      <p className="text-[11.5px] text-on-surface-2">
+        {last ? `上次同步：${new Date(last).toLocaleString('zh-CN')}` : '还没有同步过'}
+        {' · '}网页版需要 WebDAV 服务端允许跨域；安卓 App 内由原生请求，不受此限制
+      </p>
     </section>
   )
 }

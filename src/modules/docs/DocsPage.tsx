@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { AlignLeft, BookOpen, FileText, FileSpreadsheet, FileType2, Import, PenLine, Presentation, Search, Trash2 } from 'lucide-react'
-import type { Doc } from '@/db/db'
+import { useNavigate, useSearchParams } from 'react-router'
+import { AlignLeft, BookOpen, FileText, FileSpreadsheet, FileType2, FolderInput, FolderPlus, Import, PenLine, Presentation, Search, Trash2 } from 'lucide-react'
+import type { Doc, Folder } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
 import { deleteDoc, importDoc } from '@/db/docs'
+import { createFolder, deleteFolder, setDocFolder } from '@/db/folders'
 import { useDocs } from '@/db/hooks'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
@@ -24,8 +25,29 @@ const DELETE_HOLD_MS = 1500
 export function DocsPage() {
   const navigate = useNavigate()
   const docs = useDocs()
+  const [params, setParams] = useSearchParams()
+  const activeFolder = params.get('folder')
+  const folders = useLiveQuery(() => db.folders.toArray(), [], [] as Folder[])
+  const folderCounts = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const d of docs) if (d.folderId) m[d.folderId] = (m[d.folderId] ?? 0) + 1
+    return m
+  }, [docs])
+  const docsInView = useMemo(
+    () => (activeFolder ? docs.filter((d) => d.folderId === activeFolder) : docs),
+    [docs, activeFolder],
+  )
+  const [folderDialog, setFolderDialog] = useState<{ mode: 'create' } | { mode: 'move'; doc: Doc } | null>(null)
+  const [folderName, setFolderName] = useState('')
+  const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
   const toast = useUi((s) => s.toast)
   const [keyword, setKeyword] = useState('')
+  // 搜索防抖：全文命中要扫所有 docText，逐字符触发会把主线程按住（文档库卡死的直接来源）
+  const [query, setQuery] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(keyword), 250)
+    return () => clearTimeout(t)
+  }, [keyword])
   const [pendingDelete, setPendingDelete] = useState<Doc | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   /** 全文搜索用小写副本缓存（hash → {indexedAt, lower}），避免每次改关键词都整篇 toLowerCase */
@@ -40,29 +62,43 @@ export function DocsPage() {
     {} as Record<string, { progressPct?: number; updatedAt: number }>,
   )
 
-  // 全文索引：进入页面静默回填（每轮 5 篇，直至补齐）
+  // 全文索引：进入页面静默回填，一次一篇、篇间让出主线程。
+  // 原来一轮 5 篇接一轮地跑，手机上等于连续几十秒的满负载，表现就是「点到文档工作站就卡死」。
   useEffect(() => {
     let alive = true
-    const tick = () => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = async () => {
       if (!alive) return
-      void backfillDocTextIndex(5).then((n) => { if (n > 0) tick() })
+      if (document.visibilityState === 'hidden') {
+        timer = setTimeout(tick, 3000)
+        return
+      }
+      try {
+        const n = await backfillDocTextIndex(1)
+        timer = setTimeout(tick, n > 0 ? 400 : 5000)
+      } catch {
+        timer = setTimeout(tick, 5000)
+      }
     }
-    tick()
-    return () => { alive = false }
+    timer = setTimeout(tick, 1200)
+    return () => {
+      alive = false
+      if (timer) clearTimeout(timer)
+    }
   }, [])
 
   // 搜索：标题命中 + 全文命中（含片段与分段号）
   const results = useMemo(() => {
-    const kw = keyword.trim().toLowerCase()
+    const kw = query.trim().toLowerCase()
     if (!kw) return null
     return docs.map((d) => {
       const titleHit = d.title.toLowerCase().includes(kw)
       return { doc: d, titleHit }
     })
-  }, [docs, keyword])
+  }, [docs, query])
 
   const textHits = useLiveQuery(async () => {
-    const kw = keyword.trim().toLowerCase()
+    const kw = query.trim().toLowerCase()
     if (!kw || kw.length < 2) return {}
     const rows = await db.docText.toArray()
     const map: Record<string, { count: number; snippet: string; seg?: number }> = {}
@@ -94,12 +130,32 @@ export function DocsPage() {
       map[r.hash] = { count, snippet, seg }
     }
     return map
-  }, [keyword], {} as Record<string, { count: number; snippet: string; seg?: number }>)
+  }, [query], {} as Record<string, { count: number; snippet: string; seg?: number }>)
 
   const filtered = useMemo(() => {
     if (!results) return null
-    return results.filter((r) => r.titleHit || (textHits[r.doc.hash]?.count ?? 0) > 0)
-  }, [results, textHits])
+    return results.filter((r) => (r.titleHit || (textHits[r.doc.hash]?.count ?? 0) > 0) && docsInView.some((d) => d.id === r.doc.id))
+  }, [results, textHits, docsInView])
+
+
+  /** 当前筛选的文件夹；null = 全部 */
+  function setFolderParam(id: string | null) {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (id) next.set('folder', id)
+      else next.delete('folder')
+      return next
+    }, { replace: true })
+  }
+
+  async function doCreateFolder() {
+    const name = folderName.trim()
+    if (!name) return
+    const f = await createFolder(name)
+    setFolderDialog(null)
+    setFolderParam(f.id)
+    toast(`已创建「${f.name}」`)
+  }
 
   const { state: importState, run: runImport } = useAsyncButton({ successHoldMs: 900 })
 
@@ -113,6 +169,8 @@ export function DocsPage() {
         for (const file of Array.from(files)) {
           try {
             const r = await importDoc(file)
+            // 在某个文件夹里导入 → 直接归入该夹
+            if (activeFolder && !r.duplicated) await setDocFolder(r.doc.id, activeFolder)
             if (r.duplicated) dup++
             else added++
           } catch {
@@ -164,7 +222,41 @@ export function DocsPage() {
         </div>
       </div>
 
-      {docs.length === 0 ? (
+      {/* 文件夹筛选：长期任务的资料夹 */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+          <FolderChip active={!activeFolder} onClick={() => setFolderParam(null)}>
+            全部 <span className="opacity-60">{docs.length}</span>
+          </FolderChip>
+          {folders.map((f) => (
+            <FolderChip key={f.id} active={activeFolder === f.id} onClick={() => setFolderParam(f.id)}>
+              {f.name} <span className="opacity-60">{folderCounts[f.id] ?? 0}</span>
+            </FolderChip>
+          ))}
+          <button
+            type="button"
+            onClick={() => { setFolderName(''); setFolderDialog({ mode: 'create' }) }}
+            className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-full border border-dashed border-outline text-[12px] text-on-surface-2 hover:text-on-surface hover:border-primary/50 transition-colors cursor-pointer"
+          >
+            <FolderPlus size={13} /> 新建文件夹
+          </button>
+          {activeFolder && (
+            <button
+              type="button"
+              onClick={() => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)}
+              className="shrink-0 h-8 px-2.5 rounded-full text-[12px] text-on-surface-2 hover:text-danger cursor-pointer"
+            >
+              删除文件夹
+            </button>
+          )}
+      </div>
+
+      {docsInView.length === 0 && activeFolder ? (
+        <EmptyState
+          icon={FileType2}
+          title="这个文件夹还是空的"
+          hint="点右上角「导入」把资料放进来；在这里导入的文件会自动归入当前文件夹。"
+        />
+      ) : docs.length === 0 ? (
         <EmptyState
           icon={FileType2}
           title="文档库还是空的"
@@ -183,7 +275,7 @@ export function DocsPage() {
         <EmptyState icon={Search} title="没有匹配的文档" hint="换个关键词试试（全文搜索需 2 个字符以上）。" />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {(filtered ?? docs.map((d) => ({ doc: d, titleHit: true }))).map(({ doc: d }) => {
+          {(filtered ?? docsInView.map((d) => ({ doc: d, titleHit: true }))).map(({ doc: d }) => {
             const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
             const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
             return (
@@ -201,6 +293,8 @@ export function DocsPage() {
                 }
                 onEdit={() => navigate(`/docs/edit/${d.id}`)}
                 onRead={() => openDoc({ docId: d.id })}
+                folderName={folders.find((f) => f.id === d.folderId)?.name}
+                onMove={() => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
                 onRequestConfirm={() => setPendingDelete(d)}
                 onDelete={() => {
                   void deleteDoc(d).then(() => toast('文档已删除'))
@@ -210,6 +304,90 @@ export function DocsPage() {
           })}
         </div>
       )}
+
+      <Dialog
+        open={folderDialog != null}
+        onOpenChange={(v) => !v && setFolderDialog(null)}
+        title={folderDialog?.mode === 'move' ? '移动到文件夹' : '新建文件夹'}
+        description={folderDialog?.mode === 'move' ? `把「${folderDialog.doc.title}」放进哪个文件夹？` : '文件夹用来收拢长期任务相关的资料。'}
+      >
+        {folderDialog?.mode === 'move' ? (
+          <div className="flex flex-col gap-1.5 max-h-[50dvh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => {
+                const d = folderDialog.doc
+                setFolderDialog(null)
+                void setDocFolder(d.id, undefined).then(() => toast('已移出文件夹'))
+              }}
+              className="h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-left text-[13px] hover:border-primary/50 cursor-pointer shrink-0"
+            >
+              不移入文件夹
+            </button>
+            {folders.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => {
+                  if (folderDialog.mode !== 'move') return
+                  const d = folderDialog.doc
+                  setFolderDialog(null)
+                  void setDocFolder(d.id, f.id).then(() => toast(`已移到「${f.name}」`))
+                }}
+                className={cn(
+                  'h-10 px-3 rounded-[10px] text-left text-[13px] border transition-colors cursor-pointer flex items-center gap-2',
+                  folderDialog.doc.folderId === f.id ? 'border-primary bg-primary-soft text-primary' : 'bg-surface-2 border-outline hover:border-primary/50',
+                )}
+              >
+                <FolderInput size={14} />
+                <span className="truncate flex-1">{f.name}</span>
+                <span className="text-[11px] opacity-60">{folderCounts[f.id] ?? 0}</span>
+              </button>
+            ))}
+            {folders.length === 0 && <p className="text-[12px] text-on-surface-2 py-2">还没有文件夹，先新建一个。</p>}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <input
+              autoFocus
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              placeholder="文件夹名称，如「毕业论文」"
+              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/60"
+              onKeyDown={(e) => { if (e.key === 'Enter' && folderName.trim()) void doCreateFolder() }}
+            />
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setFolderDialog(null)}>取消</Button>
+              <Button variant="primary" disabled={!folderName.trim()} onClick={() => void doCreateFolder()}>创建</Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={folderToDelete != null}
+        onOpenChange={(v) => !v && setFolderToDelete(null)}
+        title="删除文件夹？"
+        description="文件夹里的文档不会被删除，只会解除归属；关联的任务也会保留。"
+      >
+        <div className="flex justify-end gap-2">
+          <Button onClick={() => setFolderToDelete(null)}>取消</Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              const f = folderToDelete
+              setFolderToDelete(null)
+              if (!f) return
+              void deleteFolder(f.id).then(() => {
+                if (activeFolder === f.id) setFolderParam(null)
+                toast('文件夹已删除')
+              })
+            }}
+          >
+            删除
+          </Button>
+        </div>
+      </Dialog>
 
       {/* 删除的正常路径是按住垃圾桶让光绕卡片一周；键盘与减弱动效走这个兜底二次确认 */}
       <Dialog
@@ -240,6 +418,8 @@ interface CardProps {
   doc: Doc
   pct: number
   hit?: { count: number; snippet: string; seg?: number }
+  folderName?: string
+  onMove: () => void
   onOpen: () => void
   onEdit: () => void
   onRead: () => void
@@ -249,7 +429,7 @@ interface CardProps {
 }
 
 /** 文档卡：整卡可点开，右上角行内动作分别负责阅读 / 写作 / 删除 */
-function DocCard({ doc: d, pct, hit, onOpen, onEdit, onRead, onRequestConfirm, onDelete }: CardProps) {
+function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead, onRequestConfirm, onDelete }: CardProps) {
   const { progress, bind } = useHoldToConfirm({
     holdMs: DELETE_HOLD_MS,
     onComplete: onDelete,
@@ -273,6 +453,7 @@ function DocCard({ doc: d, pct, hit, onOpen, onEdit, onRead, onRequestConfirm, o
           {d.lastOpenedAt
             ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
             : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
+          {folderName && ` · ${folderName}`}
         </span>
         {hit && (
           <span className="block text-[12px] text-on-surface mt-1.5 leading-snug line-clamp-2">
@@ -290,6 +471,9 @@ function DocCard({ doc: d, pct, hit, onOpen, onEdit, onRead, onRequestConfirm, o
         <CardAction label="继续阅读" primary onClick={onRead}>
           <Import size={15} className="rotate-180" />
         </CardAction>
+        <CardAction label="移动到文件夹" onClick={onMove}>
+          <FolderInput size={15} />
+        </CardAction>
         {d.kind === 'md' && (
           <CardAction label="继续写作" onClick={onEdit}>
             <PenLine size={15} />
@@ -305,6 +489,21 @@ function DocCard({ doc: d, pct, hit, onOpen, onEdit, onRead, onRequestConfirm, o
         </CardAction>
       </span>
       <HoldRing progress={progress} />
+    </button>
+  )
+}
+
+function FolderChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-[12px] transition-colors cursor-pointer',
+        active ? 'bg-primary-soft border-primary/40 text-primary font-medium' : 'bg-surface-2 border-outline text-on-surface-2 hover:text-on-surface',
+      )}
+    >
+      {children}
     </button>
   )
 }

@@ -1,5 +1,6 @@
 import { db, type Annotation, type Doc, type DocKind, type DocSettings, type ReadingPosition } from './db'
 import { uid } from '@/lib/id'
+import { markDeleted } from '@/lib/tombstones'
 
 /** SHA-256 内容指纹；非安全上下文降级为 FNV-1a */
 async function hashBuffer(buf: ArrayBuffer): Promise<string> {
@@ -69,7 +70,7 @@ export async function touchDoc(id: string): Promise<void> {
 }
 
 export async function deleteDoc(doc: Doc): Promise<void> {
-  await db.transaction('rw', [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText], async () => {
+  await db.transaction('rw', [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText, db.tombstones], async () => {
     await db.docs.delete(doc.id)
     const otherRefs = await db.docs.where('hash').equals(doc.hash).count()
     if (otherRefs === 0) {
@@ -81,6 +82,8 @@ export async function deleteDoc(doc: Doc): Promise<void> {
     await db.annotations.bulkDelete(anns.map((a) => a.id))
     const marks = await db.bookmarks.where('docHash').equals(doc.hash).toArray()
     await db.bookmarks.bulkDelete(marks.map((b) => b.id))
+    // 文档连同它的批注/书签一起立墓碑，否则另一台设备同步时会把它们推回来
+    await markDeleted(doc.id, ...anns.map((a) => a.id), ...marks.map((b) => b.id))
   })
 }
 
@@ -123,25 +126,34 @@ export async function saveDocSettings(hash: string, settings: DocSettings): Prom
 /* ============ 批注与书签 ============ */
 
 export async function addAnnotation(input: Omit<Annotation, 'id' | 'createdAt'>): Promise<Annotation> {
-  const ann: Annotation = { ...input, id: uid(), createdAt: Date.now() }
+  const now = Date.now()
+  const ann: Annotation = { ...input, id: uid(), createdAt: now, updatedAt: now }
   await db.annotations.add(ann)
   return ann
 }
 
 export async function updateAnnotation(id: string, patch: Partial<Annotation>): Promise<void> {
-  await db.annotations.update(id, patch)
+  // updatedAt 决定同步时谁新：评论、改色、复习进度都靠它
+  await db.annotations.update(id, { ...patch, updatedAt: Date.now() })
 }
 
 export async function deleteAnnotation(id: string): Promise<void> {
-  await db.annotations.delete(id)
+  await db.transaction('rw', [db.annotations, db.tombstones], async () => {
+    await db.annotations.delete(id)
+    await markDeleted(id)
+  })
 }
 
 export async function addBookmark(docHash: string, label: string, anchor: string, quote?: string): Promise<void> {
-  await db.bookmarks.add({ id: uid(), docHash, label, anchor, quote, createdAt: Date.now() })
+  const now = Date.now()
+  await db.bookmarks.add({ id: uid(), docHash, label, anchor, quote, createdAt: now, updatedAt: now })
 }
 
 export async function deleteBookmark(id: string): Promise<void> {
-  await db.bookmarks.delete(id)
+  await db.transaction('rw', [db.bookmarks, db.tombstones], async () => {
+    await db.bookmarks.delete(id)
+    await markDeleted(id)
+  })
 }
 
 /* ============ 批注 → 任务（互跳） ============ */

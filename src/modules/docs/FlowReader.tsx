@@ -3,6 +3,8 @@ import { cn } from '@/lib/cn'
 import type { Annotation, DocSettings } from '@/db/db'
 import type { FlowDoc } from './flowDoc'
 import { saveScrollAndProgress } from '@/db/docs'
+import { handleDocLink } from '@/lib/links'
+import { usePinch } from '@/lib/usePinch'
 import { wrapText } from './MdReader'
 
 export interface FlowSelectionInfo {
@@ -29,19 +31,57 @@ interface Props {
   onLoaded: (segCount: number) => void
   scrollRef: React.RefObject<HTMLDivElement>
   initialTarget: FlowJumpTarget | null
+  /** 双指缩放提交后的字号（px） */
+  onFontSizeChange?: (px: number) => void
 }
 
 /**
  * 流式阅读器（v1.3）：EPUB / DOCX / PPTX / TXT 统一滚动阅读。
  * 复用沉浸排版设置与批注体系（v1.3.1：划词高亮按章节/片定位，文本 mark 包裹）。
  */
-export function FlowReader({ hash, flow, settings, annotations, jump, onSelection, onProgress, onRestored, onLoaded, scrollRef, initialTarget }: Props) {
+export function FlowReader({ hash, flow, settings, annotations, jump, onSelection, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onFontSizeChange }: Props) {
   const restoredRef = useRef(false)
   const lastWriteRef = useRef(0)
   const lastJumpTs = useRef(0)
   const lastReportedPct = useRef(-1)
   const segRefs = useRef<(HTMLElement | null)[]>([])
   const [flashSeg, setFlashSeg] = useState<number | null>(null)
+
+  // 双指缩放 = 改字号：docx/epub/pptx/txt 与 Markdown 同一套手感
+  const [liveFont, setLiveFont] = useState(settings.fontSize)
+  const liveFontRef = useRef(settings.fontSize)
+  const baseFontRef = useRef(settings.fontSize)
+  const fontAnchor = useRef<{ el: HTMLElement; top: number } | null>(null)
+  useEffect(() => {
+    liveFontRef.current = settings.fontSize
+    setLiveFont(settings.fontSize)
+  }, [settings.fontSize])
+
+  usePinch(scrollRef, {
+    onStart: () => {
+      baseFontRef.current = liveFontRef.current
+      const c = scrollRef.current
+      const segs = segRefs.current.filter(Boolean) as HTMLElement[]
+      if (!c) return
+      const cr = c.getBoundingClientRect()
+      const hit = segs.find((el) => el.getBoundingClientRect().bottom > cr.top + 8) ?? segs[0]
+      fontAnchor.current = hit ? { el: hit, top: hit.getBoundingClientRect().top - cr.top } : null
+    },
+    onScale: (ratio) => {
+      const px = Math.round(Math.min(32, Math.max(14, baseFontRef.current * ratio)))
+      liveFontRef.current = px
+      setLiveFont(px)
+    },
+    onEnd: () => { onFontSizeChange?.(liveFontRef.current) },
+  })
+
+  useLayoutEffect(() => {
+    const a = fontAnchor.current
+    const c = scrollRef.current
+    if (!a || !c || !a.el.isConnected) return
+    const cr = c.getBoundingClientRect()
+    c.scrollTop += (a.el.getBoundingClientRect().top - cr.top) - a.top
+  }, [liveFont, scrollRef])
 
   useEffect(() => { onLoaded(flow.segments.length) }, [flow.segments.length, onLoaded])
 
@@ -198,7 +238,16 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   return (
     // ref 必须挂在这个根节点上：滚动监听、进度上报、位置恢复、目录跳转全走 scrollRef，
     // 漏挂时这些路径会静默空转（容器是真的能滚，只是没人听见它的 scroll 事件）
-    <div ref={scrollRef} className={cn('h-full overflow-y-auto overscroll-contain', themeCls)}>
+    <div
+      ref={scrollRef}
+      // EPUB/DOCX 正文里的链接同样不能改掉 SPA 地址（详见 lib/links）
+      onClick={(e) => {
+        const a = (e.target as Element).closest?.('a[href]')
+        if (a) handleDocLink(e, a.getAttribute('href'))
+      }}
+      style={{ touchAction: 'pan-x pan-y' }}
+      className={cn('h-full overflow-y-auto overscroll-contain', themeCls)}
+    >
       <div
         className="mx-auto px-4 py-8"
         style={{ width: `${settings.widthPct}%`, maxWidth: 860, minWidth: 300 }}
@@ -219,7 +268,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
             )}
             <div
               className="flow-body"
-              style={{ fontSize: settings.fontSize, lineHeight: settings.leading }}
+              style={{ fontSize: liveFont, lineHeight: settings.leading }}
               dangerouslySetInnerHTML={{ __html: seg.html }}
             />
           </section>

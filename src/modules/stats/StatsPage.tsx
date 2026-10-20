@@ -5,6 +5,8 @@ import { db } from '@/db/db'
 import { migrateLegacyFocusRecords } from '@/db/focus'
 import { cn } from '@/lib/cn'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
+import { useUi } from '@/stores/ui'
+import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
 
 /** 统计页（v1.3）：完成热力图 + 周报 + 标签分布 + 专注排行。全部本地数据。 */
 
@@ -131,6 +133,7 @@ export function StatsPage() {
 
   if (!tasks || !sessions || !annotations) return null
 
+  const intelPlacement = useUi((s) => s.intelPlacement)
   return (
     <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
       <div>
@@ -145,6 +148,8 @@ export function StatsPage() {
         <StatCard icon={<Timer size={16} />} label="专注总时长" value={Math.round((totalFocus / 60) * 10) / 10} unit="小时" accent="var(--ok)" decimals={1} />
         <StatCard icon={<Highlighter size={16} />} label="批注总数" value={annotations.length} unit="条" />
       </div>
+
+      {intelPlacement === 'stats' && <IntelligenceCard />}
 
       {/* 热力图 */}
       <div className="card p-4">

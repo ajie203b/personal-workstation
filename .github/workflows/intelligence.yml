@@ -1,0 +1,40 @@
+name: Update intelligence ranking
+
+# 每天抓一次 Artificial Analysis 智能指数，写入 public/intelligence.json。
+# 应用启动后每天静默从仓库读这份数据（见 src/lib/intelligence.ts），
+# 因此网页版与安卓包都不用重新发版也能拿到新榜单。
+on:
+  schedule:
+    - cron: '17 5 * * *' # UTC 05:17 = 北京时间 13:17
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch ranking
+        run: node scripts/fetch-intelligence.mjs
+        env:
+          AA_API_KEY: ${{ secrets.AA_API_KEY }}
+
+      - name: Commit if changed
+        run: |
+          # 首次运行时文件还是未跟踪状态，git diff 看不出变化，必须看 status
+          if [ -z "$(git status --porcelain -- public/intelligence.json)" ]; then
+            echo "榜单没有变化，跳过提交"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/intelligence.json
+          git commit -m "data: 每日更新模型智能排名"
+          git push

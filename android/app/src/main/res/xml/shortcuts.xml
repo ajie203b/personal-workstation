@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 长按桌面图标弹出的快捷方式（v2.0）。
+     intent 的 data 必须与 AndroidManifest 里声明的 scheme 对应，
+     JS 侧由 lib/appActions.ts 的 parseAppUrl 解析。 -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="quickadd"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_quickadd"
+        android:shortcutLongLabel="@string/shortcut_quickadd_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.personal.workstation"
+            android:targetClass="com.personal.workstation.MainActivity"
+            android:data="com.personal.workstation://quickadd" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="today"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_today"
+        android:shortcutLongLabel="@string/shortcut_today_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.personal.workstation"
+            android:targetClass="com.personal.workstation.MainActivity"
+            android:data="com.personal.workstation://today" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

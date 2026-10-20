@@ -1,9 +1,10 @@
-import { db, type Annotation, type AiMessage, type AiProvider, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type ReadingPosition, type SettingKV, type Task, type Tier } from './db'
+import { db, type Annotation, type AiMessage, type AiProvider, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type ReadingPosition, type Folder, type SettingKV, type Task, type Tier, type Tombstone } from './db'
 import type { Table } from 'dexie'
 import { uid } from '@/lib/id'
-import { todayStr } from '@/lib/date'
+import { addDaysStr, parseDateStr, todayStr } from '@/lib/date'
 import { nextDueForRepeat } from '@/lib/repeat'
 import { syncTaskNotification } from '@/lib/notify'
+import { markDeleted } from '@/lib/tombstones'
 
 export interface NewTaskInput {
   title: string
@@ -15,6 +16,8 @@ export interface NewTaskInput {
   notes?: string
   repeat?: Task['repeat']
   status?: Task['status']
+  startAt?: number
+  folderId?: string
   docRef?: Task['docRef']
   aiRef?: string
 }
@@ -32,6 +35,8 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
     due: input.due,
     dueTime: input.dueTime,
     repeat: input.repeat,
+    startAt: input.startAt,
+    folderId: input.folderId,
     docRef: input.docRef,
     aiRef: input.aiRef,
     createdAt: now,
@@ -118,11 +123,39 @@ export async function setPriority(id: string, priority: Priority): Promise<void>
   await updateTask(id, { priority })
 }
 
-/** 删除：返回快照供撤销；同时取消提醒 */
+/** 删除：返回快照供撤销；同时取消提醒，并立墓碑供同步判重 */
 export async function deleteTask(task: Task): Promise<Task> {
-  await db.tasks.delete(task.id)
+  await db.transaction('rw', [db.tasks, db.tombstones], async () => {
+    await db.tasks.delete(task.id)
+    await markDeleted(task.id)
+  })
   void syncTaskNotification({ ...task, status: 'done' })
   return task
+}
+
+/** 顺延一天：截止日与开始时间一起往后推；没有截止的任务设成明天 */
+export async function postponeTask(task: Task, days = 1): Promise<void> {
+  const due = task.due ? addDaysStr(days, parseDateStr(task.due)) : addDaysStr(days)
+  await updateTask(task.id, {
+    due,
+    tier: due > todayStr() ? 'upcoming' : task.tier,
+    ...(task.startAt ? { startAt: task.startAt + days * 86400000 } : {}),
+  })
+}
+
+/** 每日回顾：把今天没做完的整体挪到明天（截止日改明天、清单进「近期」） */
+export async function rolloverTasks(tasks: Task[], toDate: string = addDaysStr(1)): Promise<void> {
+  if (!tasks.length) return
+  const now = Date.now()
+  await db.transaction('rw', db.tasks, async () => {
+    for (const t of tasks) {
+      await db.tasks.update(t.id, { due: toDate, tier: 'upcoming', updatedAt: now })
+    }
+  })
+  for (const t of tasks) {
+    const updated = await db.tasks.get(t.id)
+    if (updated) void syncTaskNotification(updated)
+  }
 }
 
 export async function restoreTask(task: Task): Promise<void> {
@@ -160,6 +193,8 @@ interface ExportPayload {
   aiUsage: AiUsageRow[]
   docText: DocText[]
   focusSessions: FocusSession[]
+  tombstones: Tombstone[]
+  folders: Folder[]
   /** 手动导出的 JSON：文档本体内联 base64 */
   blobRows?: { hash: string; type: string; data: string }[]
   /** 目录式快照：文档本体在 blobs/<hash>，这里只留清单 */
@@ -168,8 +203,11 @@ interface ExportPayload {
 
 const SNAPSHOT_HEAD = { app: 'personal-workstation' as const, version: 4 as const }
 
+/** 只属于本机的设置：WebDAV 口令、同步/备份时间戳、通知权限状态 */
+const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt', 'notifyEnabled'])
+
 /** 一次读出所有表（手动导出与自动快照共用） */
-type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiProviders' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions'>
+type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiProviders' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders'>
 
 async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
   const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiProviders, aiSessions, aiMessages, aiUsage, docText, focusSessions] = await Promise.all([
@@ -187,8 +225,26 @@ async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
     db.docText.toArray(),
     db.focusSessions.toArray(),
   ])
+  const tombstones = await db.tombstones.toArray()
+  const folders = await db.folders.toArray()
   return {
-    data: { tasks, settings, docs, positions, annotations, bookmarks, aiProviders, aiSessions, aiMessages, aiUsage, docText, focusSessions },
+    // 设备本地的口令 / 时间戳不进导出，避免同步或备份时把 WebDAV 口令带出去
+    data: {
+      tasks,
+      settings: settings.filter((s) => !LOCAL_ONLY_SETTINGS.has(s.key)),
+      docs,
+      positions,
+      annotations,
+      bookmarks,
+      aiProviders,
+      aiSessions,
+      aiMessages,
+      aiUsage,
+      docText,
+      focusSessions,
+      tombstones,
+      folders,
+    },
     blobs: blobs.map((r) => ({ hash: r.hash, type: r.blob.type, blob: r.blob })),
   }
 }
@@ -255,6 +311,8 @@ const IMPORT_TABLES: [string, Table<any, any>][] = [
   ['aiUsage', db.aiUsage],
   ['docText', db.docText],
   ['focusSessions', db.focusSessions],
+  ['tombstones', db.tombstones],
+  ['folders', db.folders],
 ]
 
 async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promise<ImportResult> {
@@ -300,6 +358,8 @@ async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promis
       if (has('aiUsage')) await db.aiUsage.bulkPut(data.aiUsage as AiUsageRow[])
       if (has('docText')) await db.docText.bulkPut(data.docText as DocText[])
       if (has('focusSessions')) await db.focusSessions.bulkPut(data.focusSessions as FocusSession[])
+      if (has('tombstones')) await db.tombstones.bulkPut(data.tombstones as Tombstone[])
+      if (has('folders')) await db.folders.bulkPut(data.folders as Folder[])
     },
   )
   return result
@@ -322,7 +382,7 @@ export async function importSnapshotParts(
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions],
+    [db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions, db.tombstones, db.folders],
     async () => {
       await db.tasks.clear()
       await db.settings.clear()
@@ -337,8 +397,12 @@ export async function clearAllData(): Promise<void> {
       await db.aiUsage.clear()
       await db.docText.clear()
       await db.focusSessions.clear()
+      await db.tombstones.clear()
+      await db.folders.clear()
       localStorage.removeItem('ws-doc-tabs')
       localStorage.removeItem('ws-focus-records')
     },
   )
+  // 清空也是一次「删除」：写一个纪元时间戳，另一台设备同步时不会把旧数据合并回来
+  await db.settings.put({ key: 'syncEpoch', value: Date.now() })
 }
