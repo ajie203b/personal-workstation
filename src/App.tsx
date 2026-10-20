@@ -6,12 +6,16 @@ import { CommandPalette } from '@/shared/CommandPalette'
 import { ToastHost } from '@/shared/ui/Toast'
 import { GlobalHotkeys } from './GlobalHotkeys'
 import { TaskDetail } from '@/modules/tasks/TaskDetail'
+import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TodayPage } from '@/modules/today/TodayPage'
 import { TasksPage } from '@/modules/tasks/TasksPage'
 import { useAllTasks } from '@/db/hooks'
 import { getNotifyEnabled, syncAllTaskNotifications } from '@/lib/notify'
 import { maybeAutoBackup, scrubSnapshotSecrets } from '@/lib/autoBackup'
 import { ShareInbound } from '@/shared/ShareInbound'
+import { Spotlight } from '@/shared/Spotlight'
+import { PageSkeleton } from '@/shared/ui/Skeleton'
+import { useUi } from '@/stores/ui'
 import { initAppActions } from '@/lib/appActions'
 import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
@@ -24,11 +28,7 @@ const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((
 const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ default: m.StatsPage })))
 const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => ({ default: m.ReviewPage })))
 
-const RouteLoader = (
-  <div className="h-full grid place-items-center text-on-surface-2 text-[13px]">
-    <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-  </div>
-)
+const RouteLoader = <PageSkeleton />
 
 /**
  * 按文档重挂载阅读器 / 编辑器。
@@ -45,6 +45,16 @@ function DocReaderRoute() {
 function MdEditorRoute() {
   const { docId } = useParams()
   return <MdEditorPage key={docId ?? 'new'} />
+}
+
+/**
+ * 全局「添加任务」抽屉：手机悬浮按钮、任务页快捷键 N、桌面快捷方式深链共用同一个实例，
+ * 省掉每个页面各自挂一份 sheet（以前看板/日历/四象限根本没有入口）。
+ */
+function GlobalAddSheet() {
+  const { open, tier, todayContext } = useUi((s) => s.addSheet)
+  const close = useUi((s) => s.closeAddSheet)
+  return <AddTaskSheet open={open} onOpenChange={(v) => { if (!v) close() }} defaultTier={tier} todayContext={todayContext} />
 }
 
 export default function App() {
@@ -95,7 +105,9 @@ export default function App() {
       </Suspense>
       {/* 详情面板全局挂载：今日页/任务页的任务卡点击都可打开 */}
       <TaskDetail />
+      <GlobalAddSheet />
       <CommandPalette />
+      <Spotlight />
       <ToastHost />
       <KeyboardShortcutsDialog />
     </>

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
 
@@ -9,6 +10,8 @@ export interface SegmentOption<T extends string> {
   badge?: string
   /** 可选：前导色点（如优先级色） */
   dot?: string
+  /** 可选：手机上只显示图标，文字到 md 才出现（省地方给窄屏） */
+  icon?: LucideIcon
 }
 
 interface Props<T extends string> {
@@ -124,7 +127,8 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
             )}
           >
             {o.dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: o.dot }} />}
-            {o.label}
+            {o.icon && <o.icon size={15} strokeWidth={active ? 2.2 : 1.9} className="shrink-0" />}
+            <span className={cn(o.icon && 'hidden md:inline')}>{o.label}</span>
             {o.badge != null && (
               <span
                 className={cn(

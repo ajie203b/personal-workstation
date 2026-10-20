@@ -741,3 +741,47 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
 .flow-body th, .flow-body td { border: 1px solid var(--md-rule); padding: 7px 12px; text-align: left; }
 .flow-body th { background: var(--md-quote); }
 .flow-body hr { border: none; border-top: 1px solid var(--md-rule); margin: 1.8em 0; }
+
+/* ---------------- 骨架屏扫光（ui-motion 15） ---------------- */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-3);
+  border-radius: 8px;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--surface) 72%, transparent) 45%,
+    color-mix(in srgb, var(--surface) 72%, transparent) 55%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.2s var(--ease-standard) infinite;
+}
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+/* 减少动效 / 关闭动效：只剩静态灰块，不闪 */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; content: none; }
+}
+.no-motion .skeleton::after { animation: none; content: none; }
+
+/* ---------------- 任务详情：桌面右侧抽屉 ---------------- */
+@keyframes drawer-in {
+  from { transform: translateX(28px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ---------------- 聚光灯引导（ui-motion 61） ---------------- */
+.spot-ring {
+  box-shadow: 0 0 0 3px var(--primary), 0 0 0 9999px color-mix(in srgb, #000 55%, transparent);
+  border-radius: 14px;
+  transition: all var(--dur-3) var(--ease-standard);
+}
+

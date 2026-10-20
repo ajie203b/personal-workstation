@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
+import { CalendarDays, ChevronDown, Columns3, Grid2x2, List } from 'lucide-react'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
 import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
@@ -77,39 +78,68 @@ export function TasksPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <h1 className="text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
+    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <h1 className="hidden md:block text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
+
+        {/* 手机：5 个页签横滚看不到边，改成下拉选择；桌面仍是分段控件 */}
+        <div className="md:hidden relative">
+          <select
+            aria-label="切换清单"
+            value={isLogbook ? 'logbook' : tier}
+            onChange={(e) => setParam('tier', e.target.value)}
+            className="appearance-none h-9 pl-3 pr-8 rounded-[10px] bg-surface-2 border border-outline text-[14px] font-semibold outline-none focus:border-primary/60"
+          >
+            {TIERS.map((t) => (
+              <option key={t} value={t}>{TIER_LABEL[t]}（{counts[t] ?? 0}）</option>
+            ))}
+            <option value="logbook">日志（{doneCount}）</option>
+          </select>
+          <ChevronDown size={15} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-2 pointer-events-none" />
+        </div>
+
         {!isLogbook && (
-          <div className="sm:ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <Segmented
               size="sm"
               ariaLabel="视图切换"
               value={view}
               onChange={(v) => setParam('view', v)}
               options={[
-                { value: 'list', label: '列表' },
-                { value: 'board', label: '看板' },
-                { value: 'calendar', label: '日历' },
-                { value: 'quadrant', label: '四象限' },
+                { value: 'list', label: '列表', icon: List },
+                { value: 'board', label: '看板', icon: Columns3 },
+                { value: 'calendar', label: '日历', icon: CalendarDays },
+                { value: 'quadrant', label: '四象限', icon: Grid2x2 },
               ]}
             />
           </div>
         )}
+        {isLogbook && (
+          <button
+            type="button"
+            onClick={() => setParam('tier', 'today')}
+            className="ml-auto text-[13px] text-on-surface-2 hover:text-on-surface cursor-pointer"
+          >
+            返回清单
+          </button>
+        )}
       </div>
 
       {view === 'list' && (
-        <QuickAdd
-          defaultTier={tier}
-          placeholder={tier === 'today' ? '添加到今日…（明天14:00 交报告 P1 #工作）' : undefined}
-        />
+        <div className="hidden md:block">
+          <QuickAdd
+            defaultTier={tier}
+            placeholder={tier === 'today' ? '添加到今日…（明天14:00 交报告 P1 #工作）' : undefined}
+          />
+        </div>
       )}
 
-      {/* 分级标签仅列表视图有语义（看板/日历/四象限展示全量任务，点击切换无效） */}
-      {view === 'list' && (
+      {/* 分级标签仅列表视图有语义（看板/日历/四象限展示全量任务，点击切换无效）；
+          手机上由上面的下拉代替 */}
+      {view === 'list' && !isLogbook && (
         <Segmented
           ariaLabel="清单切换"
-          value={isLogbook ? 'logbook' : tier}
+          value={tier}
           onChange={(v) => setParam('tier', v)}
           options={[
             ...TIERS.map((t) => ({
@@ -119,7 +149,7 @@ export function TasksPage() {
             })),
             { value: 'logbook', label: '日志', badge: String(doneCount) },
           ]}
-          className="self-start max-w-full overflow-x-auto"
+          className="hidden md:inline-flex self-start max-w-full"
         />
       )}
 

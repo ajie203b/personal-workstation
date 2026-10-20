@@ -40,7 +40,14 @@ export function GlobalHotkeys() {
       if (isTyping(e.target) || e.isComposing) return
       if (e.key === 'n' || e.key === '/') {
         e.preventDefault()
-        window.dispatchEvent(new CustomEvent('ws:focus-quickadd'))
+        // 有输入框的页面（任务清单）优先聚焦它；否则直接开全局添加抽屉
+        const input = document.getElementById('quick-add-input') as HTMLInputElement | null
+        if (input && input.offsetParent !== null) {
+          window.dispatchEvent(new CustomEvent('ws:focus-quickadd'))
+          input.focus()
+        } else {
+          useUi.getState().openAddSheet()
+        }
       } else if (e.key === '?') {
         e.preventDefault()
         setShortcutsOpen(true)

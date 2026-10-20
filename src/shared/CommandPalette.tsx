@@ -8,6 +8,7 @@ import { db, type Doc, type DocKind, type DocText, type Task } from '@/db/db'
 import { useUi, togglePalette } from '@/stores/ui'
 import { useTasksUi } from '@/stores/tasks'
 import { openDocAtHit } from '@/shared/DeepLink'
+import { Skeleton } from '@/shared/ui/Skeleton'
 import { cn } from '@/lib/cn'
 
 interface PaletteItem {
@@ -177,6 +178,17 @@ export function CommandPalette() {
 
   useEffect(() => { setCursor(0) }, [query])
 
+  /**
+   * 搜索结果的出场（ui-motion 55）：查询落定后再让结果依次淡入，
+   * 敲字过程中先摆三条骨架行 —— 不然每敲一个字整列结果闪一下，很难看清。
+   */
+  const [settled, setSettled] = useState('')
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(query), 160)
+    return () => window.clearTimeout(t)
+  }, [query])
+  const searching = query.trim().length > 0 && settled !== query
+
   // 键盘：↑↓/Enter/Esc
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) {
@@ -236,10 +248,21 @@ export function CommandPalette() {
           <kbd className="kbd">Esc</kbd>
         </div>
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto p-2">
-          {filtered.length === 0 && (
+          {searching && (
+            <div className="flex flex-col gap-1 px-1 py-1" aria-hidden>
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-2.5 px-3 h-10">
+                  <Skeleton className="w-4 h-4 rounded-[5px] shrink-0" />
+                  <Skeleton className="h-3.5 flex-1" />
+                  <Skeleton className="h-3 w-10 shrink-0" />
+                </div>
+              ))}
+            </div>
+          )}
+          {!searching && filtered.length === 0 && (
             <p className="text-center text-[13px] text-on-surface-2 py-8">没有匹配的结果</p>
           )}
-          {groups.map((g) => (
+          {!searching && groups.map((g) => (
             <div key={g.name} className="mb-1">
               <p className="text-[11px] text-on-surface-2 px-3 pt-2 pb-1 tracking-wide">{g.name}</p>
               {g.items.map((item) => {
@@ -247,10 +270,14 @@ export function CommandPalette() {
                 const idx = flatIdx
                 return (
                   <button
-                    key={item.id}
+                    key={`${settled}-${item.id}`}
                     data-idx={idx}
                     onMouseEnter={() => setCursor(idx)}
                     onClick={() => { setOpen(false); item.run() }}
+                    style={{
+                      animation: 'fade-up var(--dur-2) var(--ease-standard) both',
+                      animationDelay: `${Math.min(idx * 18, 180)}ms`,
+                    }}
                     className={cn(
                       'w-full flex items-center gap-2.5 px-3 h-10 rounded-[10px] text-left cursor-pointer transition-colors',
                       idx === cursor ? 'bg-primary-soft text-primary' : 'text-on-surface hover:bg-surface-3',

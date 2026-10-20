@@ -13,6 +13,7 @@ import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { repeatLabel } from '@/lib/repeat'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
@@ -157,6 +158,8 @@ export function TaskDetail() {
     useUi.getState().toast('已删除任务', { label: '撤销', run: () => void restoreTask(task) })
   }
 
+  const isDesktop = useMediaQuery('(min-width: 768px)')
+
   const done = task.status === 'done'
 
   return (
@@ -168,15 +171,22 @@ export function TaskDetail() {
       }
     >
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 md:bg-transparent md:pointer-events-none" />
         <RadixDialog.Content
-          className="pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(600px,92vw)] max-h-[86dvh] flex flex-col rounded-[20px]"
+          className={cn(
+            'pop fixed z-50 flex flex-col bg-surface',
+            // 手机：底部弹出的居中胶囊；桌面：右侧抽屉（列表不被整块盖住，可以接着点下一条）
+            'left-0 right-0 bottom-0 max-h-[86dvh] rounded-t-[20px]',
+            'md:left-auto md:right-0 md:top-0 md:bottom-0 md:w-[440px] md:max-h-none md:rounded-none md:rounded-l-[20px] md:border-l md:border-outline',
+          )}
           style={{
             // 常挂转场名：打开时若来自卡片则浏览器自动插值形变，关闭时也能「长回」卡片；
             // 不支持 View Transitions 时该属性无副作用。
             viewTransitionName: MORPH_NAME,
             // 由卡片形变而来时抑制自身 scale-in，避免与转场打架；直接打开保留弹簧入场
-            animation: morphFromCard.current ? undefined : 'scale-in var(--dur-2) var(--ease-spring)',
+            animation: morphFromCard.current
+              ? undefined
+              : isDesktop ? 'drawer-in var(--dur-2) var(--ease-standard)' : 'scale-in var(--dur-2) var(--ease-spring)',
           }}
         >
           {/* 标题栏 */}

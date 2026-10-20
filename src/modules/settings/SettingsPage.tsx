@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, BellOff, Download, History, Smartphone, Upload } from 'lucide-react'
+import { Bell, BellOff, ChevronLeft, ChevronRight, Database, Download, History, Info, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
 import { useUi, type Accent, type Density, type IntelPlacement, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
+import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
@@ -21,27 +22,88 @@ import {
   type WebdavConfig,
 } from '@/lib/sync'
 
-type Tab = 'appearance' | 'data' | 'about'
+type Tab = 'appearance' | 'data' | 'sync' | 'about'
 
+const SECTIONS: { id: Tab; label: string; hint: string; icon: typeof Palette }[] = [
+  { id: 'appearance', label: '外观', hint: '主题、强调色、密度、动效', icon: Palette },
+  { id: 'data', label: '数据', hint: '备份、自动快照、清空', icon: Database },
+  { id: 'sync', label: '同步', hint: 'WebDAV 跨设备共用数据', icon: RefreshCw },
+  { id: 'about', label: '关于', hint: '版本、更新、安装', icon: Info },
+]
+
+/**
+ * 设置：桌面是「左侧分区 + 右侧内容」（macOS 系统设置那套），
+ * 手机是「一级列表 → 点进二级页」，不再用顶部分段选择器（三个选项还行，四个就挤了）。
+ */
 export function SettingsPage() {
   const [tab, setTab] = useState<Tab>('appearance')
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  const content = tab === 'appearance' ? <AppearanceTab />
+    : tab === 'data' ? <DataTab />
+    : tab === 'sync' ? <SyncTab />
+    : <AboutTab />
+
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">
-      <h1 className="text-[22px] font-bold leading-8">设置</h1>
-      <Segmented
-        ariaLabel="设置分区"
-        value={tab}
-        onChange={setTab}
-        className="self-start"
-        options={[
-          { value: 'appearance', label: '外观' },
-          { value: 'data', label: '数据' },
-          { value: 'about', label: '关于' },
-        ]}
-      />
-      {tab === 'appearance' && <AppearanceTab />}
-      {tab === 'data' && <DataTab />}
-      {tab === 'about' && <AboutTab />}
+    <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 pb-24 md:pb-14 enter">
+      <h1 className="hidden md:block text-[22px] font-bold leading-8 mb-4">设置</h1>
+
+      <div className="flex flex-col md:flex-row md:gap-8 md:items-start">
+        {/* 桌面：分区列表 */}
+        <nav className="hidden md:flex md:flex-col md:w-44 md:shrink-0 gap-0.5 md:sticky md:top-2" aria-label="设置分区">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setTab(s.id)}
+              className={cn(
+                'flex items-center gap-2.5 h-9 px-2.5 rounded-[9px] text-[13px] text-left transition-colors cursor-pointer',
+                tab === s.id ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+              )}
+            >
+              <s.icon size={15} className="shrink-0" />
+              {s.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* 手机：一级列表 */}
+        {!mobileOpen && (
+          <div className="md:hidden flex flex-col gap-2">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => { setTab(s.id); setMobileOpen(true) }}
+                className="card flex items-center gap-3 px-4 py-3.5 text-left cursor-pointer"
+              >
+                <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
+                  <s.icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-medium">{s.label}</span>
+                  <span className="block text-[12px] text-on-surface-2 mt-0.5 truncate">{s.hint}</span>
+                </span>
+                <ChevronRight size={16} className="text-on-surface-2 shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 内容：手机二级页才显示，桌面常显 */}
+        <div className={cn('flex-1 min-w-0 md:block', mobileOpen ? 'block' : 'hidden')}>
+          {mobileOpen && (
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="md:hidden mb-3 inline-flex items-center gap-1 text-[13px] text-on-surface-2 hover:text-on-surface cursor-pointer"
+            >
+              <ChevronLeft size={15} /> 设置
+            </button>
+          )}
+          {content}
+        </div>
+      </div>
     </div>
   )
 }
@@ -227,8 +289,6 @@ function DataTab() {
 
       <AutoBackupCard />
 
-      <WebdavCard />
-
       <section className="card p-4" style={{ borderColor: 'color-mix(in srgb, var(--danger) 30%, var(--outline))' }}>
         <h2 className="text-[14px] font-semibold mb-1 text-danger">危险区</h2>
         <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。按住 1.5 秒才会执行（键盘用户会走二次确认）。</p>
@@ -244,26 +304,51 @@ function DataTab() {
   )
 }
 
+/** 同步分区：WebDAV 内容不少，单独一页，顶部就是上次同步时间与「立即同步」 */
+function SyncTab() {
+  return (
+    <div className="flex flex-col gap-4 max-w-2xl">
+      <WebdavCard />
+    </div>
+  )
+}
+
 /** 提醒通知开关（仅安卓 App 内渲染） */
 function NotifyCard() {
   const [on, setOn] = useState(false)
+  const [askOpen, setAskOpen] = useState(false)
   const toast = useUi((s) => s.toast)
 
   useEffect(() => {
     void getNotifyEnabled().then(setOn)
   }, [])
 
-  const toggle = async () => {
-    if (!on) {
-      const granted = await requestNotifyPermission()
-      if (!granted) {
-        toast('未获得通知权限，请在系统设置中允许')
-        return
-      }
+  /**
+   * 安卓上通知权限被拒一次就很难再要回来（系统会记成「已拒绝」，再弹也没有对话框），
+   * 所以先用自己的说明卡讲清「为什么需要、发什么、能不能关」，用户点了「开启」才弹系统框。
+   */
+  const ask = () => setAskOpen(true)
+
+  const grant = async () => {
+    setAskOpen(false)
+    const granted = await requestNotifyPermission()
+    if (!granted) {
+      toast('未获得通知权限，请在系统设置中允许')
+      return
     }
-    await setNotifyEnabled(!on)
-    setOn(!on)
-    toast(!on ? '已开启到期提醒' : '已关闭到期提醒')
+    await setNotifyEnabled(true)
+    setOn(true)
+    toast('已开启到期提醒')
+  }
+
+  const toggle = async () => {
+    if (on) {
+      await setNotifyEnabled(false)
+      setOn(false)
+      toast('已关闭到期提醒')
+      return
+    }
+    ask()
   }
   const sendTest = async () => {
     try {
@@ -302,6 +387,26 @@ function NotifyCard() {
           </Button>
         </div>
       )}
+
+      <Dialog
+        open={askOpen}
+        onOpenChange={setAskOpen}
+        title="开启到期提醒需要通知权限"
+        description="接下来系统会弹一个权限框，请在系统对话框里点「允许」。"
+      >
+        <div className="flex flex-col gap-3">
+          <ul className="text-[13px] text-on-surface-2 leading-relaxed flex flex-col gap-1.5">
+            <li>· 只在你设定的截止时间发一条本地通知，提醒哪件事到期了</li>
+            <li>· 通知在本机生成，不经过任何服务器，也不含你的任务内容之外的信息</li>
+            <li>· 随时可以在这里关掉，关掉后不再发</li>
+          </ul>
+          <p className="text-[12px] text-on-surface-2/80">安卓上拒绝过一次就不容易再要回来，所以先在这里说明清楚。</p>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setAskOpen(false)}>以后再说</Button>
+            <Button variant="primary" onClick={() => void grant()}>好的，去开启</Button>
+          </div>
+        </div>
+      </Dialog>
     </section>
   )
 }
