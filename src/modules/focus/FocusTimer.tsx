@@ -7,6 +7,7 @@ import type { Task } from '@/db/db'
 import { addFocusSession } from '@/db/focus'
 import { useAllTasks } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
+import { todayStr } from '@/lib/date'
 import { haptic } from '@/lib/haptics'
 import { useUi } from '@/stores/ui'
 import { Segmented } from '@/shared/ui/Segmented'
@@ -78,7 +79,9 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
 
   const remaining = remainingOf(store, now)
 
-  const today = new Date().toISOString().slice(0, 10)
+  // 必须用本地日期：toISOString() 是 UTC，北京时间 0–8 点会取到昨天，
+  // 和落库用的 todayStr() 对不上，凌晨的专注会记到「今日」之外
+  const today = todayStr()
   const todayStats = useLiveQuery(
     async () => {
       const rows = await db.focusSessions.where('day').equals(today).toArray()

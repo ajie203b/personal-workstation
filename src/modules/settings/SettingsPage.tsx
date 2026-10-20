@@ -8,6 +8,7 @@ import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
+import { todayStr } from '@/lib/date'
 import { isNative } from '@/lib/native'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
 import {
@@ -145,7 +146,8 @@ function DataTab() {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `个人工作站备份-${new Date().toISOString().slice(0, 10)}.json`
+        // 本地日期，别用 toISOString（UTC 会让凌晨导出的文件名变成昨天）
+        a.download = `个人工作站备份-${todayStr()}.json`
         a.click()
         setTimeout(() => URL.revokeObjectURL(url), 10000)
         toast('备份已导出')
@@ -336,7 +338,7 @@ function AutoBackupCard() {
                 label="恢复"
                 className="h-8 px-3"
                 dialogTitle="恢复这份快照？"
-                dialogDescription="当前数据将与之合并（同 id 覆盖）。建议先手动导出一份备份再恢复。"
+                dialogDescription="将用这份快照替换当前数据：快照之后新增的记录会消失，快照之后删除的会回来。建议先手动导出一份备份。"
                 onConfirm={() => void restoreBackup(b.name).then(() => {
                   toast('已恢复快照')
                   refresh()

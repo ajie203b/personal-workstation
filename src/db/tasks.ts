@@ -1,6 +1,8 @@
-import { db, type Priority, type Task, type Tier } from './db'
+import { db, type Annotation, type AiMessage, type AiProvider, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type ReadingPosition, type SettingKV, type Task, type Tier } from './db'
+import type { Table } from 'dexie'
 import { uid } from '@/lib/id'
-import { addDaysStr, todayStr } from '@/lib/date'
+import { todayStr } from '@/lib/date'
+import { nextDueForRepeat } from '@/lib/repeat'
 import { syncTaskNotification } from '@/lib/notify'
 
 export interface NewTaskInput {
@@ -57,15 +59,7 @@ export async function toggleDone(task: Task): Promise<Task | null> {
     await db.transaction('rw', db.tasks, async () => {
       await db.tasks.update(task.id, { status: 'todo', doneAt: undefined, updatedAt: Date.now() })
       if (!task.repeat) return
-      const base = task.due ?? todayStr()
-      let nextDue: string
-      if (task.repeat === 'daily') nextDue = addDaysStr(1, new Date(base + 'T00:00:00'))
-      else if (task.repeat === 'weekly') nextDue = addDaysStr(7, new Date(base + 'T00:00:00'))
-      else {
-        let d = new Date(base + 'T00:00:00')
-        do { d = new Date(d.getTime() + 86400000) } while (d.getDay() === 0 || d.getDay() === 6)
-        nextDue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      }
+      const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr())
       const spawned = await db.tasks
         .filter((t) => t.title === task.title && t.repeat === task.repeat && t.due === nextDue && t.status === 'todo' && t.createdAt > (task.doneAt ?? 0) && t.id !== task.id)
         .toArray()
@@ -80,17 +74,7 @@ export async function toggleDone(task: Task): Promise<Task | null> {
     const now = Date.now()
     await db.tasks.update(task.id, { status: 'done', doneAt: now, updatedAt: now })
     if (!task.repeat) return
-    const base = task.due ?? todayStr()
-    let nextDue: string
-    if (task.repeat === 'daily') {
-      nextDue = addDaysStr(1, new Date(base + 'T00:00:00'))
-    } else if (task.repeat === 'weekly') {
-      nextDue = addDaysStr(7, new Date(base + 'T00:00:00'))
-    } else {
-      let d = new Date(base + 'T00:00:00')
-      do { d = new Date(d.getTime() + 86400000) } while (d.getDay() === 0 || d.getDay() === 6)
-      nextDue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    }
+    const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr())
     const next: Task = {
       id: uid(),
       title: task.title,
@@ -158,7 +142,36 @@ export function sortTasks(tasks: Task[]): Task[] {
   })
 }
 
-export async function exportAll(): Promise<string> {
+type BlobOut = { hash: string; type: string; blob: Blob }
+
+interface ExportPayload {
+  app: 'personal-workstation'
+  version: 4
+  exportedAt: string
+  tasks: Task[]
+  settings: SettingKV[]
+  docs: Doc[]
+  positions: ReadingPosition[]
+  annotations: Annotation[]
+  bookmarks: Bookmark[]
+  aiProviders: AiProvider[]
+  aiSessions: AiSession[]
+  aiMessages: AiMessage[]
+  aiUsage: AiUsageRow[]
+  docText: DocText[]
+  focusSessions: FocusSession[]
+  /** 手动导出的 JSON：文档本体内联 base64 */
+  blobRows?: { hash: string; type: string; data: string }[]
+  /** 目录式快照：文档本体在 blobs/<hash>，这里只留清单 */
+  blobMeta?: { hash: string; type: string }[]
+}
+
+const SNAPSHOT_HEAD = { app: 'personal-workstation' as const, version: 4 as const }
+
+/** 一次读出所有表（手动导出与自动快照共用） */
+type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiProviders' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions'>
+
+async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
   const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiProviders, aiSessions, aiMessages, aiUsage, docText, focusSessions] = await Promise.all([
     db.tasks.toArray(),
     db.settings.toArray(),
@@ -174,17 +187,32 @@ export async function exportAll(): Promise<string> {
     db.docText.toArray(),
     db.focusSessions.toArray(),
   ])
+  return {
+    data: { tasks, settings, docs, positions, annotations, bookmarks, aiProviders, aiSessions, aiMessages, aiUsage, docText, focusSessions },
+    blobs: blobs.map((r) => ({ hash: r.hash, type: r.blob.type, blob: r.blob })),
+  }
+}
+
+/** 手动导出：单个 JSON（文档内联 base64），能拷到别的设备导入 */
+export async function exportAll(): Promise<string> {
+  const { data, blobs } = await collectAll()
   const blobRows = await Promise.all(
-    blobs.map(async (row) => ({
-      hash: row.hash,
-      type: row.blob.type,
-      data: await blobToBase64(row.blob),
-    })),
+    blobs.map(async (r) => ({ hash: r.hash, type: r.type, data: await blobToBase64(r.blob) })),
   )
-  return JSON.stringify(
-    { app: 'personal-workstation', version: 4, exportedAt: new Date().toISOString(), tasks, settings, docs, blobRows, positions, annotations, bookmarks, aiProviders, aiSessions, aiMessages, aiUsage, docText, focusSessions },
-    null, 2,
-  )
+  return JSON.stringify({ ...SNAPSHOT_HEAD, exportedAt: new Date().toISOString(), ...data, blobRows }, null, 2)
+}
+
+/**
+ * 自动快照：JSON 只写清单，文档本体由调用方逐个写进 OPFS。
+ * 旧实现把整个文档库 base64 塞进一个字符串（体积 +33%，且要在内存里拼出巨型 string），
+ * 文档一多，开 App 时那次静默备份就会卡顿甚至被系统杀掉。
+ */
+export async function exportSnapshotParts(): Promise<{ json: string; blobs: BlobOut[] }> {
+  const { data, blobs } = await collectAll()
+  return {
+    json: JSON.stringify({ ...SNAPSHOT_HEAD, exportedAt: new Date().toISOString(), ...data, blobMeta: blobs.map(({ hash, type }) => ({ hash, type })) }, null, 2),
+    blobs,
+  }
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -210,55 +238,85 @@ export interface ImportResult {
   docs?: number
 }
 
-export async function importAll(json: string): Promise<ImportResult> {
-  const data = JSON.parse(json) as {
-    tasks?: Task[]
-    settings?: { key: string; value: unknown }[]
-    docs?: import('./db').Doc[]
-    blobRows?: { hash: string; type: string; data: string }[]
-    positions?: import('./db').ReadingPosition[]
-    annotations?: import('./db').Annotation[]
-    bookmarks?: import('./db').Bookmark[]
-    aiProviders?: import('./db').AiProvider[]
-    aiSessions?: import('./db').AiSession[]
-    aiMessages?: import('./db').AiMessage[]
-    aiUsage?: import('./db').AiUsageRow[]
-    docText?: import('./db').DocText[]
-    focusSessions?: import('./db').FocusSession[]
-  }
+/** merge = 手动导入（同 id 覆盖，不动别的）；replace = 恢复快照（快照没覆盖的表保持原样） */
+export type ImportMode = 'merge' | 'replace'
+
+const IMPORT_TABLES: [string, Table<any, any>][] = [
+  ['tasks', db.tasks],
+  ['settings', db.settings],
+  ['docs', db.docs],
+  ['blobs', db.blobs],
+  ['positions', db.positions],
+  ['annotations', db.annotations],
+  ['bookmarks', db.bookmarks],
+  ['aiProviders', db.aiProviders],
+  ['aiSessions', db.aiSessions],
+  ['aiMessages', db.aiMessages],
+  ['aiUsage', db.aiUsage],
+  ['docText', db.docText],
+  ['focusSessions', db.focusSessions],
+]
+
+async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promise<ImportResult> {
   if (!Array.isArray(data.tasks)) throw new Error('文件格式不正确：缺少 tasks 数组')
   const result: ImportResult = { tasks: 0, settings: 0, docs: 0 }
+  const has = (k: string) => Array.isArray(data[k])
   await db.transaction(
     'rw',
-    [db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions],
+    IMPORT_TABLES.map(([, t]) => t),
     async () => {
-      if (data.tasks!.length) {
-        await db.tasks.bulkPut(data.tasks!)
-        result.tasks = data.tasks!.length
+      if (mode === 'replace') {
+        // 真恢复：先清空快照覆盖到的表——快照之后新建的记录会消失，快照之后删掉的会回来。
+        // 老备份缺哪张表就不动哪张，避免顺手把现有数据清空。
+        for (const [key, t] of IMPORT_TABLES) {
+          if (key === 'blobs' ? has('blobRows') : has(key)) await t.clear()
+        }
       }
-      if (Array.isArray(data.settings) && data.settings.length) {
-        await db.settings.bulkPut(data.settings)
-        result.settings = data.settings.length
+      if (has('tasks')) {
+        await db.tasks.bulkPut(data.tasks as Task[])
+        result.tasks = (data.tasks as Task[]).length
       }
-      if (Array.isArray(data.docs)) {
-        await db.docs.bulkPut(data.docs)
-        result.docs = data.docs.length
+      if (has('settings')) {
+        await db.settings.bulkPut(data.settings as SettingKV[])
+        result.settings = (data.settings as SettingKV[]).length
       }
-      if (Array.isArray(data.blobRows) && data.blobRows.length) {
-        await db.blobs.bulkPut(data.blobRows.map((r) => ({ hash: r.hash, blob: base64ToBlob(r.data, r.type) })))
+      if (has('docs')) {
+        await db.docs.bulkPut(data.docs as Doc[])
+        result.docs = (data.docs as Doc[]).length
       }
-      if (Array.isArray(data.positions)) await db.positions.bulkPut(data.positions)
-      if (Array.isArray(data.annotations)) await db.annotations.bulkPut(data.annotations)
-      if (Array.isArray(data.bookmarks)) await db.bookmarks.bulkPut(data.bookmarks)
-      if (Array.isArray(data.aiProviders)) await db.aiProviders.bulkPut(data.aiProviders)
-      if (Array.isArray(data.aiSessions)) await db.aiSessions.bulkPut(data.aiSessions)
-      if (Array.isArray(data.aiMessages)) await db.aiMessages.bulkPut(data.aiMessages)
-      if (Array.isArray(data.aiUsage)) await db.aiUsage.bulkPut(data.aiUsage)
-      if (Array.isArray(data.docText)) await db.docText.bulkPut(data.docText)
-      if (Array.isArray(data.focusSessions)) await db.focusSessions.bulkPut(data.focusSessions)
+      if (has('blobRows')) {
+        const rows = (data.blobRows as { hash: string; type?: string; data?: string; blob?: Blob }[]).map((r) => ({
+          hash: r.hash,
+          blob: r.blob instanceof Blob ? r.blob : base64ToBlob(r.data ?? '', r.type ?? 'application/octet-stream'),
+        }))
+        await db.blobs.bulkPut(rows)
+      }
+      if (has('positions')) await db.positions.bulkPut(data.positions as ReadingPosition[])
+      if (has('annotations')) await db.annotations.bulkPut(data.annotations as Annotation[])
+      if (has('bookmarks')) await db.bookmarks.bulkPut(data.bookmarks as Bookmark[])
+      if (has('aiProviders')) await db.aiProviders.bulkPut(data.aiProviders as AiProvider[])
+      if (has('aiSessions')) await db.aiSessions.bulkPut(data.aiSessions as AiSession[])
+      if (has('aiMessages')) await db.aiMessages.bulkPut(data.aiMessages as AiMessage[])
+      if (has('aiUsage')) await db.aiUsage.bulkPut(data.aiUsage as AiUsageRow[])
+      if (has('docText')) await db.docText.bulkPut(data.docText as DocText[])
+      if (has('focusSessions')) await db.focusSessions.bulkPut(data.focusSessions as FocusSession[])
     },
   )
   return result
+}
+
+export async function importAll(json: string, mode: ImportMode = 'merge'): Promise<ImportResult> {
+  return writeAll(JSON.parse(json) as Record<string, unknown>, mode)
+}
+
+/** 目录式快照的写入路径：json 里的清单 + 从 OPFS 读出来的原始 Blob */
+export async function importSnapshotParts(
+  parts: { json: string; blobs: { hash: string; type?: string; blob: Blob }[] },
+  mode: ImportMode = 'merge',
+): Promise<ImportResult> {
+  const data = JSON.parse(parts.json) as Record<string, unknown>
+  data.blobRows = parts.blobs
+  return writeAll(data, mode)
 }
 
 export async function clearAllData(): Promise<void> {
