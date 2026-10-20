@@ -1,7 +1,7 @@
 {
   "name": "personal-workstation",
   "private": true,
-  "version": "1.5.10",
+  "version": "2.0.0",
   "type": "module",
   "description": "个人工作站：任务清单 × 文档工作站（本地优先 PWA + 安卓 App，数据不出本机）",
   "scripts": {
@@ -25,6 +25,7 @@
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-dropdown-menu": "^2.1.6",
     "@tiptap/core": "^2.27.3",
+    "@tiptap/extension-image": "^2.27.3",
     "@tiptap/react": "^2.27.3",
     "@tiptap/starter-kit": "^2.27.3",
     "clsx": "^2.1.1",

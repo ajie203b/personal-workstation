@@ -38,8 +38,9 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
   }, [focusId])
 
   useEffect(() => {
-    // 列表内容变化后，聚焦项可能已不在列表中
-    if (focusId && !tasks.some((t) => t.id === focusId)) setFocusId(null)
+    // 列表内容变化后，聚焦项可能已不在列表中。
+    // tasks 为空时不要清：首次加载 liveQuery 还没回来，深链（?focus=）会被误清掉。
+    if (focusId && tasks.length > 0 && !tasks.some((t) => t.id === focusId)) setFocusId(null)
   }, [tasks, focusId, setFocusId])
 
   // 完成/删除后兄弟卡片滑到新位置，而不是瞬跳

@@ -11,6 +11,8 @@ const config: CapacitorConfig = {
   android: {
     // Android 15 edge-to-edge：自动给 WebView 加系统栏安全边距
     adjustMarginsForEdgeToEdge: 'auto',
+    // 关掉 WebView 自己的缩放：整页放大会把侧栏/底栏一起放大，文档缩放由前端做
+    zoomEnabled: false,
   },
 }
 

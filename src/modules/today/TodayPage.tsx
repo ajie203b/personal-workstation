@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { Clock3, History, Keyboard, Plus } from 'lucide-react'
-import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
-import { sortTasks } from '@/db/tasks'
+import { ChevronRight, Clock3, History, Keyboard, Plus, Sparkles } from 'lucide-react'
+import { useAllAnnotations, useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
+import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
+import { dueCards } from '@/lib/review'
 import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { prefersReducedMotion } from '@/lib/motion'
+import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
 export function TodayPage() {
@@ -26,12 +28,29 @@ export function TodayPage() {
       return next
     }, { replace: true })
   }, [focusTaskParam, setParams])
+  // 安卓桌面快捷方式：workstation://quickadd → /today?quickadd=1，打开录入并抹掉参数
+  const quickaddParam = params.get('quickadd')
+  const [addOpen, setAddOpen] = useState(false)
+  useEffect(() => {
+    if (!quickaddParam) return
+    setAddOpen(true)
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('quickadd')
+      return next
+    }, { replace: true })
+  }, [quickaddParam, setParams])
   const todayTasks = useMemo(() => sortTasks(deriveToday(all, today)), [all, today])
   const todayDone = useMemo(() => deriveTodayDone(all, today), [all, today])
+  // 「随时」清单也放进今日页：没有截止日、平时容易一直沉底的任务，在这里能顺手做掉
+  const anytimeTasks = useMemo(
+    () => sortTasks(all.filter((t) => t.status !== 'done' && t.tier === 'anytime' && !t.due)),
+    [all],
+  )
   const weekDone = useMemo(() => all.filter((t) => t.status === 'done' && isThisWeek(t.doneAt ?? 0)).length, [all])
   const totalDone = useMemo(() => all.filter((t) => t.status === 'done').length, [all])
   const openShortcuts = useUi((s) => s.setShortcutsOpen)
-  const [addOpen, setAddOpen] = useState(false)
+  const intelPlacement = useUi((s) => s.intelPlacement)
   useEffect(() => {
     const open = () => setAddOpen(true)
     window.addEventListener('ws:focus-quickadd', open)
@@ -85,6 +104,21 @@ export function TodayPage() {
             emptyTitle="今天没有安排"
             emptyHint="点右上角加号添加任务；写「每天」可创建打卡任务。"
           />
+
+          {anytimeTasks.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-baseline gap-2 px-1 mb-2.5">
+                <h2 className="text-[15px] font-semibold">随时</h2>
+                <span className="text-[12px] text-on-surface-2">{anytimeTasks.length}</span>
+              </div>
+              <TaskList
+                scope="anytime"
+                tasks={anytimeTasks}
+                emptyTitle="没有随时任务"
+                emptyHint="在任务清单里放进「随时」的任务会出现在这里。"
+              />
+            </div>
+          )}
         </section>
 
         {/* 侧栏卡片组 */}
@@ -115,13 +149,97 @@ export function TodayPage() {
             </button>
           </div>
 
+          <ReviewInbox />
           <FocusTimer initialTaskId={focusTaskParam} />
           <RecentReads />
         </aside>
       </div>
 
+      <DailyReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
+
+      {intelPlacement === 'today' && <IntelligenceCard />}
+
       <AddTaskSheet open={addOpen} onOpenChange={setAddOpen} defaultTier="today" todayContext />
     </div>
+  )
+}
+
+/** 今日复习入口：有到期高亮才出现 */
+function ReviewInbox() {
+  const navigate = useNavigate()
+  const anns = useAllAnnotations()
+  const due = useMemo(() => dueCards(anns, todayStr()).length, [anns])
+  if (due === 0) return null
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/review')}
+      className="card card-hover p-4 flex items-center gap-3 text-left cursor-pointer w-full"
+    >
+      <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-primary-soft text-primary shrink-0">
+        <Sparkles size={17} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[13px] font-medium">今日复习</span>
+        <span className="block text-[12px] text-on-surface-2 mt-0.5">{due} 张高亮到期</span>
+      </span>
+      <ChevronRight size={16} className="text-on-surface-2 shrink-0" />
+    </button>
+  )
+}
+
+/** 每日回顾：今天完成了什么、还剩几件，一键把没做完的挪到明天 */
+function DailyReview({ todayTasks, todayDone, weekDone }: { todayTasks: import('@/db/db').Task[]; todayDone: import('@/db/db').Task[]; weekDone: number }) {
+  const toast = useUi((s) => s.toast)
+  const [rolling, setRolling] = useState(false)
+  if (todayTasks.length === 0 && todayDone.length === 0) return null
+
+  const roll = async () => {
+    if (rolling) return
+    setRolling(true)
+    try {
+      await rolloverTasks(todayTasks)
+      toast(`已把 ${todayTasks.length} 件挪到明天`)
+    } catch {
+      toast('挪动失败，请重试')
+    } finally {
+      setRolling(false)
+    }
+  }
+
+  return (
+    <section className="card p-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h2 className="text-[13px] font-semibold text-on-surface-2">今日回顾</h2>
+          <p className="text-[12.5px] text-on-surface-2 mt-1">
+            完成 <b className="text-ok font-semibold">{todayDone.length}</b> 件 · 未完成{' '}
+            <b className="text-on-surface font-semibold">{todayTasks.length}</b> 件 · 本周累计{' '}
+            <b className="text-on-surface font-semibold">{weekDone}</b> 件
+          </p>
+        </div>
+        {todayTasks.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void roll()}
+            disabled={rolling}
+            className="h-8 px-3 rounded-[10px] border border-outline text-[12.5px] text-on-surface-2 hover:text-on-surface hover:bg-surface-3 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            {rolling ? '正在挪…' : `把 ${todayTasks.length} 件挪到明天`}
+          </button>
+        )}
+      </div>
+      {todayDone.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {todayDone.slice(0, 6).map((t) => (
+            <span key={t.id} className="inline-flex items-center gap-1 max-w-[220px] px-2 py-1 rounded-md bg-ok/10 text-[11.5px] text-ok">
+              <span className="truncate">✓ {t.title}</span>
+            </span>
+          ))}
+          {todayDone.length > 6 && <span className="text-[11.5px] text-on-surface-2 px-1 py-1">还有 {todayDone.length - 6} 件</span>}
+        </div>
+      )}
+    </section>
   )
 }
 

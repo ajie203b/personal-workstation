@@ -2,14 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
 import {
-  ArrowLeft, Bold, Code, Heading2, Heading3, Italic, List, ListOrdered, Quote, Redo2, Save, Undo2,
+  ArrowLeft, Bold, Code, Heading2, Heading3, ImagePlus, Italic, List, ListOrdered, Quote, Redo2, Save, Undo2,
 } from 'lucide-react'
 import { db, type Doc } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { uid } from '@/lib/id'
+import { fileToDataUrl } from '@/lib/image'
 import { cn } from '@/lib/cn'
 
 const TOOLBAR_BTN = 'grid place-items-center w-8 h-8 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer'
@@ -26,6 +28,8 @@ export function MdEditorPage() {
   const [contentSeed, setContentSeed] = useState<string | null>(null)
   const savedHashRef = useRef<string | null>(null)
   const saveRef = useRef<(() => Promise<void>) | null>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const insertImagesRef = useRef<(files: File[]) => void>(() => {})
 
   // 载入待编辑文档
   useEffect(() => {
@@ -54,6 +58,8 @@ export function MdEditorPage() {
   const editor = useEditor({
     extensions: [
       StarterKit,
+      // 图片走 data URL 存进正文：本地优先、导出/同步都自带，不依赖图床
+      Image.configure({ inline: false, allowBase64: true }),
       Markdown.configure({
         html: false,
         breaks: true,
@@ -66,6 +72,21 @@ export function MdEditorPage() {
       attributes: {
         class: 'md-body outline-none min-h-full pb-24',
         spellcheck: 'false',
+      },
+      // 粘贴 / 拖入图片：转 data URL 后插进正文
+      handlePaste: (_view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'))
+        if (!files.length) return false
+        event.preventDefault()
+        insertImagesRef.current(files)
+        return true
+      },
+      handleDrop: (_view, event) => {
+        const files = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'))
+        if (!files.length) return false
+        event.preventDefault()
+        insertImagesRef.current(files)
+        return true
       },
     },
   })
@@ -86,6 +107,26 @@ export function MdEditorPage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  const insertImages = useCallback(
+    async (files: File[]) => {
+      if (!editor) return
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) continue
+        try {
+          const src = await fileToDataUrl(file)
+          editor.chain().focus().insertContent([
+            { type: 'image', attrs: { src, alt: file.name.replace(/\.[^.]+$/, '') } },
+            { type: 'paragraph' },
+          ]).run()
+        } catch {
+          toast('图片插入失败')
+        }
+      }
+    },
+    [editor, toast],
+  )
+  insertImagesRef.current = (files) => void insertImages(files)
 
   const save = useCallback(async () => {
     if (!editor) return
@@ -195,6 +236,24 @@ export function MdEditorPage() {
             className={cn(TOOLBAR_BTN, editor.isActive('codeBlock') && TOOLBAR_ON)}
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           ><Code size={15} /></button>
+          <span className="w-px h-5 bg-outline mx-1" />
+          <button
+            aria-label="插入图片"
+            title="插入图片（也可直接粘贴或拖入）"
+            className={TOOLBAR_BTN}
+            onClick={() => imageInputRef.current?.click()}
+          ><ImagePlus size={15} /></button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.length) void insertImages(Array.from(e.target.files))
+              e.target.value = ''
+            }}
+          />
           <span className="ml-auto text-[11px] text-on-surface-2 pr-1 shrink-0">Markdown 自动序列化</span>
         </div>
       )}

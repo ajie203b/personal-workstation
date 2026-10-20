@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Navigate, Route, Routes, useParams } from 'react-router'
+import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router'
 import { AppShell } from './app/AppShell'
 import { KeyboardShortcutsDialog } from '@/shared/KeyboardShortcuts'
 import { CommandPalette } from '@/shared/CommandPalette'
@@ -12,6 +12,9 @@ import { useAllTasks } from '@/db/hooks'
 import { getNotifyEnabled, syncAllTaskNotifications } from '@/lib/notify'
 import { maybeAutoBackup } from '@/lib/autoBackup'
 import { ShareInbound } from '@/shared/ShareInbound'
+import { initAppActions } from '@/lib/appActions'
+import { pruneTombstones } from '@/lib/tombstones'
+import { maybeAutoSync } from '@/lib/sync'
 
 // 重资源页面按路由分包：PDF/Office/EPUB 渲染库、TipTap 编辑器只在进入文档模块时加载
 const DocsPage = lazy(() => import('@/modules/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
@@ -19,6 +22,7 @@ const DocReaderPage = lazy(() => import('@/modules/docs/DocReaderPage').then((m)
 const MdEditorPage = lazy(() => import('@/modules/docs/MdEditorPage').then((m) => ({ default: m.MdEditorPage })))
 const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ default: m.StatsPage })))
+const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => ({ default: m.ReviewPage })))
 
 const RouteLoader = (
   <div className="h-full grid place-items-center text-on-surface-2 text-[13px]">
@@ -44,6 +48,15 @@ function MdEditorRoute() {
 }
 
 export default function App() {
+  const navigate = useNavigate()
+  // 桌面快捷方式 / 通知点击 / 冷启动深链（原生壳内才有）
+  useEffect(() => {
+    let dispose: (() => void) | undefined
+    void initAppActions((route) => navigate(route)).then((d) => { dispose = d })
+    void pruneTombstones()
+    void maybeAutoSync()
+    return () => dispose?.()
+  }, [navigate])
   // 提醒开关打开时，启动即全量重排通知（覆盖导入备份/离线变更的场景）
   const all = useAllTasks()
   useEffect(() => {
@@ -65,6 +78,7 @@ export default function App() {
             <Route path="today" element={<TodayPage />} />
             <Route path="tasks" element={<TasksPage />} />
             <Route path="stats" element={<StatsPage />} />
+            <Route path="review" element={<ReviewPage />} />
             <Route path="docs" element={<DocsPage />} />
             <Route path="docs/new" element={<MdEditorRoute />} />
             <Route path="docs/edit/:docId" element={<MdEditorRoute />} />

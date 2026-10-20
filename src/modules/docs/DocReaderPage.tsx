@@ -13,6 +13,7 @@ import {
   getDocBlob, getPosition, saveDocSettings, touchDoc, updateAnnotation,
 } from '@/db/docs'
 import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
+import { toggleDone } from '@/db/tasks'
 import { MORPH_NAME, morphClose } from '@/lib/viewTransition'
 import { useDocTabs } from '@/stores/tabs'
 import { useUi } from '@/stores/ui'
@@ -102,6 +103,11 @@ export function DocReaderPage() {
   const [rightTab, setRightTab] = useState<'anns' | 'backlinks'>('anns')
   const [mobilePanel, setMobilePanel] = useState<'toc' | 'anns' | null>(null)
   const restoredShown = useRef(false)
+  // 读完提醒：进度第一次跨到 100% 时，若有未完成的关联任务就问一句
+  const [finishAsk, setFinishAsk] = useState<Task[] | null>(null)
+  const [finishPicked, setFinishPicked] = useState<Set<string>>(new Set())
+  const finishAsked = useRef(false)
+  const prevPct = useRef(0)
 
   // 载入文档内容（依赖 doc.id 原始值，避免 liveQuery 对象身份变化引发重载循环）
   const docContentId = doc?.id
@@ -224,7 +230,14 @@ export function DocReaderPage() {
       : doc?.kind === 'md' ? `b${locator}`
       : `f${locator}`,
     )
-  }, [doc?.kind])
+    // 从「没读完」跨到 100% 才算读完；打开时本来就 100% 的不再打扰
+    if (!finishAsked.current && pct >= 0.995 && prevPct.current < 0.98 && backlinks.length > 0) {
+      finishAsked.current = true
+      setFinishPicked(new Set(backlinks.map((t) => t.id)))
+      setFinishAsk(backlinks)
+    }
+    prevPct.current = pct
+  }, [doc?.kind, backlinks])
 
   const doJump = useCallback((anchor: string, hl?: string) => {
     setJump({ anchor, hl, ts: Date.now() })
@@ -361,20 +374,37 @@ export function DocReaderPage() {
                     ]}
                   />
                 </div>
-                <Stepper label="字号" value={`${settings.fontSize}px`} onMinus={() => updateSettings({ fontSize: Math.max(14, settings.fontSize - 1) })} onPlus={() => updateSettings({ fontSize: Math.min(24, settings.fontSize + 1) })} />
-                <Stepper label="行距" value={settings.leading.toFixed(2)} onMinus={() => updateSettings({ leading: Math.max(1.6, Math.round((settings.leading - 0.1) * 10) / 10) })} onPlus={() => updateSettings({ leading: Math.min(2.2, Math.round((settings.leading + 0.1) * 10) / 10) })} />
-                <div>
-                  <p className="text-[12px] font-medium text-on-surface-2 mb-1.5">页宽</p>
-                  <Segmented
-                    size="sm"
-                    value={String(settings.widthPct)}
-                    onChange={(v) => updateSettings({ widthPct: Number(v) })}
-                    options={[
-                      { value: '62', label: '窄' },
-                      { value: '72', label: '中' },
-                      { value: '88', label: '宽' },
-                    ]}
+                {doc.kind === 'pdf' ? (
+                  <Stepper
+                    label="缩放"
+                    value={`${Math.round((settings.zoom ?? 1) * 100)}%`}
+                    onMinus={() => updateSettings({ zoom: Math.max(0.5, Math.round(((settings.zoom ?? 1) - 0.1) * 10) / 10) })}
+                    onPlus={() => updateSettings({ zoom: Math.min(3, Math.round(((settings.zoom ?? 1) + 0.1) * 10) / 10) })}
                   />
+                ) : (
+                  <>
+                    <Stepper label="字号" value={`${settings.fontSize}px`} onMinus={() => updateSettings({ fontSize: Math.max(14, settings.fontSize - 1) })} onPlus={() => updateSettings({ fontSize: Math.min(32, settings.fontSize + 1) })} />
+                    <Stepper label="行距" value={settings.leading.toFixed(2)} onMinus={() => updateSettings({ leading: Math.max(1.6, Math.round((settings.leading - 0.1) * 10) / 10) })} onPlus={() => updateSettings({ leading: Math.min(2.2, Math.round((settings.leading + 0.1) * 10) / 10) })} />
+                  </>
+                )}
+                <div>
+                  <p className="text-[12px] font-medium text-on-surface-2 mb-1.5 flex items-center justify-between">
+                    <span>正文宽度</span>
+                    <span className="text-on-surface tabular-nums">{settings.widthPct}%</span>
+                  </p>
+                  <input
+                    type="range"
+                    min={50}
+                    max={100}
+                    step={2}
+                    value={settings.widthPct}
+                    onChange={(e) => updateSettings({ widthPct: Number(e.target.value) })}
+                    aria-label="正文宽度"
+                    className="w-full h-5 cursor-pointer accent-[var(--primary)]"
+                  />
+                  <div className="flex justify-between text-[10.5px] text-on-surface-2 mt-0.5">
+                    <span>窄</span><span>宽</span>
+                  </div>
                 </div>
                 <p className="text-[11px] text-on-surface-2">按文档记忆，下次打开保持</p>
               </div>
@@ -419,6 +449,7 @@ export function DocReaderPage() {
               onRestored={onRestored}
               scrollRef={scrollRef}
               initialTarget={(initialTarget as { blockIdx: number; ratio: number } | null)?.blockIdx != null ? (initialTarget as { blockIdx: number; ratio: number }) : null}
+              onFontSizeChange={(px) => updateSettings({ fontSize: px })}
             />
           )}
           {content?.kind === 'pdf' && (
@@ -438,6 +469,7 @@ export function DocReaderPage() {
               }}
               scrollRef={scrollRef}
               initialTarget={(initialTarget as { page: number; offsetRatio: number } | null)?.page != null ? (initialTarget as { page: number; offsetRatio: number }) : null}
+              onZoom={(z) => updateSettings({ zoom: z })}
             />
           )}
           {content?.kind === 'flow' && (
@@ -453,6 +485,7 @@ export function DocReaderPage() {
               onLoaded={(n) => setNumPages(n)}
               scrollRef={scrollRef}
               initialTarget={(initialTarget as { segIdx: number; ratio: number } | null)?.segIdx != null ? (initialTarget as { segIdx: number; ratio: number }) : null}
+              onFontSizeChange={(px) => updateSettings({ fontSize: px })}
             />
           )}
           {!content && (
@@ -571,6 +604,57 @@ export function DocReaderPage() {
               创建任务
             </Button>
           </div>
+        </div>
+      </Dialog>
+
+      {/* 读完提醒：把引用本文档的任务收尾 */}
+      <Dialog
+        open={finishAsk != null}
+        onOpenChange={(v) => !v && setFinishAsk(null)}
+        title="这篇读完了"
+        description="下面这些任务引用了本文档，要顺手标记完成吗？"
+      >
+        <div className="flex flex-col gap-1.5 max-h-[45dvh] overflow-y-auto">
+          {finishAsk?.map((t) => {
+            const checked = finishPicked.has(t.id)
+            return (
+              <label
+                key={t.id}
+                className="flex items-center gap-2.5 min-h-10 px-3 rounded-[10px] bg-surface-2 hover:bg-surface-3 transition-colors cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => {
+                    setFinishPicked((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(t.id)) next.delete(t.id)
+                      else next.add(t.id)
+                      return next
+                    })
+                  }}
+                  className="w-4 h-4 shrink-0 accent-[var(--primary)]"
+                />
+                <span className="text-[13px] leading-snug">{t.title}</span>
+              </label>
+            )
+          })}
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button onClick={() => setFinishAsk(null)}>稍后</Button>
+          <Button
+            variant="primary"
+            disabled={finishPicked.size === 0}
+            onClick={() => {
+              const picked = (finishAsk ?? []).filter((t) => finishPicked.has(t.id))
+              setFinishAsk(null)
+              void Promise.all(picked.map((t) => toggleDone(t))).then(() => {
+                toast(`已完成 ${picked.length} 个任务`)
+              })
+            }}
+          >
+            完成所选
+          </Button>
         </div>
       </Dialog>
 

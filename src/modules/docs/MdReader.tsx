@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { saveScrollAndProgress } from '@/db/docs'
 import type { Annotation, DocSettings } from '@/db/db'
+import { handleDocLink, transformDocUrl } from '@/lib/links'
+import { usePinch } from '@/lib/usePinch'
 
 export interface MdSelectionInfo {
   text: string
@@ -25,6 +27,8 @@ interface Props {
   scrollRef: React.RefObject<HTMLDivElement>
   /** 初次挂载后的进度恢复 */
   initialTarget: { blockIdx: number; ratio: number } | null
+  /** 双指缩放提交后的字号（px） */
+  onFontSizeChange?: (px: number) => void
 }
 
 /** 解析 Markdown：按空行切块，返回标题目录（块号即顶级块序号） */
@@ -51,7 +55,7 @@ export function parseMdBlocks(md: string): { headings: { level: number; text: st
 
 /** MD 阅读器：块锚点渲染 + 沉浸排版 + 划词高亮 */
 export function MdReader({
-  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget,
+  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange,
 }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null)
   const lastScrollTop = useRef(0)
@@ -59,6 +63,45 @@ export function MdReader({
   const restoredRef = useRef(false)
   const lastReportedPct = useRef(-1)
   const lastWriteRef = useRef(0)
+
+  // 双指缩放 = 改字号（正文重排，比整体放大清晰，也不需要横向拖动）
+  const [liveFont, setLiveFont] = useState(settings.fontSize)
+  const liveFontRef = useRef(settings.fontSize)
+  const baseFontRef = useRef(settings.fontSize)
+  const fontAnchor = useRef<{ el: HTMLElement; top: number } | null>(null)
+  useEffect(() => {
+    liveFontRef.current = settings.fontSize
+    setLiveFont(settings.fontSize)
+  }, [settings.fontSize])
+
+  const captureFontAnchor = useCallback(() => {
+    const c = scrollRef.current
+    const body = bodyRef.current
+    if (!c || !body) return
+    const cr = c.getBoundingClientRect()
+    const kids = Array.from(body.children) as HTMLElement[]
+    const hit = kids.find((k) => k.getBoundingClientRect().bottom > cr.top + 8) ?? kids[0]
+    fontAnchor.current = hit ? { el: hit, top: hit.getBoundingClientRect().top - cr.top } : null
+  }, [scrollRef])
+
+  usePinch(scrollRef, {
+    onStart: () => { baseFontRef.current = liveFontRef.current; captureFontAnchor() },
+    onScale: (ratio) => {
+      const px = Math.round(Math.min(32, Math.max(14, baseFontRef.current * ratio)))
+      liveFontRef.current = px
+      setLiveFont(px)
+    },
+    onEnd: () => { onFontSizeChange?.(liveFontRef.current) },
+  })
+
+  // 字号变了以后把缩放前盯着的那一行留在原地
+  useLayoutEffect(() => {
+    const a = fontAnchor.current
+    const c = scrollRef.current
+    if (!a || !c || !a.el.isConnected) return
+    const cr = c.getBoundingClientRect()
+    c.scrollTop += (a.el.getBoundingClientRect().top - cr.top) - a.top
+  }, [liveFont, scrollRef])
 
   // 顶级块分配锚点 id
   useLayoutEffect(() => {
@@ -217,20 +260,49 @@ export function MdReader({
   }, [checkSelection])
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className={`h-full overflow-y-auto theme-${settings.theme}`}>
+    <div
+      ref={scrollRef}
+      onScroll={onScroll}
+      style={{ touchAction: 'pan-x pan-y' }}
+      className={`h-full overflow-y-auto overscroll-contain theme-${settings.theme}`}
+    >
       <div
-        style={{ width: `${settings.widthPct}%`, fontSize: settings.fontSize, ['--md-leading' as string]: String(settings.leading) }}
+        // 宽度按百分比跟随窗口自适应，maxWidth 防止宽屏上把一行拉成 200 多个字符
+        style={{ width: `${settings.widthPct}%`, maxWidth: 900, fontSize: liveFont, ['--md-leading' as string]: String(settings.leading) }}
         className="mx-auto px-2 py-10 md:py-14 min-w-0"
       >
         <div ref={bodyRef} className="md-body" onMouseUp={onMouseUp}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            urlTransform={transformDocUrl}
+            components={{
+              // 链接统一接管：否则 #锚点/相对路径会改掉 hash 路由，直接跳回今日页
+              a: ({ href, children, ...rest }) => (
+                <a href={href} rel="noreferrer noopener" onClick={(e) => { handleDocLink(e, href) }} {...rest}>
+                  {children}
+                </a>
+              ),
+              img: ({ src, alt, ...rest }) => (
+                <img src={src} alt={alt ?? ''} loading="lazy" className="rounded-[10px] border border-outline/50" {...rest} />
+              ),
+            }}
+          >
+            {md}
+          </ReactMarkdown>
         </div>
       </div>
     </div>
   )
 }
 
-/** 在元素内找到目标文本（可跨文本节点）并包上 mark（MD/Flow 阅读器共用） */
+/**
+ * 在元素内找到目标文本（可跨文本节点）并包上 mark（MD/Flow 阅读器共用）。
+ *
+ * 必须逐文本节点包：跨列表项选区时整个 Range 无法 surroundContents，旧的兜底
+ * extractContents + insertNode 会把 <mark> 塞进 <ul>、里面还带着 <li>，
+ * 浏览器重新解析后上下各多出一个空列表项 —— 就是「转任务后多出黑点」。
+ * 逐节点包出来的多个 mark 共享同一个 data-ann，清除与闪烁逻辑不受影响。
+ */
 export function wrapText(root: HTMLElement, text: string, annId: string, color: string): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const nodes: Text[] = []
@@ -240,37 +312,35 @@ export function wrapText(root: HTMLElement, text: string, annId: string, color: 
   if (idx < 0) return
   const endIdx = idx + text.length
 
-  const mark = document.createElement('mark')
-  mark.className = `hl-${color}`
-  mark.dataset.ann = annId
-
+  const targets: { node: Text; start: number; end: number }[] = []
   let consumed = 0
-  const range = document.createRange()
-  let rangeOpen = false
   for (const n of nodes) {
     const start = consumed
     const end = consumed + n.data.length
     consumed = end
     if (end <= idx || start >= endIdx) continue
-    const localStart = Math.max(0, idx - start)
-    const localEnd = Math.min(n.data.length, endIdx - start)
-    if (!rangeOpen) {
-      range.setStart(n, localStart)
-      rangeOpen = true
-    }
-    range.setEnd(n, localEnd)
+    targets.push({
+      node: n,
+      start: Math.max(0, idx - start),
+      end: Math.min(n.data.length, endIdx - start),
+    })
   }
-  if (!rangeOpen) return
-  try {
-    range.surroundContents(mark)
-  } catch {
-    // 跨元素边界时降级为 extract+insert
+
+  // 倒序处理：先改后面的节点，前面节点的偏移量不受影响
+  for (const t of targets.reverse()) {
+    if (!t.node.isConnected) continue
+    // 纯空白不包（列表项之间的换行文本节点，包了没有意义还可能被浏览器挪位）
+    if (!t.node.data.slice(t.start, t.end).trim()) continue
+    const range = document.createRange()
+    range.setStart(t.node, t.start)
+    range.setEnd(t.node, t.end)
+    const mark = document.createElement('mark')
+    mark.className = `hl-${color}`
+    mark.dataset.ann = annId
     try {
-      const frag = range.extractContents()
-      mark.appendChild(frag)
-      range.insertNode(mark)
+      range.surroundContents(mark)
     } catch {
-      /* 忽略无法锚定的批注 */
+      /* 单个文本节点内理论上不会失败；失败就跳过这一段 */
     }
   }
 }

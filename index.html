@@ -2,7 +2,8 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- 整页缩放会连 UI 一起放大，手势也拦不住；文档内部的缩放由阅读器自己处理（lib/usePinch） -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="description" content="个人工作站：任务清单 × 文档工作站，本地优先、数据不出本机" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1F1E21" />

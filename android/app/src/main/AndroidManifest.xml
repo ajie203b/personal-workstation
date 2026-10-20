@@ -22,6 +22,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- 桌面快捷方式 / 深链（v2.0）：com.personal.workstation://quickadd 与 ://today -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.personal.workstation" android:host="quickadd" />
+                <data android:scheme="com.personal.workstation" android:host="today" />
+            </intent-filter>
+
+            <!-- 长按图标的快捷方式清单 -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
         </activity>
 
         <provider

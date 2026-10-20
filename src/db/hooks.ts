@@ -89,6 +89,11 @@ export function useAnnotations(docHash: string | undefined): Annotation[] {
   )
 }
 
+/** 全部批注（复习队列 / 今日复习入口用） */
+export function useAllAnnotations(): Annotation[] {
+  return useLiveQuery(() => db.annotations.toArray(), [], EMPTY_ANNS)
+}
+
 /** 反向链接：引用了当前文档的任务（可逆查询，方案 2.2） */
 export function useDocBacklinks(docId: string | undefined): Task[] {
   return useLiveQuery(

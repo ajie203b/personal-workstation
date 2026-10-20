@@ -4,4 +4,9 @@
     <string name="title_activity_main">个人工作站</string>
     <string name="package_name">com.personal.workstation</string>
     <string name="custom_url_scheme">com.personal.workstation</string>
+    <!-- 桌面快捷方式（v2.0） -->
+    <string name="shortcut_quickadd">快速添加</string>
+    <string name="shortcut_quickadd_long">快速添加任务</string>
+    <string name="shortcut_today">今日</string>
+    <string name="shortcut_today_long">打开今日清单</string>
 </resources>

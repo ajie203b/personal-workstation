@@ -55,6 +55,10 @@ export interface Task {
   dueTime?: string // HH:mm
   tags: string[]
   repeat?: RepeatKind
+  /** 计划开始时间（v2.1）：只填截止时默认取创建时刻；用于详情展示与顺延 */
+  startAt?: number
+  /** 关联的文档文件夹（长期任务 ↔ 资料夹，v2.1） */
+  folderId?: string
   docRef?: DocRef
   aiRef?: string
   subtasks?: SubTask[] // v1.3 子任务清单
@@ -92,6 +96,18 @@ export interface Doc {
   pages?: number // PDF 页数（首次打开时回填）
   addedAt: number
   lastOpenedAt?: number
+  /** 所属文件夹（v2.1） */
+  folderId?: string
+}
+
+/** 文档文件夹（v2.1）：给长期任务收拢资料，任务与文件夹互相链接 */
+export interface Folder {
+  id: string
+  name: string
+  /** 关联的任务 id（一个文件夹对应一个长期任务；不设唯一约束，允许先建夹后关联） */
+  taskId?: string
+  createdAt: number
+  updatedAt: number
 }
 
 /** 沉浸排版设置（按文档记忆，方案 2.2） */
@@ -99,7 +115,9 @@ export interface DocSettings {
   theme: 'day' | 'night' | 'sepia' | 'dusk'
   fontSize: number // px
   leading: number // 行高倍数
-  widthPct: number // 正文栏宽占比 60~100
+  widthPct: number // 正文栏宽占比 50~100
+  /** PDF 页宽倍数（v2.1）：1 = 适配阅读区，加载/手势缩放都写这里，按文档记忆 */
+  zoom?: number
 }
 
 /**
@@ -120,6 +138,15 @@ export interface ReadingPosition {
   updatedAt: number
 }
 
+/** 间隔重复状态（v2.0 高亮复习卡）：due 为 YYYY-MM-DD，interval 单位天 */
+export interface ReviewState {
+  due: string
+  interval: number
+  ease: number
+  reps: number
+  lastAt?: number
+}
+
 /** 批注：文字高亮（≤4 色）或区域截图（M2.5），结构化存储可供 AI/任务消费 */
 export interface Annotation {
   id: string
@@ -136,6 +163,10 @@ export interface Annotation {
   color: 'yellow' | 'green' | 'blue' | 'red'
   comment?: string
   createdAt: number
+  /** 最后修改时间（评论/改色/复习），同步按它取新 */
+  updatedAt?: number
+  /** 间隔重复状态；没有该字段的旧高亮按「创建次日到期」处理 */
+  review?: ReviewState
 }
 
 export interface Bookmark {
@@ -147,6 +178,14 @@ export interface Bookmark {
   /** 添加书签时该处的第一句话，只作列表摘要用（不参与索引，无需建表版本） */
   quote?: string
   createdAt: number
+  updatedAt?: number
+}
+
+/** 删除墓碑（v2.0 同步）：记录本地删掉的 id，防止另一台设备把旧数据推回来 */
+export interface Tombstone {
+  id: string
+  /** 删除发生时刻；同步时与记录自身的更新时间比较，谁新听谁 */
+  ts: number
 }
 
 /* ============ v1.3 大更新 ============ */
@@ -265,6 +304,8 @@ class WorkstationDB extends Dexie {
   aiUsage!: Table<AiUsageRow, string>
   docText!: Table<DocText, string>
   focusSessions!: Table<FocusSession, string>
+  tombstones!: Table<Tombstone, string>
+  folders!: Table<Folder, string>
 
   constructor() {
     super('workstation')
@@ -291,6 +332,16 @@ class WorkstationDB extends Dexie {
     this.version(4).stores({
       docText: 'hash',
       focusSessions: 'id, day, taskId, ts',
+    })
+    // v5（v2.0）：同步墓碑（纯增表）
+    this.version(5).stores({
+      tombstones: 'id, ts',
+    })
+    // v6（v2.1）：文档文件夹 + 任务开始时间/所属文件夹
+    this.version(6).stores({
+      tasks: 'id, tier, status, priority, due, doneAt, updatedAt, folderId',
+      docs: 'id, hash, kind, lastOpenedAt, folderId',
+      folders: 'id, taskId, createdAt',
     })
   }
 }
