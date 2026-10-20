@@ -61,12 +61,20 @@ export function addDaysStr(n: number, from: Date = new Date()): string {
   return toDateStr(addDays(from, n))
 }
 
-/** 下一个周几（0=周日…6=周六；含今天；weeksAhead=1 表示「下周」） */
+/**
+ * 下一个周几（0=周日…6=周六）。
+ * weeksAhead=0：最近的周几（含今天）；1 / 2 表示「下周 / 下下周」——
+ * 按自然周（周一起）取那一周的周几，而不是「最近的周几再加 7 天」。
+ * 旧写法在周二算「下周一」会先取到本周一（已过 → 下周一 10-26）再加 7 天，得到 11-02。
+ */
 export function nextWeekday(target: number, weeksAhead = 0): string {
   const today = new Date()
-  let diff = (target - today.getDay() + 7) % 7
-  if (diff === 0 && weeksAhead > 0) diff = 7
-  return toDateStr(addDays(today, diff + weeksAhead * 7))
+  if (weeksAhead === 0) {
+    return toDateStr(addDays(today, (target - today.getDay() + 7) % 7))
+  }
+  const monday = startOfWeek(today, { weekStartsOn: 1 })
+  const fromMonday = (target - 1 + 7) % 7 // 周一=0 … 周日=6
+  return toDateStr(addDays(monday, weeksAhead * 7 + fromMonday))
 }
 
 export const CN_NUM: Record<string, number> = {

@@ -15,6 +15,8 @@ interface Token {
   re: RegExp
   /** 命中后消费匹配文本，写入 parsed */
   handle: (m: RegExpMatchArray, p: ParsedTask) => void
+  /** 歧义写法在消费前先过一次裁决（返回 false 则跳过、保留原文） */
+  guard?: (m: RegExpMatchArray) => boolean
 }
 
 /** 中文优先的自然语言解析：「明天14:00 交报告 P1 #工作」 */
@@ -28,9 +30,11 @@ export function parseQuickAdd(raw: string): ParsedTask {
     return ' '
   })
 
-  // —— 优先级 P0–P3（含全角；支持「报告P1」连写）——
-  s = s.replace(/([^\s#@pP0-9a-zA-Z])([pP][0-3０-３])(?=\s|$)/g, '$1 $2')
-  s = s.replace(/\s[pｐP]([0-3０-３])(?=\s)/g, (_, d: string) => {
+  // —— 优先级 P0–P3（含全角；支持「报告P1」「P1交报告」两种连写）——
+  s = s.replace(/([^\s#@pPｐＰ0-9a-zA-Z])([pPｐＰ][0-3０-３])(?=\s|$)/g, '$1 $2')
+  // 行首 / 空白后的 P1 后面可以直接接中文；接英文时不认（p2p 不是优先级）
+  s = s.replace(/(^|\s)([pPｐＰ][0-3０-３])(?=\s|$|[\u4e00-\u9fff])/g, '$1 $2 ')
+  s = s.replace(/\s[pｐPＰ]([0-3０-３])(?=\s)/g, (_, d: string) => {
     p.priority = Number(d) as Priority
     return ' '
   })
@@ -38,16 +42,27 @@ export function parseQuickAdd(raw: string): ParsedTask {
   // 后置日期：标题后面的日期词也能识别
   s = s.replace(/(开会|提醒|交|完成|处理)\s*(明天|今日|明天|后天)/g, '$1 $2 ')
 
+  // —— 「周五前 / 下周三前」的截止词：先把「前」与后文分开，
+  //    否则下一步会把它当成普通连写拆成「周五 前交作业」，标题里留下一个孤零零的「前」
+  s = s.replace(/((?:下下周|下周)?(?:周|星期|礼拜)[一二三四五六日天])(?:之前|以前|前)(?=[^\s])/g, '$1前 ')
+
   // —— 归一化（两趟，防贪心回溯拆散数字）：
   // ① 中文日期/重复词与任何非空白字符连写时补空格（含数字，如「明天14:00」「每天喝水」）
+  //    · 周几后面紧跟「前」时不拆（交给日期词整体匹配）
+  //    · 裸「每周」后面紧跟周几时不拆（否则「每周三 打球」会被拆成「每周 三」）
   s = s.replace(
-    /(今天|今日|明天|明日|后天|大后天|[0-9一二两三四五六七八九十]+天[后後]|下下周[一二三四五六日天]|下周[一二三四五六日天]|每周[一二三四五六日天]|(?:周|星期|礼拜)[一二三四五六日天]|每天|每日|每周|工作日)(?=[^\s])/g,
+    /(今天|今日|明天|明日|后天|大后天|[0-9一二两三四五六七八九十]+天[后後]|下下周[一二三四五六日天](?!前)|下周[一二三四五六日天](?!前)|每周[一二三四五六日天]|(?:周|星期|礼拜)[一二三四五六日天](?!前)|每天|每日|每周(?![一二三四五六日天])|工作日)(?=[^\s])/g,
     '$1 ',
   )
-  // ② 数字型时间/日期仅在紧贴汉字时补空格（「3点半开会」「10月8日交房租」「14:00开会」），
-  //    后瞻排除数字，避免「2026-10-15」「3点半 复诊」被错误拆散
+  // ② 时间词仅在紧贴汉字时补空格（「3点半开会」「3点开会」「14:00开会」）；
+  //    紧跟「第」的不算时间（「读第3点笔记」）
   s = s.replace(
-    /([0-9]{1,4}[-/.年][0-9]{1,2}[-/.月][0-9]{1,2}日?|[0-9]{1,2}月[0-9]{1,2}[日号]|[0-9一二两三四五六七八九十]+点半|[0-9一二两三四五六七八九十]+点[0-5]?[0-9]分?|[0-9]{1,2}[:：][0-5][0-9])(?=[^\s\d])/g,
+    /(^|[^第])([0-9一二两三四五六七八九十]+点(?:半|[0-5]?\d分?)?|[0-9]{1,2}[:：][0-5][0-9])(?=[^\s\d])/g,
+    '$1$2 ',
+  )
+  // ③ 数字型日期同上（「10月8日交房租」），后面排除数字避免拆散 2026-10-15
+  s = s.replace(
+    /([0-9]{1,4}[-/.年][0-9]{1,2}[-/.月][0-9]{1,2}日?|[0-9]{1,2}月[0-9]{1,2}[日号])(?=[^\s\d])/g,
     '$1 ',
   )
 
@@ -71,11 +86,15 @@ export function parseQuickAdd(raw: string): ParsedTask {
   })
 
   // —— 时间：14:00 / 14点 / 下午3点(半) / 中午12点 / 下午三点 ——
-  // 前导空格与时段词前缀都可选：「下午3点」「今天 下午3点」「3点半」均可命中
+  // 前导空格与时段词前缀都可选：「下午3点」「今天 下午3点」「3点半」均可命中；
+  // 右侧要求是边界（归一化已把连写的「3点开会」拆成「3点 开会」），
+  // 这样「第3点笔记」「7-11」这类正文不会被误当成时间。
   const timeRe =
-    /\s?(上午|早上|中午|下午|傍晚|晚上)?\s?(二十[一二三四五六七八九]?|[01]?\d|2[0-3]|十[一二三四五六七八九]?|一|两|二|三|四|五|六|七|八|九)点(半|[0-5]?\d分?)?/
+    /\s?(上午|早上|凌晨|中午|下午|傍晚|晚上)?\s?(二十[一二三四五六七八九]?|[01]?\d|2[0-3]|十[一二三四五六七八九]?|一|两|二|三|四|五|六|七|八|九)点(半|[0-5]?\d分?)?(?=\s|[，。！？、,.!?;；]|$)/
   const tm = s.match(timeRe)
-  if (tm) {
+  // 「第3点」是序号不是时间（归一化那边也放过它，这里再兜一次）
+  const beforeTime = tm ? s.slice(0, tm.index).trimEnd() : ''
+  if (tm && !beforeTime.endsWith('第')) {
     const rawHour = tm[2]
     let h: number
     if (/^\d+$/.test(rawHour)) {
@@ -87,7 +106,13 @@ export function parseQuickAdd(raw: string): ParsedTask {
     } else {
       h = CN_NUM[rawHour] ?? 0
     }
-    if (tm[1] && (tm[1] === '下午' || tm[1] === '晚上' || tm[1] === '傍晚') && h < 12) h += 12
+    const period = tm[1]
+    if (period && (period === '下午' || period === '晚上' || period === '傍晚') && h < 12) {
+      h += 12
+    } else if (!period && h >= 1 && h <= 6) {
+      // 没写时段时 1–6 点按下午算（「3点半复诊」= 15:30）；凌晨/早上要显式写
+      h += 12
+    }
     const rawMin = tm[3]
     const mm = rawMin == null || rawMin === '半' ? (rawMin === '半' ? 30 : 0) : Number(rawMin.replace('分', ''))
     p.dueTime = `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
@@ -101,6 +126,8 @@ export function parseQuickAdd(raw: string): ParsedTask {
   }
 
   // —— 日期 ——
+  // 截止词「前 / 之前 / 以前」直接跟在日期词后时一并消费（「周五前」「下周三前」）
+  const DEADLINE = '(?:之前|以前|前)?'
   const dateTokens: Token[] = [
     { re: /\s(今天|今日)(?=\s)/, handle: (_m, q) => { q.due = todayStr() } },
     { re: /\s(明天|明日)(?=\s)/, handle: (_m, q) => { q.due = addDaysStr(1) } },
@@ -114,16 +141,16 @@ export function parseQuickAdd(raw: string): ParsedTask {
       },
     },
     {
-      re: /\s下下周[一二三四五六日天](?=\s)/,
-      handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[0].slice(-1)), 2) },
+      re: new RegExp(`\\s下下周([一二三四五六日天])${DEADLINE}(?=\\s)`),
+      handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[1]), 2) },
     },
     {
-      re: /\s下周[一二三四五六日天](?=\s)/,
-      handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[0].slice(-1)), 1) },
+      re: new RegExp(`\\s下周([一二三四五六日天])${DEADLINE}(?=\\s)`),
+      handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[1]), 1) },
     },
     {
-      re: /\s(周|星期|礼拜)[一二三四五六日天](?=\s)/,
-      handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[0].slice(-1)), 0) },
+      re: new RegExp(`\\s(?:周|星期|礼拜)([一二三四五六日天])${DEADLINE}(?=\\s)`),
+      handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[1]), 0) },
     },
     {
       re: /\s(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?=\s)/,
@@ -139,6 +166,9 @@ export function parseQuickAdd(raw: string): ParsedTask {
     },
     {
       re: /\s(\d{1,2})[-/](\d{1,2})(?=\s)/,
+      // 两边都不超过 12 时是歧义写法（「7-11 买咖啡」），不当日期；
+      // 「12-25」「3-15」这种能唯一确定才认。要写月份请用「7月11日」。
+      guard: (m) => Number(m[1]) > 12 || Number(m[2]) > 12,
       handle: (m, q) => {
         const year = new Date().getFullYear()
         const due = `${year}-${pad(m[1])}-${pad(m[2])}`
@@ -148,11 +178,11 @@ export function parseQuickAdd(raw: string): ParsedTask {
   ]
   for (const t of dateTokens) {
     const m = s.match(t.re)
-    if (m) {
-      t.handle(m, p)
-      s = s.replace(t.re, ' ')
-      break // 只取第一个命中的日期
-    }
+    if (!m) continue
+    if (t.guard && !t.guard(m)) continue
+    t.handle(m, p)
+    s = s.replace(t.re, ' ')
+    break // 只取第一个命中的日期
   }
 
   p.title = s.replace(/\s+/g, ' ').trim()

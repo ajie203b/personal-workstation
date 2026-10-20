@@ -1,10 +1,15 @@
 import { db } from '@/db/db'
-import { exportAll, importAll } from '@/db/tasks'
+import { exportSnapshotParts, importAll, importSnapshotParts } from '@/db/tasks'
 
 /**
  * 自动备份（v1.3）：本地 OPFS（Origin Private File System）滚动快照。
  * 无服务器、无云同步 —— 打开应用时若距上次快照超过 24h，静默写一份；
  * 永远保留最近 3 份，可在设置页一键恢复。
+ *
+ * v1.5.10 起快照改成目录式：`snapshot-<stamp>/data.json` + `blobs/<hash>`。
+ * 旧格式（单个 .json，文档 base64 内联）仍可列出与恢复，但不再新写 ——
+ * 把整个文档库 base64 塞进一个字符串会让体积 +33%，且要在内存里拼出巨型 string，
+ * 文档一多，启动时那次静默备份就会卡顿甚至被系统回收。
  */
 
 const ENABLE_KEY = 'autoBackupEnabled'
@@ -12,6 +17,7 @@ const LAST_AT_KEY = 'lastAutoBackupAt'
 const DIR_NAME = 'backups'
 const KEEP = 3
 const INTERVAL_MS = 24 * 60 * 60 * 1000
+const PREFIX = 'snapshot-'
 
 function opfsAvailable(): boolean {
   return typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage
@@ -37,20 +43,44 @@ function stamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
 }
 
-/** 写一份快照并滚动清理旧文件 */
-export async function writeSnapshot(): Promise<string> {
-  const json = await exportAll()
-  const dir = await backupsDir()
-  const name = `snapshot-${stamp()}.json`
+/** OPFS 的 entries() 在部分 TS lib 版本里没有异步迭代器声明 */
+async function entriesOf(dir: FileSystemDirectoryHandle): Promise<[string, FileSystemHandle][]> {
+  const out: [string, FileSystemHandle][] = []
+  // @ts-expect-error: async iterator 在部分 TS lib 版本缺失
+  for await (const [name, handle] of dir.entries()) out.push([name, handle])
+  return out
+}
+
+async function writeFile(dir: FileSystemDirectoryHandle, name: string, data: Blob | string): Promise<number> {
   const fh = await dir.getFileHandle(name, { create: true })
   const w = await fh.createWritable()
-  await w.write(json)
+  await w.write(data)
   await w.close()
+  return typeof data === 'string' ? new Blob([data]).size : data.size
+}
+
+/** 写一份目录式快照并滚动清理旧文件 */
+export async function writeSnapshot(): Promise<string> {
+  const parts = await exportSnapshotParts()
+  const dir = await backupsDir()
+  const name = `${PREFIX}${stamp()}`
+  const snap = await dir.getDirectoryHandle(name, { create: true })
+
+  let bytes = await writeFile(snap, 'data.json', parts.json)
+  if (parts.blobs.length) {
+    const bd = await snap.getDirectoryHandle('blobs', { create: true })
+    for (const b of parts.blobs) {
+      bytes += await writeFile(bd, b.hash, b.blob)
+    }
+  }
+  // meta 让设置页不必为了显示体积去逐个读文档本体
+  await writeFile(snap, 'meta.json', JSON.stringify({ at: Date.now(), bytes, blobs: parts.blobs.length }))
+
   await db.settings.put({ key: LAST_AT_KEY, value: Date.now() })
-  // 滚动保留最近 KEEP 份
+  // 滚动保留最近 KEEP 份（目录与旧格式 .json 一起算）
   const names = (await listBackups()).map((b) => b.name)
   for (const old of names.slice(KEEP)) {
-    try { await dir.removeEntry(old) } catch { /* ignore */ }
+    try { await dir.removeEntry(old, { recursive: true }) } catch { /* ignore */ }
   }
   return name
 }
@@ -65,26 +95,70 @@ export async function listBackups(): Promise<BackupInfo[]> {
   if (!opfsAvailable()) return []
   const dir = await backupsDir()
   const out: BackupInfo[] = []
-  // @ts-expect-error: async iterator 在部分 TS lib 版本缺失
-  for await (const [name, handle] of dir.entries()) {
-    if (!name.startsWith('snapshot-') || !name.endsWith('.json')) continue
-    if (handle.kind !== 'file') continue
-    const f = await (handle as FileSystemFileHandle).getFile()
-    out.push({ name, size: f.size, at: f.lastModified })
+  for (const [name, handle] of await entriesOf(dir)) {
+    if (!name.startsWith(PREFIX)) continue
+    if (handle.kind === 'file') {
+      // 旧格式：snapshot-*.json，文档 base64 内联
+      if (!name.endsWith('.json')) continue
+      const f = await (handle as FileSystemFileHandle).getFile()
+      out.push({ name, size: f.size, at: f.lastModified })
+      continue
+    }
+    // 新格式：目录
+    try {
+      const snap = handle as FileSystemDirectoryHandle
+      const metaFile = await (await snap.getFileHandle('meta.json')).getFile()
+      const meta = JSON.parse(await metaFile.text()) as { at?: number; bytes?: number }
+      out.push({ name, size: meta.bytes ?? 0, at: meta.at ?? metaFile.lastModified })
+    } catch {
+      try {
+        const metaFile = await (await (handle as FileSystemDirectoryHandle).getFileHandle('data.json')).getFile()
+        out.push({ name, size: metaFile.size, at: metaFile.lastModified })
+      } catch { /* 半截快照，忽略 */ }
+    }
   }
   return out.sort((a, b) => b.at - a.at)
 }
 
-export async function readBackup(name: string): Promise<string> {
+async function readLegacy(name: string): Promise<string> {
   const dir = await backupsDir()
   const fh = await dir.getFileHandle(name)
-  const f = await fh.getFile()
-  return f.text()
+  return (await fh.getFile()).text()
 }
 
+async function readDirSnapshot(name: string): Promise<{ json: string; blobs: { hash: string; type: string; blob: Blob }[] }> {
+  const dir = await backupsDir()
+  const snap = await dir.getDirectoryHandle(name)
+  const json = await (await (await snap.getFileHandle('data.json')).getFile()).text()
+  const meta = new Map<string, string>()
+  try {
+    const parsed = JSON.parse(json) as { blobMeta?: { hash: string; type: string }[] }
+    for (const m of parsed.blobMeta ?? []) meta.set(m.hash, m.type)
+  } catch { /* 清单坏了就退回文件自带的 type */ }
+
+  const blobs: { hash: string; type: string; blob: Blob }[] = []
+  try {
+    const bd = await snap.getDirectoryHandle('blobs')
+    for (const [hash, handle] of await entriesOf(bd)) {
+      if (handle.kind !== 'file') continue
+      const f = await (handle as FileSystemFileHandle).getFile()
+      const type = meta.get(hash) ?? f.type ?? 'application/octet-stream'
+      blobs.push({ hash, type, blob: type === f.type ? f : new Blob([f], { type }) })
+    }
+  } catch { /* 没有 blobs 目录：只有元数据的快照 */ }
+  return { json, blobs }
+}
+
+/**
+ * 恢复快照 = 真恢复（替换语义）：先清空快照覆盖的表再写入。
+ * 旧实现走 importAll 的 bulkPut 合并 —— 快照之后新建的数据还在、快照之后删掉的又回来，结果是混合状态。
+ */
 export async function restoreBackup(name: string): Promise<void> {
-  const json = await readBackup(name)
-  await importAll(json)
+  if (name.endsWith('.json')) {
+    await importAll(await readLegacy(name), 'replace')
+    return
+  }
+  await importSnapshotParts(await readDirSnapshot(name), 'replace')
 }
 
 /** 应用启动钩子：开启且超 24h → 静默快照（失败静默，不打扰） */

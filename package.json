@@ -1,13 +1,15 @@
 {
   "name": "personal-workstation",
   "private": true,
-  "version": "1.5.9",
+  "version": "1.5.10",
   "type": "module",
-  "description": "个人工作站：任务清单 × 文档工作站 × AI 助手面板（本地优先 PWA）",
+  "description": "个人工作站：任务清单 × 文档工作站（本地优先 PWA + 安卓 App，数据不出本机）",
   "scripts": {
     "dev": "vite",
     "dev:lan": "vite --host --mode lan",
     "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview --host",
     "preview:lan": "vite preview --host --mode lan"
   },
@@ -55,6 +57,7 @@
     "typescript": "~5.7.3",
     "vite": "^6.1.0",
     "vite-plugin-pwa": "^0.21.1",
-    "vite-plugin-static-copy": "^2.3.2"
+    "vite-plugin-static-copy": "^2.3.2",
+    "vitest": "^5.0.5"
   }
 }
