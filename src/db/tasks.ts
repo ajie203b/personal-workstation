@@ -1,4 +1,4 @@
-import { db, type Annotation, type AiMessage, type AiProvider, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type ReadingPosition, type Folder, type SettingKV, type Task, type Tier, type Tombstone } from './db'
+import { db, type Annotation, type AiMessage, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type ReadingPosition, type Folder, type SettingKV, type Task, type Tier, type Tombstone } from './db'
 import type { Table } from 'dexie'
 import { uid } from '@/lib/id'
 import { addDaysStr, parseDateStr, todayStr } from '@/lib/date'
@@ -15,6 +15,8 @@ export interface NewTaskInput {
   tags?: string[]
   notes?: string
   repeat?: Task['repeat']
+  repeatDays?: number[]
+  repeatMonthDay?: number
   status?: Task['status']
   startAt?: number
   folderId?: string
@@ -35,6 +37,8 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
     due: input.due,
     dueTime: input.dueTime,
     repeat: input.repeat,
+    repeatDays: input.repeatDays,
+    repeatMonthDay: input.repeatMonthDay,
     startAt: input.startAt,
     folderId: input.folderId,
     docRef: input.docRef,
@@ -64,7 +68,7 @@ export async function toggleDone(task: Task): Promise<Task | null> {
     await db.transaction('rw', db.tasks, async () => {
       await db.tasks.update(task.id, { status: 'todo', doneAt: undefined, updatedAt: Date.now() })
       if (!task.repeat) return
-      const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr())
+      const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr(), { days: task.repeatDays, monthDay: task.repeatMonthDay })
       const spawned = await db.tasks
         .filter((t) => t.title === task.title && t.repeat === task.repeat && t.due === nextDue && t.status === 'todo' && t.createdAt > (task.doneAt ?? 0) && t.id !== task.id)
         .toArray()
@@ -79,7 +83,7 @@ export async function toggleDone(task: Task): Promise<Task | null> {
     const now = Date.now()
     await db.tasks.update(task.id, { status: 'done', doneAt: now, updatedAt: now })
     if (!task.repeat) return
-    const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr())
+    const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr(), { days: task.repeatDays, monthDay: task.repeatMonthDay })
     const next: Task = {
       id: uid(),
       title: task.title,
@@ -91,6 +95,8 @@ export async function toggleDone(task: Task): Promise<Task | null> {
       tags: task.tags,
       notes: task.notes,
       repeat: task.repeat,
+      repeatDays: task.repeatDays,
+      repeatMonthDay: task.repeatMonthDay,
       docRef: task.docRef,
       aiRef: task.aiRef,
       createdAt: now,
@@ -187,7 +193,6 @@ interface ExportPayload {
   positions: ReadingPosition[]
   annotations: Annotation[]
   bookmarks: Bookmark[]
-  aiProviders: AiProvider[]
   aiSessions: AiSession[]
   aiMessages: AiMessage[]
   aiUsage: AiUsageRow[]
@@ -206,11 +211,16 @@ const SNAPSHOT_HEAD = { app: 'personal-workstation' as const, version: 4 as cons
 /** 只属于本机的设置：WebDAV 口令、同步/备份时间戳、通知权限状态 */
 const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt', 'notifyEnabled'])
 
-/** 一次读出所有表（手动导出与自动快照共用） */
-type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiProviders' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders'>
+/**
+ * 一次读出所有表（手动导出与自动快照共用）。
+ *
+ * 有意不含 aiProviders：那张表存的是明文 apiKey，AI 面板下线后已无用途，
+ * 导出 / 自动快照 / WebDAV 同步（同样走这个函数）都不该把它带出去。
+ */
+type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders'>
 
 async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
-  const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiProviders, aiSessions, aiMessages, aiUsage, docText, focusSessions] = await Promise.all([
+  const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiSessions, aiMessages, aiUsage, docText, focusSessions] = await Promise.all([
     db.tasks.toArray(),
     db.settings.toArray(),
     db.docs.toArray(),
@@ -218,7 +228,6 @@ async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
     db.positions.toArray(),
     db.annotations.toArray(),
     db.bookmarks.toArray(),
-    db.aiProviders.toArray(),
     db.aiSessions.toArray(),
     db.aiMessages.toArray(),
     db.aiUsage.toArray(),
@@ -236,7 +245,6 @@ async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
       positions,
       annotations,
       bookmarks,
-      aiProviders,
       aiSessions,
       aiMessages,
       aiUsage,
@@ -305,7 +313,6 @@ const IMPORT_TABLES: [string, Table<any, any>][] = [
   ['positions', db.positions],
   ['annotations', db.annotations],
   ['bookmarks', db.bookmarks],
-  ['aiProviders', db.aiProviders],
   ['aiSessions', db.aiSessions],
   ['aiMessages', db.aiMessages],
   ['aiUsage', db.aiUsage],
@@ -352,7 +359,7 @@ async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promis
       if (has('positions')) await db.positions.bulkPut(data.positions as ReadingPosition[])
       if (has('annotations')) await db.annotations.bulkPut(data.annotations as Annotation[])
       if (has('bookmarks')) await db.bookmarks.bulkPut(data.bookmarks as Bookmark[])
-      if (has('aiProviders')) await db.aiProviders.bulkPut(data.aiProviders as AiProvider[])
+      // 老备份里的 aiProviders 不还原：那是明文 apiKey，回来就等于把密钥又摊在磁盘上
       if (has('aiSessions')) await db.aiSessions.bulkPut(data.aiSessions as AiSession[])
       if (has('aiMessages')) await db.aiMessages.bulkPut(data.aiMessages as AiMessage[])
       if (has('aiUsage')) await db.aiUsage.bulkPut(data.aiUsage as AiUsageRow[])

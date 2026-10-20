@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Clock3, Flag, Hash, Repeat } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
+import { repeatLabel } from '@/lib/repeat'
 import { addTask } from '@/db/tasks'
 import { todayStr, fmtDue } from '@/lib/date'
 import { PRIORITY_VAR, type RepeatKind, type Tier } from '@/db/db'
@@ -18,8 +19,6 @@ interface Props {
 }
 
 type Mode = 'single' | 'repeat'
-
-const REPEAT_LABEL: Record<RepeatKind, string> = { daily: '每天', weekly: '每周', weekdays: '工作日' }
 
 /**
  * 添加任务抽屉（方案迭代 v0.6）：
@@ -50,6 +49,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   // 检测优先：文本里有每天/每周/工作日 → 重复流程；否则看用户手动选择
   const mode: Mode = modeOverride ?? (detectedRepeat ? 'repeat' : 'single')
   const effectiveRepeat: RepeatKind | undefined = mode === 'repeat' ? (detectedRepeat ?? freqOverride) : undefined
+  // 文本里带细化的周期（每周一三五 / 每月15号）时一并带上；用户手动改过频率就不带
+  const keepsDetectedDays = mode === 'repeat' && effectiveRepeat === detectedRepeat
   const chips = value.trim() ? parseSummary(parsed) : []
   const hasContent = value.trim().length > 0
 
@@ -75,6 +76,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
         startAt,
         tags: p.tags,
         repeat: effectiveRepeat,
+        repeatDays: keepsDetectedDays ? parsed.repeatDays : undefined,
+        repeatMonthDay: keepsDetectedDays ? parsed.repeatMonthDay : undefined,
       }))
     } catch {
       /* 失败态由按钮呈现，这里不制造未处理的 Promise 拒绝 */
@@ -110,7 +113,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           <div className="flex flex-wrap items-center gap-1.5 -mt-1">
             <span className="text-[11px] text-on-surface-2 mr-0.5">识别到</span>
             {parsed.due && <Chip icon={CalendarDays} text={fmtDue(parsed.due, parsed.dueTime).text} />}
-            {parsed.repeat && <Chip icon={Repeat} text={REPEAT_LABEL[parsed.repeat]} />}
+            {parsed.repeat && <Chip icon={Repeat} text={repeatLabel(parsed.repeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay })} />}
             {parsed.priority != null && <Chip icon={Flag} text={`P${parsed.priority}`} color={PRIORITY_VAR[parsed.priority]} />}
             {parsed.tags.map((t) => <Chip key={t} icon={Hash} text={t} />)}
           </div>
@@ -151,7 +154,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
             {detectedRepeat ? (
               <>
                 <Repeat size={14} className="text-primary" />
-                <span>检测到 <b className="text-primary">重复任务</b>（{REPEAT_LABEL[detectedRepeat]}），完成后自动生成下一次</span>
+                <span>检测到 <b className="text-primary">重复任务</b>（{repeatLabel(detectedRepeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay })}），完成后自动生成下一次</span>
               </>
             ) : (
               <>
@@ -177,6 +180,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
                 { value: 'daily', label: '每天' },
                 { value: 'weekly', label: '每周' },
                 { value: 'weekdays', label: '工作日' },
+                { value: 'monthly', label: '每月' },
               ]}
             />
           )}

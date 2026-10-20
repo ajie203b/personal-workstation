@@ -27,7 +27,7 @@ export const PRIORITY_VAR: Record<Priority, string> = {
 }
 
 export type TaskStatus = 'todo' | 'doing' | 'done'
-export type RepeatKind = 'daily' | 'weekly' | 'weekdays'
+export type RepeatKind = 'daily' | 'weekly' | 'weekdays' | 'monthly'
 
 /** 子任务/清单项（v1.3） */
 export interface SubTask {
@@ -55,6 +55,10 @@ export interface Task {
   dueTime?: string // HH:mm
   tags: string[]
   repeat?: RepeatKind
+  /** 每周重复的星期集合（0=周日…6）： 「每周一三五」→ [1,3,5] */
+  repeatDays?: number[]
+  /** 每月重复的日号：「每月15号」→ 15 */
+  repeatMonthDay?: number
   /** 计划开始时间（v2.1）：只填截止时默认取创建时刻；用于详情展示与顺延 */
   startAt?: number
   /** 关联的文档文件夹（长期任务 ↔ 资料夹，v2.1） */
@@ -342,6 +346,11 @@ class WorkstationDB extends Dexie {
       tasks: 'id, tier, status, priority, due, doneAt, updatedAt, folderId',
       docs: 'id, hash, kind, lastOpenedAt, folderId',
       folders: 'id, taskId, createdAt',
+    })
+    // v7（v2.0.1）：AI 面板已下线，aiProviders 里留着明文 apiKey —— 本机也一并清掉，
+    // 免得旧数据还能被导出、快照或 WebDAV 同步带出去
+    this.version(7).stores({}).upgrade(async (tx) => {
+      await tx.table('aiProviders').clear()
     })
   }
 }

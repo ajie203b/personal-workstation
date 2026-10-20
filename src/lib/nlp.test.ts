@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { parseQuickAdd } from './nlp'
+import { inferTier, parseQuickAdd, parseSummary } from './nlp'
 
-/** 固定「今天」= 2026-10-20（周二），本周一 = 10-19 */
+/** 固定「今天」= 2026-10-20（周二）10:30，本周一 = 10-19 */
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date(2026, 9, 20, 10, 30))
@@ -11,6 +11,11 @@ afterEach(() => {
 })
 
 const parse = (s: string) => parseQuickAdd(s)
+/** 换一个「现在」再解析，用来验证时间推断跟当前时刻的关系 */
+const parseAt = (h: number, m: number, s: string) => {
+  vi.setSystemTime(new Date(2026, 9, 20, h, m))
+  return parseQuickAdd(s)
+}
 
 describe('完整例子', () => {
   it('明天14:00 交报告 P1 #工作', () => {
@@ -43,15 +48,53 @@ describe('下周一 / 下下周', () => {
   })
 })
 
+describe('这周五 / 下个月1号', () => {
+  it('这周五 → 本周五 10-23，标题不留「这周」', () => {
+    expect(parse('这周五 交材料')).toMatchObject({ title: '交材料', due: '2026-10-23' })
+  })
+  it('这周五前交材料：吃掉截止词', () => {
+    expect(parse('这周五前交材料')).toMatchObject({ title: '交材料', due: '2026-10-23' })
+  })
+  it('「这周一」已经过了 → 顺延到下周一，不生成过去日期', () => {
+    expect(parse('这周一 补材料')).toMatchObject({ title: '补材料', due: '2026-10-26' })
+  })
+  it('下个月1号 → 11-01', () => {
+    expect(parse('下个月1号 交报表')).toMatchObject({ title: '交报表', due: '2026-11-01' })
+  })
+  it('下月十五号（中文数字）→ 11-15', () => {
+    expect(parse('下月十五号 交房租')).toMatchObject({ title: '交房租', due: '2026-11-15' })
+  })
+})
+
 describe('重复任务', () => {
   it('每周三 打球：不被归一化拆成「每周 三」', () => {
     expect(parse('每周三 打球')).toMatchObject({
-      title: '打球', repeat: 'weekly', due: '2026-10-21',
+      title: '打球', repeat: 'weekly', repeatDays: [3], due: '2026-10-21',
     })
   })
   it('每周三打球（不带空格）也一样', () => {
     expect(parse('每周三打球')).toMatchObject({
       title: '打球', repeat: 'weekly', due: '2026-10-21',
+    })
+  })
+  it('每周一三五 健身：多天一起认，标题里不留「三五」', () => {
+    expect(parse('每周一三五 健身')).toMatchObject({
+      title: '健身', repeat: 'weekly', repeatDays: [1, 3, 5], due: '2026-10-21',
+    })
+  })
+  it('每周一三五打卡（连写）也能认', () => {
+    expect(parse('每周一三五打卡')).toMatchObject({
+      title: '打卡', repeat: 'weekly', repeatDays: [1, 3, 5],
+    })
+  })
+  it('每月15号 交房租：本月已过，落到 11-15', () => {
+    expect(parse('每月15号 交房租')).toMatchObject({
+      title: '交房租', repeat: 'monthly', repeatMonthDay: 15, due: '2026-11-15',
+    })
+  })
+  it('每月十五号（中文数字）', () => {
+    expect(parse('每月十五号 交房租')).toMatchObject({
+      title: '交房租', repeat: 'monthly', repeatMonthDay: 15,
     })
   })
   it('每周 复盘：不带周几，只有周期', () => {
@@ -63,6 +106,9 @@ describe('重复任务', () => {
     const p = parse('每天 喝水')
     expect(p).toMatchObject({ title: '喝水', repeat: 'daily' })
   })
+  it('每天8点 喝水：打卡时间不按此刻往后挪', () => {
+    expect(parse('每天8点 喝水')).toMatchObject({ title: '喝水', repeat: 'daily', dueTime: '08:00' })
+  })
   it('工作日 打卡', () => {
     expect(parse('工作日 打卡')).toMatchObject({ title: '打卡', repeat: 'weekdays' })
   })
@@ -73,33 +119,63 @@ describe('重复任务', () => {
   })
 })
 
-describe('时间', () => {
-  it('3点半复诊 → 15:30（无时段 1–6 点默认下午）', () => {
-    expect(parse('3点半复诊')).toMatchObject({ title: '复诊', dueTime: '15:30' })
+describe('时间：没写时段词时取「今天之后最近的那个点」', () => {
+  it('上午 10:30 说「3点半」→ 今天 15:30', () => {
+    expect(parse('3点半复诊')).toMatchObject({ title: '复诊', dueTime: '15:30', due: '2026-10-20' })
   })
-  it('2点 开会 → 14:00', () => {
-    expect(parse('2点 开会')).toMatchObject({ title: '开会', dueTime: '14:00' })
+  it('上午 10:30 说「2点」→ 今天 14:00', () => {
+    expect(parse('2点 开会')).toMatchObject({ title: '开会', dueTime: '14:00', due: '2026-10-20' })
+  })
+  it('上午 10:30 说「7点」→ 今天 19:00（20 点还没到）', () => {
+    expect(parse('7点 跑步')).toMatchObject({ title: '跑步', dueTime: '19:00', due: '2026-10-20' })
+  })
+  it('晚上 19:53 说「6点 起床」→ 明天 06:00，而不是 18:00', () => {
+    expect(parseAt(19, 53, '6点 起床')).toMatchObject({ title: '起床', dueTime: '06:00', due: '2026-10-21' })
+  })
+  it('晚上 19:53 说「7点 晚饭」→ 明天 07:00，而不是今天', () => {
+    expect(parseAt(19, 53, '7点 晚饭')).toMatchObject({ title: '晚饭', dueTime: '07:00', due: '2026-10-21' })
   })
   it('3点开会（连写）→ 15:00', () => {
     expect(parse('3点开会')).toMatchObject({ title: '开会', dueTime: '15:00' })
   })
-  it('凌晨2点 看球 → 02:00', () => {
-    expect(parse('凌晨2点 看球')).toMatchObject({ title: '看球', dueTime: '02:00' })
+  it('12点 → 中午 12:00', () => {
+    expect(parse('12点 吃饭')).toMatchObject({ title: '吃饭', dueTime: '12:00' })
+  })
+})
+
+describe('时间：时段词', () => {
+  it('凌晨2点 看球 → 02:00（今天已过 → 明天）', () => {
+    expect(parse('凌晨2点 看球')).toMatchObject({ title: '看球', dueTime: '02:00', due: '2026-10-21' })
   })
   it('上午9点 站会 → 09:00', () => {
     expect(parse('上午9点 站会')).toMatchObject({ title: '站会', dueTime: '09:00' })
   })
   it('下午3点 评审 → 15:00', () => {
-    expect(parse('下午3点 评审')).toMatchObject({ title: '评审', dueTime: '15:00' })
+    expect(parse('下午3点 评审')).toMatchObject({ title: '评审', dueTime: '15:00', due: '2026-10-20' })
   })
   it('晚上8点 跑步 → 20:00', () => {
-    expect(parse('晚上8点 跑步')).toMatchObject({ title: '跑步', dueTime: '20:00' })
+    expect(parse('晚上8点 跑步')).toMatchObject({ title: '跑步', dueTime: '20:00', due: '2026-10-20' })
   })
   it('下午三点 复盘 → 15:00', () => {
     expect(parse('下午三点 复盘')).toMatchObject({ title: '复盘', dueTime: '15:00' })
   })
-  it('7 点仍是早上，不擅自加 12（只处理 1–6 点）', () => {
-    expect(parse('7点 跑步')).toMatchObject({ title: '跑步', dueTime: '07:00' })
+  it('中午1点 吃饭 → 13:00', () => {
+    expect(parse('中午1点 吃饭')).toMatchObject({ title: '吃饭', dueTime: '13:00' })
+  })
+  it('中午12点 → 12:00', () => {
+    expect(parse('中午12点 吃饭')).toMatchObject({ title: '吃饭', dueTime: '12:00' })
+  })
+  it('今晚9点 加班 → 21:00，标题不留「今晚」', () => {
+    expect(parse('今晚9点 加班')).toMatchObject({ title: '加班', dueTime: '21:00', due: '2026-10-20' })
+  })
+  it('今天晚上9点（带「今天」）也一样', () => {
+    expect(parse('今天晚上9点 加班')).toMatchObject({ title: '加班', dueTime: '21:00', due: '2026-10-20' })
+  })
+  it('明晚8点 → 明天 20:00', () => {
+    expect(parse('明晚8点 聚会')).toMatchObject({ title: '聚会', dueTime: '20:00', due: '2026-10-21' })
+  })
+  it('晚上12点 → 次日 00:00', () => {
+    expect(parse('晚上12点 跨年')).toMatchObject({ title: '跨年', dueTime: '00:00', due: '2026-10-21' })
   })
   it('明天下午3点开会', () => {
     expect(parse('明天下午3点开会')).toMatchObject({
@@ -110,6 +186,22 @@ describe('时间', () => {
     const p = parse('读第3点笔记')
     expect(p.dueTime).toBeUndefined()
     expect(p.title).toBe('读第3点笔记')
+  })
+})
+
+describe('预览', () => {
+  it('只写时间也要显示出来（今天 15:30）', () => {
+    expect(parseSummary(parse('3点半复诊'))).toContain('今天 15:30')
+  })
+  it('跨到明天的时间显示「明天」', () => {
+    expect(parseSummary(parseAt(19, 53, '6点 起床'))).toContain('明天 06:00')
+  })
+  it('重复规则显示成中文周期', () => {
+    expect(parseSummary(parse('每周一三五 健身'))).toContain('每周一三五')
+    expect(parseSummary(parse('每月15号 交房租'))).toContain('每月15号')
+  })
+  it('清单一栏：只写时间时归到「今日」', () => {
+    expect(inferTier(parse('3点半复诊'), 'anytime')).toBe('today')
   })
 })
 
@@ -150,6 +242,21 @@ describe('优先级连写', () => {
   })
   it('全角 Ｐ1', () => {
     expect(parse('交报告 Ｐ1')).toMatchObject({ title: '交报告', priority: 1 })
+  })
+})
+
+describe('边界', () => {
+  it('每月31号：本月 10-31 还没到就用本月', () => {
+    expect(parse('每月31号 对账')).toMatchObject({ repeat: 'monthly', repeatMonthDay: 31, due: '2026-10-31' })
+  })
+  it('下个月31号：11 月没有 31 号 → 收敛到 11-30', () => {
+    expect(parse('下个月31号 对账')).toMatchObject({ title: '对账', due: '2026-11-30' })
+  })
+  it('中午1点吃饭（连写）→ 13:00', () => {
+    expect(parse('中午1点吃饭')).toMatchObject({ title: '吃饭', dueTime: '13:00' })
+  })
+  it('晚上11点 → 23:00，不跨天', () => {
+    expect(parse('晚上11点 收尾')).toMatchObject({ title: '收尾', dueTime: '23:00', due: '2026-10-20' })
   })
 })
 
