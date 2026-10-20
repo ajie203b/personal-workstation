@@ -9,8 +9,8 @@ export type ThemeMode = 'system' | 'light' | 'dark'
 export type Accent = 'blue' | 'purple' | 'pink' | 'red' | 'orange' | 'green'
 /** 界面密度（对应 macOS 字号档） */
 export type Density = 'compact' | 'default' | 'large'
-/** 模型智能排名卡的位置（v2.1） */
-export type IntelPlacement = 'today' | 'stats' | 'hidden'
+/** 模型智能排名卡的位置（v2.2：默认落在新的「工具」页） */
+export type IntelPlacement = 'tools' | 'today' | 'stats' | 'hidden'
 
 export interface ToastItem {
   id: string
@@ -30,6 +30,8 @@ interface UiState {
   /** 触觉/振动反馈（勾选、拖拽、长按确认等）。默认开，设置页可关。 */
   haptics: boolean
   intelPlacement: IntelPlacement
+  /** 一次性迁移标记：老版本把榜单默认放今日页，搬到工具页后不再重复搬 */
+  toolsIntelMoved?: boolean
   shortcutsOpen: boolean
   paletteOpen: boolean
   toasts: ToastItem[]
@@ -61,7 +63,7 @@ export const useUi = create<UiState>()(
       motion: true,
       sidebarCollapsed: false,
       haptics: true,
-      intelPlacement: 'today',
+      intelPlacement: 'tools',
       shortcutsOpen: false,
       paletteOpen: false,
       addSheet: { open: false, tier: 'anytime', todayContext: false },
@@ -87,7 +89,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'ws-ui',
-      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, intelPlacement: s.intelPlacement }),
+      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, intelPlacement: s.intelPlacement, toolsIntelMoved: s.toolsIntelMoved }),
       // 旧版本 theme 曾允许 'system'，现在收敛进 themeMode 并保留合法值
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UiState> & { theme?: string }
@@ -103,14 +105,26 @@ export const useUi = create<UiState>()(
           density: p.density ?? 'default',
           motion: p.motion !== false,
           haptics: p.haptics !== false,
-          intelPlacement: (['today', 'stats', 'hidden'] as IntelPlacement[]).includes(p.intelPlacement as IntelPlacement)
-            ? (p.intelPlacement as IntelPlacement)
-            : 'today',
+          intelPlacement: resolveIntelPlacement(p),
+          toolsIntelMoved: true,
         }
       },
     },
   ),
 )
+
+/**
+ * 榜单位置：v2.2 起首页是「工具」页。
+ * 老版本没手动改过的值都是 'today'（当时的默认），一次性搬到工具页；
+ * 搬过之后用户在设置里选什么都原样尊重。
+ */
+function resolveIntelPlacement(p: Partial<UiState>): IntelPlacement {
+  const valid = (['tools', 'today', 'stats', 'hidden'] as IntelPlacement[])
+  const saved = valid.includes(p.intelPlacement as IntelPlacement) ? (p.intelPlacement as IntelPlacement) : null
+  if (!saved) return 'tools'
+  if (!p.toolsIntelMoved && saved === 'today') return 'tools'
+  return saved
+}
 
 /** Ctrl/Cmd+K 快捷键不走 persist 的 setter，专供命令面板 */
 export function togglePalette() {

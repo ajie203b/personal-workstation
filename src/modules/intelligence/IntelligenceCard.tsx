@@ -62,7 +62,8 @@ export function IntelligenceCard() {
           <h2 className="text-[13px] font-semibold">模型智能排名</h2>
           <p className="text-[11.5px] text-on-surface-2 mt-0.5 truncate">
             Artificial Analysis{data?.indexVersion ? ` · ${data.indexVersion}` : ''}
-            {at ? ` · 更新于 ${new Date(at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}` : ' · 内置快照'}
+            {/* 只有真的拿到数据才说「更新于」；否则一直标「内置快照」，别把占位图说成新数据 */}
+            {!data ? ' · 内置快照' : at ? ` · 更新于 ${new Date(at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}` : ''}
           </p>
         </div>
         <button

@@ -27,6 +27,7 @@ const MdEditorPage = lazy(() => import('@/modules/docs/MdEditorPage').then((m) =
 const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ default: m.StatsPage })))
 const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => ({ default: m.ReviewPage })))
+const ToolsPage = lazy(() => import('@/modules/tools/ToolsPage').then((m) => ({ default: m.ToolsPage })))
 
 const RouteLoader = <PageSkeleton />
 
@@ -90,6 +91,7 @@ export default function App() {
             <Route path="today" element={<TodayPage />} />
             <Route path="tasks" element={<TasksPage />} />
             <Route path="stats" element={<StatsPage />} />
+            <Route path="tools" element={<ToolsPage />} />
             <Route path="review" element={<ReviewPage />} />
             <Route path="docs" element={<DocsPage />} />
             <Route path="docs/new" element={<MdEditorRoute />} />

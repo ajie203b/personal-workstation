@@ -1,4 +1,4 @@
-import { CalendarCheck, ChartLine, FileText, ListTodo, type LucideIcon } from 'lucide-react'
+import { CalendarCheck, ChartLine, FileText, ListTodo, Wrench, type LucideIcon } from 'lucide-react'
 
 export interface NavItem {
   path: string
@@ -6,12 +6,13 @@ export interface NavItem {
   icon: LucideIcon
 }
 
-/** 主导航（设置入口在左上角应用图标） */
+/** 主导航（设置在顶栏齿轮 / 侧栏底部） */
 export const NAV_ITEMS: NavItem[] = [
   { path: '/today', label: '今日', icon: CalendarCheck },
   { path: '/tasks', label: '任务清单', icon: ListTodo },
   { path: '/docs', label: '文档工作站', icon: FileText },
   { path: '/stats', label: '统计', icon: ChartLine },
+  { path: '/tools', label: '工具', icon: Wrench },
 ]
 
 /** 页面标题映射（含非导航页） */
@@ -22,6 +23,7 @@ export const PAGE_TITLE: Record<string, string> = {
   '/review': '高亮复习',
   '/docs': '文档工作站',
   '/docs/new': '写文档',
+  '/tools': '工具',
   '/settings': '设置',
   '/ai': 'AI 助手',
   '/share': '分享接收',
