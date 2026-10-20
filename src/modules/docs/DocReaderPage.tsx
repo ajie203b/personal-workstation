@@ -22,6 +22,7 @@ import { Segmented } from '@/shared/ui/Segmented'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Sheet } from '@/shared/ui/Sheet'
+import { Skeleton } from '@/shared/ui/Skeleton'
 import { MdReader, parseMdBlocks } from './MdReader'
 import { PdfReader, type TocItem } from './PdfReader'
 import { FlowReader } from './FlowReader'
@@ -93,6 +94,9 @@ export function DocReaderPage() {
   const [selection, setSelection] = useState<Selection | null>(null)
   const [shotMode, setShotMode] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  /** 手机上收起阅读器顶栏（轻点正文切换），把纵向空间还给正文 */
+  const [chromeHidden, setChromeHidden] = useState(false)
+  const tapRef = useRef<{ x: number; y: number } | null>(null)
   useEffect(() => {
     if (!showSettings) return
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowSettings(false) }
@@ -114,38 +118,48 @@ export function DocReaderPage() {
   const docHash = doc?.hash
   const docKind = doc?.kind
   const flowRef = useRef<FlowDoc | null>(null)
+  /** 内容载入失败（文件丢了 / 解析炸了）—— 就地给重试，不拆整页 */
+  const [loadFail, setLoadFail] = useState<string | null>(null)
+  const [reloadTick, setReloadTick] = useState(0)
   useEffect(() => {
     if (!docContentId || !docHash || !docKind) return
     let alive = true
     setContent(null)
+    setLoadFail(null)
     flowRef.current?.dispose?.()
     flowRef.current = null
     void (async () => {
-      const blob = await getDocBlob(docHash)
-      if (!blob || !alive) return
-      await touchDoc(docContentId)
-      if (docKind === 'pdf') {
-        // PDF 由 PdfReader 自行加载 Blob（避免双份 ArrayBuffer 占用内存）
-        setContent({ kind: 'pdf', data: new ArrayBuffer(0) })
-      } else if (FLOW_KINDS.includes(docKind)) {
-        // EPUB/DOCX/PPTX/TXT：解析为流式段落
-        try {
+      try {
+        const blob = await getDocBlob(docHash)
+        if (!alive) return
+        if (!blob) {
+          setLoadFail('文件本体没找到，可能被系统清理了。请重新导入这份文档。')
+          return
+        }
+        await touchDoc(docContentId)
+        if (docKind === 'pdf') {
+          // PDF 由 PdfReader 自行加载 Blob（避免双份 ArrayBuffer 占用内存）
+          setContent({ kind: 'pdf', data: new ArrayBuffer(0) })
+        } else if (FLOW_KINDS.includes(docKind)) {
+          // EPUB/DOCX/PPTX/TXT：解析为流式段落
           const flow = await parseFlowDoc(docKind, blob)
           if (!alive) { flow.dispose?.(); return }
           flowRef.current = flow
           setToc(flow.segments.map((s, i) => ({ level: 0, title: s.title ?? `第 ${i + 1} 段`, page: i + 1 })))
           setContent({ kind: 'flow', data: flow })
-        } catch {
-          if (alive) setContent(null)
+        } else {
+          setContent({ kind: 'md', md: await blob.text() })
         }
-      } else {
-        setContent({ kind: 'md', md: await blob.text() })
+      } catch (e) {
+        if (!alive) return
+        setContent(null)
+        setLoadFail(e instanceof Error && e.message ? e.message : '这个文件解析失败，可能已损坏。')
       }
     })()
     return () => {
       alive = false
     }
-  }, [docContentId, docHash, docKind])
+  }, [docContentId, docHash, docKind, reloadTick])
 
   // 组件卸载时释放 flow 文档的 blob URL（EPUB 图片）
   useEffect(() => () => flowRef.current?.dispose?.(), [])
@@ -308,8 +322,11 @@ export function DocReaderPage() {
     // 共享元素转场的「详情侧」：根容器常挂转场名，打开时与文档卡片插值生长、
     // 返回时再「长回」卡片。不支持时该属性无副作用。
     <div className="h-full flex flex-col bg-surface" style={{ viewTransitionName: MORPH_NAME }}>
-      {/* 顶栏 */}
-      <header className="glass relative z-30 shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70">
+      {/* 顶栏：手机上轻点正文可收起，把 56px 还给正文（再点一下回来） */}
+      <header
+        className="glass relative z-30 shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70 transition-transform duration-300 ease-standard"
+        style={{ transform: chromeHidden ? 'translateY(-100%)' : 'none' }}
+      >
         <button
           onClick={() => morphClose(() => document.getElementById(`doc-${doc.id}`), () => navigate('/docs'))}
           aria-label="返回文档库"
@@ -421,7 +438,24 @@ export function DocReaderPage() {
       <TabBar docId={docId} onJump={(id) => navigate(`/docs/${id}`)} />
 
       {/* 三栏工作区 */}
-      <div className="flex-1 flex min-h-0">
+      <div
+        className="flex-1 flex min-h-0"
+        onPointerDown={(e) => { tapRef.current = { x: e.clientX, y: e.clientY } }}
+        onPointerUp={(e) => {
+          // 只在手机上做「轻点切换工具栏」：桌面空间够，别和双击选词较劲
+          if (window.matchMedia('(min-width: 768px)').matches) return
+          const start = tapRef.current
+          tapRef.current = null
+          if (!start) return
+          // 手指挪过（滚动 / 双指缩放 / 拖拽框选）就不算轻点
+          if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return
+          // 有选中文本（划词高亮）时不抢事件
+          if (window.getSelection()?.toString()) return
+          const el = e.target as HTMLElement
+          if (el.closest('button,a,input,textarea,select,[role="button"],[contenteditable="true"]')) return
+          setChromeHidden((v) => !v)
+        }}
+      >
         {/* 左：目录 + 高亮 */}
         <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-outline/70 bg-surface-2/40">
           <PanelTabs value={leftTab} onChange={setLeftTab} left="目录" right="高亮" />
@@ -488,8 +522,38 @@ export function DocReaderPage() {
               onFontSizeChange={(px) => updateSettings({ fontSize: px })}
             />
           )}
-          {!content && (
-            <div className="h-full grid place-items-center text-on-surface-2 text-[13px]">正在载入文档…</div>
+          {!content && loadFail && (
+            <div className="flex-1 grid place-items-center px-6">
+              <div className="max-w-sm text-center">
+                <p className="text-[15px] font-semibold">这份文档没能打开</p>
+                <p className="text-[13px] text-on-surface-2 mt-1.5 leading-relaxed">{loadFail}</p>
+                <div className="flex items-center justify-center gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setReloadTick((n) => n + 1)}
+                    className="h-9 px-4 rounded-[10px] bg-primary text-on-primary text-[13px] font-medium cursor-pointer"
+                  >
+                    重试
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/docs')}
+                    className="h-9 px-4 rounded-[10px] border border-outline text-[13px] text-on-surface-2 hover:text-on-surface cursor-pointer"
+                  >
+                    返回文档库
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {!content && !loadFail && (
+            // 骨架屏按「正文块」的形状铺，比一句「正在载入文档…」更像内容马上就到
+            <div className="mx-auto w-full max-w-[720px] px-6 py-8 flex flex-col gap-3">
+              <Skeleton className="h-6 w-2/3" />
+              {Array.from({ length: 9 }).map((_, i) => (
+                <Skeleton key={i} className={i % 4 === 3 ? 'h-3 w-2/3' : 'h-3'} />
+              ))}
+            </div>
           )}
 
           {/* 划词浮条（选区近顶部时自动翻转到下方，避免被裁切/遮挡） */}

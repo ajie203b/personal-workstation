@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Inbox, Check } from 'lucide-react'
+import { Inbox, Check, Plus, Trash2 } from 'lucide-react'
 import type { Task } from '@/db/db'
 import { useTasksUi } from '@/stores/tasks'
+import { useUi } from '@/stores/ui'
+import { deleteTask, restoreTask } from '@/db/tasks'
 import { toggleTaskWithUndo } from './taskActions'
 import { TaskItem } from './TaskItem'
 import { EmptyState } from '@/shared/ui/EmptyState'
+import { Button } from '@/shared/ui/Button'
 import { useFlipList } from '@/lib/useFlipList'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
@@ -27,6 +30,13 @@ const NAV_DIR: Record<string, 1 | -1> = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1
  */
 export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
   const { focusId, setFocusId, openDetail } = useTasksUi()
+  const openAddSheet = useUi((s) => s.openAddSheet)
+  const toast = useUi((s) => s.toast)
+  // 左滑删除：软删除 + 4 秒撤销（与详情里的删除走同一条路径）
+  const removeTask = async (t: Task) => {
+    await deleteTask(t)
+    toast('已删除任务', { label: '撤销', run: () => void restoreTask(t) })
+  }
   const containerRef = useRef<HTMLUListElement>(null)
   // 按键处理读最新数据，避免把 tasks 塞进依赖导致每帧重绑监听
   const latest = useRef({ tasks, focusId })
@@ -99,7 +109,13 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
   }, [setFocusId, openDetail])
 
   if (tasks.length === 0) {
-    return <EmptyState icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'} />
+    return (
+      <EmptyState icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'}>
+        <Button size="sm" variant="primary" onClick={() => openAddSheet({ tier: 'today', todayContext: true })}>
+          <Plus size={15} /> 加第一个任务
+        </Button>
+      </EmptyState>
+    )
   }
 
   return (
@@ -116,7 +132,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
     >
       {tasks.map((t) => (
         <li key={t.id}>
-          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} disabled={t.status === 'done'}>
+          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={() => void removeTask(t)} disabled={t.status === 'done'}>
             <TaskItem task={t} focused={focusId === t.id} flip />
           </SwipeRow>
         </li>
@@ -126,14 +142,18 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
 }
 
 /**
- * 手机端横向滑动完成（P1）：右滑露出绿色对勾底色，过阈值松手即完成，否则回弹。
- * 仅触摸设备启用；纵向滚动/点击/看板拖拽不受影响——只有横向意图明确时才接管。
+ * 手机端横向手势：右滑完成、左滑删除（P1 + v2.2）。
+ * - 右滑露出绿色对勾底色，过阈值松手即完成
+ * - 左滑露出红色删除位，过阈值松手即删除，并给 4 秒撤销提示条
+ * 仅触摸设备启用；纵向滚动、点击、看板拖拽都不受影响 —— 只有横向意图明确时才接管。
  */
-function SwipeRow({ children, onComplete, disabled }: { children: React.ReactNode; onComplete: () => void; disabled?: boolean }) {
+function SwipeRow({ children, onComplete, onDelete, disabled }: { children: React.ReactNode; onComplete: () => void; onDelete: () => void; disabled?: boolean }) {
   const [dx, setDx] = useState(0)
   const [dragging, setDragging] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const start = useRef({ x: 0, y: 0, t: 0, active: false })
   const moved = useRef(false)
+  const armed = useRef(0)
 
   const enabled = () =>
     !disabled &&
@@ -144,18 +164,27 @@ function SwipeRow({ children, onComplete, disabled }: { children: React.ReactNod
     if (!enabled()) return
     start.current = { x: e.clientX, y: e.clientY, t: performance.now(), active: true }
     moved.current = false
+    armed.current = 0
   }
   const onMove = (e: React.PointerEvent) => {
     if (!start.current.active) return
     const rawX = e.clientX - start.current.x
     const rawY = e.clientY - start.current.y
     if (!moved.current) {
-      // 只认向右的横向意图（+容差），否则交还给纵向滚动
-      if (rawX < 8 || rawX < Math.abs(rawY)) return
+      // 横向意图明确才接管，否则交还给纵向滚动
+      if (Math.abs(rawX) < 8 || Math.abs(rawX) < Math.abs(rawY)) return
       moved.current = true
       setDragging(true)
     }
-    setDx(Math.max(0, Math.min(rawX * 0.9, 104)))
+    const val = rawX > 0 ? Math.min(rawX * 0.9, 104) : Math.max(rawX * 0.9, -104)
+    setDx(val)
+    // 越过阈值时给一次轻振：手感上的「咔哒」
+    const dir = val > 0 ? 1 : -1
+    const nowArmed = Math.abs(val) > 72 ? dir : 0
+    if (nowArmed !== armed.current) {
+      armed.current = nowArmed
+      if (nowArmed) haptic('light')
+    }
   }
   const onUp = (e: React.PointerEvent) => {
     if (!start.current.active) return
@@ -166,31 +195,47 @@ function SwipeRow({ children, onComplete, disabled }: { children: React.ReactNod
       return
     }
     const rawX = e.clientX - start.current.x
-    const velocity = rawX / Math.max(1, performance.now() - start.current.t)
-    if (rawX > 72 || velocity > 0.5) {
+    const velocity = Math.abs(rawX) / Math.max(1, performance.now() - start.current.t)
+    if (rawX > 72 || (rawX > 20 && velocity > 0.5)) {
       haptic('light')
       onComplete()
+      setDx(0)
+      return
+    }
+    if (rawX < -72 || (rawX < -20 && velocity > 0.5)) {
+      haptic('warning')
+      // 先滑到底再淡出，别一松手就弹回来（会让人以为没删掉）
+      setDx(-window.innerWidth)
+      setLeaving(true)
+      window.setTimeout(onDelete, 200)
+      return
     }
     setDx(0)
   }
 
   return (
-    <div className="swipe-row rounded-[16px]">
+    <div className={cn('swipe-row rounded-[16px]', leaving && 'pointer-events-none')}>
+      {/* 底色：往右滑露出「完成」，往左滑露出「删除」 */}
       <span
         aria-hidden
-        className="swipe-underlay rounded-[16px]"
-        style={{ background: 'color-mix(in srgb, var(--ok) 88%, #000)' }}
+        className="swipe-underlay rounded-[16px] justify-start gap-1"
+        style={{ background: 'color-mix(in srgb, var(--ok) 88%, #000)', opacity: dx > 0 ? Math.min(1, dx / 72) : 0 }}
       >
-        <span />
-        <span className="inline-flex items-center gap-1">
-          <Check size={15} /> 完成
-        </span>
+        <Check size={15} /> 完成
+      </span>
+      <span
+        aria-hidden
+        className="swipe-underlay rounded-[16px] justify-end gap-1"
+        style={{ background: 'color-mix(in srgb, var(--danger) 90%, #000)', opacity: dx < 0 ? Math.min(1, -dx / 72) : 0 }}
+      >
+        <Trash2 size={15} /> 删除
       </span>
       <div
         className="swipe-content rounded-[16px]"
         style={{
           transform: dx ? `translateX(${dx}px)` : undefined,
-          transition: dragging ? 'none' : 'transform var(--dur-1) var(--ease-standard)',
+          transition: dragging ? 'none' : 'transform var(--dur-2) cubic-bezier(.34,1.32,.5,1), opacity 180ms linear',
+          opacity: leaving ? 0 : 1,
         }}
         onPointerDown={onDown}
         onPointerMove={onMove}

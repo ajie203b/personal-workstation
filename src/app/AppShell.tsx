@@ -1,10 +1,16 @@
-import { Outlet, useLocation } from 'react-router'
+import { Outlet, useLocation, useSearchParams } from 'react-router'
 import { useEffect, useRef } from 'react'
+import { Plus } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
 import { TopBar } from './TopBar'
 import { PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
+import { RouteProgress } from '@/shared/ui/RouteProgress'
+import { FocusMiniBar, useFocusTicker } from '@/shared/FocusMiniBar'
+import { useUi } from '@/stores/ui'
+import { TIERS, type Tier } from '@/db/db'
+import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
 
 /**
@@ -16,9 +22,18 @@ import { cn } from '@/lib/cn'
  */
 const SELF_SCROLLING = /^\/docs\//
 
+/**
+ * 沉浸模式：阅读器 / 编辑器 / 高亮复习自己带工具栏，全局顶栏与底栏全部让位。
+ * 手机上原来顶栏 56 + 阅读器工具栏 56 + 底栏 56 ≈ 170px 被三套壳吃掉，正文只剩一条缝。
+ */
+const IMMERSIVE = [/^\/docs\/.+/, /^\/docs\/new$/, /^\/review$/]
+
 export function AppShell() {
   useThemeEffect()
   const { pathname } = useLocation()
+  const [params] = useSearchParams()
+  const openAddSheet = useUi((s) => s.openAddSheet)
+  const focus = useFocusTicker()
   const title = PAGE_TITLE[`/${pathname.split('/')[1]}`] ?? '个人工作站'
   const section = `/${pathname.split('/')[1] || ''}`
 
@@ -33,12 +48,25 @@ export function AppShell() {
   }, [pathname, section])
 
   const selfScrolling = SELF_SCROLLING.test(pathname)
+  const immersive = IMMERSIVE.some((re) => re.test(pathname))
+
+  // 悬浮按钮的默认归属：今日页进「今日」，任务页跟随当前页签，其余落「随时」
+  const onAdd = () => {
+    haptic('light')
+    if (section === '/today') return openAddSheet({ tier: 'today', todayContext: true })
+    if (section === '/tasks') {
+      const t = params.get('tier')
+      return openAddSheet({ tier: (TIERS as readonly string[]).includes(t ?? '') ? (t as Tier) : 'today' })
+    }
+    openAddSheet({ tier: 'anytime' })
+  }
 
   return (
     <div className="h-full flex bg-surface">
+      <RouteProgress />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar title={title} />
+        {!immersive && <TopBar title={title} />}
         <main
           id="main-scroll"
           className={cn(
@@ -50,8 +78,30 @@ export function AppShell() {
             <Outlet />
           </div>
         </main>
-        <BottomNav />
+        {!immersive && <BottomNav />}
       </div>
+
+      {/* 计时中：迷你条目常驻底栏上方，切到任何页都看得到 */}
+      {!immersive && focus && <FocusMiniBar state={focus} />}
+
+      {/* 手机统一添加入口：右下角、底栏上方，拇指够得着；桌面用输入框与 N 快捷键 */}
+      {!immersive && (
+        <button
+          type="button"
+          id="fab-add"
+          onClick={onAdd}
+          aria-label="添加任务"
+          title="添加任务"
+          className={cn(
+            'md:hidden fixed right-4 z-30 grid place-items-center w-14 h-14 rounded-full cursor-pointer',
+            'bg-primary text-on-primary shadow-lg shadow-primary/25',
+            'active:scale-95 transition-[transform,bottom] duration-200',
+          )}
+          style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${focus ? '8.25rem' : '4.25rem'})` }}
+        >
+          <Plus size={26} strokeWidth={2.4} />
+        </button>
+      )}
     </div>
   )
 }

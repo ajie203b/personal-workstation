@@ -64,6 +64,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
       <div className="flex items-center gap-3">
         <input
           ref={inputRef}
+          id="quick-add-input"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {

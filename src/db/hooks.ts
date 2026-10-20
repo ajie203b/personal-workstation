@@ -59,6 +59,14 @@ const EMPTY_DOCS: Doc[] = []
 const EMPTY_ANNS: Annotation[] = []
 
 export function useDocs(): Doc[] {
+  return useDocsLive() ?? EMPTY_DOCS
+}
+
+/**
+ * 与 useDocs 同源，但首帧是 undefined：用它区分「真的空库」和「还没从 IndexedDB 读出来」，
+ * 骨架屏只在后者出现（否则空库也会先闪一下骨架）。
+ */
+export function useDocsLive(): Doc[] | undefined {
   // 不能用 orderBy(lastOpenedAt)：未打开过的文档该字段为 undefined 不会进索引
   return useLiveQuery(
     async () => {
@@ -66,7 +74,6 @@ export function useDocs(): Doc[] {
       return all.sort((a, b) => (b.lastOpenedAt ?? b.addedAt) - (a.lastOpenedAt ?? a.addedAt))
     },
     [],
-    EMPTY_DOCS,
   )
 }
 

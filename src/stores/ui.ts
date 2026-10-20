@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { Tier } from '@/db/db'
 
 export type Theme = 'light' | 'dark'
 /** 主题档位：跟随系统 / 固定浅色 / 固定深色 */
@@ -32,6 +33,8 @@ interface UiState {
   shortcutsOpen: boolean
   paletteOpen: boolean
   toasts: ToastItem[]
+  /** 全局「添加任务」抽屉（手机悬浮按钮 / 快捷键 / 深链都走这里） */
+  addSheet: { open: boolean; tier: Tier; todayContext: boolean }
   setTheme: (t: Theme) => void
   setThemeMode: (m: ThemeMode) => void
   setAccent: (a: Accent) => void
@@ -42,6 +45,8 @@ interface UiState {
   setIntelPlacement: (p: IntelPlacement) => void
   setShortcutsOpen: (v: boolean) => void
   setPaletteOpen: (v: boolean) => void
+  openAddSheet: (opts?: { tier?: Tier; todayContext?: boolean }) => void
+  closeAddSheet: () => void
   toast: (message: string, action?: ToastItem['action']) => void
   dismissToast: (id: string) => void
 }
@@ -59,6 +64,7 @@ export const useUi = create<UiState>()(
       intelPlacement: 'today',
       shortcutsOpen: false,
       paletteOpen: false,
+      addSheet: { open: false, tier: 'anytime', todayContext: false },
       toasts: [],
       setTheme: (theme) => set({ theme, themeMode: theme }),
       setThemeMode: (themeMode) => set({ themeMode }),
@@ -70,6 +76,8 @@ export const useUi = create<UiState>()(
       setIntelPlacement: (intelPlacement) => set({ intelPlacement }),
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+      openAddSheet: (opts) => set({ addSheet: { open: true, tier: opts?.tier ?? 'anytime', todayContext: opts?.todayContext ?? false } }),
+      closeAddSheet: () => set((s) => ({ addSheet: { ...s.addSheet, open: false } })),
       toast: (message, action) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, action }] }))

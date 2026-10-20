@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ChevronRight, Clock3, History, Keyboard, Plus, Sparkles } from 'lucide-react'
+import { ChevronRight, Clock3, History, Keyboard, Plus, Sparkles, X } from 'lucide-react'
 import { useAllAnnotations, useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
 import { dueCards } from '@/lib/review'
-import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
@@ -18,6 +17,7 @@ export function TodayPage() {
   const today = useDateTick()
   const all = useAllTasks()
   const [params, setParams] = useSearchParams()
+  const openAddSheet = useUi((s) => s.openAddSheet)
   // 任务「开始专注」深链：/today?focus-task=<id> → 番茄钟自动绑定
   const focusTaskParam = params.get('focus-task') ?? undefined
   useEffect(() => {
@@ -30,16 +30,15 @@ export function TodayPage() {
   }, [focusTaskParam, setParams])
   // 安卓桌面快捷方式：workstation://quickadd → /today?quickadd=1，打开录入并抹掉参数
   const quickaddParam = params.get('quickadd')
-  const [addOpen, setAddOpen] = useState(false)
   useEffect(() => {
     if (!quickaddParam) return
-    setAddOpen(true)
+    openAddSheet({ tier: 'today', todayContext: true })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.delete('quickadd')
       return next
     }, { replace: true })
-  }, [quickaddParam, setParams])
+  }, [quickaddParam, setParams, openAddSheet])
   const todayTasks = useMemo(() => sortTasks(deriveToday(all, today)), [all, today])
   const todayDone = useMemo(() => deriveTodayDone(all, today), [all, today])
   // 「随时」清单也放进今日页：没有截止日、平时容易一直沉底的任务，在这里能顺手做掉
@@ -49,13 +48,12 @@ export function TodayPage() {
   )
   const weekDone = useMemo(() => all.filter((t) => t.status === 'done' && isThisWeek(t.doneAt ?? 0)).length, [all])
   const totalDone = useMemo(() => all.filter((t) => t.status === 'done').length, [all])
-  const openShortcuts = useUi((s) => s.setShortcutsOpen)
   const intelPlacement = useUi((s) => s.intelPlacement)
   useEffect(() => {
-    const open = () => setAddOpen(true)
+    const open = () => openAddSheet({ tier: 'today', todayContext: true })
     window.addEventListener('ws:focus-quickadd', open)
     return () => window.removeEventListener('ws:focus-quickadd', open)
-  }, [])
+  }, [openAddSheet])
 
   const date = useMemo(() => new Date(), [today])
 
@@ -70,11 +68,13 @@ export function TodayPage() {
               {fmtWeekdayLong(date)}
             </h1>
           </div>
+          {/* 手机：一枚小进度环顶替原来那 4 张数字卡（完成 3/8 一眼可见，不占一屏） */}
+          <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} className="md:hidden shrink-0 mb-1.5" />
           <button
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
-            onClick={() => setAddOpen(true)}
-            className="grid place-items-center w-12 h-12 rounded-full border border-ok/30 shadow-sm hover:scale-105 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
+            onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
+            className="hidden md:grid place-items-center w-12 h-12 rounded-full border border-ok/30 shadow-sm hover:scale-105 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
             style={{ background: 'color-mix(in srgb, var(--ok) 14%, var(--surface))', color: 'var(--ok)' }}
           >
             <Plus size={24} strokeWidth={2.4} />
@@ -121,9 +121,22 @@ export function TodayPage() {
           )}
         </section>
 
-        {/* 侧栏卡片组 */}
+        {/* 侧栏卡片组：手机顺序按「此刻最想用的」排 —— 番茄钟 → 复习 → 最近阅读，
+            进度与键盘卡只在桌面出现（手机上进度环已经在标题旁） */}
         <aside className="md:col-span-2 flex flex-col gap-4 min-w-0">
-          <section className="card p-4">
+          <div className="order-1 md:order-none min-w-0">
+            <FocusTimer initialTaskId={focusTaskParam} />
+          </div>
+
+          <div className="order-2 md:order-none min-w-0">
+            <ReviewInbox />
+          </div>
+
+          <div className="order-3 md:order-none min-w-0">
+            <RecentReads />
+          </div>
+
+          <section className="hidden md:block card p-4 order-4 md:order-none">
             <h2 className="text-[13px] font-semibold text-on-surface-2 mb-3">进度</h2>
             <div className="grid grid-cols-2 gap-3">
               <Kpi value={todayTasks.length} label="今日待办" />
@@ -133,33 +146,85 @@ export function TodayPage() {
             </div>
           </section>
 
-          <div className="hidden md:block">
-            <button
-              type="button"
-              onClick={() => openShortcuts(true)}
-              className="card card-hover p-4 flex items-center gap-3 text-left cursor-pointer w-full"
-            >
-              <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
-                <Keyboard size={17} />
-              </span>
-              <span>
-                <span className="block text-[13px] font-medium">全键盘工作流</span>
-                <span className="block text-[12px] text-on-surface-2 mt-0.5">按 ? 查看快捷键，N 快速添加</span>
-              </span>
-            </button>
-          </div>
-
-          <ReviewInbox />
-          <FocusTimer initialTaskId={focusTaskParam} />
-          <RecentReads />
+          <KeyboardHint className="hidden md:block order-4 md:order-none" />
         </aside>
       </div>
 
       <DailyReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
 
       {intelPlacement === 'today' && <IntelligenceCard />}
+    </div>
+  )
+}
 
-      <AddTaskSheet open={addOpen} onOpenChange={setAddOpen} defaultTier="today" todayContext />
+/**
+ * 今日完成度小环：手机上一眼看到 3/8，替代原来四张占地方的数字卡。
+ * 环的进度用 stroke-dashoffset 过渡，减少动效时由全局兜底压平。
+ */
+function ProgressRing({ done, total, className }: { done: number; total: number; className?: string }) {
+  const pct = total > 0 ? done / total : 0
+  const R = 15
+  const C = 2 * Math.PI * R
+  return (
+    <div className={className} aria-label={`今日完成 ${done} / ${total}`}>
+      <div className="relative w-12 h-12">
+        <svg viewBox="0 0 36 36" className="w-12 h-12 -rotate-90">
+          <circle cx="18" cy="18" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="3.5" />
+          <circle
+            cx="18" cy="18" r={R} fill="none"
+            stroke={pct >= 1 ? 'var(--ok)' : 'var(--primary)'}
+            strokeWidth="3.5" strokeLinecap="round"
+            strokeDasharray={C}
+            strokeDashoffset={C * (1 - pct)}
+            style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
+          />
+        </svg>
+        <span className="absolute inset-0 grid place-items-center text-[12px] font-semibold tabular-nums leading-none">
+          {done}<span className="text-on-surface-2 font-normal">/{total}</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 键盘快捷键提示卡：用过一次（点开过快捷键面板）就收起来，不常驻占位。
+ * 「收起」写进 localStorage，下次进来自动隐藏；想找回来在设置里再打开。
+ */
+function KeyboardHint({ className }: { className?: string }) {
+  const openShortcuts = useUi((s) => s.setShortcutsOpen)
+  const [hidden, setHidden] = useState(() => localStorage.getItem('ws-kbd-hint-dismissed') === '1')
+  if (hidden) return null
+  const dismiss = () => {
+    localStorage.setItem('ws-kbd-hint-dismissed', '1')
+    setHidden(true)
+  }
+  return (
+    <div className={className}>
+      <div className="card p-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => { openShortcuts(true); dismiss() }}
+          className="flex items-center gap-3 text-left cursor-pointer flex-1 min-w-0"
+        >
+          <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
+            <Keyboard size={17} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-medium">全键盘工作流</span>
+            <span className="block text-[12px] text-on-surface-2 mt-0.5">按 ? 查看快捷键，N 快速添加</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="收起快捷键提示"
+          title="收起来"
+          className="shrink-0 w-7 h-7 grid place-items-center rounded-lg text-on-surface-2/70 hover:bg-surface-3 hover:text-on-surface cursor-pointer"
+        >
+          <X size={14} />
+        </button>
+      </div>
     </div>
   )
 }

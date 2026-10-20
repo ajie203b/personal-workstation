@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Coffee, Pause, Play, RotateCcw, Target, Timer } from 'lucide-react'
+import { Coffee, RotateCcw, Target, Timer } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { db } from '@/db/db'
 import type { Task } from '@/db/db'
@@ -12,6 +12,7 @@ import { todayStr } from '@/lib/date'
 import { haptic } from '@/lib/haptics'
 import { useUi } from '@/stores/ui'
 import { Segmented } from '@/shared/ui/Segmented'
+import { PlayPauseIcon } from '@/shared/ui/PlayPauseIcon'
 import { Dialog } from '@/shared/ui/Sheet'
 
 type Phase = 'work' | 'break'
@@ -255,7 +256,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
           )}
           aria-label={store.running ? '暂停' : '开始'}
         >
-          {store.running ? <Pause size={20} /> : <Play size={20} className="ml-0.5" />}
+          {<PlayPauseIcon playing={store.running} size={20} />}
         </button>
         <button
           onClick={reset}

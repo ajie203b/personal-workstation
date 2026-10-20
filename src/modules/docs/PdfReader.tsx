@@ -197,6 +197,12 @@ export function PdfReader({
   const lastJumpTs = useRef(0)
   const lastWriteRef = useRef(0)
   const lastReportedPct = useRef(-1)
+  /** 顶层细进度条：文档解析 + 页宽高比测量阶段才有意义，量完就收起 */
+  const [loadPct, setLoadPct] = useState(0)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  /** 已画完的页：用来做「模糊 → 清晰」的入场（画布出来前先给一块糊的占位） */
+  const [drawn, setDrawn] = useState<Set<number>>(() => new Set())
 
   useEffect(() => {
     void getDocBlob(hash).then(async (blob) => {
@@ -324,6 +330,8 @@ export function PdfReader({
       } catch {
         /* 无大纲 */
       }
+      // 结构量完了：细条走到头再收
+      setLoadPct(1)
       onLoaded(n, outlineItems)
     },
     [onLoaded],
@@ -533,19 +541,60 @@ export function PdfReader({
 
   return (
     <div className="relative h-full">
+      {/* 顶部细条：先快后慢地走，解析完 / 出错就收起（不占阅读空间，2px） */}
+      {(loadPct < 1 || data === null) && !loadError && (
+        <div className="absolute inset-x-0 top-0 z-20 h-[2px] bg-transparent pointer-events-none" aria-hidden>
+          <div
+            className="h-full bg-primary origin-left"
+            style={{
+              width: `${loadPct < 0.08 ? 8 : loadPct * 100}%`,
+              transition: 'width 240ms cubic-bezier(.22,.61,.36,1)',
+              boxShadow: '0 0 8px color-mix(in srgb, var(--primary) 60%, transparent)',
+            }}
+          />
+        </div>
+      )}
+
+      {loadError && (
+        // 就地重试：不拆整页，只把内容区换成一张可重试的卡片
+        <div className="h-full grid place-items-center px-6">
+          <div className="max-w-sm text-center">
+            <p className="text-[15px] font-semibold">这份 PDF 打不开</p>
+            <p className="text-[13px] text-on-surface-2 mt-1.5 leading-relaxed">{loadError}</p>
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => { setLoadError(null); setLoadPct(0); setData(null); setReloadKey((k) => k + 1) }}
+                className="h-9 px-4 rounded-[10px] bg-primary text-on-primary text-[13px] font-medium cursor-pointer"
+              >
+                重试
+              </button>
+              <a href="#/docs" className="h-9 px-4 rounded-[10px] border border-outline text-[13px] leading-9 text-on-surface-2 hover:text-on-surface">
+                返回文档库
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         ref={scrollRef}
         onScroll={onScroll}
         // pan-x pan-y：禁掉浏览器整页缩放，横竖滚动交给容器自己；双指手势由 usePinch 接
-        style={{ touchAction: 'pan-x pan-y' }}
+        style={{ touchAction: 'pan-x pan-y', display: loadError ? 'none' : undefined }}
         className="h-full overflow-auto overscroll-contain bg-surface-3/50"
       >
         <div style={{ transform: preview !== 1 ? `scale(${preview})` : undefined, transformOrigin: 'top center' }}>
           <Document
+            key={reloadKey}
             file={data ?? undefined}
             onLoadSuccess={onLoad}
+            onLoadProgress={({ loaded, total }) => {
+              if (total > 0) setLoadPct(Math.min(0.98, loaded / total))
+            }}
+            onLoadError={(e) => setLoadError(e?.message || '文件可能已损坏，或格式不受支持')}
             loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13px]">正在载入 PDF…</div>}
-            error={<div className="grid place-items-center h-40 text-danger text-[13px]">无法打开此 PDF</div>}
+            error={null}
             className="flex flex-col items-start py-4 gap-4"
             options={PDF_OPTIONS}
           >
@@ -557,7 +606,14 @@ export function PdfReader({
               <div key={p} className="flex flex-col items-center gap-1 mx-auto">
                 <div
                   data-page={p}
-                  style={{ width: dispW, height: pageH(p - 1) }}
+                  style={{
+                    width: dispW,
+                    height: pageH(p - 1),
+                    // 画布还没画出来时先糊着：比一块死白更像「内容正在显影」
+                    filter: inWindow && !drawn.has(p) ? 'blur(10px)' : undefined,
+                    opacity: inWindow && !drawn.has(p) ? 0.55 : 1,
+                    transition: 'filter 260ms ease-out, opacity 260ms ease-out',
+                  }}
                   className={`relative rounded-[10px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
                   onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
                   onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
@@ -571,6 +627,7 @@ export function PdfReader({
                       renderTextLayer
                       renderAnnotationLayer={false}
                       loading=""
+                      onRenderSuccess={() => setDrawn((s) => (s.has(p) ? s : new Set(s).add(p)))}
                     />
                   ) : null}
                   {/* 截图框选预览 */}
