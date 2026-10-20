@@ -191,6 +191,7 @@ function AppearanceTab() {
           value={intelPlacement}
           onChange={(v) => setIntelPlacement(v as IntelPlacement)}
           options={[
+            { value: 'tools', label: '工具页' },
             { value: 'today', label: '今日页' },
             { value: 'stats', label: '统计页' },
             { value: 'hidden', label: '隐藏' },

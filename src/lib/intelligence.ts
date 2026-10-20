@@ -21,6 +21,8 @@ export interface IntelData {
 
 const CACHE_KEY = 'intelData'
 const AT_KEY = 'intelFetchedAt'
+/** 上次「尝试」的时间（不管成没成）。只用来节流，不参与「更新于」的展示 */
+const ATTEMPT_KEY = 'intelAttemptAt'
 const DAY_MS = 24 * 60 * 60 * 1000
 /** 拉取失败后的重试间隔（成功则按 24h 走） */
 const RETRY_MS = 6 * 60 * 60 * 1000
@@ -110,15 +112,28 @@ export async function getLastIntelFetch(): Promise<number | null> {
   return typeof row?.value === 'number' ? row.value : null
 }
 
+async function getLastAttempt(): Promise<number | null> {
+  const row = await db.settings.get(ATTEMPT_KEY)
+  return typeof row?.value === 'number' ? row.value : null
+}
+
 /**
- * 静默刷新：默认 24 小时最多一次（force 用于手动刷新）。
+ * 静默刷新：成功后 24 小时最多一次；失败（比如仓库还没生成 intelligence.json）6 小时后再试。
  * 任何失败都不抛错——保留缓存，卡片继续显示内置快照。
+ *
+ * 「尝试时间」和「成功时间」必须分开记：以前只记一个时间，失败后要么每次打开都重打 404，
+ * 要么（记了失败时间）卡片会把内置快照标成「更新于今天」，等于谎报数据新鲜度。
  */
 export async function refreshIntel(force = false): Promise<IntelData | null> {
   if (!force) {
     const at = await getLastIntelFetch()
     if (at && Date.now() - at < DAY_MS) return loadCachedIntel()
+    const attempt = await getLastAttempt()
+    if (attempt && Date.now() - attempt < RETRY_MS) return loadCachedIntel()
   }
+  try {
+    await db.settings.put({ key: ATTEMPT_KEY, value: Date.now() })
+  } catch { /* 记不上就算了，最多多请求一次 */ }
   for (const url of SOURCES) {
     try {
       const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' })
@@ -132,10 +147,5 @@ export async function refreshIntel(force = false): Promise<IntelData | null> {
       /* 换下一个源 */
     }
   }
-  // 两个源都失败（比如仓库还没生成 intelligence.json）也要记一次时间：
-  // 否则每次打开今日页/统计页都会重新打两遍 404。失败的重试放到下次启动（≥6 小时）。
-  try {
-    await db.settings.put({ key: AT_KEY, value: Date.now() - DAY_MS + RETRY_MS })
-  } catch { /* 记不上就算了 */ }
   return loadCachedIntel()
 }
