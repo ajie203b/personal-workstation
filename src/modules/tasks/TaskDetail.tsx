@@ -13,6 +13,7 @@ import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
+import { repeatLabel } from '@/lib/repeat'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
@@ -409,7 +410,7 @@ export function TaskDetail() {
 
               {task.repeat && (
                 <p className="text-[13px] text-on-surface-2">
-                  重复：{{ daily: '每天', weekly: '每周', weekdays: '工作日' }[task.repeat]}（打卡任务：完成后自动生成下一次）
+                  重复：{repeatLabel(task.repeat, { days: task.repeatDays, monthDay: task.repeatMonthDay })}（打卡任务：完成后自动生成下一次）
                 </p>
               )}
 

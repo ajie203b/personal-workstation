@@ -171,3 +171,52 @@ export async function maybeAutoBackup(): Promise<void> {
     await writeSnapshot()
   } catch { /* 静默失败：存储满/隐私模式等，不影响使用 */ }
 }
+
+/* ---------------- 旧快照里的凭据清理（v2.0.1） ---------------- */
+
+const SCRUB_KEY = 'snapshotsScrubbedOfAiKeys'
+
+/** 去掉快照 JSON 里的 aiProviders（AI 服务商 + 明文 Key），其余原样保留 */
+function stripAiProviders(text: string): string {
+  try {
+    const obj = JSON.parse(text) as Record<string, unknown> | null
+    if (!obj || typeof obj !== 'object' || !('aiProviders' in obj)) return text
+    delete obj.aiProviders
+    return JSON.stringify(obj, null, 2)
+  } catch {
+    // 解析不了就别动，宁可留着也不能把备份写坏
+    return text
+  }
+}
+
+/**
+ * 把磁盘上已有的几份快照就地「消毒」：只摘掉 aiProviders 这一个字段，
+ * 任务、文档、批注等照原样保留（不做删除，只是不再让明文 Key 躺在备份里）。
+ * 一次跑完打标记，之后启动不再扫。
+ */
+export async function scrubSnapshotSecrets(): Promise<void> {
+  try {
+    if (!opfsAvailable()) return
+    if ((await db.settings.get(SCRUB_KEY))?.value === 1) return
+    const dir = await backupsDir()
+    for (const [name, handle] of await entriesOf(dir)) {
+      if (!name.startsWith(PREFIX)) continue
+      try {
+        if (handle.kind === 'file') {
+          if (!name.endsWith('.json')) continue
+          const fh = await dir.getFileHandle(name)
+          const text = await (await fh.getFile()).text()
+          const cleaned = stripAiProviders(text)
+          if (cleaned !== text) await writeFile(dir, name, cleaned)
+        } else {
+          const snap = handle as FileSystemDirectoryHandle
+          const fh = await snap.getFileHandle('data.json')
+          const text = await (await fh.getFile()).text()
+          const cleaned = stripAiProviders(text)
+          if (cleaned !== text) await writeFile(snap, 'data.json', cleaned)
+        }
+      } catch { /* 单份坏了跳过，不影响其它快照 */ }
+    }
+    await db.settings.put({ key: SCRUB_KEY, value: 1 })
+  } catch { /* 静默：隐私模式 / 配额不足 */ }
+}

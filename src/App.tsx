@@ -10,7 +10,7 @@ import { TodayPage } from '@/modules/today/TodayPage'
 import { TasksPage } from '@/modules/tasks/TasksPage'
 import { useAllTasks } from '@/db/hooks'
 import { getNotifyEnabled, syncAllTaskNotifications } from '@/lib/notify'
-import { maybeAutoBackup } from '@/lib/autoBackup'
+import { maybeAutoBackup, scrubSnapshotSecrets } from '@/lib/autoBackup'
 import { ShareInbound } from '@/shared/ShareInbound'
 import { initAppActions } from '@/lib/appActions'
 import { pruneTombstones } from '@/lib/tombstones'
@@ -64,6 +64,8 @@ export default function App() {
       if (on) void syncAllTaskNotifications(all)
     })
     void maybeAutoBackup()
+    // 老快照里可能还带着 AI 服务商的明文 Key，启动时顺手清一次（只摘那个字段）
+    void scrubSnapshotSecrets()
     // 只需在会话启动时执行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

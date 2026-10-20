@@ -1,6 +1,7 @@
 import { Clock, FileText, Flag, ListChecks, Pin, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, type Task } from '@/db/db'
 import { fmtDue } from '@/lib/date'
+import { repeatLabel } from '@/lib/repeat'
 import { cn } from '@/lib/cn'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { toggleTaskWithUndo } from './taskActions'
@@ -77,7 +78,7 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
               {task.repeat && (
                 <span className="inline-flex items-center gap-1 text-[12px] text-on-surface-2">
                   <Repeat size={12} />
-                  {{ daily: '每天', weekly: '每周', weekdays: '工作日' }[task.repeat]}
+                  {repeatLabel(task.repeat, { days: task.repeatDays, monthDay: task.repeatMonthDay })}
                 </span>
               )}
               {task.docRef && (

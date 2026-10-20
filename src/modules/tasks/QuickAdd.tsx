@@ -3,6 +3,7 @@ import { CalendarDays, Flag, Hash, Repeat } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { addTask } from '@/db/tasks'
 import { todayStr, fmtDue } from '@/lib/date'
+import { repeatLabel } from '@/lib/repeat'
 import { PRIORITY_VAR, type Tier } from '@/db/db'
 import { cn } from '@/lib/cn'
 
@@ -45,6 +46,8 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
       dueTime: p.dueTime,
       tags: p.tags,
       repeat: p.repeat,
+      repeatDays: p.repeatDays,
+      repeatMonthDay: p.repeatMonthDay,
     })
     setValue('')
     inputRef.current?.focus()
@@ -88,7 +91,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
         <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
           <span className="text-[11px] text-on-surface-2 mr-0.5">识别到</span>
           {parsed.due && <PreviewChip icon={CalendarDays} text={dueChipText(parsed.due, parsed.dueTime)} />}
-          {parsed.repeat && <PreviewChip icon={Repeat} text={{ daily: '每天', weekly: '每周', weekdays: '工作日' }[parsed.repeat]} />}
+          {parsed.repeat && <PreviewChip icon={Repeat} text={repeatLabel(parsed.repeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay })} />}
           {parsed.priority != null && (
             <PreviewChip
               icon={Flag}
