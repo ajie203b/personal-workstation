@@ -6,6 +6,8 @@ import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 import { ThemeButton } from './ThemeButton'
+import { useState } from 'react'
+import { BrandMark } from '@/shared/BrandMark'
 
 /**
  * 左侧导航：
@@ -19,7 +21,10 @@ import { ThemeButton } from './ThemeButton'
 export function Sidebar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const collapsed = useUi((s) => s.sidebarCollapsed)
+  const savedCollapsed = useUi((s) => s.sidebarCollapsed)
+  const [readerExpanded, setReaderExpanded] = useState(false)
+  const reading = /^\/docs\/.+/.test(pathname)
+  const collapsed = reading ? !readerExpanded : savedCollapsed
   const setCollapsed = useUi((s) => s.setSidebarCollapsed)
   const all = useAllTasks()
   const counts = countByTier(all)
@@ -46,7 +51,7 @@ export function Sidebar() {
           onClick={onBrandClick}
           className={cn('shrink-0 cursor-pointer rounded-[10px] active:opacity-80 select-none', collapsed && 'lg:hidden')}
         >
-          <img src="./brand.png" alt="" className="w-10 h-10 rounded-[10px] object-cover" draggable={false} />
+          <BrandMark />
         </button>
         <span
           className="hidden lg:block text-[15px] font-semibold tracking-wide overflow-hidden whitespace-nowrap transition-opacity duration-200"
@@ -58,7 +63,7 @@ export function Sidebar() {
           type="button"
           aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
           aria-expanded={!collapsed}
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => reading ? setReaderExpanded(collapsed) : setCollapsed(!collapsed)}
           className="hidden lg:grid place-items-center ml-auto w-8 h-8 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors shrink-0"
         >
           {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
@@ -84,9 +89,9 @@ export function Sidebar() {
           >
             {({ isActive }) => (
               <>
-                <item.icon size={19} strokeWidth={isActive ? 2.2 : 1.9} className="shrink-0" />
+                <item.icon size={20} strokeWidth={isActive ? 2 : 1.8} className="shrink-0" aria-hidden />
                 <span
-                  className="hidden lg:block text-[13px] truncate transition-opacity duration-200"
+                  className="hidden lg:block text-ui-label truncate transition-opacity duration-200"
                   style={{ opacity: collapsed ? 0 : 1 }}
                 >
                   {item.label}

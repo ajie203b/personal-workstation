@@ -72,9 +72,9 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
   return (
     <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {/* 窄屏一列一屏左右滑（吸附），到 sm 才铺成 2 列 / xl 4 列 */}
-      <div className="flex gap-3.5 overflow-x-auto snap-x snap-mandatory pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 sm:grid sm:grid-cols-2 xl:grid-cols-4 sm:overflow-visible enter">
+      <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-3 -mx-4 px-4 md:mx-0 md:px-0 enter">
         {TIERS.map((tier) => (
-          <div key={tier} className="snap-start shrink-0 w-[86vw] sm:w-auto sm:shrink">
+          <div key={tier} className="snap-start shrink-0 w-[86vw] sm:w-[280px] md:flex-1 md:min-w-[260px]">
             <BoardColumn tier={tier} tasks={byTier[tier]} />
           </div>
         ))}

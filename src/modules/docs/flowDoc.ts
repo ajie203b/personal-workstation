@@ -1,8 +1,12 @@
 import type { DocKind } from '@/db/db'
+import { sanitizeHtml } from '@/lib/sanitizeHtml'
 
 /**
  * 流式文档解析（v1.3）：EPUB / DOCX / PPTX / TXT → 统一段落模型，
  * 供 FlowReader 渲染与全文索引共用。段落 = 章（epub）/ 片（pptx）/ 篇（docx/txt）。
+ *
+ * segments.html 一律经 sanitizeHtml 白名单清洗后才交给 dangerouslySetInnerHTML，
+ * 外来文档（EPUB/DOCX）不再能把 onerror 之类的属性带进 DOM。
  */
 
 export interface FlowSegment {
@@ -26,7 +30,7 @@ export interface FlowDoc {
 function htmlBody(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   doc.querySelectorAll('script,style,link,meta,head').forEach((el) => el.remove())
-  return doc.body?.innerHTML ?? ''
+  return sanitizeHtml(doc.body?.innerHTML ?? '')
 }
 
 function htmlToText(html: string): string {
@@ -101,7 +105,7 @@ async function inlineEpubImages(html: string, chapterPath: string, zip: Zip, url
       el.remove()
     }
   }
-  return doc.body?.innerHTML ?? ''
+  return sanitizeHtml(doc.body?.innerHTML ?? '')
 }
 
 async function parseEpub(blob: Blob): Promise<FlowDoc> {

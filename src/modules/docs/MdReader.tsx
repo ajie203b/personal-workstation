@@ -269,8 +269,8 @@ export function MdReader({
     >
       <div
         // 宽度完全交给滑块：100% 就是可用宽度，不再被固定 maxWidth 卡在 900px
-        style={{ width: `${settings.widthPct}%`, fontSize: liveFont, ['--md-leading' as string]: String(settings.leading) }}
-        className="mx-auto px-2 py-10 md:py-14 min-w-0"
+        style={{ ['--reader-width' as string]: `${settings.widthPct}%`, fontSize: liveFont, ['--md-leading' as string]: String(settings.leading) }}
+        className="reader-prose mx-auto py-8 md:py-12 min-w-0"
       >
         <div ref={bodyRef} className="md-body" onMouseUp={onMouseUp}>
           <ReactMarkdown

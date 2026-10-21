@@ -1,0 +1,37 @@
+name: CI
+
+# 每次提交都跑一遍类型检查、单测与构建。
+# 之前仓库里只有排行榜更新工作流，改动是否弄坏构建只能等发版时才发现。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc -b
+
+      - name: Unit tests
+        run: npm test
+
+      # 构建放最后：它内部还会再跑一次 tsc，但那一步失败时前面的单测结果已经可见
+      - name: Build
+        run: npm run build

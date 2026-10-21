@@ -28,7 +28,7 @@ export function Sheet({
   children: ReactNode
 }) {
   const bodyRef = useRef<HTMLDivElement>(null)
-  const [narrow, setNarrow] = useState(false)
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_Q).matches)
   const [drag, setDrag] = useState(0)
   const [dragging, setDragging] = useState(false)
   const moved = useRef(false)
@@ -56,6 +56,7 @@ export function Sheet({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if ((e.target as HTMLElement).closest('button, input, textarea, select, [contenteditable="true"]')) return
       if (narrow) {
         // 手机：内容滚到顶才接管下拉
         const body = bodyRef.current
@@ -64,7 +65,6 @@ export function Sheet({
       active.current = true
       moved.current = false
       start.current = { x: e.clientX, y: e.clientY, t: performance.now() }
-      setDragging(true)
     },
     [narrow],
   )
@@ -78,13 +78,17 @@ export function Sheet({
         // 只有真的向下拖够距离才进入跟手态，避免微抖吞掉点击
         if (dy < 6) return
         if (Math.abs(dx) > Math.abs(dy)) return
+        if (!moved.current) e.currentTarget.getAnimations().forEach((a) => a.cancel())
         moved.current = true
+        setDragging(true)
         setDrag(dy * 0.86)
       } else {
         // 桌面：只跟向右拖关闭
         if (dx < 6) return
         if (Math.abs(dy) > Math.abs(dx)) return
+        if (!moved.current) e.currentTarget.getAnimations().forEach((a) => a.cancel())
         moved.current = true
+        setDragging(true)
         setDrag(dx * 0.86)
       }
     },
@@ -135,7 +139,7 @@ export function Sheet({
           style={{
             transform: drag ? (narrow ? `translateY(${drag}px)` : `translateX(${drag}px)`) : undefined,
             transition: dragging ? 'none' : 'transform var(--dur-2) var(--ease-standard)',
-            ...(drag || dragging ? {} : { animation: `${narrow ? 'sheet-rise' : 'slide-left'} var(--dur-3) var(--ease-soft-spring)` }),
+            animation: `${narrow ? 'sheet-rise' : 'slide-left'} var(--dur-3) var(--ease-soft-spring)`,
           }}
         >
           {/* 抽屉把手（手机）：明示可往下拽 */}

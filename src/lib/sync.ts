@@ -1,8 +1,10 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { db, type Annotation, type Bookmark, type Doc, type FocusSession, type Folder, type ReadingPosition, type Task, type Tombstone } from '@/db/db'
+import type { Table } from 'dexie'
+import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
 import { exportSnapshotParts } from '@/db/tasks'
 import { isNative } from './native'
 import { mergePayloads, type SyncPayload } from './syncMerge'
+import { planReconcile } from './syncReconcile'
 
 /**
  * 可选 WebDAV 同步（v2.0）：本地优先不变，只是把同一份数据放到自己的 WebDAV 上。
@@ -25,6 +27,7 @@ export interface WebdavConfig {
 
 const CFG_KEY = 'webdav'
 const LAST_KEY = 'lastSyncAt'
+const LAST_ERROR_KEY = 'lastSyncError'
 const SYNC_FILE = 'sync.json'
 const AUTO_MIN_INTERVAL = 10 * 60 * 1000
 
@@ -165,8 +168,38 @@ function base64ToBlob(text: string, type: string): Blob {
 // 注意不含 db.blobs：文档本体不在 JSON 里，清掉就找不回来了
 const SYNCED_TABLES = [db.tasks, db.docs, db.positions, db.annotations, db.bookmarks, db.focusSessions, db.folders, db.tombstones]
 
-async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean }): Promise<void> {
+const taskTs = (t: Task) => t.updatedAt ?? t.createdAt
+const docTs = (d: Doc) => d.updatedAt ?? d.addedAt
+const annTs = (a: Annotation) => a.updatedAt ?? a.createdAt
+const markTs = (b: Bookmark) => b.updatedAt ?? b.createdAt
+
+/**
+ * 单表对账写入：合并结果 + 写入前的实时本地数据一起看（规则见 syncReconcile.ts）。
+ * 必须跑在 rw 事务里：否则「读当前 → 判断 → 写」之间又会被别的写入插队。
+ */
+async function reconcileInto<T>(
+  table: Table<T, string>,
+  merged: T[],
+  base: T[],
+  key: (row: T) => string,
+  ts: (row: T) => number,
+  stat: { pending: number },
+): Promise<void> {
+  const current = (await table.toArray()) as T[]
+  const plan = planReconcile({ merged, base, current, key, ts })
+  if (plan.put.length) await table.bulkPut(plan.put)
+  if (plan.del.length) await table.bulkDelete(plan.del)
+  stat.pending += plan.pending
+}
+
+/** 落库统计：pending = 同步期间又产生的本地改动（本轮以本地为准，下一轮推送） */
+interface ApplyStat {
+  pending: number
+}
+
+async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean }, base: SyncPayload): Promise<ApplyStat> {
   const p = merged.payload
+  const stat: ApplyStat = { pending: 0 }
   if (merged.replaceAll) {
     // 另一方清空过：本地先整份清掉再写入，避免「清空过的旧数据」被合并回来
     await db.transaction('rw', [...SYNCED_TABLES, db.docText], async () => {
@@ -189,37 +222,24 @@ async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean 
       await db.tombstones.bulkPut(p.tombstones)
     })
     await db.settings.put({ key: 'syncEpoch', value: p.epoch ?? Date.now() })
-    return
+    return stat
   }
 
   await db.transaction('rw', SYNCED_TABLES, async () => {
-    await db.tasks.bulkPut(p.tasks)
-    await db.docs.bulkPut(p.docs)
-    await db.positions.bulkPut(p.positions)
-    await db.annotations.bulkPut(p.annotations)
-    await db.bookmarks.bulkPut(p.bookmarks)
-    await db.focusSessions.bulkPut(p.focusSessions)
-    await db.folders.bulkPut(p.folders ?? [])
-    await db.tombstones.bulkPut(p.tombstones)
-    // 合并结果里没有的本地记录 = 远端墓碑赢或另一端删过，本地也要删
-    const prune = async (table: { toCollection: () => { primaryKeys: () => Promise<unknown[]> }; bulkDelete: (ids: string[]) => Promise<void> }, keep: Set<string>) => {
-      const ids = (await table.toCollection().primaryKeys()) as string[]
-      const extras = ids.filter((id) => !keep.has(id))
-      if (extras.length) await table.bulkDelete(extras)
-    }
-    await prune(db.tasks, new Set(p.tasks.map((t: Task) => t.id)))
-    await prune(db.docs, new Set(p.docs.map((d: Doc) => d.id)))
-    await prune(db.positions, new Set(p.positions.map((x: ReadingPosition) => x.hash)))
-    await prune(db.annotations, new Set(p.annotations.map((a: Annotation) => a.id)))
-    await prune(db.bookmarks, new Set(p.bookmarks.map((b: Bookmark) => b.id)))
-    await prune(db.focusSessions, new Set(p.focusSessions.map((f: FocusSession) => f.id)))
-    await prune(db.folders, new Set((p.folders ?? []).map((f: Folder) => f.id)))
-    await prune(db.tombstones, new Set(p.tombstones.map((t: Tombstone) => t.id)))
+    await reconcileInto(db.tasks, p.tasks, base.tasks ?? [], (t) => t.id, taskTs, stat)
+    await reconcileInto(db.docs, p.docs, base.docs ?? [], (d) => d.id, docTs, stat)
+    await reconcileInto(db.positions, p.positions, base.positions ?? [], (x) => x.hash, (x) => x.updatedAt, stat)
+    await reconcileInto(db.annotations, p.annotations, base.annotations ?? [], (a) => a.id, annTs, stat)
+    await reconcileInto(db.bookmarks, p.bookmarks, base.bookmarks ?? [], (b) => b.id, markTs, stat)
+    await reconcileInto(db.focusSessions, p.focusSessions, base.focusSessions ?? [], (f) => f.id, (f) => f.ts, stat)
+    await reconcileInto(db.folders, p.folders ?? [], base.folders ?? [], (f) => f.id, (f) => f.updatedAt, stat)
+    await reconcileInto(db.tombstones, p.tombstones, base.tombstones ?? [], (t) => t.id, (t) => t.ts, stat)
   })
   if (p.epoch) {
     const cur = (await db.settings.get('syncEpoch'))?.value as number | undefined
     if (!cur || p.epoch > cur) await db.settings.put({ key: 'syncEpoch', value: p.epoch })
   }
+  return stat
 }
 
 /* ---------------- 主流程 ---------------- */
@@ -243,6 +263,18 @@ export interface SyncReport {
   blobsUp: number
   blobsDown: number
   at: number
+  /** 同步期间又发生的本地改动条数：本地已保留，下一轮同步会推送 */
+  pendingLocal: number
+}
+
+/** 读一份「当前本地状态」的同步载荷（文档本体不进来，全文索引是派生数据也不进来） */
+async function readLocalPayload(): Promise<SyncPayload> {
+  const parts = await exportSnapshotParts()
+  const local = JSON.parse(parts.json) as SyncPayload & { docText?: unknown }
+  local.tombstones = await db.tombstones.toArray()
+  local.epoch = (await db.settings.get('syncEpoch'))?.value as number | undefined
+  delete local.docText
+  return local
 }
 
 async function performSync(): Promise<SyncReport> {
@@ -251,13 +283,9 @@ async function performSync(): Promise<SyncReport> {
   const base = normalizeBase(cfg.url)
   await ensureDirs(cfg, base)
 
-  const localParts = await exportSnapshotParts()
-  const local = JSON.parse(localParts.json) as SyncPayload & { docText?: unknown }
-  local.tombstones = await db.tombstones.toArray()
-  local.epoch = (await db.settings.get('syncEpoch'))?.value as number | undefined
-  delete local.docText // 全文索引是派生数据，同步里不带，下载文档后在本机重建
-
   const syncUrl = join(base, SYNC_FILE)
+  // 顺序要紧：先完成网络读取，再读本地快照。反过来的话，网络往返期间的本地改动
+  // 会被「合并用的旧快照」盖掉（同步期间丢改动就是这个问题）。
   const got = await getText(cfg, syncUrl)
   let remote: SyncPayload | null = null
   if (got?.text) {
@@ -268,10 +296,12 @@ async function performSync(): Promise<SyncReport> {
     }
   }
 
+  const local = await readLocalPayload()
   const merged = mergePayloads(local, remote)
   const remoteHashes = new Set((remote?.blobMeta ?? []).map((m) => m.hash))
 
-  await applyLocally(merged)
+  // 落库时以「写入前重新读到的本地数据」为准（见 syncReconcile.ts）
+  const stat = await applyLocally(merged, local)
   if (merged.replaceAll) void reindexMissingDocs()
 
   const localHashes = new Set((await db.blobs.toCollection().primaryKeys()) as string[])
@@ -304,22 +334,74 @@ async function performSync(): Promise<SyncReport> {
     blobsUp++
   }
 
-  // 3) 推合并结果（带上 ETag 防覆盖别人的并发写入）
-  await putText(cfg, syncUrl, JSON.stringify(merged.payload), got?.etag)
+  // 3) 推合并结果（带上 ETag 防覆盖别人的并发写入）。
+  //    内容以落库后的本地状态为准：同步期间的新改动不需要等下一轮才上去。
+  const pushed = await readLocalPayload()
+  pushed.blobMeta = merged.payload.blobMeta
+  await putText(cfg, syncUrl, JSON.stringify(pushed), got?.etag)
 
   const at = Date.now()
   await db.settings.put({ key: LAST_KEY, value: at })
-  return { tasks: merged.payload.tasks.length, docs: merged.payload.docs.length, blobsUp, blobsDown, at }
+  await db.settings.delete(LAST_ERROR_KEY)
+  return {
+    tasks: pushed.tasks.length,
+    docs: pushed.docs.length,
+    blobsUp,
+    blobsDown,
+    at,
+    pendingLocal: stat.pending,
+  }
 }
 
-/** 立即同步；并发冲突（412）时重跑一次 */
-export async function syncNow(): Promise<SyncReport> {
+/**
+ * 同步互斥：自动同步（启动钩子）与「立即同步」按钮可能撞在一起，
+ * 两个同步并发读同一份远端、各自整份覆盖，必然互相吃掉对方的写入。
+ * 这里让它们排队跑，后进来的等前一个收尾再开始。
+ */
+let syncChain: Promise<unknown> = Promise.resolve()
+
+async function runOnce(): Promise<SyncReport> {
   try {
     return await performSync()
   } catch (e) {
     if (e instanceof Error && e.message === 'CONFLICT') return await performSync()
     throw e
   }
+}
+
+/** 失败留痕：设置页据此显示「上次同步失败的原因」 */
+async function recordError(e: unknown): Promise<void> {
+  const message = e instanceof Error ? e.message : String(e)
+  try {
+    await db.settings.put({ key: LAST_ERROR_KEY, value: { at: Date.now(), message } })
+  } catch { /* 设置写不进去也不能影响错误上抛 */ }
+}
+
+/** 立即同步；并发冲突（412）时重跑一次，多次调用按顺序串行 */
+export function syncNow(): Promise<SyncReport> {
+  const run = syncChain.then(async () => {
+    try {
+      return await runOnce()
+    } catch (e) {
+      await recordError(e)
+      throw e
+    }
+  })
+  // 链上只保留「已结束」的语义，避免一次失败让后续同步全部短路
+  syncChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+export interface SyncFailure {
+  at: number
+  message: string
+}
+
+/** 上次同步失败的原因（成功一次就清掉）；没有失败过返回 null */
+export async function getLastSyncError(): Promise<SyncFailure | null> {
+  const row = await db.settings.get(LAST_ERROR_KEY)
+  const v = row?.value as SyncFailure | undefined
+  return v && typeof v.message === 'string' ? v : null
 }
 
 /** 连接测试：建目录 + 读一次 sync.json（404 也算通） */

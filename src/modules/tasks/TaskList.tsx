@@ -18,6 +18,8 @@ interface Props {
   emptyHint?: string
   /** 键盘导航作用域 id，避免多列表互相抢焦点 */
   scope: string
+  /** 空态只在手机上收紧（首页首屏空间紧） */
+  denseEmpty?: boolean
 }
 
 const NAV_DIR: Record<string, 1 | -1> = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1 }
@@ -28,7 +30,7 @@ const NAV_DIR: Record<string, 1 | -1> = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1
  * 监听挂在 window 上并按作用域过滤——挂在 ul 上时，焦点不在列表内（刚进页面、
  * 点过卡片后又落回 body）按键事件根本不会流经 ul，键盘流会整条失效。
  */
-export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
+export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Props) {
   const { focusId, setFocusId, openDetail } = useTasksUi()
   const openAddSheet = useUi((s) => s.openAddSheet)
   // 左滑删除：软删除 + 撤销（与详情里的删除走同一条路径）
@@ -106,7 +108,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
 
   if (tasks.length === 0) {
     return (
-      <EmptyState icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'}>
+      <EmptyState dense={denseEmpty} icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'}>
         <Button size="sm" variant="primary" onClick={() => openAddSheet({ tier: 'today', todayContext: true })}>
           <Plus size={15} /> 加第一个任务
         </Button>

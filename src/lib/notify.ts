@@ -29,13 +29,28 @@ export async function setNotifyEnabled(on: boolean): Promise<void> {
   if (!on) await cancelAllTaskNotifications()
 }
 
-/** 由 due/dueTime 计算提醒时刻；无时间默认当天 09:00 */
+/**
+ * 由 due/dueTime 计算提醒时刻；无时间默认当天 09:00。
+ *
+ * 旧写法 `hh || 9` 会把合法的 0 点当成「没填」——`00:30` 被排到 09:30。
+ * 现在按「先解析、再校验范围」：格式不对或越界才退回默认值，0 是合法值。
+ */
 export function reminderDateFor(task: Pick<Task, 'due' | 'dueTime'>): Date | null {
   if (!task.due) return null
   const [y, m, d] = task.due.split('-').map(Number)
   if (!y || !m || !d) return null
-  const [hh, mm] = (task.dueTime ?? '09:00').split(':').map(Number)
-  return new Date(y, m - 1, d, hh || 9, mm || 0, 0)
+  const { hh, mm } = parseTimeOfDay(task.dueTime)
+  return new Date(y, m - 1, d, hh, mm, 0)
+}
+
+/** 解析 HH:mm；非法或越界时退回 09:00（0 点是合法值，不能被当成缺省） */
+export function parseTimeOfDay(value: string | undefined): { hh: number; mm: number } {
+  const m = /^(\d{1,2}):(\d{1,2})$/.exec((value ?? '').trim())
+  if (!m) return { hh: 9, mm: 0 }
+  const hh = Number(m[1])
+  const mm = Number(m[2])
+  if (hh > 23 || mm > 59) return { hh: 9, mm: 0 }
+  return { hh, mm }
 }
 
 /** 单个任务：按当前状态与到期时间注册/取消提醒（写入路径末尾调用） */

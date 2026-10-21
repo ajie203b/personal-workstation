@@ -53,7 +53,7 @@ export function AppShell() {
     if (fromIdx < 0 || toIdx < 0) return
     const el = contentRef.current
     if (!el) return
-    el.style.setProperty('--flow-x', `${toIdx > fromIdx ? 16 : -16}px`)
+    el.style.setProperty('--flow-x', `${toIdx > fromIdx ? 6 : -6}px`)
     el.classList.remove('page-flow-in')
     void el.offsetWidth
     el.classList.add('page-flow-in')
@@ -82,7 +82,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="h-full flex bg-surface">
+    <div className="h-full flex bg-canvas">
       <RouteProgress />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">

@@ -14,6 +14,7 @@ import { QuadrantView } from './QuadrantView'
 import { LogbookView } from './LogbookView'
 import { Segmented } from '@/shared/ui/Segmented'
 import { todayStr } from '@/lib/date'
+import { cn } from '@/lib/cn'
 
 type View = 'list' | 'board' | 'calendar' | 'quadrant'
 
@@ -78,7 +79,7 @@ export function TasksPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-3">
+    <div className={cn('mx-auto w-full px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4', view === 'board' ? 'max-w-[1600px]' : 'max-w-5xl')}>
       <div className="flex items-center gap-2">
         <h1 className="hidden md:block text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
 

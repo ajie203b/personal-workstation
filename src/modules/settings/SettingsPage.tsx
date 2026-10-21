@@ -20,8 +20,8 @@ import {
   type BackupInfo,
 } from '@/lib/autoBackup'
 import {
-  getLastSyncAt, getWebdavConfig, setWebdavConfig, syncNow, testWebdav,
-  type WebdavConfig,
+  getLastSyncAt, getLastSyncError, getWebdavConfig, setWebdavConfig, syncNow, testWebdav,
+  type SyncFailure, type WebdavConfig,
 } from '@/lib/sync'
 
 type Tab = 'appearance' | 'data' | 'sync' | 'about'
@@ -227,7 +227,7 @@ function DataTab() {
       await runImport(async () => {
         const json = await file.text()
         const r = await importAll(json)
-        toast(`已导入 ${r.tasks} 条任务`)
+        toast(r.warnings.length ? `已导入 ${r.tasks} 条任务；${r.warnings[0]}` : `已导入 ${r.tasks} 条任务`)
       })
     } catch (err) {
       toast(`导入失败：${err instanceof Error ? err.message : '文件无法解析'}`)
@@ -398,12 +398,14 @@ function WebdavCard() {
   const [cfg, setCfg] = useState<WebdavConfig>({ url: '', username: '', password: '', auto: false })
   const [last, setLast] = useState<number | null>(null)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const [lastError, setLastError] = useState<SyncFailure | null>(null)
   const [busy, setBusy] = useState<'test' | 'sync' | null>(null)
 
   useEffect(() => {
-    void Promise.all([getWebdavConfig(), getLastSyncAt()]).then(([c, l]) => {
+    void Promise.all([getWebdavConfig(), getLastSyncAt(), getLastSyncError()]).then(([c, l, err]) => {
       if (c) setCfg(c)
       setLast(l)
+      setLastError(err)
     })
   }, [])
 
@@ -430,11 +432,17 @@ function WebdavCard() {
     try {
       const r = await syncNow()
       setLast(r.at)
-      setNote({ ok: true, text: `已同步：${r.tasks} 条任务、${r.docs} 篇文档（上传 ${r.blobsUp} / 下载 ${r.blobsDown} 个文件）` })
+      setLastError(null)
+      setNote({
+        ok: true,
+        text: `已同步：${r.tasks} 条任务、${r.docs} 篇文档（上传 ${r.blobsUp} / 下载 ${r.blobsDown} 个文件）`
+          + (r.pendingLocal > 0 ? `；另有 ${r.pendingLocal} 条同步期间的改动已保留，下次同步会推送` : ''),
+      })
       toast('同步完成')
     } catch (e) {
       const text = e instanceof Error ? e.message : '同步失败'
       setNote({ ok: false, text })
+      setLastError({ at: Date.now(), message: text })
       toast(text)
     } finally {
       setBusy(null)
@@ -507,6 +515,11 @@ function WebdavCard() {
       {note && (
         <p className={cn('text-[12px] leading-relaxed', note.ok ? 'text-primary' : 'text-danger')}>{note.text}</p>
       )}
+      {!note && lastError && (
+        <p className="text-[12px] leading-relaxed text-danger">
+          上次同步失败（{new Date(lastError.at).toLocaleString('zh-CN')}）：{lastError.message}
+        </p>
+      )}
       <p className="text-[11.5px] text-on-surface-2">
         {last ? `上次同步：${new Date(last).toLocaleString('zh-CN')}` : '还没有同步过'}
         {' · '}网页版需要 WebDAV 服务端允许跨域；安卓 App 内由原生请求，不受此限制
@@ -572,9 +585,12 @@ function AutoBackupCard() {
                 className="h-8 px-3"
                 dialogTitle="恢复这份快照？"
                 dialogDescription="将用这份快照替换当前数据：快照之后新增的记录会消失，快照之后删除的会回来。建议先手动导出一份备份。"
-                onConfirm={() => void restoreBackup(b.name).then(() => {
-                  toast('已恢复快照')
+                onConfirm={() => void restoreBackup(b.name).then((r) => {
+                  // 有缺本体/孤儿批注时不要只说「已恢复」——静默成功最容易让人以为数据都回来了
+                  toast(r.warnings.length ? `已恢复快照，但${r.warnings[0]}` : '已恢复快照')
                   refresh()
+                }).catch((e: unknown) => {
+                  toast(`恢复失败：${e instanceof Error ? e.message : '快照无法读取'}`)
                 })}
               />
             </div>

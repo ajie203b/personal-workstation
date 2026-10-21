@@ -9,7 +9,9 @@ import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
+import { GettingStarted } from './GettingStarted'
 import { prefersReducedMotion } from '@/lib/motion'
+import { cn } from '@/lib/cn'
 import { Button } from '@/shared/ui/Button'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
@@ -64,7 +66,7 @@ export function TodayPage() {
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[13px] text-on-surface-2">{greeting(date)}</p>
-            <h1 className="text-[28px] md:text-[34px] font-bold leading-[34px] md:leading-[40px] tracking-tight mt-0.5">
+            <h1 className="text-[28px] md:text-[32px] font-semibold leading-[36px] md:leading-[40px] tracking-tight mt-0.5">
               {fmtWeekdayLong(date)}
             </h1>
           </div>
@@ -74,20 +76,19 @@ export function TodayPage() {
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
             onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
-            className="hidden md:grid place-items-center w-12 h-12 rounded-full border border-primary/30 shadow-sm hover:scale-105 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
+            className="hidden md:grid place-items-center w-12 h-12 rounded-full border border-primary/20 bg-primary-soft text-primary shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-transform shrink-0 mb-1 cursor-pointer"
             style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))', color: 'var(--primary)' }}
           >
             <Plus size={24} strokeWidth={2.4} />
           </button>
         </div>
-        <p className="text-[13px] text-on-surface-2 mt-1">
+        {/* 手机空态时这句和下面的「今天没有安排」重复，收起来把首屏让给专注控件 */}
+        <p className={cn('text-[13px] text-on-surface-2 mt-1', todayTasks.length === 0 && 'hidden md:block')}>
           {todayTasks.length > 0
             ? `今天有 ${todayTasks.length} 件事等你处理，一件件来。`
             : '今天的清单已清空，享受此刻。'}
         </p>
       </header>
-
-      <TodayReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-4 items-start">
         {/* 今日任务 */}
@@ -100,10 +101,13 @@ export function TodayPage() {
           </div>
           <TaskList
             scope="today"
+            denseEmpty
             tasks={todayTasks}
             emptyTitle="今天没有安排"
             emptyHint="点加号（桌面在右上角、手机在右下角），或按 N 快速添加；写「每天」可创建打卡任务。"
           />
+          {/* 空态下面直接给下一步：没有任务、也没导入过文档的新用户最需要这个 */}
+          {todayTasks.length === 0 && <GettingStarted />}
 
           {anytimeTasks.length > 0 && (
             <>
@@ -157,6 +161,7 @@ export function TodayPage() {
         </aside>
       </div>
 
+      <TodayReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
       <SmartSuggestions all={all} />
     </div>
   )

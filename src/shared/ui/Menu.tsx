@@ -38,7 +38,7 @@ export function MenuItem({
     <RadixMenu.Item
       onSelect={onSelect}
       className={cn(
-        'flex items-center gap-2 px-3 h-9 rounded-[10px] text-[13px] cursor-pointer outline-none select-none',
+        'flex items-center gap-2 px-3 h-10 rounded-[10px] text-ui-label cursor-pointer outline-none select-none',
         'transition-colors duration-150',
         danger ? 'text-danger data-[highlighted]:bg-danger/10' : 'text-on-surface data-[highlighted]:bg-surface-3',
         active && 'text-primary',
@@ -50,7 +50,7 @@ export function MenuItem({
 }
 
 export function MenuLabel({ children }: { children: ReactNode }) {
-  return <div className="px-3 pt-2 pb-1 text-[11px] text-on-surface-2 tracking-wide">{children}</div>
+  return <div className="px-3 pt-2 pb-1 text-[12px] text-on-surface-2 tracking-wide">{children}</div>
 }
 
 export function MenuSeparator() {

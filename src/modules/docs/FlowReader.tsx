@@ -249,8 +249,8 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       className={cn('h-full overflow-y-auto overscroll-contain', themeCls)}
     >
       <div
-        className="mx-auto px-4 py-8"
-        style={{ width: `${settings.widthPct}%`, minWidth: 260 }}
+        className="reader-prose mx-auto py-8 md:py-12"
+        style={{ ['--reader-width' as string]: `${settings.widthPct}%` }}
       >
         {flow.segments.map((seg, i) => (
           <section
@@ -266,6 +266,8 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
             {flow.unit !== 'doc' && (
               <h2 className="flow-seg-title">{seg.title}</h2>
             )}
+            {/* seg.html 在 flowDoc 解析阶段已过 sanitizeHtml 白名单清洗（事件属性 / 脚本 / 危险协议都会被摘掉），
+                这里不要再拼接任何未经清洗的外部 HTML */}
             <div
               className="flow-body"
               style={{

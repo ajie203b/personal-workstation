@@ -24,9 +24,9 @@ const variantCls: Record<Variant, string> = {
   danger: 'text-danger hover:bg-danger/10',
 }
 const sizeCls: Record<Size, string> = {
-  sm: 'h-8 px-3 rounded-[9px] text-[13px] gap-1.5',
-  md: 'h-10 px-4 rounded-[10px] text-[14px] gap-2',
-  icon: 'w-9 h-9 rounded-[9px] justify-center',
+  sm: 'h-9 px-3 rounded-[10px] text-ui-caption gap-1.5',
+  md: 'h-10 px-4 rounded-[12px] text-ui-label gap-2',
+  icon: 'w-10 h-10 rounded-[10px] justify-center',
 }
 const stateCls: Record<ButtonState, string> = {
   idle: '',
@@ -72,7 +72,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-state={state}
       className={cn(
         'press relative overflow-hidden inline-flex items-center font-medium select-none',
-        'transition-all duration-150 ease-standard',
+        'transition-[background-color,color,border-color,opacity,transform,border-radius] duration-150 ease-standard',
         'disabled:opacity-45 disabled:pointer-events-none',
         variantCls[variant],
         sizeCls[size],

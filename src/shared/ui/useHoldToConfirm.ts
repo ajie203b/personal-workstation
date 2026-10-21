@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { haptic } from '@/lib/haptics'
+import { prefersReducedMotion } from '@/lib/motion'
 
-export const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+export { prefersReducedMotion }
 
 /**
  * 长按蓄力的计时内核：走满才执行，中途松手按比例倒退归零。

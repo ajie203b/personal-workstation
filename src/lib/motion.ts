@@ -13,11 +13,12 @@ export function durMs(name: string, fallback: number): number {
   return raw.endsWith('ms') ? n : n * 1000
 }
 
-/** 是否启用了系统「减弱动态效果」 */
+/** 系统偏好与应用开关共用同一判断，CSS 与 JS 动效同步停用。 */
 export function prefersReducedMotion(): boolean {
   return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    (typeof document !== 'undefined' && document.documentElement.classList.contains('no-motion')) ||
+    (typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   )
 }

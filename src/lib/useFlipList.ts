@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
+import { prefersReducedMotion } from './motion'
 
 /**
  * FLIP 补位（动效方案 5.C）：列表增删/换序后，留下的节点从旧位置滑到新位置，
@@ -49,7 +50,7 @@ export function useFlipList<T extends HTMLElement>(
     })
     rects.current = next
 
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (prefersReducedMotion()) return
     for (const { el, dx, dy } of moving) {
       // 关键：Web Animations 会覆盖内联 style，动画结束后必须 cancel 释放，
       // 否则同一元素上其它 transform（如按压 :active、拖拽位移）会永久失效
