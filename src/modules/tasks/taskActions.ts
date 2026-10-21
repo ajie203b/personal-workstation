@@ -2,6 +2,7 @@ import { toggleDone, undoToggleDone } from '@/db/tasks'
 import type { Task } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { registerUndo } from '@/lib/undo'
+import { isFutureTask } from '@/lib/date'
 
 /**
  * 勾选完成 / 恢复。完成会让任务消失（重复任务还会生成下一次），属于不可见变更，
@@ -9,6 +10,10 @@ import { registerUndo } from '@/lib/undo'
  * 恢复方向任务会重新出现在列表里，不需要撤销。
  */
 export async function toggleTaskWithUndo(task: Task): Promise<void> {
+  if (task.status !== 'done' && isFutureTask(task)) {
+    useUi.getState().toast('这是未来任务，到日期后再完成')
+    return
+  }
   if (task.status === 'done') {
     await toggleDone(task)
     return

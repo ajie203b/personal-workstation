@@ -19,6 +19,7 @@ import { useUi } from '@/stores/ui'
 import { initAppActions } from '@/lib/appActions'
 import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
+import { syncTaskWidget } from '@/lib/taskWidget'
 
 // 重资源页面按路由分包：PDF/Office/EPUB 渲染库、TipTap 编辑器只在进入文档模块时加载
 const DocsPage = lazy(() => import('@/modules/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
@@ -28,6 +29,7 @@ const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((
 const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ default: m.StatsPage })))
 const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => ({ default: m.ReviewPage })))
 const ToolsPage = lazy(() => import('@/modules/tools/ToolsPage').then((m) => ({ default: m.ToolsPage })))
+const FanqiePage = lazy(() => import('@/modules/tools/FanqiePage').then((m) => ({ default: m.FanqiePage })))
 
 const RouteLoader = <PageSkeleton />
 
@@ -70,6 +72,11 @@ export default function App() {
   }, [navigate])
   // 提醒开关打开时，启动即全量重排通知（覆盖导入备份/离线变更的场景）
   const all = useAllTasks()
+  // 任务变化后 400ms 同步一次桌面/负一屏小组件（native 才有实际动作）
+  useEffect(() => {
+    const id = window.setTimeout(() => syncTaskWidget(all), 400)
+    return () => window.clearTimeout(id)
+  }, [all])
   useEffect(() => {
     void getNotifyEnabled().then((on) => {
       if (on) void syncAllTaskNotifications(all)
@@ -92,6 +99,7 @@ export default function App() {
             <Route path="tasks" element={<TasksPage />} />
             <Route path="stats" element={<StatsPage />} />
             <Route path="tools" element={<ToolsPage />} />
+            <Route path="tools/fanqie" element={<FanqiePage />} />
             <Route path="review" element={<ReviewPage />} />
             <Route path="docs" element={<DocsPage />} />
             <Route path="docs/new" element={<MdEditorRoute />} />

@@ -10,12 +10,13 @@ import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { prefersReducedMotion } from '@/lib/motion'
-import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
+import { Button } from '@/shared/ui/Button'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
 export function TodayPage() {
   const today = useDateTick()
   const all = useAllTasks()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
   // 任务「开始专注」深链：/today?focus-task=<id> → 番茄钟自动绑定
@@ -48,7 +49,6 @@ export function TodayPage() {
   )
   const weekDone = useMemo(() => all.filter((t) => t.status === 'done' && isThisWeek(t.doneAt ?? 0)).length, [all])
   const totalDone = useMemo(() => all.filter((t) => t.status === 'done').length, [all])
-  const intelPlacement = useUi((s) => s.intelPlacement)
   useEffect(() => {
     const open = () => openAddSheet({ tier: 'today', todayContext: true })
     window.addEventListener('ws:focus-quickadd', open)
@@ -58,13 +58,13 @@ export function TodayPage() {
   const date = useMemo(() => new Date(), [today])
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">
+    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-3 pb-24 md:pb-14 flex flex-col gap-3 md:gap-4 enter">
       <Milestone total={todayTasks.length} done={todayDone.length} />
-      <header className="pt-1">
+      <header className="pt-0.5">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[13px] text-on-surface-2">{greeting(date)}</p>
-            <h1 className="text-[32px] md:text-[34px] font-bold leading-[40px] tracking-tight mt-0.5">
+            <h1 className="text-[28px] md:text-[34px] font-bold leading-[34px] md:leading-[40px] tracking-tight mt-0.5">
               {fmtWeekdayLong(date)}
             </h1>
           </div>
@@ -87,12 +87,12 @@ export function TodayPage() {
         </p>
       </header>
 
-      <SmartSuggestions all={all} />
+      <TodayReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-4 items-start">
         {/* 今日任务 */}
         <section className="md:col-span-3 min-w-0">
-          <div className="flex items-baseline gap-2 px-1 mb-2.5">
+          <div className="flex items-baseline gap-2 px-1 mb-2">
             <h2 className="text-[15px] font-semibold">今日任务</h2>
             {todayDone.length > 0 && (
               <span className="text-[12px] text-ok font-medium">已完成 {todayDone.length}</span>
@@ -106,37 +106,44 @@ export function TodayPage() {
           />
 
           {anytimeTasks.length > 0 && (
-            <div className="mt-6">
-              <div className="flex items-baseline gap-2 px-1 mb-2.5">
-                <h2 className="text-[15px] font-semibold">随时</h2>
-                <span className="text-[12px] text-on-surface-2">{anytimeTasks.length}</span>
+            <>
+              <div className="mt-5 hidden md:block">
+                <div className="flex items-baseline gap-2 px-1 mb-2">
+                  <h2 className="text-[15px] font-semibold">随时</h2>
+                  <span className="text-[12px] text-on-surface-2">{anytimeTasks.length}</span>
+                </div>
+                <TaskList
+                  scope="anytime"
+                  tasks={anytimeTasks}
+                  emptyTitle="没有随时任务"
+                  emptyHint="在任务清单里放进「随时」的任务会出现在这里。"
+                />
               </div>
-              <TaskList
-                scope="anytime"
-                tasks={anytimeTasks}
-                emptyTitle="没有随时任务"
-                emptyHint="在任务清单里放进「随时」的任务会出现在这里。"
-              />
-            </div>
+              <button
+                type="button"
+                onClick={() => navigate('/tasks?tier=anytime')}
+                className="md:hidden mt-3 w-full card card-hover px-4 py-2.5 flex items-center gap-2 text-left cursor-pointer"
+              >
+                <span className="text-[13px] font-medium">随时清单</span>
+                <span className="text-[12px] text-on-surface-2">{anytimeTasks.length} 件</span>
+                <ChevronRight size={15} className="ml-auto text-on-surface-2" />
+              </button>
+            </>
           )}
         </section>
 
-        {/* 侧栏卡片组：手机顺序按「此刻最想用的」排 —— 番茄钟 → 复习 → 最近阅读，
+        {/* 侧栏卡片组：手机顺序按「此刻最想用的」排 —— 番茄钟 → 最近阅读，
             进度与键盘卡只在桌面出现（手机上进度环已经在标题旁） */}
-        <aside className="md:col-span-2 flex flex-col gap-4 min-w-0">
+        <aside className="md:col-span-2 flex flex-col gap-3 md:gap-4 min-w-0">
           <div className="order-1 md:order-none min-w-0">
             <FocusTimer initialTaskId={focusTaskParam} />
           </div>
 
           <div className="order-2 md:order-none min-w-0">
-            <ReviewInbox />
-          </div>
-
-          <div className="order-3 md:order-none min-w-0">
             <RecentReads />
           </div>
 
-          <section className="hidden md:block card p-4 order-4 md:order-none">
+          <section className="hidden md:block card p-4 order-3 md:order-none">
             <h2 className="text-[13px] font-semibold text-on-surface-2 mb-3">进度</h2>
             <div className="grid grid-cols-2 gap-3">
               <Kpi value={todayTasks.length} label="今日待办" />
@@ -150,9 +157,7 @@ export function TodayPage() {
         </aside>
       </div>
 
-      <DailyReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
-
-      {intelPlacement === 'today' && <IntelligenceCard />}
+      <SmartSuggestions all={all} />
     </div>
   )
 }
@@ -231,35 +236,26 @@ function KeyboardHint({ className }: { className?: string }) {
   )
 }
 
-/** 今日复习入口：有到期高亮才出现 */
-function ReviewInbox() {
+/**
+ * 今日回顾（置顶）：完成摘要 + 高亮复习入口 + 未完成顺延。
+ * 合并了原来的「今日复习」小卡和页面底部的「今日回顾」，减少首屏高度。
+ */
+function TodayReview({
+  todayTasks,
+  todayDone,
+  weekDone,
+}: {
+  todayTasks: import('@/db/db').Task[]
+  todayDone: import('@/db/db').Task[]
+  weekDone: number
+}) {
   const navigate = useNavigate()
   const anns = useAllAnnotations()
   const due = useMemo(() => dueCards(anns, todayStr()).length, [anns])
-  if (due === 0) return null
-  return (
-    <button
-      type="button"
-      onClick={() => navigate('/review')}
-      className="card card-hover p-4 flex items-center gap-3 text-left cursor-pointer w-full"
-    >
-      <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-primary-soft text-primary shrink-0">
-        <Sparkles size={17} />
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-[13px] font-medium">今日复习</span>
-        <span className="block text-[12px] text-on-surface-2 mt-0.5">{due} 张高亮到期</span>
-      </span>
-      <ChevronRight size={16} className="text-on-surface-2 shrink-0" />
-    </button>
-  )
-}
-
-/** 每日回顾：今天完成了什么、还剩几件，一键把没做完的挪到明天 */
-function DailyReview({ todayTasks, todayDone, weekDone }: { todayTasks: import('@/db/db').Task[]; todayDone: import('@/db/db').Task[]; weekDone: number }) {
   const toast = useUi((s) => s.toast)
   const [rolling, setRolling] = useState(false)
-  if (todayTasks.length === 0 && todayDone.length === 0) return null
+
+  if (todayTasks.length === 0 && todayDone.length === 0 && due === 0) return null
 
   const roll = async () => {
     if (rolling) return
@@ -275,37 +271,44 @@ function DailyReview({ todayTasks, todayDone, weekDone }: { todayTasks: import('
   }
 
   return (
-    <section className="card p-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <h2 className="text-[13px] font-semibold text-on-surface-2">今日回顾</h2>
-          <p className="text-[12.5px] text-on-surface-2 mt-1">
-            完成 <b className="text-ok font-semibold">{todayDone.length}</b> 件 · 未完成{' '}
-            <b className="text-on-surface font-semibold">{todayTasks.length}</b> 件 · 本周累计{' '}
-            <b className="text-on-surface font-semibold">{weekDone}</b> 件
-          </p>
-        </div>
-        {todayTasks.length > 0 && (
-          <button
-            type="button"
-            onClick={() => void roll()}
-            disabled={rolling}
-            className="h-8 px-3 rounded-[10px] border border-outline text-[12.5px] text-on-surface-2 hover:text-on-surface hover:bg-surface-3 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
-          >
-            {rolling ? '正在挪…' : `把 ${todayTasks.length} 件挪到明天`}
-          </button>
-        )}
-      </div>
-      {todayDone.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {todayDone.slice(0, 6).map((t) => (
-            <span key={t.id} className="inline-flex items-center gap-1 max-w-[220px] px-2 py-1 rounded-md bg-ok/10 text-[11.5px] text-ok">
-              <span className="truncate">✓ {t.title}</span>
+    <section className="card px-3.5 py-3 md:px-4">
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-primary-soft text-primary shrink-0">
+          <Sparkles size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-x-2.5 gap-y-1 flex-wrap">
+            <h2 className="text-[13px] font-semibold">今日回顾</h2>
+            <span className="text-[11.5px] text-on-surface-2">
+              完成 <b className="text-ok font-semibold">{todayDone.length}</b> · 未完成{' '}
+              <b className="text-on-surface font-semibold">{todayTasks.length}</b> · 本周{' '}
+              <b className="text-on-surface font-semibold">{weekDone}</b>
             </span>
-          ))}
-          {todayDone.length > 6 && <span className="text-[11.5px] text-on-surface-2 px-1 py-1">还有 {todayDone.length - 6} 件</span>}
+          </div>
+          {todayDone.length > 0 && (
+            <div className="hidden md:flex items-center gap-1.5 mt-1.5 overflow-x-auto whitespace-nowrap">
+              {todayDone.slice(0, 6).map((t) => (
+                <span key={t.id} className="inline-flex items-center gap-1 max-w-[180px] px-2 py-0.5 rounded-md bg-ok/10 text-[11px] text-ok">
+                  <span className="truncate">✓ {t.title}</span>
+                </span>
+              ))}
+              {todayDone.length > 6 && <span className="text-[11px] text-on-surface-2 px-1">还有 {todayDone.length - 6} 件</span>}
+            </div>
+          )}
         </div>
-      )}
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+          {due > 0 && (
+            <Button size="sm" variant="outline" onClick={() => navigate('/review')}>
+              复习 {due}
+            </Button>
+          )}
+          {todayTasks.length > 0 && (
+            <Button size="sm" variant="outline" disabled={rolling} onClick={() => void roll()}>
+              {rolling ? '挪动中…' : '挪到明天'}
+            </Button>
+          )}
+        </div>
+      </div>
     </section>
   )
 }

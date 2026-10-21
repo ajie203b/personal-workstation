@@ -1,10 +1,10 @@
 import { Outlet, useLocation, useSearchParams } from 'react-router'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
 import { TopBar } from './TopBar'
-import { PAGE_TITLE } from './nav'
+import { NAV_ITEMS, PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
 import { RouteProgress } from '@/shared/ui/RouteProgress'
 import { FocusMiniBar, useFocusActive } from '@/shared/FocusMiniBar'
@@ -34,12 +34,30 @@ export function AppShell() {
   const [params] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
   const focusActive = useFocusActive()
-  const title = PAGE_TITLE[`/${pathname.split('/')[1]}`] ?? '个人工作站'
   const section = `/${pathname.split('/')[1] || ''}`
+  const title = PAGE_TITLE[pathname] ?? PAGE_TITLE[section] ?? '个人工作站'
 
   // 同一会话内重复进入某视图时不再重放入场动画（P0：去掉反复切页的「晃」）
   const seen = useRef(new Set<string>())
   const revisiting = seen.current.has(section)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const prevSection = useRef(section)
+
+  // 底栏切页时让内容从切换方向轻轻流进来；同页刷新/深链不做
+  useLayoutEffect(() => {
+    const from = prevSection.current
+    prevSection.current = section
+    if (from === section) return
+    const fromIdx = NAV_ITEMS.findIndex((item) => item.path === from)
+    const toIdx = NAV_ITEMS.findIndex((item) => item.path === section)
+    if (fromIdx < 0 || toIdx < 0) return
+    const el = contentRef.current
+    if (!el) return
+    el.style.setProperty('--flow-x', `${toIdx > fromIdx ? 16 : -16}px`)
+    el.classList.remove('page-flow-in')
+    void el.offsetWidth
+    el.classList.add('page-flow-in')
+  }, [section])
 
   // 路由切换回顶部
   useEffect(() => {
@@ -76,7 +94,7 @@ export function AppShell() {
             selfScrolling ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain',
           )}
         >
-          <div className={cn(selfScrolling && 'h-full', revisiting && 'enter-once')}>
+          <div ref={contentRef} className={cn('page-flow', selfScrolling && 'h-full', revisiting && 'enter-once')}>
             <Outlet />
           </div>
         </main>

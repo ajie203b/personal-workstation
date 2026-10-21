@@ -1,5 +1,5 @@
 import type { Annotation, ReviewState } from '@/db/db'
-import { addDaysStr, todayStr } from './date'
+import { addDaysStr, parseDateStr, todayStr } from './date'
 
 /**
  * 高亮复习（v2.0）：把划过的批注当 Anki 卡片，按简化 SM-2 排期。
@@ -71,7 +71,7 @@ export function reviewNext(
   interval = Math.min(MAX_INTERVAL, Math.max(0, interval))
 
   return {
-    due: rating === 'again' ? today : addDaysStr(interval),
+    due: rating === 'again' ? today : addDaysStr(interval, parseDateStr(today)),
     interval,
     ease,
     reps,

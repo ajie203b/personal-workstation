@@ -171,7 +171,14 @@ export function MdEditorPage() {
   }, [])
 
   return (
-    <div className="h-full flex flex-col bg-surface">
+    <div
+      className="h-full flex flex-col bg-surface"
+      style={{
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingLeft: 'env(safe-area-inset-left, 0px)',
+        paddingRight: 'env(safe-area-inset-right, 0px)',
+      }}
+    >
       {/* 顶栏 */}
       <header className="glass shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70">
         <button

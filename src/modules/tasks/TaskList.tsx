@@ -10,6 +10,7 @@ import { EmptyState } from '@/shared/ui/EmptyState'
 import { Button } from '@/shared/ui/Button'
 import { useFlipList } from '@/lib/useFlipList'
 import { haptic } from '@/lib/haptics'
+import { isFutureTask } from '@/lib/date'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -132,7 +133,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
     >
       {tasks.map((t) => (
         <li key={t.id}>
-          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={() => void removeTask(t)} disabled={t.status === 'done'}>
+          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={() => void removeTask(t)} disabled={t.status === 'done' || isFutureTask(t)}>
             <TaskItem task={t} focused={focusId === t.id} flip />
           </SwipeRow>
         </li>

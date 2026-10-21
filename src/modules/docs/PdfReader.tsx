@@ -176,7 +176,7 @@ const PDF_OPTIONS = {
 export function PdfReader({
   hash, settings, annotations, jump, onSelection, shotMode, onShot, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onZoom,
 }: Props) {
-  const [data, setData] = useState<ArrayBuffer | null>(null)
+  const [data, setData] = useState<Blob | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([]) // 每页 高/宽
   const [containerW, setContainerW] = useState(0)
@@ -184,13 +184,12 @@ export function PdfReader({
   const [flashId, setFlashId] = useState<string | null>(null)
   // 截图框选状态
   const [drag, setDrag] = useState<{ page: number; x0: number; y0: number; x1: number; y1: number } | null>(null)
-  // 缩放：手势中用 transform 预览（不重排），松手再改页宽、重渲染成清晰的
+  // 缩放：手势中直接改外层 transform（不触发 React 重渲染），松手再改页宽、重渲染成清晰的
   const zoom = settings.zoom ?? 1
-  const [preview, setPreview] = useState(1)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   const liveZoomRef = useRef(zoom)
-  const previewRef = useRef(1)
+  const transformRef = useRef<HTMLDivElement>(null)
   const zoomAnchor = useRef<{ ratio: number } | null>(null)
   const lastScrollTop = useRef(0)
   const restoredRef = useRef(false)
@@ -213,8 +212,10 @@ export function PdfReader({
         setLoadError('找不到这个 PDF 的文件本体，可能已被系统清理。重新导入一份即可。')
         return
       }
-      const buf = await blob.arrayBuffer()
-      // 重试时组件可能已切到别篇，别把旧文件的 buffer 塞进去
+      const buf = blob
+      // 直接把 Blob 交给 react-pdf：之前传 ArrayBuffer 会被 worker transfer 成 detached，
+      // 组件因缩放/重渲染再次拿同一 buffer 时就会抛 "Cannot perform Construct on a detached ArrayBuffer"。
+      // 重试时组件可能已切到别篇，别把旧文件塞进去
       if (alive) setData(buf)
     })
     return () => { alive = false }
@@ -222,6 +223,8 @@ export function PdfReader({
 
   const fitW = Math.max(280, Math.min(containerW - 24, 860))
   const dispW = Math.max(240, Math.min(Math.round(fitW * zoom), 2600))
+  // 页宽很大时按比例降低画布 DPR，避免 2600px 宽、dpr2 的 canvas 把手机内存和渲染拖垮
+  const renderDpr = Math.max(1, Math.min(PDF_DPR, 3000 / dispW))
   const pageH = (i: number) => (ratios[i] ? Math.round(dispW * ratios[i]) : Math.round(dispW * 1.414))
   const offsets = useRef<number[]>([])
   const layout = useCallback(() => {
@@ -237,39 +240,67 @@ export function PdfReader({
   }, [numPages, dispW, ratios])
 
   usePinch(scrollRef, {
-    onStart: () => { liveZoomRef.current = zoomRef.current },
-    onScale: (ratio) => {
+    onStart: () => {
+      liveZoomRef.current = zoomRef.current
+    },
+    onScale: (ratio, mid) => {
       const next = Math.min(3, Math.max(0.5, zoomRef.current * ratio))
       liveZoomRef.current = next
       const p = next / zoomRef.current
-      // 变化太小时不重渲染，避免每次 touchmove 都刷整页列表
-      if (Math.abs(p - previewRef.current) > 0.01) {
-        previewRef.current = p
-        setPreview(p)
-      }
+      const box = transformRef.current
+      const el = scrollRef.current
+      if (!box || !el || Math.abs(p - 1) < 0.005) return
+      // 以双指中心为缩放锚点：先把视口坐标换算成内容坐标，手感不会飘
+      const rect = el.getBoundingClientRect()
+      const ox = mid.x - rect.left + el.scrollLeft
+      const oy = mid.y - rect.top + el.scrollTop
+      box.style.transformOrigin = `${ox}px ${oy}px`
+      box.style.transform = `scale(${p})`
+      box.style.willChange = 'transform'
     },
     onEnd: () => {
       const next = Math.round(liveZoomRef.current * 100) / 100
-      previewRef.current = 1
-      setPreview(1)
-      if (Math.abs(next - zoomRef.current) < 0.01) return
+      const box = transformRef.current
+      if (Math.abs(next - zoomRef.current) < 0.01) {
+        if (box) { box.style.transform = ''; box.style.willChange = '' }
+        return
+      }
       const el = scrollRef.current
       if (el) {
         const max = el.scrollHeight - el.clientHeight
         zoomAnchor.current = { ratio: max > 0 ? el.scrollTop / max : 0 }
       }
-      onZoom?.(next)
+      // 保留当前 transform 到新页宽渲染完成；useLayoutEffect([dispW]) 会在 paint 前复位，
+      // 避免「先缩回 1x 再变大」造成的那一下闪屏
+      if (onZoom) {
+        onZoom(next)
+      } else if (box) {
+        box.style.transform = ''
+        box.style.willChange = ''
+      }
     },
   })
 
-  // 页宽变了之后把阅读位置按比例放回去，缩放不会把人甩到别处
+  // 页宽变了之后把阅读位置按比例放回去，缩放不会把人甩到别处；
+  // 同时在 paint 前清掉手势 transform，让新页宽直接接管。
   useLayoutEffect(() => {
+    const box = transformRef.current
+    if (box) {
+      box.style.transform = ''
+      box.style.transformOrigin = 'top center'
+      box.style.willChange = ''
+    }
     const anchor = zoomAnchor.current
     const el = scrollRef.current
     if (!anchor || !el) return
     zoomAnchor.current = null
     const max = el.scrollHeight - el.clientHeight
     el.scrollTop = Math.max(0, anchor.ratio * max)
+  }, [dispW])
+
+  // 页宽变化后旧 canvas 先淡出成模糊占位，等新画布画完再淡入，避免硬闪
+  useLayoutEffect(() => {
+    setDrawn(new Set())
   }, [dispW])
 
   // 容器宽度跟踪
@@ -599,9 +630,9 @@ export function PdfReader({
         onScroll={onScroll}
         // pan-x pan-y：禁掉浏览器整页缩放，横竖滚动交给容器自己；双指手势由 usePinch 接
         style={{ touchAction: 'pan-x pan-y', display: loadError ? 'none' : undefined }}
-        className="h-full overflow-auto overscroll-contain bg-surface-3/50"
+        className="h-full overflow-auto overscroll-contain bg-surface-3/45"
       >
-        <div style={{ transform: preview !== 1 ? `scale(${preview})` : undefined, transformOrigin: 'top center' }}>
+        <div ref={transformRef} style={{ transformOrigin: 'top center', backfaceVisibility: 'hidden' }}>
           <Document
             key={reloadKey}
             file={data ?? undefined}
@@ -612,7 +643,7 @@ export function PdfReader({
             onLoadError={(e) => setLoadError(e?.message || '文件可能已损坏，或格式不受支持')}
             loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13px]">正在载入 PDF…</div>}
             error={null}
-            className="flex flex-col items-start py-4 gap-4"
+            className="flex flex-col items-start py-5 gap-5"
             options={PDF_OPTIONS}
           >
         {numPages > 0 &&
@@ -631,7 +662,7 @@ export function PdfReader({
                     opacity: inWindow && !drawn.has(p) ? 0.55 : 1,
                     transition: 'filter 260ms ease-out, opacity 260ms ease-out',
                   }}
-                  className={`relative rounded-[10px] overflow-hidden bg-white shadow-sm ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
+                  className={`relative rounded-[6px] overflow-hidden bg-white ring-1 ring-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_18px_44px_-26px_rgba(0,0,0,0.4)] ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
                   onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
                   onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
                   onMouseMove={(e) => onShotMouseMove(e, p, e.currentTarget)}
@@ -640,7 +671,7 @@ export function PdfReader({
                     <Page
                       pageNumber={p}
                       width={dispW}
-                      devicePixelRatio={PDF_DPR}
+                      devicePixelRatio={renderDpr}
                       renderTextLayer
                       renderAnnotationLayer={false}
                       loading=""
@@ -691,7 +722,7 @@ export function PdfReader({
                   {/* 选区预览：独立组件，拖拽时只有它自己重渲染 */}
                   {!shotMode && <SelectionLayer page={p} />}
                 </div>
-                <span className="text-[11px] text-on-surface-2 select-none">
+                <span className="text-[10.5px] tabular-nums tracking-[0.04em] text-on-surface-2/80 select-none mt-0.5">
                   {p} / {numPages}
                 </span>
               </div>

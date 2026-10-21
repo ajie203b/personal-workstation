@@ -412,6 +412,13 @@ select:focus-visible {
 /* 页面入场：300ms / 12px 上移淡入（MD3 medium2） */
 .enter { animation: fade-up var(--dur-2) var(--ease-standard) both; }
 
+/* 底栏切页：内容从切换方向轻轻流进来（只加在 AppShell 的内容 wrapper 上，不重挂页面） */
+@keyframes page-flow-in {
+  from { opacity: 0.72; transform: translateX(var(--flow-x, 14px)); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.page-flow-in { animation: page-flow-in var(--dur-2) var(--ease-standard) both; }
+
 /* 同层列表级联错峰（前 8 项各差 8ms，之后不再增加） */
 .cascade > * { animation: fade-up var(--dur-2) var(--ease-standard) both; }
 .cascade > *:nth-child(1) { animation-delay: 0ms; }
@@ -524,6 +531,78 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
 /* ============================================================
    M2 文档工作站
    ============================================================ */
+
+/* 三栏阅读布局（v2.2）：左右栏可拖拽压缩 / 折叠。
+   宽度走 CSS 变量，拖动时只改 DOM 变量，正文不跟着重渲染。 */
+.reader-workspace {
+  --reader-left-w: 264px;
+  --reader-right-w: 328px;
+}
+.reader-panel {
+  transition: width var(--dur-2) var(--ease-standard), opacity var(--dur-1) var(--ease-standard);
+}
+.reader-workspace[data-resizing='true'] {
+  cursor: col-resize;
+  user-select: none;
+}
+.reader-workspace[data-resizing='true'] .reader-panel {
+  transition: none;
+}
+.reader-splitter {
+  position: relative;
+  flex: 0 0 1px;
+  width: 1px;
+  align-self: stretch;
+  background: var(--outline);
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 20;
+  outline: none;
+}
+/* 视觉线 1px，实际可抓取范围 ±5px */
+.reader-splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  right: -5px;
+}
+/* 悬停/拖动时才亮起的短握把，静止时保持一条安静的细线 */
+.reader-splitter::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 40px;
+  border-radius: 999px;
+  background: transparent;
+  transform: translate(-50%, -50%);
+  transition: background-color var(--dur-1) var(--ease-standard);
+}
+.reader-splitter:hover,
+.reader-splitter:focus-visible {
+  background: color-mix(in srgb, var(--primary) 45%, var(--outline));
+}
+.reader-splitter:hover::after,
+.reader-splitter:focus-visible::after,
+.reader-workspace[data-resizing='true'] .reader-splitter::after {
+  background: var(--primary);
+}
+.reader-splitter:focus-visible {
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+/* 批注操作行：静止时淡一点，悬停/键盘进入时亮起，减少侧栏噪声 */
+.ann-actions {
+  opacity: 0.72;
+  transition: opacity var(--dur-1) var(--ease-standard);
+}
+.group:hover .ann-actions,
+.group:focus-within .ann-actions {
+  opacity: 1;
+}
 
 /* 批注闪烁定位 */
 @keyframes ann-flash {
@@ -641,28 +720,73 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
   
 }
 
-/* MD 正文排版（≤72 字符行宽的沉浸阅读） */
-.md-body { color: var(--md-ink); line-height: var(--md-leading, 1.85); }
-.md-body h1, .md-body h2, .md-body h3, .md-body h4 { color: var(--md-ink); font-weight: 700; line-height: 1.4; margin: 1.6em 0 0.6em; }
-.md-body h1 { font-size: 1.7em; }
-.md-body h2 { font-size: 1.4em; padding-bottom: 0.3em; border-bottom: 1px solid var(--md-rule); }
-.md-body h3 { font-size: 1.2em; }
-.md-body p { margin: 0.85em 0; }
-.md-body ul, .md-body ol { margin: 0.85em 0; padding-left: 1.6em; }
+/* MD 正文排版：行宽由阅读器控制，这里只管节奏与层级 */
+.md-body {
+  color: var(--md-ink);
+  line-height: var(--md-leading, 1.85);
+  letter-spacing: 0.012em;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+  color: var(--md-ink);
+  font-weight: 700;
+  line-height: 1.38;
+  margin: 1.7em 0 0.65em;
+  letter-spacing: -0.008em;
+  text-wrap: balance;
+  scroll-margin-top: 24px;
+}
+.md-body h1 { font-size: 1.72em; }
+.md-body h2 { font-size: 1.36em; padding-bottom: 0.32em; border-bottom: 1px solid color-mix(in srgb, var(--md-rule) 72%, transparent); }
+.md-body h3 { font-size: 1.16em; }
+.md-body h4 { font-size: 1.02em; }
+.md-body p { margin: 0.9em 0; }
+.md-body ul, .md-body ol { margin: 0.9em 0; padding-left: 1.5em; }
 .md-body ul { list-style: disc; }
 .md-body ol { list-style: decimal; }
-.md-body li { margin: 0.3em 0; }
-.md-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-.md-body blockquote { margin: 1.1em 0; padding: 0.4em 1.1em; border-left: 3px solid var(--primary); background: var(--md-quote); border-radius: 0 10px 10px 0; color: var(--md-ink-2); }
-.md-body code { font-family: var(--font-mono); font-size: 0.86em; background: var(--md-code-bg); padding: 0.15em 0.4em; border-radius: 6px; }
-.md-body pre { background: var(--md-code-bg); border: 1px solid var(--md-rule); border-radius: 12px; padding: 14px 16px; overflow-x: auto; margin: 1.1em 0; }
-.md-body pre code { background: transparent; padding: 0; font-size: 13px; }
-.md-body table { border-collapse: collapse; margin: 1.1em 0; width: 100%; font-size: 0.92em; }
-.md-body th, .md-body td { border: 1px solid var(--md-rule); padding: 7px 12px; text-align: left; }
-.md-body th { background: var(--md-quote); }
-.md-body img { max-width: 100%; border-radius: 10px; }
-.md-body hr { border: none; border-top: 1px solid var(--md-rule); margin: 1.8em 0; }
-.md-body mark { background: transparent; color: inherit; padding: 0.1em 0; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.md-body li { margin: 0.32em 0; padding-left: 0.1em; }
+.md-body li::marker { color: var(--md-ink-2); }
+.md-body li > ul, .md-body li > ol { margin: 0.3em 0; }
+.md-body a { color: var(--primary); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.md-body strong { font-weight: 650; }
+.md-body blockquote {
+  margin: 1.2em 0;
+  padding: 0.55em 1.1em;
+  border-left: 2.5px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  background: var(--md-quote);
+  border-radius: 2px 10px 10px 2px;
+  color: var(--md-ink-2);
+}
+.md-body blockquote > :first-child { margin-top: 0; }
+.md-body blockquote > :last-child { margin-bottom: 0; }
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--md-code-bg);
+  border: 1px solid color-mix(in srgb, var(--md-rule) 70%, transparent);
+  padding: 0.14em 0.4em;
+  border-radius: 6px;
+}
+.md-body pre {
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-rule);
+  border-radius: 12px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 1.2em 0;
+  line-height: 1.65;
+}
+.md-body pre code { background: transparent; border: 0; padding: 0; font-size: 13px; }
+.md-body table { border-collapse: collapse; margin: 1.2em 0; width: 100%; font-size: 0.92em; line-height: 1.55; }
+.md-body th, .md-body td { border: 1px solid color-mix(in srgb, var(--md-rule) 82%, transparent); padding: 8px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.md-body th { background: var(--md-quote); font-weight: 600; }
+.md-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--md-quote) 52%, transparent); }
+.md-body img { display: block; max-width: 100%; max-height: 72vh; object-fit: contain; margin: 1.2em auto; border-radius: 10px; }
+.md-body hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--md-rule), transparent); margin: 2em 0; }
+.md-body mark { background: transparent; color: inherit; padding: 0.1em 0; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background-color var(--dur-1) var(--ease-standard); }
 /* 批注颜色：优先级高于上面的 mark 透明底（否则原文里看不到颜色） */
 .md-body mark.hl-yellow { background: rgba(250, 204, 21, 0.42); }
 .md-body mark.hl-green { background: rgba(74, 222, 128, 0.38); }
@@ -714,7 +838,9 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
   color: var(--md-ink);
   font-weight: 700;
   font-size: 1.25em;
-  line-height: 1.4;
+  line-height: 1.35;
+  letter-spacing: -0.008em;
+  text-wrap: balance;
   margin: 0 0 0.8em;
 }
 .flow-doc .ppt-slide-no {
@@ -724,23 +850,30 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
   letter-spacing: 0.05em;
   margin: 1.4em 0 0.4em;
 }
-.flow-body { color: var(--md-ink); }
-.flow-body h1, .flow-body h2, .flow-body h3, .flow-body h4 { color: var(--md-ink); font-weight: 700; line-height: 1.4; margin: 1.4em 0 0.6em; }
+.flow-body { color: var(--md-ink); letter-spacing: 0.012em; overflow-wrap: break-word; text-wrap: pretty; }
+.flow-body > :first-child { margin-top: 0; }
+.flow-body > :last-child { margin-bottom: 0; }
+.flow-body h1, .flow-body h2, .flow-body h3, .flow-body h4 { color: var(--md-ink); font-weight: 700; line-height: 1.38; margin: 1.5em 0 0.6em; letter-spacing: -0.008em; text-wrap: balance; }
 .flow-body h1 { font-size: 1.5em; }
 .flow-body h2 { font-size: 1.25em; }
 .flow-body h3 { font-size: 1.1em; }
-.flow-body p { margin: 0.85em 0; }
-.flow-body ul, .flow-body ol { margin: 0.85em 0; padding-left: 1.6em; }
+.flow-body p { margin: 0.9em 0; }
+.flow-body ul, .flow-body ol { margin: 0.9em 0; padding-left: 1.5em; }
 .flow-body ul { list-style: disc; }
 .flow-body ol { list-style: decimal; }
-.flow-body li { margin: 0.3em 0; }
-.flow-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-.flow-body blockquote { margin: 1.1em 0; padding: 0.4em 1.1em; border-left: 3px solid var(--primary); background: var(--md-quote); border-radius: 0 10px 10px 0; color: var(--md-ink-2); }
-.flow-body img { max-width: 100%; border-radius: 10px; }
-.flow-body table { border-collapse: collapse; margin: 1.1em 0; width: 100%; font-size: 0.92em; }
-.flow-body th, .flow-body td { border: 1px solid var(--md-rule); padding: 7px 12px; text-align: left; }
-.flow-body th { background: var(--md-quote); }
-.flow-body hr { border: none; border-top: 1px solid var(--md-rule); margin: 1.8em 0; }
+.flow-body li { margin: 0.32em 0; }
+.flow-body li::marker { color: var(--md-ink-2); }
+.flow-body a { color: var(--primary); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.flow-body blockquote { margin: 1.2em 0; padding: 0.55em 1.1em; border-left: 2.5px solid color-mix(in srgb, var(--primary) 72%, transparent); background: var(--md-quote); border-radius: 2px 10px 10px 2px; color: var(--md-ink-2); }
+.flow-body code { font-family: var(--font-mono); font-size: 0.875em; background: var(--md-code-bg); border: 1px solid color-mix(in srgb, var(--md-rule) 70%, transparent); padding: 0.14em 0.4em; border-radius: 6px; }
+.flow-body pre { background: var(--md-code-bg); border: 1px solid var(--md-rule); border-radius: 12px; padding: 14px 16px; overflow-x: auto; margin: 1.2em 0; line-height: 1.65; }
+.flow-body pre code { background: transparent; border: 0; padding: 0; }
+.flow-body img { display: block; max-width: var(--flow-img-max, 100%); max-height: 72vh; object-fit: contain; margin: 1.2em auto; border-radius: 10px; zoom: var(--flow-img-zoom, 1); }
+.flow-body table { border-collapse: collapse; margin: 1.2em 0; width: 100%; font-size: 0.92em; line-height: 1.55; }
+.flow-body th, .flow-body td { border: 1px solid color-mix(in srgb, var(--md-rule) 82%, transparent); padding: 8px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.flow-body th { background: var(--md-quote); font-weight: 600; }
+.flow-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--md-quote) 52%, transparent); }
+.flow-body hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--md-rule), transparent); margin: 2em 0; }
 
 /* ---------------- 骨架屏扫光（ui-motion 15） ---------------- */
 .skeleton {

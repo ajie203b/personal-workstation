@@ -9,8 +9,26 @@ export type ThemeMode = 'system' | 'light' | 'dark'
 export type Accent = 'blue' | 'purple' | 'pink' | 'red' | 'orange' | 'green'
 /** 界面密度（对应 macOS 字号档） */
 export type Density = 'compact' | 'default' | 'large'
-/** 模型智能排名卡的位置（v2.2：默认落在新的「工具」页） */
-export type IntelPlacement = 'tools' | 'today' | 'stats' | 'hidden'
+
+/** 阅读器两侧栏：宽度按设备记忆，折叠状态同文档无关 */
+export interface ReaderPanels {
+  leftWidth: number
+  rightWidth: number
+  leftCollapsed: boolean
+  rightCollapsed: boolean
+}
+
+export const READER_PANEL_LIMITS = {
+  left: { min: 200, max: 420 },
+  right: { min: 260, max: 480 },
+} as const
+
+export const DEFAULT_READER_PANELS: ReaderPanels = {
+  leftWidth: 264,
+  rightWidth: 328,
+  leftCollapsed: false,
+  rightCollapsed: false,
+}
 
 export interface ToastItem {
   id: string
@@ -29,9 +47,7 @@ interface UiState {
   sidebarCollapsed: boolean
   /** 触觉/振动反馈（勾选、拖拽、长按确认等）。默认开，设置页可关。 */
   haptics: boolean
-  intelPlacement: IntelPlacement
-  /** 一次性迁移标记：老版本把榜单默认放今日页，搬到工具页后不再重复搬 */
-  toolsIntelMoved?: boolean
+  readerPanels: ReaderPanels
   shortcutsOpen: boolean
   paletteOpen: boolean
   toasts: ToastItem[]
@@ -44,7 +60,7 @@ interface UiState {
   setMotion: (v: boolean) => void
   setSidebarCollapsed: (v: boolean) => void
   setHaptics: (v: boolean) => void
-  setIntelPlacement: (p: IntelPlacement) => void
+  setReaderPanels: (patch: Partial<ReaderPanels>) => void
   setShortcutsOpen: (v: boolean) => void
   setPaletteOpen: (v: boolean) => void
   openAddSheet: (opts?: { tier?: Tier; todayContext?: boolean }) => void
@@ -63,7 +79,7 @@ export const useUi = create<UiState>()(
       motion: true,
       sidebarCollapsed: false,
       haptics: true,
-      intelPlacement: 'tools',
+      readerPanels: DEFAULT_READER_PANELS,
       shortcutsOpen: false,
       paletteOpen: false,
       addSheet: { open: false, tier: 'anytime', todayContext: false },
@@ -75,7 +91,7 @@ export const useUi = create<UiState>()(
       setMotion: (motion) => set({ motion }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setHaptics: (haptics) => set({ haptics }),
-      setIntelPlacement: (intelPlacement) => set({ intelPlacement }),
+      setReaderPanels: (patch) => set((s) => ({ readerPanels: normalizeReaderPanels({ ...s.readerPanels, ...patch }) })),
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       openAddSheet: (opts) => set({ addSheet: { open: true, tier: opts?.tier ?? 'anytime', todayContext: opts?.todayContext ?? false } }),
@@ -89,7 +105,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'ws-ui',
-      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, intelPlacement: s.intelPlacement, toolsIntelMoved: s.toolsIntelMoved }),
+      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, readerPanels: s.readerPanels }),
       // 旧版本 theme 曾允许 'system'，现在收敛进 themeMode 并保留合法值
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UiState> & { theme?: string }
@@ -105,25 +121,24 @@ export const useUi = create<UiState>()(
           density: p.density ?? 'default',
           motion: p.motion !== false,
           haptics: p.haptics !== false,
-          intelPlacement: resolveIntelPlacement(p),
-          toolsIntelMoved: true,
+          readerPanels: normalizeReaderPanels(p.readerPanels),
         }
       },
     },
   ),
 )
 
-/**
- * 榜单位置：v2.2 起首页是「工具」页。
- * 老版本没手动改过的值都是 'today'（当时的默认），一次性搬到工具页；
- * 搬过之后用户在设置里选什么都原样尊重。
- */
-function resolveIntelPlacement(p: Partial<UiState>): IntelPlacement {
-  const valid = (['tools', 'today', 'stats', 'hidden'] as IntelPlacement[])
-  const saved = valid.includes(p.intelPlacement as IntelPlacement) ? (p.intelPlacement as IntelPlacement) : null
-  if (!saved) return 'tools'
-  if (!p.toolsIntelMoved && saved === 'today') return 'tools'
-  return saved
+/** 旧存档 / 手改 localStorage 都可能带脏值，读入时夹到合法区间 */
+function normalizeReaderPanels(input: unknown): ReaderPanels {
+  const p = (input ?? {}) as Partial<ReaderPanels>
+  const num = (v: unknown, fallback: number, min: number, max: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback
+  return {
+    leftWidth: num(p.leftWidth, DEFAULT_READER_PANELS.leftWidth, READER_PANEL_LIMITS.left.min, READER_PANEL_LIMITS.left.max),
+    rightWidth: num(p.rightWidth, DEFAULT_READER_PANELS.rightWidth, READER_PANEL_LIMITS.right.min, READER_PANEL_LIMITS.right.max),
+    leftCollapsed: p.leftCollapsed === true,
+    rightCollapsed: p.rightCollapsed === true,
+  }
 }
 
 /** Ctrl/Cmd+K 快捷键不走 persist 的 setter，专供命令面板 */

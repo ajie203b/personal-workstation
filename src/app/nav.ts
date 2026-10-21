@@ -24,6 +24,7 @@ export const PAGE_TITLE: Record<string, string> = {
   '/docs': '文档工作站',
   '/docs/new': '写文档',
   '/tools': '工具',
+  '/tools/fanqie': '番茄小说',
   '/settings': '设置',
   '/ai': 'AI 助手',
   '/share': '分享接收',
