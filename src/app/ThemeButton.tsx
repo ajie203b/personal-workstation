@@ -1,13 +1,16 @@
-import { Moon, Sun } from 'lucide-react'
-import { useUi, type Theme } from '@/stores/ui'
+import { Check, Monitor, Moon, Sun } from 'lucide-react'
+import { useUi, type ThemeMode } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { setThemeWithTransition } from '@/shared/theme'
 import { haptic } from '@/lib/haptics'
+import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuLabel } from '@/shared/ui/Menu'
 
-/** 只有 浅色 / 深色 两档：点击在两者之间往返，不再有「跟随系统」 */
-const NEXT: Record<Theme, Theme> = { light: 'dark', dark: 'light' }
-const ICONS: Record<Theme, typeof Sun> = { light: Sun, dark: Moon }
-const LABELS: Record<Theme, string> = { light: '浅色', dark: '深色' }
+const META: Record<ThemeMode, { icon: typeof Sun; label: string }> = {
+  system: { icon: Monitor, label: '跟随系统' },
+  light: { icon: Sun, label: '浅色' },
+  dark: { icon: Moon, label: '深色' },
+}
+const MODES: ThemeMode[] = ['system', 'light', 'dark']
 
 /** 从按钮位置记下扩散原点，CSS 的 ::view-transition-new(root) 用它画圆（多处共用） */
 export function markOrigin(e: React.MouseEvent<HTMLElement>) {
@@ -17,46 +20,48 @@ export function markOrigin(e: React.MouseEvent<HTMLElement>) {
   root.style.setProperty('--vt-y', `${rect.top + rect.height / 2}px`)
 }
 
+/** 侧栏主题入口：三档菜单，跟设置页「跟随系统 / 浅色 / 深色」保持一致 */
 export function ThemeButton({ compact = false }: { compact?: boolean }) {
-  const theme = useUi((s) => s.theme)
-  const Icon = ICONS[theme]
-  return (
-    <button
-      type="button"
-      aria-label={`主题：${LABELS[theme]}（点击切换到${LABELS[NEXT[theme]]}）`}
-      title={`主题：${LABELS[theme]}`}
-      onClick={(e) => {
-        markOrigin(e)
-        haptic('light')
-        setThemeWithTransition(NEXT[theme])
-      }}
-      className={cn(
-        'press relative overflow-hidden flex items-center gap-2 h-10 rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer',
-        compact ? 'w-10 justify-center max-lg:px-0' : 'w-full px-2.5 text-[13px]',
-      )}
-    >
-      <Icon size={18} strokeWidth={1.9} />
-      {!compact && <span className="hidden lg:block">{LABELS[theme]}</span>}
-    </button>
-  )
-}
+  const mode = useUi((s) => s.themeMode)
+  const setThemeMode = useUi((s) => s.setThemeMode)
+  const { icon: Icon, label } = META[mode]
 
-/** 手机顶栏上的主题切换（含当前模式指示） */
-export function ThemeButtonInline() {
-  const theme = useUi((s) => s.theme)
-  const Icon = ICONS[theme]
+  const choose = (next: ThemeMode) => {
+    if (next === mode) return
+    haptic('light')
+    if (next === 'system') setThemeMode('system')
+    else setThemeWithTransition(next)
+  }
+
   return (
-    <button
-      type="button"
-      aria-label={`主题：${LABELS[theme]}（点击切换到${LABELS[NEXT[theme]]}）`}
-      onClick={(e) => {
-        markOrigin(e)
-        haptic('light')
-        setThemeWithTransition(NEXT[theme])
-      }}
-      className="press relative overflow-hidden grid place-items-center w-10 h-10 rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
-    >
-      <Icon size={19} strokeWidth={1.9} />
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`主题：${label}`}
+          title={`主题：${label}`}
+          className={cn(
+            'press relative overflow-hidden flex items-center gap-2 h-10 rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer',
+            compact ? 'w-10 justify-center max-lg:px-0' : 'w-full px-2.5 text-[13px]',
+          )}
+        >
+          <Icon size={18} strokeWidth={1.9} />
+          {!compact && <span className="hidden lg:block">{label}</span>}
+        </button>
+      </DropdownMenuTrigger>
+      <MenuContent>
+        <MenuLabel>主题</MenuLabel>
+        {MODES.map((m) => {
+          const M = META[m]
+          return (
+            <MenuItem key={m} active={mode === m} onSelect={() => choose(m)}>
+              <M.icon size={15} />
+              <span className="flex-1">{M.label}</span>
+              {mode === m && <Check size={14} />}
+            </MenuItem>
+          )
+        })}
+      </MenuContent>
+    </DropdownMenu>
   )
 }

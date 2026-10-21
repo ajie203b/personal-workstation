@@ -74,8 +74,8 @@ export function TodayPage() {
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
             onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
-            className="hidden md:grid place-items-center w-12 h-12 rounded-full border border-ok/30 shadow-sm hover:scale-105 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
-            style={{ background: 'color-mix(in srgb, var(--ok) 14%, var(--surface))', color: 'var(--ok)' }}
+            className="hidden md:grid place-items-center w-12 h-12 rounded-full border border-primary/30 shadow-sm hover:scale-105 active:scale-95 transition-all shrink-0 mb-1 cursor-pointer"
+            style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))', color: 'var(--primary)' }}
           >
             <Plus size={24} strokeWidth={2.4} />
           </button>
@@ -102,7 +102,7 @@ export function TodayPage() {
             scope="today"
             tasks={todayTasks}
             emptyTitle="今天没有安排"
-            emptyHint="点右下角加号添加任务；写「每天」可创建打卡任务。"
+            emptyHint="点加号（桌面在右上角、手机在右下角），或按 N 快速添加；写「每天」可创建打卡任务。"
           />
 
           {anytimeTasks.length > 0 && (
@@ -148,8 +148,8 @@ export function TodayPage() {
             <div className="grid grid-cols-2 gap-3">
               <Kpi value={todayTasks.length} label="今日待办" />
               <Kpi value={todayDone.length} label="今日完成" tone="ok" />
-              <Kpi value={weekDone} label="本周完成" />
-              <Kpi value={totalDone} label="累计完成" />
+              <Kpi value={weekDone} label="本周完成" tone="ok" />
+              <Kpi value={totalDone} label="累计完成" tone="ok" />
             </div>
           </section>
 
@@ -372,7 +372,7 @@ function RecentReads() {
     <button
       type="button"
       onClick={() => navigate('/docs')}
-      className="card card-hover p-4 text-left cursor-pointer"
+      className="card card-hover w-full p-4 text-left cursor-pointer"
     >
       <span className="flex items-center gap-2.5 mb-2.5">
         <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">

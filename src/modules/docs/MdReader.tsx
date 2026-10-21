@@ -5,6 +5,7 @@ import { saveScrollAndProgress } from '@/db/docs'
 import type { Annotation, DocSettings } from '@/db/db'
 import { handleDocLink, transformDocUrl } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
+import { remarkHighlight } from './mdHighlight'
 
 export interface MdSelectionInfo {
   text: string
@@ -273,15 +274,21 @@ export function MdReader({
       >
         <div ref={bodyRef} className="md-body" onMouseUp={onMouseUp}>
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkHighlight]}
             urlTransform={transformDocUrl}
             components={{
               // 链接统一接管：否则 #锚点/相对路径会改掉 hash 路由，直接跳回今日页
-              a: ({ href, children, ...rest }) => (
-                <a href={href} rel="noreferrer noopener" onClick={(e) => { handleDocLink(e, href) }} {...rest}>
-                  {children}
-                </a>
-              ),
+              a: ({ href, children, ...rest }) => {
+                // remarkHighlight 把 ==color|文字== 变成 hl:color 链接，这里画回高亮
+                if (href?.startsWith('hl:')) {
+                  return <mark className={`hl-${href.slice(3)}`}>{children}</mark>
+                }
+                return (
+                  <a href={href} rel="noreferrer noopener" onClick={(e) => { handleDocLink(e, href) }} {...rest}>
+                    {children}
+                  </a>
+                )
+              },
               img: ({ src, alt, ...rest }) => (
                 <img src={src} alt={alt ?? ''} loading="lazy" className="rounded-[10px] border border-outline/50" {...rest} />
               ),

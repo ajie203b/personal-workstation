@@ -24,7 +24,7 @@ function apply() {
   setTimeout(() => root.classList.remove('theme-transition'), 300)
   // 同步 meta theme-color
   const meta = document.querySelector('meta[name="theme-color"]:not([media])')
-  if (meta) meta.setAttribute('content', dark ? '#1F1E21' : '#FFFFFF')
+  if (meta) meta.setAttribute('content', dark ? '#1B1A1D' : '#FFFFFF')
 }
 
 /**

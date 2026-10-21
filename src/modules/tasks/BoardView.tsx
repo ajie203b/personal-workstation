@@ -115,8 +115,8 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
         </div>
       </SortableContext>
       {tasks.length === 0 && (
-        <div className="grid place-items-center flex-1 min-h-[96px] text-[12px] text-on-surface-2/70 border border-dashed border-outline rounded-xl">
-          拖任务到这里
+        <div className="grid place-items-center flex-1 min-h-[96px] px-3 text-center text-[12px] text-on-surface-2 border border-dashed border-outline rounded-xl">
+          拖任务到这里，或用上方输入框 / 右下角加号添加
         </div>
       )}
     </div>

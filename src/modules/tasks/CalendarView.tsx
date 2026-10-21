@@ -208,6 +208,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
           <div className="flex flex-col items-center py-8 text-on-surface-2">
             <Inbox size={24} className="mb-2 opacity-50" />
             <p className="text-[13px]">没有待办任务</p>
+            <p className="text-[11.5px] mt-1">用上方输入框或右下角加号添加，添加后拖到日期格即可排期</p>
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">

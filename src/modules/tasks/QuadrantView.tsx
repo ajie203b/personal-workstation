@@ -61,7 +61,7 @@ export function QuadrantView({ tasks, onOpenTask }: Props) {
           </div>
           <div className="flex flex-col gap-1.5 flex-1">
             {quadrants[q.key].length === 0 && (
-              <p className="text-[11.5px] text-on-surface-2/60 py-3 text-center">暂无任务</p>
+              <p className="text-[11.5px] text-on-surface-2 py-3 text-center">暂无任务，用上方输入框或右下角加号添加</p>
             )}
             {quadrants[q.key].map((t) => (
               <TaskQuadItem key={t.id} task={t} onOpen={onOpenTask} />
