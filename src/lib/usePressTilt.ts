@@ -5,7 +5,7 @@ import { prefersReducedMotion } from './motion'
  * 卡片按下微倾（ui-motion 65）：只给桌面鼠标用，触屏保持原生按压。
  * 倾斜方向跟随指针相对卡片中心的位置，松手用轻微回弹复位。
  */
-export function usePressTilt<T extends HTMLElement>(maxDeg = 7) {
+export function usePressTilt<T extends HTMLElement>(maxDeg = 2) {
   const ref = useRef<T>(null)
   const active = useRef<number | null>(null)
 
@@ -19,7 +19,7 @@ export function usePressTilt<T extends HTMLElement>(maxDeg = 7) {
     const rx = (0.5 - py) * maxDeg * 2
     const ry = (px - 0.5) * maxDeg * 2
     el.style.transition = 'none' // 按住时 1:1 跟手，松手再走回弹
-    el.style.transform = `perspective(900px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) scale(0.97)`
+    el.style.transform = `perspective(900px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) scale(0.99)`
     el.style.setProperty('--tilt-x', `${(px * 100).toFixed(1)}%`)
     el.style.setProperty('--tilt-y', `${(py * 100).toFixed(1)}%`)
   }
@@ -28,7 +28,7 @@ export function usePressTilt<T extends HTMLElement>(maxDeg = 7) {
     active.current = null
     const el = ref.current
     if (!el) return
-    el.style.transition = 'transform 380ms cubic-bezier(.34,1.28,.64,1)'
+    el.style.transition = 'transform var(--dur-2) var(--ease-soft-spring)'
     el.style.transform = ''
   }
 

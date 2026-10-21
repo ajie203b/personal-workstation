@@ -43,6 +43,7 @@ export async function importDoc(file: File): Promise<ImportResult> {
     kind,
     size: file.size,
     addedAt: Date.now(),
+    updatedAt: Date.now(),
   }
   const blob = new Blob([buf], { type: file.type || 'application/octet-stream' })
   await db.transaction('rw', db.docs, db.blobs, async () => {
@@ -67,6 +68,89 @@ export async function touchDoc(id: string): Promise<void> {
   // 1 分钟内的重复打开不重复写，避免 liveQuery 风暴
   if (!doc || (doc.lastOpenedAt ?? 0) > Date.now() - 60_000) return
   await db.docs.update(id, { lastOpenedAt: Date.now() })
+}
+
+/* ============ Markdown 编辑保存 ============ */
+
+/**
+ * Markdown 内容的版本哈希。
+ *
+ * 为什么不能复用旧 hash：文档本体按 hash 寻址，WebDAV 同步只上传「远端没有的 hash」。
+ * 旧实现保存时一直写回 `doc.hash`，内容变了 hash 没变 → 第二次同步直接跳过上传，
+ * 远端永远停在第一次的正文。现在 hash 由「文档 id + 内容摘要」决定：
+ * 同一篇文档内容一改就换 hash，同步才会把它当新本体上传。
+ */
+export function mdContentHash(docId: string, text: string): string {
+  let h = 0x811c9dc5
+  let g = 0x01000193
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    h = Math.imul(h ^ c, 0x01000193)
+    g = Math.imul(g ^ c, 0x85ebca6b)
+  }
+  return `md-${docId}-${(h >>> 0).toString(16)}${(g >>> 0).toString(16)}`
+}
+
+/**
+ * 保存 Markdown 文档（新建或覆盖）。内容变化时换 hash，并把按 hash 关联的
+ * 阅读位置 / 批注 / 书签 / 全文索引一起迁到新 hash 上——否则正文换了，批注就全成了孤儿。
+ */
+export async function saveMarkdownDoc(input: {
+  doc: Doc | null
+  title: string
+  markdown: string
+}): Promise<Doc> {
+  const { markdown } = input
+  const now = Date.now()
+  const title = input.title.trim() || input.doc?.title || '无标题文档'
+  const blob = new Blob([markdown], { type: 'text/markdown' })
+  const id = input.doc?.id ?? uid()
+  const hash = mdContentHash(id, markdown)
+  const old = input.doc
+
+  if (!old) {
+    const doc: Doc = { id, hash, title, kind: 'md', size: markdown.length, addedAt: now, updatedAt: now, lastOpenedAt: now }
+    await db.transaction('rw', db.docs, db.blobs, async () => {
+      await db.blobs.put({ hash, blob })
+      await db.docs.add(doc)
+    })
+    void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(doc, blob))
+    return doc
+  }
+
+  const next: Doc = { ...old, hash, title, size: markdown.length, updatedAt: now, lastOpenedAt: now }
+
+  if (old.hash === hash) {
+    await db.docs.put(next)
+    return next
+  }
+
+  await db.transaction(
+    'rw',
+    [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText],
+    async () => {
+      await db.blobs.put({ hash, blob })
+      await db.docs.put(next)
+
+      // 旧 hash 只被这一篇文档引用时才迁移关联数据，避免把另一篇同内容文档的批注「搬走」
+      const sharedWithOthers = (await db.docs.where('hash').equals(old.hash).count()) > 0
+      if (!sharedWithOthers) {
+        const pos = await db.positions.get(old.hash)
+        if (pos) {
+          await db.positions.put({ ...pos, hash, updatedAt: now })
+          await db.positions.delete(old.hash)
+        }
+        const anns = await db.annotations.where('docHash').equals(old.hash).toArray()
+        for (const a of anns) await db.annotations.update(a.id, { docHash: hash })
+        const marks = await db.bookmarks.where('docHash').equals(old.hash).toArray()
+        for (const b of marks) await db.bookmarks.update(b.id, { docHash: hash })
+        await db.docText.delete(old.hash)
+        await db.blobs.delete(old.hash)
+      }
+    },
+  )
+  void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(next, blob))
+  return next
 }
 
 export async function deleteDoc(doc: Doc): Promise<void> {

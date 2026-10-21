@@ -95,6 +95,8 @@ export interface Doc {
   size: number
   pages?: number // PDF 页数（首次打开时回填）
   addedAt: number
+  /** 元信息最后修改时间：同步按它判新旧（只写 addedAt 的话标题/正文改动永远输给另一端） */
+  updatedAt?: number
   lastOpenedAt?: number
   /** 所属文件夹（v2.1） */
   folderId?: string

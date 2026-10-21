@@ -35,6 +35,7 @@ export interface MergeResult {
 }
 
 const taskTs = (t: Task) => t.updatedAt ?? t.createdAt
+const docTs = (d: Doc) => d.updatedAt ?? d.addedAt
 const annTs = (a: Annotation) => a.updatedAt ?? a.createdAt
 const markTs = (b: Bookmark) => b.updatedAt ?? b.createdAt
 
@@ -126,7 +127,7 @@ export function mergePayloads(local: SyncPayload, remote: SyncPayload | null, no
       epoch,
       tasks: mergeByKey(local.tasks ?? [], remote.tasks ?? [], (t) => t.id, taskTs, dead),
       settings: mergeSettings(local.settings ?? [], remote.settings ?? []),
-      docs: mergeByKey(local.docs ?? [], remote.docs ?? [], (d) => d.id, (d) => d.addedAt, dead),
+      docs: mergeByKey(local.docs ?? [], remote.docs ?? [], (d) => d.id, docTs, dead),
       positions: mergeByKey(local.positions ?? [], remote.positions ?? [], (p) => p.hash, (p) => p.updatedAt, dead),
       annotations: mergeByKey(local.annotations ?? [], remote.annotations ?? [], (a) => a.id, annTs, dead),
       bookmarks: mergeByKey(local.bookmarks ?? [], remote.bookmarks ?? [], (b) => b.id, markTs, dead),

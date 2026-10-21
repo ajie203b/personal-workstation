@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router'
 import { Settings } from 'lucide-react'
+import { BrandMark } from '@/shared/BrandMark'
 
 /**
  * 手机端顶栏（<md 显示）：玻璃材质 + 品牌图标（回今日）+ 页面标题 + 设置齿轮。
@@ -22,7 +23,7 @@ export function TopBar({ title }: { title: string }) {
         onClick={() => navigate('/today')}
         className="shrink-0 cursor-pointer rounded-[10px] active:opacity-80 select-none"
       >
-        <img src="./brand.png" alt="" className="w-10 h-10 rounded-[10px] object-cover" draggable={false} />
+        <BrandMark />
       </button>
       <span className="text-[15px] font-semibold">{title}</span>
       <button

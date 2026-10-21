@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { BubbleMenu, EditorContent, useEditor } from '@tiptap/react'
+import { EditorContent, useEditor } from '@tiptap/react'
+// v3 把 BubbleMenu / FloatingMenu 挪到子路径，定位也从 tippy 换成 Floating UI
+import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
@@ -9,9 +11,9 @@ import {
 } from 'lucide-react'
 import { db, type Doc } from '@/db/db'
 import { addTask } from '@/db/tasks'
+import { saveMarkdownDoc } from '@/db/docs'
 import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
-import { uid } from '@/lib/id'
 import { fileToDataUrl } from '@/lib/image'
 import { cn } from '@/lib/cn'
 import { HL_COLORS, HighlightMark, type HlColor } from './mdHighlight'
@@ -169,33 +171,23 @@ export function MdEditorPage() {
     }
     setSaving(true)
     try {
-      const now = Date.now()
+      // 保存统一走 saveMarkdownDoc：内容变了就换 hash，同步才会把新正文当成新本体上传
+      // （旧实现在这里复用 existing.hash，远端 sync.json 里的 hash 一直没变，正文永远停在第一版）
+      const saved = await saveMarkdownDoc({ doc: existing, title, markdown: md })
       if (existing) {
-        await db.blobs.put({ hash: existing.hash, blob: new Blob([md], { type: 'text/markdown' }) })
-        await db.docs.update(existing.id, { title: title.trim() || existing.title, size: md.length, lastOpenedAt: now })
+        setExisting(saved)
+        setTitle(saved.title)
         toast('已保存')
       } else {
-        const hash = `md-${uid()}`
-        const doc: Doc = {
-          id: uid(),
-          hash,
-          title: title.trim() || '无标题文档',
-          kind: 'md',
-          size: md.length,
-          addedAt: now,
-          lastOpenedAt: now,
-        }
-        await db.transaction('rw', db.docs, db.blobs, async () => {
-          await db.blobs.put({ hash, blob: new Blob([md], { type: 'text/markdown' }) })
-          await db.docs.add(doc)
-        })
-        setExisting(doc)
+        setExisting(saved)
         toast('文档已创建')
         // 建完立刻切到「编辑这篇」的路由：否则留在 /docs/new 上再按一次保存，
         // existing 还是空，会再新建一篇一模一样的文档（连按两下就是两篇）
-        navigate(`/docs/edit/${doc.id}`, { replace: true })
+        navigate(`/docs/edit/${saved.id}`, { replace: true })
       }
       setDirty(false)
+    } catch {
+      toast('保存失败，请重试')
     } finally {
       setSaving(false)
     }
@@ -280,7 +272,7 @@ export function MdEditorPage() {
       {editor && (
         <BubbleMenu
           editor={editor}
-          tippyOptions={{ duration: 120, placement: 'top' }}
+          options={{ placement: 'top', offset: 8 }}
           shouldShow={({ state }) => {
             const { from, to } = state.selection
             return from !== to && state.doc.textBetween(from, to, '\n').trim().length > 0

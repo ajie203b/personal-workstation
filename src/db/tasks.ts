@@ -5,6 +5,7 @@ import { addDaysStr, parseDateStr, todayStr } from '@/lib/date'
 import { nextDueForRepeat } from '@/lib/repeat'
 import { syncTaskNotification } from '@/lib/notify'
 import { markDeleted } from '@/lib/tombstones'
+import { validateSnapshot } from './snapshotSchema'
 
 export interface NewTaskInput {
   title: string
@@ -307,6 +308,8 @@ export interface ImportResult {
   tasks: number
   settings: number
   docs?: number
+  /** 结构校验通过但有疑点（孤儿批注、缺本体等），由 UI 提示 */
+  warnings: string[]
 }
 
 /** merge = 手动导入（同 id 覆盖，不动别的）；replace = 恢复快照（快照没覆盖的表保持原样） */
@@ -329,9 +332,14 @@ const IMPORT_TABLES: [string, Table<any, any>][] = [
   ['folders', db.folders],
 ]
 
-async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promise<ImportResult> {
-  if (!Array.isArray(data.tasks)) throw new Error('文件格式不正确：缺少 tasks 数组')
-  const result: ImportResult = { tasks: 0, settings: 0, docs: 0 }
+/**
+ * 写入前的统一入口：
+ * 1) 结构校验（应用标识 / 版本 / 字段类型 / 枚举）——不通过就一条数据都不写
+ * 2) replace 模式只替换「备份负责的数据」，本机专属设置（WebDAV 口令、同步时间戳）保留
+ */
+async function writeAll(raw: unknown, mode: ImportMode): Promise<ImportResult> {
+  const { data, warnings } = validateSnapshot(raw)
+  const result: ImportResult = { tasks: 0, settings: 0, docs: 0, warnings }
   const has = (k: string) => Array.isArray(data[k])
   await db.transaction(
     'rw',
@@ -341,7 +349,19 @@ async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promis
         // 真恢复：先清空快照覆盖到的表——快照之后新建的记录会消失，快照之后删掉的会回来。
         // 老备份缺哪张表就不动哪张，避免顺手把现有数据清空。
         for (const [key, t] of IMPORT_TABLES) {
-          if (key === 'blobs' ? has('blobRows') : has(key)) await t.clear()
+          if (key === 'blobs') {
+            if (has('blobRows')) await t.clear()
+            continue
+          }
+          if (key === 'settings') {
+            if (has('settings')) {
+              // 只清「备份负责的设置」。整表 clear 会把 webdav（含口令）、lastSyncAt、
+              // lastAutoBackupAt、notifyEnabled 一起清掉 —— 恢复一次备份就得重新填 WebDAV。
+              await db.settings.filter((s) => !LOCAL_ONLY_SETTINGS.has(s.key)).delete()
+            }
+            continue
+          }
+          if (has(key)) await t.clear()
         }
       }
       if (has('tasks')) {
@@ -349,8 +369,10 @@ async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promis
         result.tasks = (data.tasks as Task[]).length
       }
       if (has('settings')) {
-        await db.settings.bulkPut(data.settings as SettingKV[])
-        result.settings = (data.settings as SettingKV[]).length
+        // 备份本不该带本机专属项（导出时已排除），手改过的文件这里再挡一道，别让它覆盖本机口令
+        const rows = (data.settings as SettingKV[]).filter((s) => !LOCAL_ONLY_SETTINGS.has(s.key))
+        await db.settings.bulkPut(rows)
+        result.settings = rows.length
       }
       if (has('docs')) {
         await db.docs.bulkPut(data.docs as Doc[])
@@ -380,7 +402,16 @@ async function writeAll(data: Record<string, unknown>, mode: ImportMode): Promis
 }
 
 export async function importAll(json: string, mode: ImportMode = 'merge'): Promise<ImportResult> {
-  return writeAll(JSON.parse(json) as Record<string, unknown>, mode)
+  return writeAll(parseJson(json), mode)
+}
+
+/** JSON 解析失败时给一句人话（文件截断、选错文件都落到这里） */
+function parseJson(json: string): unknown {
+  try {
+    return JSON.parse(json) as unknown
+  } catch {
+    throw new Error('文件不是合法 JSON：可能已损坏或被截断')
+  }
 }
 
 /** 目录式快照的写入路径：json 里的清单 + 从 OPFS 读出来的原始 Blob */
@@ -388,7 +419,7 @@ export async function importSnapshotParts(
   parts: { json: string; blobs: { hash: string; type?: string; blob: Blob }[] },
   mode: ImportMode = 'merge',
 ): Promise<ImportResult> {
-  const data = JSON.parse(parts.json) as Record<string, unknown>
+  const data = parseJson(parts.json) as Record<string, unknown>
   data.blobRows = parts.blobs
   return writeAll(data, mode)
 }

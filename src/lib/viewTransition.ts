@@ -1,4 +1,5 @@
 import { flushSync } from 'react-dom'
+import { prefersReducedMotion } from './motion'
 
 /**
  * 共享元素转场（View Transitions API）：让「列表卡片 → 详情」在空间上连续生长，
@@ -26,9 +27,7 @@ export function supportsViewTransition(): boolean {
   return (
     typeof document !== 'undefined' &&
     typeof (document as DocWithVT).startViewTransition === 'function' &&
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    !prefersReducedMotion()
   )
 }
 

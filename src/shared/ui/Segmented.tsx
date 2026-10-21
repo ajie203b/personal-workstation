@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { durMs, prefersReducedMotion } from '@/lib/motion'
 
 export interface SegmentOption<T extends string> {
   value: T
@@ -58,37 +57,6 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
       window.removeEventListener('resize', measure)
     }
   }, [value, options.length, size])
-
-  // 切换时滑块先"拉长跨过中间距离"再收回到目标宽度（果冻开关的横向版）。
-  // 只在 value 真的变化时触发，首帧和 badge 宽度校正不走这条路。
-  const prevValue = useRef(value)
-  useLayoutEffect(() => {
-    const from = prevValue.current
-    prevValue.current = value
-    if (from === value) return
-    const a = btnRefs.current.get(from)
-    const b = btnRefs.current.get(value)
-    const wrap = wrapRef.current
-    if (!a || !b || !wrap) return
-    if (prefersReducedMotion()) return
-    // 拉伸→收回的间隔与滑块过渡时长共用同一令牌（P1 统一时长）
-    const settle = durMs('--dur-1', 150)
-    const base = wrap.getBoundingClientRect().left
-    const ra = a.getBoundingClientRect()
-    const rb = b.getBoundingClientRect()
-    const left = Math.min(ra.left, rb.left) - base
-    const span = Math.max(ra.right, rb.right) - Math.min(ra.left, rb.left)
-    setThumb({ left, width: span, ready: true })
-    const t = window.setTimeout(() => {
-      // 重读一次矩形：过渡期间可能发生过滚动/缩放，缓存 rb 会算歪
-      const wrapNow = wrapRef.current
-      const btnNow = btnRefs.current.get(value)
-      if (!wrapNow || !btnNow) return
-      const r = btnNow.getBoundingClientRect()
-      setThumb({ left: r.left - wrapNow.getBoundingClientRect().left, width: r.width, ready: true })
-    }, settle)
-    return () => clearTimeout(t)
-  }, [value])
 
   return (
     <div

@@ -1,5 +1,5 @@
 import { db } from '@/db/db'
-import { exportSnapshotParts, importAll, importSnapshotParts } from '@/db/tasks'
+import { exportSnapshotParts, importAll, importSnapshotParts, type ImportResult } from '@/db/tasks'
 
 /**
  * 自动备份（v1.3）：本地 OPFS（Origin Private File System）滚动快照。
@@ -169,12 +169,11 @@ async function readDirSnapshot(name: string): Promise<{ json: string; blobs: { h
  * 恢复快照 = 真恢复（替换语义）：先清空快照覆盖的表再写入。
  * 旧实现走 importAll 的 bulkPut 合并 —— 快照之后新建的数据还在、快照之后删掉的又回来，结果是混合状态。
  */
-export async function restoreBackup(name: string): Promise<void> {
+export async function restoreBackup(name: string): Promise<ImportResult> {
   if (name.endsWith('.json')) {
-    await importAll(await readLegacy(name), 'replace')
-    return
+    return importAll(await readLegacy(name), 'replace')
   }
-  await importSnapshotParts(await readDirSnapshot(name), 'replace')
+  return importSnapshotParts(await readDirSnapshot(name), 'replace')
 }
 
 /** 应用启动钩子：开启且超 24h → 静默快照（失败静默，不打扰） */

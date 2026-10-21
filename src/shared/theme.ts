@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useUi, type Theme } from '@/stores/ui'
+import { prefersReducedMotion } from '@/lib/motion'
 
 /** 主题三档：跟随系统 / 固定浅色 / 固定深色（system 档实时监听系统切换） */
 const systemDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -24,7 +25,7 @@ function apply() {
   setTimeout(() => root.classList.remove('theme-transition'), 300)
   // 同步 meta theme-color
   const meta = document.querySelector('meta[name="theme-color"]:not([media])')
-  if (meta) meta.setAttribute('content', dark ? '#1B1A1D' : '#FFFFFF')
+  if (meta) meta.setAttribute('content', getComputedStyle(root).getPropertyValue('--canvas').trim())
 }
 
 /**
@@ -32,10 +33,10 @@ function apply() {
  * 不支持 / 减弱动效时保持原来的全站过渡，功能完全一致。
  */
 export function setThemeWithTransition(next: Theme) {
-  const doc = document.documentElement as HTMLElement & {
+  const doc = document as Document & {
     startViewTransition?: (cb: () => void) => { finished: Promise<void> }
   }
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches || !useUi.getState().motion
+  const reduced = prefersReducedMotion() || !useUi.getState().motion
   if (!doc.startViewTransition || reduced) {
     useUi.getState().setTheme(next)
     return

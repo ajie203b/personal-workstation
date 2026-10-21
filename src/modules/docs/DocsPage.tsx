@@ -16,15 +16,12 @@ import { cn } from '@/lib/cn'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
-import { useHoldToConfirm } from '@/shared/ui/useHoldToConfirm'
+import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem as DropdownItem, MenuSeparator } from '@/shared/ui/Menu'
 import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 import { morphOpen } from '@/lib/viewTransition'
 import { usePressTilt } from '@/lib/usePressTilt'
 import { formatBytes } from '@/lib/format'
-
-/** 绕卡片蓄力的时长：文案与计时共用这一个值 */
-const DELETE_HOLD_MS = 1500
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
 export function DocsPage() {
@@ -366,9 +363,6 @@ export function DocsPage() {
                 folderName={folders.find((f) => f.id === d.folderId)?.name}
                 onMove={() => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
                 onRequestConfirm={() => setPendingDelete(d)}
-                onDelete={() => {
-                  void deleteDoc(d).then(() => toast('文档已删除'))
-                }}
               />
             )
           })}
@@ -474,7 +468,7 @@ export function DocsPage() {
         </div>
       </Dialog>
 
-      {/* 删除的正常路径是按住垃圾桶让光绕卡片一周；键盘与减弱动效走这个兜底二次确认 */}
+      {/* 菜单中的删除统一先确认，鼠标、触摸和键盘共用同一路径。 */}
       <Dialog
         open={!!pendingDelete}
         onOpenChange={(v) => !v && setPendingDelete(null)}
@@ -508,76 +502,58 @@ interface CardProps {
   onOpen: () => void
   onEdit: () => void
   onRead: () => void
-  /** 键盘 / 减弱动效时请求父级弹出二次确认框 */
   onRequestConfirm: () => void
-  onDelete: () => void
 }
 
-/** 文档卡：整卡可点开，右上角行内动作分别负责阅读 / 写作 / 删除 */
-function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead, onRequestConfirm, onDelete }: CardProps) {
-  const { progress, bind } = useHoldToConfirm({
-    holdMs: DELETE_HOLD_MS,
-    onComplete: onDelete,
-    onFallback: onRequestConfirm,
-  })
-
+/** 阅读是主动作，菜单集中承载次要操作，卡片高度随内容变化。 */
+function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead, onRequestConfirm }: CardProps) {
   return (
-    <button
-      type="button"
-      id={`doc-${d.id}`}
-      onClick={onOpen}
-      className="card card-hover relative overflow-hidden text-left px-4 py-3.5 flex gap-3.5 cursor-pointer"
-    >
-      <span className="grid place-items-center w-11 h-11 rounded-[12px] text-on-surface-2/80 shrink-0">
-        <KindIcon kind={d.kind} />
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-[15px] font-semibold truncate">{d.title}</span>
-        <span className="block text-[12px] text-on-surface-2 mt-0.5">
-          {DOC_KIND_LABEL[d.kind]} · {formatBytes(d.size)} ·{' '}
-          {d.lastOpenedAt
-            ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
-            : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
-          {folderName && ` · ${folderName}`}
+    <article id={`doc-${d.id}`} className="card card-hover group relative flex items-start overflow-hidden">
+      <button type="button" onClick={onOpen} aria-label={`阅读 ${d.title}`} className="flex flex-1 min-w-0 items-start gap-3 p-4 pr-1 text-left cursor-pointer">
+        <span className="grid place-items-center w-10 h-12 rounded-[10px] bg-primary-soft text-primary shrink-0" aria-hidden>
+          <KindIcon kind={d.kind} />
         </span>
-        {hit && (
-          <span className="block text-[12px] text-on-surface mt-1.5 leading-snug line-clamp-2">
-            <span className="text-primary font-medium">{hit.count} 处命中{hit.seg ? ` · ${segLabel(d.kind, hit.seg)}` : ''}：</span>            {hit.snippet}
+        <span className="flex-1 min-w-0">
+          <span className="block text-ui-body font-medium leading-6 line-clamp-2">{d.title}</span>
+          <span className="block text-ui-caption text-on-surface-2 mt-1 leading-5">
+            {DOC_KIND_LABEL[d.kind]} · {formatBytes(d.size)}
           </span>
-        )}
-        <span className="flex items-center gap-2 mt-2">
-          <span className="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden">
-            <span className="block h-full w-full rounded-full bg-primary transition-transform duration-300 origin-left" style={{ transform: `scaleX(${pct / 100})` }} />
+          <span className="block text-ui-caption text-on-surface-2 leading-5 truncate">
+            {d.lastOpenedAt
+              ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
+              : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
+            {folderName && ` · ${folderName}`}
           </span>
-          <span className="text-[11px] text-on-surface-2 tabular-nums">{pct}%</span>
+          {hit && (
+            <span className="block text-ui-caption text-on-surface mt-2 leading-relaxed line-clamp-2">
+              <span className="text-primary font-medium">{hit.count} 处命中{hit.seg ? ` · ${segLabel(d.kind, hit.seg)}` : ''}：</span>{hit.snippet}
+            </span>
+          )}
+          <span className="flex items-center gap-2 mt-2.5">
+            <span className="flex-1 h-1 rounded-full bg-surface-3 overflow-hidden">
+              <span className={cn('block h-full w-full rounded-full transition-transform duration-300 origin-left', pct >= 100 ? 'bg-ok' : 'bg-primary/70')} style={{ transform: `scaleX(${pct / 100})` }} />
+            </span>
+            <span className="text-[12px] text-on-surface-2 tabular-nums">{pct}%</span>
+          </span>
         </span>
-      </span>
-      <span className="flex flex-col gap-1 self-start">
-        <CardAction label="继续阅读" primary onClick={onRead}>
-          <Import size={15} className="rotate-180" />
-        </CardAction>
-        <CardAction label="移动到文件夹" onClick={onMove}>
-          <FolderInput size={15} />
-        </CardAction>
-        {d.kind === 'md' && (
-          <CardAction label="继续写作" onClick={onEdit}>
-            <PenLine size={15} />
-          </CardAction>
-        )}
-        <CardAction
-          label={`删除文档（按住 ${DELETE_HOLD_MS / 1000} 秒，光绕卡片一周后删除）`}
-          danger
-          actionBind={bind}
-          onClick={() => undefined}
-        >
-          <Trash2 size={15} />
-        </CardAction>
-      </span>
-      <HoldRing progress={progress} />
-    </button>
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label={`文档操作：${d.title}`} className="grid place-items-center w-9 h-9 rounded-[10px] m-2 ml-0 shrink-0 text-on-surface-2 hover:bg-surface-2 hover:text-on-surface cursor-pointer transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 data-[state=open]:opacity-100">
+            <MoreHorizontal size={20} strokeWidth={1.8} aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <MenuContent>
+          <DropdownItem onSelect={onRead}><BookOpen size={16} aria-hidden />继续阅读</DropdownItem>
+          {d.kind === 'md' && <DropdownItem onSelect={onEdit}><PenLine size={16} aria-hidden />继续写作</DropdownItem>}
+          <DropdownItem onSelect={onMove}><FolderInput size={16} aria-hidden />移动到文件夹</DropdownItem>
+          <MenuSeparator />
+          <DropdownItem danger onSelect={onRequestConfirm}><Trash2 size={16} aria-hidden />删除文档…</DropdownItem>
+        </MenuContent>
+      </DropdownMenu>
+    </article>
   )
 }
-
 function FolderChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -591,176 +567,6 @@ function FolderChip({ active, onClick, children }: { active: boolean; onClick: (
       {children}
     </button>
   )
-}
-
-/** 卡片行内动作：外层已是 button，嵌套 button 不合法，用 span[role=button] 并补键盘激活 */
-function CardAction({
-  label, onClick, danger = false, primary = false, actionBind, children,
-}: {
-  label: string
-  onClick: () => void
-  danger?: boolean
-  primary?: boolean
-  /** 长按蓄力的指针/键盘处理器（删除用） */
-  actionBind?: React.HTMLAttributes<HTMLSpanElement> & Record<string, unknown>
-  children: React.ReactNode
-}) {
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      aria-label={label}
-      title={label}
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return
-        e.preventDefault()
-        e.stopPropagation()
-        onClick()
-      }}
-      {...actionBind}
-      className={cn(
-        'grid place-items-center w-8 h-8 rounded-[10px] cursor-pointer transition-colors touch-manipulation',
-        danger ? 'text-on-surface-2 hover:bg-danger/10 hover:text-danger'
-        : primary ? 'text-primary hover:bg-primary-soft'
-        : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
-      )}
-    >
-      {children}
-    </span>
-  )
-}
-
-/**
- * 蓄力光点：一个光点沿文档卡的圆角外轮廓跑满一周即执行删除。
- * 光点跑过的段落描边加重成危险色（越走越实），未跑到的段落保持微弱底轨提示路线。
- * 光点位置与描边进度共用同一套周长分段换算，保证光点永远压在已染色描边的头部。
- * pathLength=1 让描边进度与卡片实际周长无关；尺寸靠 ResizeObserver 量，
- * 避免用 SVG 的 CSS 几何属性（老内核会整条不画，等于删除没了反馈）。
- */
-function HoldRing({ progress }: { progress: number }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const [box, setBox] = useState({ w: 0, h: 0 })
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const measure = () => setBox({ w: el.clientWidth, h: el.clientHeight })
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  // 光路向内收 4px：光点晕光半径 4px，外缘恰好贴到卡片边界，不会被卡片的 overflow-hidden 裁切
-  const inset = 4
-  const w = box.w - inset * 2
-  const h = box.h - inset * 2
-  const ready = progress > 0 && w > 0 && h > 0
-
-  const r = ready ? Math.max(2, Math.min(15, w / 2 - 1, h / 2 - 1)) : 0
-  const path = ready ? perimeterPath(w, h, r) : ''
-  const pt = ready ? perimeterPoint(w, h, r, progress) : { x: 0, y: 0 }
-
-  return (
-    // 关键：覆盖层必须始终挂载——提前 return null 会让 ref 绑不上、尺寸量不到，光效永远不显示
-    <span ref={ref} className="absolute inset-0 z-10 pointer-events-none" aria-hidden>
-      {ready && (
-      <svg width={box.w} height={box.h}>
-        <g transform={`translate(${inset} ${inset})`}>
-          {/* 底轨：微亮的完整外轮廓，提示光点要跑的路线 */}
-          <path
-            d={path}
-            fill="none"
-            stroke="var(--danger)"
-            strokeOpacity={0.18}
-            strokeWidth={2}
-            strokeLinecap="round"
-          />
-          {/* 光点已跑过的段落：颜色加重、越走越实 */}
-          <path
-            d={path}
-            fill="none"
-            stroke={trailColor(progress)}
-            strokeWidth={2.5}
-            strokeLinecap="round"
-            pathLength={1}
-            strokeDasharray="1"
-            strokeDashoffset={1 - progress}
-          />
-          {/* 光点本体：外层晕光 + 内层实心核 */}
-          <circle cx={pt.x} cy={pt.y} r={4} fill="var(--danger)" opacity={0.25} />
-          <circle cx={pt.x} cy={pt.y} r={2.2} fill="var(--danger)" />
-        </g>
-      </svg>
-      )}
-    </span>
-  )
-}
-
-/** 卡片外轮廓（圆角矩形）路径：从顶边中点起顺时针一圈回到起点，描边进度 0→1 与光点位置一一对应 */
-function perimeterPath(w: number, h: number, r: number): string {
-  return [
-    `M ${w / 2} 0`,
-    `H ${w - r}`,
-    `A ${r} ${r} 0 0 1 ${w} ${r}`,
-    `V ${h - r}`,
-    `A ${r} ${r} 0 0 1 ${w - r} ${h}`,
-    `H ${r}`,
-    `A ${r} ${r} 0 0 1 0 ${h - r}`,
-    `V ${r}`,
-    `A ${r} ${r} 0 0 1 ${r} 0`,
-    `H ${w / 2}`,
-  ].join(' ')
-}
-
-/** 外轮廓上 t（0→1，从顶边中点顺时针）处的坐标：与 perimeterPath 的分段一一对应 */
-function perimeterPoint(w: number, h: number, r: number, t: number): { x: number; y: number } {
-  // 路径分段：顶边右半 → 右上圆角 → 右边 → 右下圆角 → 底边 → 左下圆角 → 左边 → 左上圆角 → 顶边左半
-  const topHalf = w / 2 - r
-  const top = w - 2 * r
-  const side = h - 2 * r
-  const arc = (Math.PI * r) / 2
-  const segs = [topHalf, arc, side, arc, top, arc, side, arc, topHalf]
-  const total = 2 * topHalf + top + 2 * side + 4 * arc
-  let d = Math.min(Math.max(t, 0), 1) * total
-
-  for (let i = 0; i < segs.length; i++) {
-    if (d > segs[i]) { d -= segs[i]; continue }
-    switch (i) {
-      case 0: return { x: w / 2 + d, y: 0 } // 顶边右半 →
-      case 1: { // 右上圆角
-        const a = -Math.PI / 2 + d / r
-        return { x: w - r + r * Math.cos(a), y: r + r * Math.sin(a) }
-      }
-      case 2: return { x: w, y: r + d } // 右边 ↓
-      case 3: { // 右下圆角
-        const a = d / r
-        return { x: w - r + r * Math.cos(a), y: h - r + r * Math.sin(a) }
-      }
-      case 4: return { x: w - r - d, y: h } // 底边 ←
-      case 5: { // 左下圆角
-        const a = Math.PI / 2 + d / r
-        return { x: r + r * Math.cos(a), y: h - r + r * Math.sin(a) }
-      }
-      case 6: return { x: 0, y: h - r - d } // 左边 ↑
-      case 7: { // 左上圆角
-        const a = Math.PI + d / r
-        return { x: r + r * Math.cos(a), y: r + r * Math.sin(a) }
-      }
-      default: return { x: r + d, y: 0 } // 顶边左半 →（回到中点）
-    }
-  }
-  return { x: w / 2, y: 0 }
-}
-
-/** 光轨颜色：淡红 → 纯红，越接近走满越实 */
-function trailColor(p: number): string {
-  if (p < 0.5) return `color-mix(in srgb, var(--danger) ${Math.round(35 + p * 60)}%, transparent)`
-  return 'var(--danger)'
 }
 
 function KindIcon({ kind }: { kind: Doc['kind'] }) {
@@ -888,7 +694,7 @@ function ContinueReading() {
 
 /** 继续阅读小卡：桌面按住时轻微倾斜，松手回弹 */
 function RecentDocCard({ doc: d, pct }: { doc: Doc; pct: number }) {
-  const tilt = usePressTilt<HTMLButtonElement>(5)
+  const tilt = usePressTilt<HTMLButtonElement>(1.5)
   return (
     <button
       ref={tilt.ref}

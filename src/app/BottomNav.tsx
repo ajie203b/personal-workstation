@@ -70,8 +70,8 @@ export function BottomNav() {
           '--pill-l': pill.left,
           '--pill-r': pill.right,
           // 往右切：左沿先走、右沿晚 60ms；往左切反之。差值把胶囊自然拉长再收回
-          '--pill-dl': dir === 'right' ? '0ms' : '60ms',
-          '--pill-dr': dir === 'right' ? '60ms' : '0ms',
+          '--pill-dl': dir === 'right' ? '0ms' : '32ms',
+          '--pill-dr': dir === 'right' ? '32ms' : '0ms',
           opacity: activeIndex < 0 ? 0 : 1,
         } as React.CSSProperties}
       >
@@ -96,12 +96,12 @@ export function BottomNav() {
             {({ isActive }) => (
               <>
                 <span className="relative z-[1] grid place-items-center w-16 h-8 rounded-full">
-                  <span key={String(isActive)} className={cn('grid place-items-center', isActive && 'nav-pop')}>
-                    <item.icon size={21} strokeWidth={isActive ? 2.2 : 1.9} />
+                  <span className="grid place-items-center">
+                    <item.icon size={22} strokeWidth={isActive ? 2 : 1.8} aria-hidden />
                   </span>
                   {item.path === '/tasks' && <NavBadge value={badge} />}
                 </span>
-                <span className={cn('relative z-[1] text-[11px] leading-none mt-0.5 transition-colors duration-150', isActive && 'font-semibold text-primary')}>{item.label}</span>
+                <span className={cn('relative z-[1] text-[12px] leading-none mt-0.5 transition-colors duration-150', isActive && 'font-medium text-primary')}>{item.label}</span>
               </>
             )}
           </NavLink>
@@ -139,7 +139,7 @@ function NavBadge({ value }: { value: number }) {
       role="status"
       aria-label={`今日待办 ${shown} 件`}
       className={cn(
-        'nav-badge nav-pop absolute -top-0.5 right-3 grid place-items-center min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10.5px] font-semibold tabular-nums leading-none overflow-hidden',
+        'nav-badge absolute -top-0.5 right-3 grid place-items-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-[11px] font-medium tabular-nums leading-none overflow-hidden',
         leaving && 'nav-badge-out',
       )}
     >
