@@ -34,7 +34,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
 
   const submit = () => {
     if (!hasContent) return
-    const p = parseQuickAdd(value)
+    const p = parsed
     let tier = inferTier(p, defaultTier)
     // 今日页语境：无日期的随手记也进「今日」
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
@@ -91,7 +91,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
           <span className="text-[11px] text-on-surface-2 mr-0.5">识别到</span>
-          {parsed.due && <PreviewChip icon={CalendarDays} text={dueChipText(parsed.due, parsed.dueTime)} />}
+          {parsed.due && <PreviewChip icon={CalendarDays} text={fmtDue(parsed.due, parsed.dueTime).text} />}
           {parsed.repeat && <PreviewChip icon={Repeat} text={repeatLabel(parsed.repeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay })} />}
           {parsed.priority != null && (
             <PreviewChip
@@ -107,10 +107,6 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
       )}
     </form>
   )
-}
-
-function dueChipText(due: string, time?: string) {
-  return fmtDue(due, time).text
 }
 
 function PreviewChip({

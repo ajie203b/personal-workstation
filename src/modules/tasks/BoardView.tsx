@@ -134,7 +134,7 @@ function SortableCard({ task }: { task: Task }) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn('relative', isDragging && 'opacity-30')}
+      className={cn('group relative', isDragging && 'opacity-30')}
       data-dragging={isDragging ? 'true' : undefined}
       {...attributes}
       {...listeners}
@@ -143,7 +143,7 @@ function SortableCard({ task }: { task: Task }) {
       {/* 桌面端的显式可拖提示；手势本身在整张卡上，长按 200ms 才起拖 */}
       <span
         aria-hidden
-        className="absolute right-9 top-1/2 -translate-y-1/2 grid place-items-center w-6 h-8 text-on-surface-2/0 hover:text-on-surface-2/40 pointer-events-none transition-opacity"
+        className="absolute right-9 top-1/2 -translate-y-1/2 grid place-items-center w-6 h-8 text-on-surface-2/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none transition-opacity"
       >
         <GripVertical size={14} />
       </span>

@@ -6,7 +6,7 @@ import { todayStr } from '@/lib/date'
 const PRESETS = ['09:00', '12:00', '14:00', '18:00', '20:00']
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']
-const FIELD = 'w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60'
+const FIELD = 'w-full h-10 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60'
 
 interface TimePickerProps {
   value?: string

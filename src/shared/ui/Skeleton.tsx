@@ -28,23 +28,6 @@ export function DocCardSkeleton() {
   )
 }
 
-/** 列表骨架：任务行 */
-export function RowSkeleton({ count = 4 }: { count?: number }) {
-  return (
-    <div className="flex flex-col gap-2" aria-hidden>
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="card px-3.5 py-3 flex items-center gap-3">
-          <Skeleton className="w-[22px] h-[22px] rounded-full shrink-0" />
-          <div className="flex-1 flex flex-col gap-1.5">
-            <Skeleton className="h-3.5" />
-            <Skeleton className="h-2.5 w-1/3" />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 /** 整页骨架：路由懒加载时顶替转圈，按「标题 + 卡片网格」的形状铺 */
 export function PageSkeleton() {
   return (

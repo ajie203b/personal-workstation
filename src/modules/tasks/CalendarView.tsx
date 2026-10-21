@@ -5,6 +5,8 @@ import { TIERS, TIER_LABEL } from '@/db/db'
 import { sortTasks, updateTask } from '@/db/tasks'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
+import { toDateStr } from '@/lib/date'
+import { CheckCircle } from '@/shared/ui/CheckCircle'
 
 interface Props {
   tasks: Task[]
@@ -14,16 +16,13 @@ interface Props {
 
 const WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
-function toDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 /** 日历视图（v1.2 → v1.3 拖拽排期）：月视图网格 + 议程流 + 未排期池拖入日期即排期 */
 export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
   const today = new Date()
+  const todayKey = toDateStr(today)
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth()) // 0-11
-  const [selectedDate, setSelectedDate] = useState<string | null>(toDateKey(today))
+  const [selectedDate, setSelectedDate] = useState<string | null>(todayKey)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const toast = useUi((s) => s.toast)
 
@@ -71,7 +70,6 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
 
   // 议程流：选中日期或「全部即将到来」
   const agenda = useMemo(() => {
-    const todayKey = toDateKey(today)
     const upcoming = tasks
       .filter((t) => t.status !== 'done' && t.due && t.due >= todayKey)
       .sort((a, b) => (a.due ?? '').localeCompare(b.due ?? ''))
@@ -79,7 +77,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
       return sortTasks(byDate.get(selectedDate) ?? [])
     }
     return sortTasks(upcoming)
-  }, [tasks, selectedDate, byDate])
+  }, [tasks, selectedDate, byDate, todayKey])
 
   const prevMonth = () => {
     if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11) } else setViewMonth((m) => m - 1)
@@ -88,16 +86,16 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
     if (viewMonth === 11) { setViewYear((y) => y + 1); setViewMonth(0) } else setViewMonth((m) => m + 1)
   }
   const goToday = () => {
-    setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelectedDate(toDateKey(today))
+    setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelectedDate(todayKey)
   }
 
   /** 拖放排期：拖任务到日期格 = 设置 due 并归入对应清单 */
   const scheduleTo = (taskId: string, dateKey: string) => {
     const task = tasks.find((t) => t.id === taskId)
     if (!task) return
-    const tier = dateKey <= toDateKey(today) ? 'today' : 'upcoming'
+    const tier = dateKey <= todayKey ? 'today' : 'upcoming'
     void updateTask(taskId, { due: dateKey, tier, dueTime: task.dueTime })
-    toast(`已排到 ${dateKey}${dateKey <= toDateKey(today) ? '（今日）' : ''}`)
+    toast(`已排到 ${dateKey}${dateKey <= todayKey ? '（今日）' : ''}`)
   }
 
   const onCellDrop = (e: React.DragEvent, dateKey: string) => {
@@ -108,7 +106,6 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
   }
 
   const monthLabel = `${viewYear} 年 ${viewMonth + 1} 月`
-  const todayKey = toDateKey(today)
 
   return (
     <div className="flex flex-col gap-4">
@@ -134,7 +131,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
       {/* 日历网格（接受拖放排期） */}
       <div className="grid grid-cols-7 gap-px bg-outline/40 rounded-[10px] overflow-hidden">
         {grid.map((cell, i) => {
-          const key = toDateKey(cell.date)
+          const key = toDateStr(cell.date)
           const dayTasks = byDate.get(key) ?? []
           const isToday = key === todayKey
           const isSelected = key === selectedDate
@@ -213,7 +210,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
         ) : (
           <div className="flex flex-col gap-1.5">
             {agenda.map((t) => (
-              <button
+              <div
                 key={t.id}
                 draggable
                 onDragStart={(e) => {
@@ -221,24 +218,26 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
                   e.dataTransfer.effectAllowed = 'move'
                 }}
                 onClick={() => onOpenTask(t.id)}
-                className="card card-hover px-3.5 py-2.5 flex items-center gap-2.5 text-left cursor-grab active:cursor-grabbing w-full"
+                className="card card-hover px-3.5 py-2.5 flex items-center gap-2.5 text-left cursor-grab active:cursor-grabbing w-full select-none"
               >
                 <span
                   className="w-1 h-8 rounded-full shrink-0"
                   style={{ background: t.priority === 0 ? 'var(--p0)' : t.priority === 1 ? 'var(--p1)' : t.priority === 2 ? 'var(--p2)' : 'var(--p3)' }}
                 />
                 <span className="flex-1 min-w-0">
-                  <span className={cn('block text-[13.5px] truncate', t.status === 'done' && 'line-through text-on-surface-2')}>{t.title}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onOpenTask(t.id) }}
+                    className={cn('block text-left text-[13.5px] truncate w-full cursor-pointer', t.status === 'done' && 'line-through text-on-surface-2')}
+                  >
+                    {t.title}
+                  </button>
                   {t.due && <span className="text-[11px] text-on-surface-2">{t.due}</span>}
                 </span>
                 {t.status !== 'done' && (
-                  <button
-                    aria-label="完成任务"
-                    onClick={(e) => { e.stopPropagation(); onToggleDone(t) }}
-                    className="shrink-0 w-6 h-6 rounded-full border-[1.5px] border-on-surface-2/40 hover:border-primary grid place-items-center cursor-pointer"
-                  />
+                  <CheckCircle checked={false} onChange={() => onToggleDone(t)} label="完成任务" />
                 )}
-              </button>
+              </div>
             ))}
             <p className="text-[11px] text-on-surface-2/70 px-1">提示：按住任务拖到上方日期格，可直接改期</p>
           </div>

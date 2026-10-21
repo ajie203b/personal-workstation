@@ -13,13 +13,6 @@ export const TIER_LABEL: Record<Tier, string> = {
 
 export type Priority = 0 | 1 | 2 | 3
 
-export const PRIORITY_LABEL: Record<Priority, string> = {
-  0: 'P0 紧急',
-  1: 'P1 重要',
-  2: 'P2 常规',
-  3: 'P3 低',
-}
-
 export const PRIORITY_VAR: Record<Priority, string> = {
   0: 'var(--p0)',
   1: 'var(--p1)',

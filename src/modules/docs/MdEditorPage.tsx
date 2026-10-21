@@ -52,7 +52,6 @@ export function MdEditorPage() {
   const [saving, setSaving] = useState(false)
   const [contentSeed, setContentSeed] = useState<string | null>(null)
   const seedingRef = useRef(false)
-  const savedHashRef = useRef<string | null>(null)
   const saveRef = useRef<(() => Promise<void>) | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const insertImagesRef = useRef<(files: File[]) => void>(() => {})
@@ -190,7 +189,6 @@ export function MdEditorPage() {
           await db.blobs.put({ hash, blob: new Blob([md], { type: 'text/markdown' }) })
           await db.docs.add(doc)
         })
-        savedHashRef.current = hash
         setExisting(doc)
         toast('文档已创建')
         // 建完立刻切到「编辑这篇」的路由：否则留在 /docs/new 上再按一次保存，

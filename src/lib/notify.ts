@@ -50,18 +50,19 @@ export async function syncTaskNotification(task: Task): Promise<void> {
   if (!at || at.getTime() <= Date.now()) return
   const perm = await LocalNotifications.checkPermissions()
   if (perm.display !== 'granted') return
-  await LocalNotifications.schedule({
-    notifications: [
-      {
-        id,
-        title: task.dueTime ? '任务提醒' : '今天有任务到期',
-        body: task.title + (task.dueTime ? ` · ${task.dueTime}` : ''),
-        schedule: { at, allowWhileIdle: true },
-        ongoing: false,
-        extra: { taskId: task.id, tier: task.tier },
-      },
-    ],
-  })
+  await LocalNotifications.schedule({ notifications: [taskNotification(task, at)] })
+}
+
+/** 单条 / 全量重排共用同一份通知载荷，避免改一处漏一处 */
+function taskNotification(task: Task, at: Date) {
+  return {
+    id: notifIdFor(task.id),
+    title: task.dueTime ? '任务提醒' : '今天有任务到期',
+    body: task.title + (task.dueTime ? ` · ${task.dueTime}` : ''),
+    schedule: { at, allowWhileIdle: true },
+    ongoing: false,
+    extra: { taskId: task.id, tier: task.tier },
+  }
 }
 
 /** 全量重排（应用启动 / 开关打开时调用）：先清后建 */
@@ -70,24 +71,12 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
   await cancelAllTaskNotifications()
   const perm = await LocalNotifications.checkPermissions()
   if (perm.display !== 'granted') return
-  const pending = await LocalNotifications.getPending()
-  void pending // cancel above clears ours via ids we track; full clear handled by cancelAllTaskNotifications
   for (const t of tasks) {
     if (t.status === 'done') continue
     const at = reminderDateFor(t)
     if (!at || at.getTime() <= Date.now()) continue
     try {
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            id: notifIdFor(t.id),
-            title: t.dueTime ? '任务提醒' : '今天有任务到期',
-            body: t.title + (t.dueTime ? ` · ${t.dueTime}` : ''),
-            schedule: { at, allowWhileIdle: true },
-            extra: { taskId: t.id, tier: t.tier },
-          },
-        ],
-      })
+      await LocalNotifications.schedule({ notifications: [taskNotification(t, at)] })
     } catch { /* 单条失败不阻塞 */ }
   }
 }

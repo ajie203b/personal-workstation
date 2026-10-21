@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Annotation, type Doc, type Task } from './db'
-import { todayStr } from '@/lib/date'
+import { toDateStr, todayStr } from '@/lib/date'
 
 const EMPTY: Task[] = []
 
 /** 当前日期 tick：60s + visibilitychange 校准，防跨零点冻结 */
 export function useDateTick(): string {
-  const [today, setToday] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })
+  const [today, setToday] = useState(() => toDateStr(new Date()))
   useEffect(() => {
     const check = () => {
-      const d = new Date()
-      const s = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      const s = toDateStr(new Date())
       setToday((prev) => (prev === s ? prev : s))
     }
     const timer = setInterval(check, 60000)
@@ -24,10 +23,6 @@ export function useDateTick(): string {
 /** 全量任务（个人规模足够快），派生数据用 useMemo 计算 */
 export function useAllTasks(): Task[] {
   return useLiveQuery(() => db.tasks.orderBy('updatedAt').reverse().toArray(), [], EMPTY)
-}
-
-export function deriveActive(all: Task[]): Task[] {
-  return all.filter((t) => t.status !== 'done')
 }
 
 export function deriveDone(all: Task[]): Task[] {

@@ -4,6 +4,7 @@ import { CheckCircle2, Flame, Highlighter, Timer } from 'lucide-react'
 import { db } from '@/db/db'
 import { migrateLegacyFocusRecords } from '@/db/focus'
 import { cn } from '@/lib/cn'
+import { toDateStr } from '@/lib/date'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
 
 /** 统计页（v1.3）：完成热力图 + 周报 + 标签分布 + 专注排行。全部本地数据。 */
@@ -12,17 +13,13 @@ type Metric = 'tasks' | 'focus' | 'notes'
 
 const METRIC_LABEL: Record<Metric, string> = { tasks: '任务', focus: '专注', notes: '批注' }
 
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 /** 从今天往回数的连续完成天数 */
 function calcStreak(doneDays: Set<string>): number {
   let streak = 0
   const cur = new Date()
-  if (!doneDays.has(dayKey(cur))) cur.setDate(cur.getDate() - 1) // 今天还没打卡不断签
+  if (!doneDays.has(toDateStr(cur))) cur.setDate(cur.getDate() - 1) // 今天还没打卡不断签
   for (;;) {
-    if (!doneDays.has(dayKey(cur))) break
+    if (!doneDays.has(toDateStr(cur))) break
     streak++
     cur.setDate(cur.getDate() - 1)
   }
@@ -57,9 +54,9 @@ export function StatsPage() {
       map[k] = map[k] ?? { tasks: 0, focus: 0, notes: 0 }
       map[k][m] += n
     }
-    for (const t of doneTasks) bump(dayKey(new Date(t.doneAt!)), 'tasks')
+    for (const t of doneTasks) bump(toDateStr(new Date(t.doneAt!)), 'tasks')
     for (const s of sessions ?? []) bump(s.day, 'focus', s.minutes)
-    for (const a of annotations ?? []) bump(dayKey(new Date(a.createdAt)), 'notes')
+    for (const a of annotations ?? []) bump(toDateStr(new Date(a.createdAt)), 'notes')
     return map
   }, [doneTasks, sessions, annotations])
 
@@ -77,7 +74,7 @@ export function StatsPage() {
       for (let d = 0; d < 7; d++) {
         const day = new Date(start)
         day.setDate(day.getDate() + d)
-        const key = dayKey(day)
+        const key = toDateStr(day)
         col.push({ key, count: dayCounts[key]?.[metric] ?? 0, date: day })
       }
       cols.push(col)
@@ -94,7 +91,7 @@ export function StatsPage() {
       let total = 0
       for (let i = 0; i < days; i++) {
         const d = new Date(from); d.setDate(d.getDate() + i)
-        total += dayCounts[dayKey(d)]?.[m] ?? 0
+        total += dayCounts[toDateStr(d)]?.[m] ?? 0
       }
       return total
     }
@@ -400,7 +397,7 @@ function FocusTrend({ range, dayCounts }: { range: 'week' | 'month'; dayCounts: 
     const out: { key: string; v: number; label: string }[] = []
     for (let i = n - 1; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i)
-      const key = dayKey(d)
+      const key = toDateStr(d)
       out.push({ key, v: dayCounts[key]?.focus ?? 0, label: `${d.getMonth() + 1}/${d.getDate()}` })
     }
     return out

@@ -21,6 +21,7 @@ import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 import { morphOpen } from '@/lib/viewTransition'
 import { usePressTilt } from '@/lib/usePressTilt'
+import { formatBytes } from '@/lib/format'
 
 /** 绕卡片蓄力的时长：文案与计时共用这一个值 */
 const DELETE_HOLD_MS = 1500
@@ -533,7 +534,7 @@ function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead,
       <span className="flex-1 min-w-0">
         <span className="block text-[15px] font-semibold truncate">{d.title}</span>
         <span className="block text-[12px] text-on-surface-2 mt-0.5">
-          {DOC_KIND_LABEL[d.kind]} · {formatSize(d.size)} ·{' '}
+          {DOC_KIND_LABEL[d.kind]} · {formatBytes(d.size)} ·{' '}
           {d.lastOpenedAt
             ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
             : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
@@ -760,12 +761,6 @@ function perimeterPoint(w: number, h: number, r: number, t: number): { x: number
 function trailColor(p: number): string {
   if (p < 0.5) return `color-mix(in srgb, var(--danger) ${Math.round(35 + p * 60)}%, transparent)`
   return 'var(--danger)'
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function KindIcon({ kind }: { kind: Doc['kind'] }) {
