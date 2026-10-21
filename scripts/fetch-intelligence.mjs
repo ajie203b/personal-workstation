@@ -36,11 +36,16 @@ function collect(list) {
       num(item.score) ??
       num(item.intelligenceIndex) ??
       num(item.intelligence_index) ??
+      // 官方 API v2 是下划线命名（evaluations.artificial_analysis_intelligence_index），
+      // 公开页面里是驼峰 —— 两种都得认，否则配了 key 也会解析出 0 个模型
+      num(ev.artificial_analysis_intelligence_index) ??
       num(ev.artificialanalysisintelligenceindex)
     const base = item.name ?? item.slug ?? item.model
     if (typeof base !== 'string' || !base || score == null) continue
     const effort = cleanEffort(item.reasoning_effort ?? item.reasoningEffort)
-    const creator = typeof item.modelCreatorName === 'string' ? item.modelCreatorName : ''
+    const creator = typeof item.modelCreatorName === 'string'
+      ? item.modelCreatorName
+      : typeof item.model_creator?.name === 'string' ? item.model_creator.name : ''
     // 公开页把「按默认配置评测」的模型写成「Claude Opus 5.5 (Max, Default Fallback)」，
     // 榜单卡片一行放不下，去掉这半句只留档位
     const label = base.replace(/,\s*Default Fallback/gi, '').replace(/\s{2,}/g, ' ').trim()
