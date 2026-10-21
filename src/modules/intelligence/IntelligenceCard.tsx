@@ -5,18 +5,13 @@ import { getLastIntelFetch, loadCachedIntel, refreshIntelDetailed } from '@/lib/
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 
-/** 与官方图相近的冷暖混排色板（按名次循环，稳定可复现） */
-const PALETTE = [
-  '#C17A5B', '#B96A4D', '#3B82F6', '#C17A5B', '#111827', '#22A06B', '#3B82F6', '#111827',
-  '#8B5CF6', '#F97316', '#F97066', '#2563EB', '#06B6D4', '#2563EB', '#C48A72', '#EC4899',
-  '#3B82F6', '#22A06B', '#0EA5E9', '#EF4444', '#111827', '#F97316', '#1D4ED8', '#15803D',
-  '#84CC16', '#737373', '#A3A3A3',
-]
-
 /**
- * 模型智能排名卡（v2.1）：
- * 有每日更新的数据就按数据画柱状榜；没有就用内置快照图。两种形态都放在横向滚动容器里，
- * 手机上左右滑动查看，不会把页面撑宽。
+ * 模型智能排名卡（v2.1，3.0.1 改）：
+ * **直接展示 Artificial Analysis 官方的图表原图**，不再用数据自绘柱状图——
+ * 自己画的版本既没有官方配色/厂商标识，也容易被误认为是官方图。
+ *
+ * 图下方的数据（榜首与日期）来自每日 Action 生成的 intelligence.json，
+ * 只用来标注"现在榜首是谁、什么时候对齐的"，不参与绘图。
  */
 export function IntelligenceCard() {
   const toast = useUi((s) => s.toast)
@@ -63,9 +58,10 @@ export function IntelligenceCard() {
         <div className="flex-1 min-w-0">
           <h2 className="text-[13px] font-semibold">模型智能排名</h2>
           <p className="text-[11.5px] text-on-surface-2 mt-0.5 truncate">
-            Artificial Analysis{data?.indexVersion ? ` · ${data.indexVersion}` : ''}
-            {/* 只有真的拿到数据才说「更新于」；否则一直标「内置快照」，别把占位图说成新数据 */}
-            {!data ? ' · 内置快照' : at ? ` · 更新于 ${new Date(at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}` : ''}
+            Artificial Analysis
+            {data?.models[0] ? ` · 榜首 ${data.models[0].name}` : ''}
+            {/* 日期是数据对齐的时间，不是图片生成时间，别混着说 */}
+            {data && at ? ` · 数据 ${new Date(at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}` : ''}
           </p>
         </div>
         <button
@@ -117,57 +113,17 @@ export function IntelligenceCard() {
         onPointerCancel={() => { dragRef.current = null; setDragging(false) }}
         onDragStart={(e) => e.preventDefault()}
       >
-        {data ? (
-          <Bars data={data} />
-        ) : (
-          <img
-            src={`${import.meta.env.BASE_URL}intelligence/seed.png`}
-            alt="Artificial Analysis 智能指数排名"
-            draggable={false}
-            className="h-[300px] w-auto max-w-none rounded-[10px] select-none pointer-events-none"
-          />
-        )}
+        {/* 官方图表原图：不重绘、不加自己的坐标轴，横向滚动看完整榜单 */}
+        <img
+          src={`${import.meta.env.BASE_URL}intelligence/chart.png`}
+          alt="Artificial Analysis 智能指数排名（官方图表）"
+          draggable={false}
+          className="h-[300px] w-auto max-w-none rounded-[10px] select-none pointer-events-none"
+        />
       </div>
       <p className="text-[11px] text-on-surface-2 mt-2">
-        {dragging ? '拖动中…' : '按住拖动或左右滑动看完整榜单'} · 每日自动更新
+        {dragging ? '拖动中…' : '按住拖动或左右滑动看完整榜单'} · 图源 artificialanalysis.ai
       </p>
     </section>
-  )
-}
-
-function Bars({ data }: { data: IntelData }) {
-  const max = Math.max(...data.models.map((m) => m.score), 1)
-  return (
-    <div className="flex items-end gap-2 min-w-max h-[320px] pl-1 pr-4">
-      {data.models.map((m, i) => (
-        <div key={`${m.name}-${i}`} className="flex flex-col items-center shrink-0" style={{ width: 56 }}>
-          <div className="rank-track relative w-10 h-[220px]">
-            <div
-              className="rank-bar absolute inset-x-0 bottom-0 rounded-t-[3px] flex justify-center"
-              title={`${m.name} · ${Math.round(m.score)}`}
-              style={{
-                background: PALETTE[i % PALETTE.length],
-                animationDelay: `${Math.min(i * 28, 360)}ms`,
-                ['--bar-ratio' as string]: Math.max(26, Math.round((m.score / max) * 220)) / 220,
-              } as React.CSSProperties}
-            >
-              <span
-                className="rank-score text-[11px] text-white/95 font-medium mt-1 tabular-nums"
-                style={{ ['--bar-inv' as string]: 220 / Math.max(26, Math.round((m.score / max) * 220)) } as React.CSSProperties}
-              >
-                {Math.round(m.score)}
-              </span>
-            </div>
-          </div>
-          <span
-            className="mt-2 h-[96px] text-[10.5px] leading-tight text-on-surface-2 whitespace-nowrap overflow-hidden text-ellipsis"
-            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-            title={m.name}
-          >
-            {m.name}
-          </span>
-        </div>
-      ))}
-    </div>
   )
 }
