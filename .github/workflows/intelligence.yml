@@ -3,6 +3,9 @@ name: Update intelligence ranking
 # 每天抓一次 Artificial Analysis 智能指数，写入 public/intelligence.json。
 # 应用启动后每天静默从仓库读这份数据（见 src/lib/intelligence.ts），
 # 因此网页版与安卓包都不用重新发版也能拿到新榜单。
+#
+# 数据源：有 AA_API_KEY 走官方 API，没有就解析官方公开榜单页
+# （2026-10 起，之前没配 secret 时这个 job 天天失败、榜单永远停在内置快照）。
 on:
   schedule:
     - cron: '17 5 * * *' # UTC 05:17 = 北京时间 13:17
@@ -10,6 +13,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: intelligence
+  cancel-in-progress: false
 
 jobs:
   fetch:
@@ -19,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Fetch ranking
         run: node scripts/fetch-intelligence.mjs

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ExternalLink, RefreshCw, Sparkles } from 'lucide-react'
 import type { IntelData } from '@/lib/intelligence'
-import { getLastIntelFetch, loadCachedIntel, refreshIntel } from '@/lib/intelligence'
+import { getLastIntelFetch, loadCachedIntel, refreshIntelDetailed } from '@/lib/intelligence'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 
@@ -31,12 +31,11 @@ export function IntelligenceCard() {
     let alive = true
     void getLastIntelFetch().then((t) => { if (alive) setAt(t) })
     void loadCachedIntel().then((d) => { if (alive && d) setData(d) })
-    void refreshIntel().then((d) => {
-      if (!alive) return
-      if (d) {
-        setData(d)
-        void getLastIntelFetch().then((t) => { if (alive) setAt(t) })
-      }
+    void refreshIntelDetailed().then((r) => {
+      if (!alive || !r.data) return
+      setData(r.data)
+      // 只有真从远端取到才刷新「更新于」；用缓存时保持原来的时间，别把旧数据标成今天
+      if (r.fetched) void getLastIntelFetch().then((t) => { if (alive) setAt(t) })
     })
     return () => { alive = false }
   }, [])
@@ -44,11 +43,11 @@ export function IntelligenceCard() {
   const manualRefresh = async () => {
     if (busy) return
     setBusy(true)
-    const next = await refreshIntel(true)
+    const r = await refreshIntelDetailed(true)
     setBusy(false)
-    if (next) {
-      setData(next)
-      setAt(Date.now())
+    if (r.data) setData(r.data)
+    if (r.fetched) {
+      void getLastIntelFetch().then((t) => setAt(t))
       toast('排名已更新')
     } else {
       toast('暂时拉不到新数据，继续显示当前榜单')
