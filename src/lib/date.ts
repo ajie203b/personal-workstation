@@ -8,8 +8,14 @@ export function todayStr(): string {
 }
 
 /**
- * 未来任务：截止日期晚于今天，或开始时间还没到。
- * 这类任务不允许提前勾完成，避免把未来计划从清单里点没。
+ * 未来任务：**以开始时间为准**。
+ *
+ * 只要这条任务有开始时间，就只看它到没到——开始时间一到就能做、就能勾完成，
+ * 哪怕截止日还在一周后。旧实现是「截止日晚于今天 或 开始时间没到」，
+ * 结果「计划今天做、周五交」的任务一整周都被标成「未来任务」、点不了完成。
+ *
+ * 没有任何开始时间（自然语言快速添加的路径不会回填）才退回按截止日判断，
+ * 这样「下周一交报告」这类还没开工的计划仍然不会被提前点掉。
  */
 export function isFutureTask(
   task: { due?: string; startAt?: number; status?: string },
@@ -17,7 +23,18 @@ export function isFutureTask(
   now = Date.now(),
 ): boolean {
   if (task.status === 'done') return false
-  return (!!task.due && task.due > today) || (task.startAt != null && task.startAt > now)
+  if (task.startAt != null) return task.startAt > now
+  return !!task.due && task.due > today
+}
+
+/** 「未来任务」是因为什么还没到：开始时间 / 截止日期（没有开始时间时） */
+export function futureReason(
+  task: { due?: string; startAt?: number; status?: string },
+  today = todayStr(),
+  now = Date.now(),
+): 'start' | 'due' | null {
+  if (!isFutureTask(task, today, now)) return null
+  return task.startAt != null ? 'start' : 'due'
 }
 
 export function toDateStr(d: Date): string {
@@ -61,6 +78,16 @@ export function fmtDue(due: string, time?: string | null): DueLabel {
 
 export function fmtWeekdayLong(d: Date = new Date()): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAY_CN[d.getDay()]}`
+}
+
+/** 开始时间的短标签：今天 08:00 / 明天 08:00 / 10月24日 08:00 */
+export function fmtStartAt(ts: number): string {
+  const d = new Date(ts)
+  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const diff = daysFromToday(toDateStr(d))
+  if (diff === 0) return `今天 ${hhmm}`
+  if (diff === 1) return `明天 ${hhmm}`
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
 }
 
 /** 本周（周一起）完成数 */

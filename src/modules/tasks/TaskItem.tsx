@@ -1,6 +1,6 @@
 import { Clock, FileText, ListChecks, Pin, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, type Task } from '@/db/db'
-import { fmtDue, isFutureTask } from '@/lib/date'
+import { fmtDue, fmtStartAt, futureReason, isFutureTask } from '@/lib/date'
 import { repeatLabel } from '@/lib/repeat'
 import { cn } from '@/lib/cn'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
@@ -23,6 +23,7 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
   const openDetail = useTasksUi((s) => s.openDetail)
   const done = task.status === 'done'
   const future = isFutureTask(task)
+  const futureWhy = futureReason(task)
   const due = task.due ? fmtDue(task.due, task.dueTime) : null
   const overdue = due?.overdue && !done
 
@@ -48,7 +49,9 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
             checked={done}
             disabled={future}
             onChange={() => void toggleTaskWithUndo(task)}
-            label={future ? '未来任务，到日期后再完成' : done ? '恢复任务' : '完成任务'}
+            label={future
+              ? (futureWhy === 'start' ? '未来任务，开始时间到了再完成' : '未来任务，到截止日后再完成')
+              : done ? '恢复任务' : '完成任务'}
           />
           {task.priority < 3 && (
             <span
@@ -70,7 +73,8 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
           >
             {task.title}
           </p>
-          {(due || task.tags.length > 0 || task.repeat || task.docRef || task.status === 'doing') && (
+          {/* 只设了开始时间的任务没有截止/标签，以前整行都不渲染，连「未来任务」都看不见 */}
+          {(due || task.tags.length > 0 || task.repeat || task.docRef || task.status === 'doing' || future) && (
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mt-1.5 text-ui-caption">
               {task.status === 'doing' && (
                 <span className="inline-flex items-center gap-1.5 text-ok">
@@ -85,7 +89,11 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
                 </span>
               )}
               {future && (
-                <span className="inline-flex items-center text-p1">未来任务</span>
+                <span className="inline-flex items-center text-p1">
+                  {futureWhy === 'start' && task.startAt != null
+                    ? `${fmtStartAt(task.startAt)} 开始`
+                    : '未来任务'}
+                </span>
               )}
               {task.repeat && (
                 <span className="inline-flex items-center gap-1 text-on-surface-2">
