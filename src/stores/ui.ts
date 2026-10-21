@@ -35,6 +35,9 @@ export interface ToastItem {
   message: string
   leaving?: boolean
   action?: { label: string; run: () => void }
+  /** 停留时长：撤销类 6 秒，普通提示 4 秒；Toast 底部倒计时线按它走 */
+  duration: number
+  createdAt: number
 }
 
 interface UiState {
@@ -98,11 +101,12 @@ export const useUi = create<UiState>()(
       closeAddSheet: () => set((s) => ({ addSheet: { ...s.addSheet, open: false } })),
       toast: (message, action) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-        set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, action }] }))
         // 带「撤销」的多留两秒：误删后要来得及反应，普通提示仍 4 秒
-        setTimeout(() => get().dismissToast(id), action ? 6000 : 4000)
+        const duration = action ? 6000 : 4000
+        set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, action, duration, createdAt: Date.now() }] }))
+        setTimeout(() => get().dismissToast(id), duration)
       },
-      dismissToast: (id) => { set((s) => ({ toasts: s.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) })); setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 160) },
+      dismissToast: (id) => { set((s) => ({ toasts: s.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) })); setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 220) },
     }),
     {
       name: 'ws-ui',

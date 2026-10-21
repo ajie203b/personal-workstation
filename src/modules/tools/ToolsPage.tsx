@@ -5,6 +5,7 @@ import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
 import { useFanqie } from '@/stores/fanqie'
 import { cn } from '@/lib/cn'
+import { usePressTilt } from '@/lib/usePressTilt'
 
 /**
  * 工具页（v2.2）：模型智能排名永远置顶，下面是小工具入口。
@@ -14,6 +15,7 @@ import { cn } from '@/lib/cn'
 export function ToolsPage() {
   const localBooks = useLiveQuery(() => db.fanqieBooks.count(), []) ?? 0
   const job = useFanqie((s) => s.job)
+  const tilt = usePressTilt<HTMLAnchorElement>()
 
   const badge = job?.phase === 'running'
     ? `下载中 ${job.done}/${job.total}`
@@ -26,7 +28,7 @@ export function ToolsPage() {
           : 'TXT / EPUB'
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 enter">
+    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 cascade">
       <div className="hidden md:block">
         <h1 className="text-[22px] font-bold leading-8">工具</h1>
         <p className="text-[13px] text-on-surface-2 mt-0.5">模型榜单与小工具</p>
@@ -38,10 +40,12 @@ export function ToolsPage() {
         <h2 className="text-[13px] font-semibold text-on-surface-2 px-1">小工具</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <Link
+            ref={tilt.ref}
+            {...tilt.tiltProps}
             to="/tools/fanqie"
             aria-label="打开番茄小说下载器"
             className={cn(
-              'press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
+              'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
               'flex flex-col overflow-hidden select-none',
             )}
           >

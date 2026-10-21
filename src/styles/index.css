@@ -54,6 +54,8 @@
   --ease-standard: cubic-bezier(.2, 0, 0, 1);
   --ease-emph: cubic-bezier(.05, .7, .1, 1);
   --ease-spring: cubic-bezier(.34, 1.32, .5, 1);
+  /* 新动效用的克制弹簧：回弹约 8%，不抢内容 */
+  --ease-soft-spring: cubic-bezier(.34, 1.28, .64, 1);
 
   /* 卡片静态层次：极浅双层阴影，弱光环境也能分清区块（P2 分层增强） */
   --elev-card: 0 1px 2px rgba(32, 31, 29, .04), 0 10px 24px -18px rgba(32, 31, 29, .22);
@@ -184,8 +186,9 @@
   to { opacity: 1; transform: translateX(0); }
 }
 @keyframes nav-pop {
-  0% { transform: scale(0.86); }
-  100% { transform: scale(1.05); }
+  0% { transform: scale(0.72); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 @keyframes pop {
   0% { transform: scale(1); }
@@ -390,6 +393,27 @@ select:focus-visible {
 }
 .card-hover:active { transform: scale(0.995); }
 
+/* 按下微倾（ui-motion 65）：桌面鼠标按住时朝按下的方向轻压，表面反光跟手 */
+.tilt-card { transform-style: preserve-3d; }
+.tilt-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    150px circle at var(--tilt-x, 50%) var(--tilt-y, 50%),
+    color-mix(in srgb, white 16%, transparent),
+    transparent 66%
+  );
+  opacity: 0;
+  transition: opacity 200ms var(--ease-standard);
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .tilt-card:hover::after { opacity: 1; }
+}
+.tilt-card:active { transition-duration: 80ms; }
+
 /* 弹层：20px 圆角 + 单层大柔和阴影 */
 .overlay-fade {
   animation: fade-in var(--dur-1) ease both;
@@ -437,12 +461,152 @@ select:focus-visible {
 /* 页面入场：300ms / 12px 上移淡入（MD3 medium2） */
 .enter { animation: fade-up var(--dur-2) var(--ease-standard) both; }
 
+/* 弹层打开时背后页面退后一步（ui-motion 12）；scale 是独立变换，不和切页的 transform 动画打架 */
+.page-flow {
+  transform-origin: 50% 16%;
+  transition: scale 320ms var(--ease-standard);
+}
+body:has([data-app-modal][data-state='open']) .page-flow { scale: 0.97; }
+
+@keyframes sheet-rise {
+  from { transform: translateY(100%); opacity: 0.7; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes modal-item-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.dialog-panel > * { animation: modal-item-in 260ms var(--ease-standard) both; }
+.dialog-panel > *:nth-child(2) { animation-delay: 35ms; }
+.dialog-panel > *:nth-child(3) { animation-delay: 70ms; }
+@keyframes menu-item-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+[role='menu'] > * { animation: menu-item-in 180ms var(--ease-standard) both; }
+[role='menu'] > *:nth-child(2) { animation-delay: 24ms; }
+[role='menu'] > *:nth-child(3) { animation-delay: 48ms; }
+[role='menu'] > *:nth-child(4) { animation-delay: 72ms; }
+[role='menu'] > *:nth-child(5) { animation-delay: 96ms; }
+[role='menu'] > *:nth-child(6) { animation-delay: 120ms; }
+
 /* 底栏切页：内容从切换方向轻轻流进来（只加在 AppShell 的内容 wrapper 上，不重挂页面） */
 @keyframes page-flow-in {
   from { opacity: 0.72; transform: translateX(var(--flow-x, 14px)); }
   to { opacity: 1; transform: translateX(0); }
 }
 .page-flow-in { animation: page-flow-in var(--dur-2) var(--ease-standard) both; }
+
+/* ---------------- 榜单柱状图（ui-motion 28） ---------------- */
+.rank-track { height: 220px; }
+.rank-bar {
+  height: 100%;
+  transform-origin: bottom center;
+  /* 柱子本体只做 scaleY：首次长出来、刷新时从旧高度平滑变到新高度 */
+  transform: scaleY(var(--bar-ratio, 1));
+  animation: rank-bar-rise 560ms var(--ease-soft-spring) backwards;
+  transition: transform 420ms var(--ease-emph), filter 180ms var(--ease-standard);
+  will-change: transform;
+}
+/* 数字跟着柱顶走，但反向缩放回正常字高，不被拉长 */
+.rank-score {
+  transform: scaleY(var(--bar-inv, 1));
+  transform-origin: top center;
+  transition: transform 420ms var(--ease-emph);
+}
+@keyframes rank-bar-rise {
+  from { transform: scaleY(0); opacity: 0.55; }
+  to { transform: scaleY(var(--bar-ratio, 1)); opacity: 1; }
+}
+@media (hover: hover) {
+  .rank-bar:hover { transform: translateY(-3px) scaleY(var(--bar-ratio, 1)); filter: brightness(1.08); }
+}
+
+/* ---------------- 撤销提示条（ui-motion 59） ---------------- */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(10px) scale(0.97); }
+}
+@keyframes toast-out-up {
+  to { opacity: 0; transform: translateY(-24px) scale(0.97); }
+}
+.toast-card { animation: toast-in 300ms var(--ease-soft-spring) both; }
+.toast-card.toast-leave { animation: toast-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards; }
+.toast-card.toast-leave-up { animation: toast-out-up 180ms cubic-bezier(0.4, 0, 1, 1) forwards; }
+.toast-countdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--primary);
+  transform-origin: left center;
+  animation-name: toast-countdown;
+  animation-timing-function: linear; /* 这是时间进度，不是装饰动效 */
+  animation-fill-mode: forwards;
+}
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* ---------------- 底部导航：水滴胶囊（ui-motion 11） ---------------- */
+@property --pill-l {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+@property --pill-r {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+.tab-pill {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 64px;
+  height: 32px;
+  pointer-events: none;
+  transform-origin: left center;
+  /* 两边各自过渡，差值变化时胶囊会被自然拉长；只改 transform，不触发重排 */
+  transform: translate3d(calc(var(--pill-l) * 1px), 0, 0) scaleX(calc((var(--pill-r) - var(--pill-l)) / 64));
+  will-change: transform;
+}
+.tab-pill[data-ready] {
+  transition:
+    --pill-l 340ms var(--ease-soft-spring) var(--pill-dl, 0ms),
+    --pill-r 380ms var(--ease-soft-spring) var(--pill-dr, 0ms),
+    opacity 180ms var(--ease-standard);
+}
+.tab-pill-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--primary-soft);
+  transform-origin: center;
+  transition: transform 180ms var(--ease-standard);
+}
+/* 被拉开时轻微压扁，停稳后恢复，像一滴被拖长的水 */
+.tab-pill[data-moving] .tab-pill-fill { transform: scaleY(0.78); }
+
+.nav-badge { will-change: transform; }
+.nav-badge-num {
+  display: block;
+  animation: badge-flip 260ms var(--ease-standard) both;
+}
+@keyframes badge-flip {
+  0% { opacity: 0; transform: translateY(70%); }
+  60% { opacity: 1; transform: translateY(-8%); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes badge-out {
+  to { opacity: 0; transform: scale(0.4); }
+}
+.nav-badge.nav-badge-out { animation: badge-out 220ms var(--ease-standard) forwards; }
 
 /* 同层列表级联错峰（前 8 项各差 8ms，之后不再增加） */
 .cascade > * { animation: fade-up var(--dur-2) var(--ease-standard) both; }
@@ -454,9 +618,28 @@ select:focus-visible {
 .cascade > *:nth-child(6) { animation-delay: 225ms; }
 .cascade > *:nth-child(7) { animation-delay: 270ms; }
 .cascade > *:nth-child(8) { animation-delay: 315ms; }
+/* 空状态：图标先轻轻浮起，标题、说明、入口依次到位 */
+.empty-state > * { animation: fade-up 320ms var(--ease-standard) both; }
+.empty-state > *:nth-child(2) { animation-delay: 40ms; }
+.empty-state > *:nth-child(3) { animation-delay: 80ms; }
+.empty-state > *:nth-child(4) { animation-delay: 120ms; }
+.empty-icon { animation: empty-icon-in 420ms var(--ease-soft-spring) both; }
+@keyframes empty-icon-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.82); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 计时迷你条从底栏上方升起 */
+.mini-bar-in { animation: mini-bar-rise 320ms var(--ease-soft-spring) both; }
+@keyframes mini-bar-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* 重访同一视图时不再重放入场（由 AppShell 挂 .enter-once） */
 .enter-once .enter,
-.enter-once .cascade > * { animation: none; }
+.enter-once .cascade > *,
+.enter-once .empty-state > * { animation: none; }
 
 /* ============================================================
    动效增强（评审改进项）

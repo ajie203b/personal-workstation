@@ -58,7 +58,7 @@ export function TodayPage() {
   const date = useMemo(() => new Date(), [today])
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-3 pb-24 md:pb-14 flex flex-col gap-3 md:gap-4 enter">
+    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-3 pb-24 md:pb-14 flex flex-col gap-3 md:gap-4 cascade">
       <Milestone total={todayTasks.length} done={todayDone.length} />
       <header className="pt-0.5">
         <div className="flex items-end justify-between gap-3">

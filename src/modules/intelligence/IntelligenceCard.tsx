@@ -142,11 +142,23 @@ function Bars({ data }: { data: IntelData }) {
     <div className="flex items-end gap-2 min-w-max h-[320px] pl-1 pr-4">
       {data.models.map((m, i) => (
         <div key={`${m.name}-${i}`} className="flex flex-col items-center shrink-0" style={{ width: 56 }}>
-          <div
-            className="relative w-10 rounded-t-[3px] flex justify-center"
-            style={{ height: Math.max(26, Math.round((m.score / max) * 220)), background: PALETTE[i % PALETTE.length] }}
-          >
-            <span className="text-[11px] text-white/95 font-medium mt-1 tabular-nums">{Math.round(m.score)}</span>
+          <div className="rank-track relative w-10 h-[220px]">
+            <div
+              className="rank-bar absolute inset-x-0 bottom-0 rounded-t-[3px] flex justify-center"
+              title={`${m.name} · ${Math.round(m.score)}`}
+              style={{
+                background: PALETTE[i % PALETTE.length],
+                animationDelay: `${Math.min(i * 28, 360)}ms`,
+                ['--bar-ratio' as string]: Math.max(26, Math.round((m.score / max) * 220)) / 220,
+              } as React.CSSProperties}
+            >
+              <span
+                className="rank-score text-[11px] text-white/95 font-medium mt-1 tabular-nums"
+                style={{ ['--bar-inv' as string]: 220 / Math.max(26, Math.round((m.score / max) * 220)) } as React.CSSProperties}
+              >
+                {Math.round(m.score)}
+              </span>
+            </div>
           </div>
           <span
             className="mt-2 h-[96px] text-[10.5px] leading-tight text-on-surface-2 whitespace-nowrap overflow-hidden text-ellipsis"
