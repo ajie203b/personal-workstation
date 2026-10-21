@@ -85,7 +85,7 @@ export function FocusMiniBar() {
     <button
       type="button"
       onClick={() => navigate('/today')}
-      className="md:hidden fixed left-3 right-[4.75rem] z-30 h-11 rounded-full bg-surface border border-outline shadow-lg flex items-center gap-2 px-3.5 cursor-pointer active:scale-[0.98] transition-transform"
+      className="mini-bar-in md:hidden fixed left-3 right-[4.75rem] z-30 h-11 rounded-full bg-surface border border-outline shadow-lg flex items-center gap-2 px-3.5 cursor-pointer active:scale-[0.98] transition-transform"
       style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 4.25rem)' }}
       aria-label={`番茄钟剩余 ${mm} 分 ${ss} 秒，点开今日页`}
     >

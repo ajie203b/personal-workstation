@@ -176,8 +176,9 @@ export function TaskDetail() {
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
         <RadixDialog.Content
+          data-app-modal="dialog"
           className={cn(
-            'pop fixed z-50 flex flex-col bg-surface overflow-hidden',
+            'dialog-panel pop fixed z-50 flex flex-col bg-surface overflow-hidden',
             // 手机：底部弹出的居中胶囊；桌面：居中宽面板（比右侧抽屉能少滚很多）
             'left-0 right-0 bottom-0 max-h-[88dvh] rounded-t-[20px]',
             'md:inset-0 md:m-auto md:h-fit md:w-[min(780px,94vw)] md:max-h-[86dvh] md:rounded-[20px] md:border md:border-outline',
@@ -455,7 +456,7 @@ export function TaskDetail() {
           {/* 固定操作栏：不用滚到底也能完成 / 置顶 / 删除 */}
           <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
             {confirmDelete ? (
-              <div className="flex items-end justify-between gap-3">
+              <div className="animate-fade-up flex items-end justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[13px] text-danger">确认删除这条任务？</p>
                   <p className="text-[11.5px] text-on-surface-2 mt-0.5">删除后仍可在提示条里撤销，关联的到期提醒会一并取消。</p>

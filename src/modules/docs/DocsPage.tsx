@@ -20,6 +20,7 @@ import { useHoldToConfirm } from '@/shared/ui/useHoldToConfirm'
 import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 import { morphOpen } from '@/lib/viewTransition'
+import { usePressTilt } from '@/lib/usePressTilt'
 
 /** 绕卡片蓄力的时长：文案与计时共用这一个值 */
 const DELETE_HOLD_MS = 1500
@@ -206,7 +207,7 @@ export function DocsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
+    <div className="mx-auto w-full max-w-[1500px] px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 cascade">
       {/* 桌面：标题 + 搜索 / 写作 / 导入 一行放得下 */}
       <div className="hidden md:flex md:items-start gap-3">
         <div>
@@ -882,29 +883,35 @@ function ContinueReading() {
         <span className="text-[11.5px] text-on-surface-2/70">接着上次的位置</span>
       </div>
       <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 snap-x">
-        {recent.map((d) => {
-          const pct = withProgress[d.hash] ?? 0
-          return (
-            <button
-              key={d.id}
-              type="button"
-              onClick={() => openDoc({ docId: d.id })}
-              className="snap-start shrink-0 w-[210px] card card-hover text-left px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer"
-            >
-              <span className="flex items-center gap-1.5 text-[11px] text-on-surface-2">
-                <BookOpen size={12} />
-                {DOC_KIND_LABEL[d.kind]}
-                <span className="ml-auto tabular-nums">{pct}%</span>
-              </span>
-              <span className="text-[13px] font-medium truncate">{d.title}</span>
-              <span className="h-1 rounded-full bg-surface-3 overflow-hidden">
-                <span className="block h-full rounded-full bg-primary origin-left" style={{ width: `${pct}%` }} />
-              </span>
-            </button>
-          )
-        })}
+        {recent.map((d) => (
+          <RecentDocCard key={d.id} doc={d} pct={withProgress[d.hash] ?? 0} />
+        ))}
       </div>
     </section>
+  )
+}
+
+/** 继续阅读小卡：桌面按住时轻微倾斜，松手回弹 */
+function RecentDocCard({ doc: d, pct }: { doc: Doc; pct: number }) {
+  const tilt = usePressTilt<HTMLButtonElement>(5)
+  return (
+    <button
+      ref={tilt.ref}
+      {...tilt.tiltProps}
+      type="button"
+      onClick={() => openDoc({ docId: d.id })}
+      className="tilt-card snap-start shrink-0 w-[210px] card card-hover text-left px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer overflow-hidden"
+    >
+      <span className="flex items-center gap-1.5 text-[11px] text-on-surface-2">
+        <BookOpen size={12} />
+        {DOC_KIND_LABEL[d.kind]}
+        <span className="ml-auto tabular-nums">{pct}%</span>
+      </span>
+      <span className="text-[13px] font-medium truncate">{d.title}</span>
+      <span className="h-1 rounded-full bg-surface-3 overflow-hidden">
+        <span className="block h-full rounded-full bg-primary origin-left" style={{ width: `${pct}%` }} />
+      </span>
+    </button>
   )
 }
 

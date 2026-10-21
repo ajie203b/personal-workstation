@@ -146,7 +146,7 @@ export function StatsPage() {
   if (!tasks || !sessions || !annotations) return null
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
+    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 cascade">
       <div className="flex items-center gap-3">
         <div className="hidden md:block">
           <h1 className="text-[22px] font-bold leading-8">统计</h1>
