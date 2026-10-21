@@ -117,19 +117,30 @@ async function getLastAttempt(): Promise<number | null> {
   return typeof row?.value === 'number' ? row.value : null
 }
 
+export interface IntelRefresh {
+  /** 能用来渲染的数据（可能是缓存） */
+  data: IntelData | null
+  /** 这一轮是否真的从远端取到了新数据（false = 用了缓存 / 全源失败） */
+  fetched: boolean
+}
+
 /**
  * 静默刷新：成功后 24 小时最多一次；失败（比如仓库还没生成 intelligence.json）6 小时后再试。
  * 任何失败都不抛错——保留缓存，卡片继续显示内置快照。
  *
  * 「尝试时间」和「成功时间」必须分开记：以前只记一个时间，失败后要么每次打开都重打 404，
  * 要么（记了失败时间）卡片会把内置快照标成「更新于今天」，等于谎报数据新鲜度。
+ *
+ * 返回值带 fetched 标记：卡片「手动刷新」靠它决定要不要说「已更新」——全源失败时
+ * 函数会退回缓存，若只看 data 非空就提示成功，等于把旧数据说成刚更新。
  */
-export async function refreshIntel(force = false): Promise<IntelData | null> {
+export async function refreshIntelDetailed(force = false): Promise<IntelRefresh> {
+  const cached = async (): Promise<IntelRefresh> => ({ data: await loadCachedIntel(), fetched: false })
   if (!force) {
     const at = await getLastIntelFetch()
-    if (at && Date.now() - at < DAY_MS) return loadCachedIntel()
+    if (at && Date.now() - at < DAY_MS) return cached()
     const attempt = await getLastAttempt()
-    if (attempt && Date.now() - attempt < RETRY_MS) return loadCachedIntel()
+    if (attempt && Date.now() - attempt < RETRY_MS) return cached()
   }
   try {
     await db.settings.put({ key: ATTEMPT_KEY, value: Date.now() })
@@ -142,10 +153,15 @@ export async function refreshIntel(force = false): Promise<IntelData | null> {
       if (!data) continue
       await db.settings.put({ key: CACHE_KEY, value: data })
       await db.settings.put({ key: AT_KEY, value: Date.now() })
-      return data
+      return { data, fetched: true }
     } catch {
       /* 换下一个源 */
     }
   }
-  return loadCachedIntel()
+  return cached()
+}
+
+/** 只要数据的调用方用这个（设置页 / 启动钩子） */
+export async function refreshIntel(force = false): Promise<IntelData | null> {
+  return (await refreshIntelDetailed(force)).data
 }
