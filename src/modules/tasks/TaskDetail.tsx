@@ -10,6 +10,7 @@ import { toggleTaskWithUndo } from './taskActions'
 import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
+import { DateTimeField, TimePicker } from '@/shared/ui/TimePicker'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
@@ -261,11 +262,10 @@ export function TaskDetail() {
                     截止顺延一天
                   </button>
                 </div>
-                <input
-                  type="datetime-local"
+                <DateTimeField
+                  ariaLabel="开始时间"
                   value={localDateTimeValue(task.startAt)}
-                  onChange={(e) => patch({ startAt: e.target.value ? new Date(e.target.value).getTime() : undefined })}
-                  className={INPUT}
+                  onChange={(v) => patch({ startAt: v ? new Date(v).getTime() : undefined })}
                 />
               </div>
 
@@ -281,11 +281,11 @@ export function TaskDetail() {
                 </div>
                 <div>
                   <label className={FIELD}>时间</label>
-                  <input
-                    type="time"
-                    value={task.dueTime ?? ''}
-                    onChange={(e) => patch({ dueTime: e.target.value || undefined })}
-                    className={INPUT}
+                  <TimePicker
+                    value={task.dueTime}
+                    onChange={(v) => patch({ dueTime: v })}
+                    placeholder="选择时间"
+                    allowClear
                   />
                 </div>
               </div>

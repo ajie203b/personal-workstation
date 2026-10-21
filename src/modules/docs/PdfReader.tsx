@@ -221,8 +221,10 @@ export function PdfReader({
     return () => { alive = false }
   }, [hash, reloadKey])
 
-  const fitW = Math.max(280, Math.min(containerW - 24, 860))
-  const dispW = Math.max(240, Math.min(Math.round(fitW * zoom), 2600))
+  // 正文宽度滑块同样作用于 PDF：100% 铺满画布，50% 收到一半；zoom 再在此之上倍乘
+  const widthRatio = Math.min(1, Math.max(0.5, (settings.widthPct ?? 72) / 100))
+  const fitW = Math.max(180, (containerW - 24) * widthRatio)
+  const dispW = Math.max(180, Math.min(Math.round(fitW * zoom), 2600))
   // 页宽很大时按比例降低画布 DPR，避免 2600px 宽、dpr2 的 canvas 把手机内存和渲染拖垮
   const renderDpr = Math.max(1, Math.min(PDF_DPR, 3000 / dispW))
   const pageH = (i: number) => (ratios[i] ? Math.round(dispW * ratios[i]) : Math.round(dispW * 1.414))
@@ -643,7 +645,7 @@ export function PdfReader({
             onLoadError={(e) => setLoadError(e?.message || '文件可能已损坏，或格式不受支持')}
             loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13px]">正在载入 PDF…</div>}
             error={null}
-            className="flex flex-col items-start py-5 gap-5"
+            className="flex flex-col items-center py-5 gap-5"
             options={PDF_OPTIONS}
           >
         {numPages > 0 &&

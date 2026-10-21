@@ -250,7 +250,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     >
       <div
         className="mx-auto px-4 py-8"
-        style={{ width: `${settings.widthPct}%`, maxWidth: 860, minWidth: 300 }}
+        style={{ width: `${settings.widthPct}%`, minWidth: 260 }}
       >
         {flow.segments.map((seg, i) => (
           <section

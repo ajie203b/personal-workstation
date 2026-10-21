@@ -8,6 +8,7 @@ import { PRIORITY_VAR, type RepeatKind, type Tier } from '@/db/db'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
+import { DateTimeField, TimePicker } from '@/shared/ui/TimePicker'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -135,24 +136,14 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
             <span className="text-[11px] text-on-surface-2">只选截止时，开始时间默认为现在</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <label className="block">
+            <div>
               <span className="block text-[12px] font-medium text-on-surface-2 mb-1">开始时间</span>
-              <input
-                type="datetime-local"
-                value={startInput}
-                onChange={(e) => setStartInput(e.target.value)}
-                className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
-              />
-            </label>
-            <label className="block">
+              <DateTimeField ariaLabel="开始时间" value={startInput} onChange={setStartInput} />
+            </div>
+            <div>
               <span className="block text-[12px] font-medium text-on-surface-2 mb-1">截止时间</span>
-              <input
-                type="datetime-local"
-                value={dueInput}
-                onChange={(e) => setDueInput(e.target.value)}
-                className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
-              />
-            </label>
+              <DateTimeField ariaLabel="截止时间" value={dueInput} onChange={setDueInput} />
+            </div>
           </div>
         </div>
 
@@ -194,15 +185,10 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           )}
           {mode === 'repeat' && (
             <div className="grid grid-cols-2 gap-2.5">
-              <label className="block">
+              <div>
                 <span className="block text-[12px] font-medium text-on-surface-2 mb-1">打卡时间</span>
-                <input
-                  type="time"
-                  value={habitTime}
-                  onChange={(e) => setHabitTime(e.target.value)}
-                  className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
-                />
-              </label>
+                <TimePicker value={habitTime} onChange={(v) => setHabitTime(v ?? '')} placeholder="选择时间" allowClear />
+              </div>
               <label className="block">
                 <span className="block text-[12px] font-medium text-on-surface-2 mb-1">次序</span>
                 <input
