@@ -552,31 +552,6 @@ select:focus-visible {
   animation: fade-up 220ms var(--ease-standard) both;
 }
 
-/* ---------------- 榜单柱状图（ui-motion 28） ---------------- */
-.rank-track { height: 220px; }
-.rank-bar {
-  height: 100%;
-  transform-origin: bottom center;
-  /* 柱子本体只做 scaleY：首次长出来、刷新时从旧高度平滑变到新高度 */
-  transform: scaleY(var(--bar-ratio, 1));
-  animation: rank-bar-rise 560ms var(--ease-soft-spring) backwards;
-  transition: transform 420ms var(--ease-emph), filter 180ms var(--ease-standard);
-  will-change: transform;
-}
-/* 数字跟着柱顶走，但反向缩放回正常字高，不被拉长 */
-.rank-score {
-  transform: scaleY(var(--bar-inv, 1));
-  transform-origin: top center;
-  transition: transform 420ms var(--ease-emph);
-}
-@keyframes rank-bar-rise {
-  from { transform: scaleY(0); opacity: 0.55; }
-  to { transform: scaleY(var(--bar-ratio, 1)); opacity: 1; }
-}
-@media (hover: hover) {
-  .rank-bar:hover { transform: translateY(-3px) scaleY(var(--bar-ratio, 1)); filter: brightness(1.08); }
-}
-
 /* ---------------- 撤销提示条（ui-motion 59） ---------------- */
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(14px) scale(0.97); }
