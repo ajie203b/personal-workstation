@@ -9,6 +9,7 @@
     "dev:lan": "vite --host --mode lan",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "test:scripts": "node scripts/intel-parse.test.mjs",
     "test:watch": "vitest",
     "preview": "vite preview --host",
     "preview:lan": "vite preview --host --mode lan"
