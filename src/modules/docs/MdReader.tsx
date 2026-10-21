@@ -268,8 +268,8 @@ export function MdReader({
       className={`h-full overflow-y-auto overscroll-contain theme-${settings.theme}`}
     >
       <div
-        // 宽度按百分比跟随窗口自适应，maxWidth 防止宽屏上把一行拉成 200 多个字符
-        style={{ width: `${settings.widthPct}%`, maxWidth: 900, fontSize: liveFont, ['--md-leading' as string]: String(settings.leading) }}
+        // 宽度完全交给滑块：100% 就是可用宽度，不再被固定 maxWidth 卡在 900px
+        style={{ width: `${settings.widthPct}%`, fontSize: liveFont, ['--md-leading' as string]: String(settings.leading) }}
         className="mx-auto px-2 py-10 md:py-14 min-w-0"
       >
         <div ref={bodyRef} className="md-body" onMouseUp={onMouseUp}>

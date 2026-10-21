@@ -288,16 +288,56 @@ export function DocReaderPage() {
   }, [])
 
   const updateSettings = useCallback(
-    (patch: Partial<DocSettings>) => {
+    (patch: Partial<DocSettings>, persist = true) => {
       if (!doc) return
       setSettings((s) => {
         const next = { ...s, ...patch }
-        void saveDocSettings(doc.hash, next)
+        // 拖动宽度时只更新预览，松手才落库；否则每个 input 事件都写一次 IndexedDB
+        if (persist) void saveDocSettings(doc.hash, next)
         return next
       })
     },
     [doc],
   )
+
+  /* ---------- 正文宽度：拖动预览 / 松手应用 ---------- */
+  const [widthDraft, setWidthDraft] = useState(settings.widthPct)
+  const [draggingWidth, setDraggingWidth] = useState(false)
+  const widthDraftRef = useRef(settings.widthPct)
+  const widthRaf = useRef(0)
+
+  useEffect(() => {
+    setWidthDraft(settings.widthPct)
+    widthDraftRef.current = settings.widthPct
+  }, [settings.widthPct])
+
+  useEffect(() => () => cancelAnimationFrame(widthRaf.current), [])
+
+  const previewWidth = (v: number) => {
+    widthDraftRef.current = v
+    setWidthDraft(v)
+    // PDF 重排一次 canvas 很贵，拖动中只改数字，松手才真正换页宽
+    if (doc?.kind === 'pdf') return
+    cancelAnimationFrame(widthRaf.current)
+    widthRaf.current = requestAnimationFrame(() => updateSettings({ widthPct: v }, false))
+  }
+
+  const commitWidth = useCallback((v: number) => {
+    widthDraftRef.current = v
+    setWidthDraft(v)
+    updateSettings({ widthPct: v }, true)
+  }, [updateSettings])
+
+  // 指针可能拖出滑块再松开，监听 window 的 pointerup 兜底提交
+  useEffect(() => {
+    if (!draggingWidth) return
+    const up = () => {
+      setDraggingWidth(false)
+      commitWidth(widthDraftRef.current)
+    }
+    window.addEventListener('pointerup', up, true)
+    return () => window.removeEventListener('pointerup', up, true)
+  }, [draggingWidth, commitWidth])
 
   /* ---------- 三栏布局：拖动调宽 / 折叠 ---------- */
 
@@ -638,20 +678,29 @@ export function DocReaderPage() {
                 <div>
                   <p className="text-[12px] font-medium text-on-surface-2 mb-1.5 flex items-center justify-between">
                     <span>正文宽度</span>
-                    <span className="text-on-surface tabular-nums">{settings.widthPct}%</span>
+                    <span className="text-on-surface tabular-nums">{widthDraft}%</span>
                   </p>
                   <input
                     type="range"
                     min={50}
                     max={100}
                     step={2}
-                    value={settings.widthPct}
-                    onChange={(e) => updateSettings({ widthPct: Number(e.target.value) })}
+                    value={widthDraft}
+                    onPointerDown={() => setDraggingWidth(true)}
+                    onPointerUp={() => { setDraggingWidth(false); commitWidth(widthDraftRef.current) }}
+                    onPointerCancel={() => { setDraggingWidth(false); commitWidth(widthDraftRef.current) }}
+                    onChange={(e) => previewWidth(Number(e.target.value))}
+                    onKeyUp={(e) => commitWidth(Number(e.currentTarget.value))}
+                    onBlur={(e) => commitWidth(Number(e.currentTarget.value))}
                     aria-label="正文宽度"
-                    className="w-full h-5 cursor-pointer accent-[var(--primary)]"
+                    aria-valuetext={`${widthDraft}%`}
+                    className="reader-range w-full cursor-pointer"
+                    style={{ ['--range-pct' as string]: `${((widthDraft - 50) / 50) * 100}%` } as React.CSSProperties}
                   />
                   <div className="flex justify-between text-[10.5px] text-on-surface-2 mt-0.5">
-                    <span>窄</span><span>宽</span>
+                    <span>窄</span>
+                    <span>{doc?.kind === 'pdf' ? '松开后应用页宽' : '拖动实时预览'}</span>
+                    <span>宽</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
