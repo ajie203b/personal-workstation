@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { daysFromToday, fmtDue, nextWeekday, todayStr } from './date'
+import { daysFromToday, fmtDue, fmtStartAt, futureReason, isFutureTask, nextWeekday, todayStr } from './date'
 
 /**
  * 固定「今天」= 2026-10-20（周二），本周（周一起）= 10-19 ~ 10-25。
@@ -65,5 +65,48 @@ describe('fmtDue / daysFromToday', () => {
     expect(fmtDue('2026-10-21').text).toBe('明天')
     // 一周内显示周几
     expect(fmtDue('2026-10-23').text).toBe('周五')
+  })
+})
+
+/**
+ * 「未来任务」以开始时间为准：
+ * 开始时间到了就该能勾完成，哪怕截止日还在将来；没有开始时间才退回看截止日。
+ * 固定现在是 2026-10-20 10:30。
+ */
+describe('isFutureTask', () => {
+  const at = (h: number, day = 20) => new Date(2026, 9, day, h, 0).getTime()
+
+  it('开始时间已到 + 截止日在将来 → 不是未来任务（旧行为会误判）', () => {
+    expect(isFutureTask({ due: '2026-10-23', startAt: at(9) })).toBe(false)
+    expect(isFutureTask({ due: '2026-10-23', startAt: at(10, 19) })).toBe(false)
+  })
+
+  it('开始时间没到 → 未来任务，即使截止日就是今天', () => {
+    expect(isFutureTask({ due: '2026-10-20', startAt: at(18) })).toBe(true)
+    expect(futureReason({ due: '2026-10-20', startAt: at(18) })).toBe('start')
+  })
+
+  it('没有开始时间才看截止日', () => {
+    expect(isFutureTask({ due: '2026-10-23' })).toBe(true)
+    expect(isFutureTask({ due: '2026-10-20' })).toBe(false)
+    expect(isFutureTask({ due: '2026-10-15' })).toBe(false)
+    expect(futureReason({ due: '2026-10-23' })).toBe('due')
+  })
+
+  it('没有开始时间也没有截止日 → 不是未来任务', () => {
+    expect(isFutureTask({})).toBe(false)
+    expect(futureReason({})).toBeNull()
+  })
+
+  it('已完成的不算未来任务', () => {
+    expect(isFutureTask({ due: '2026-10-30', startAt: at(23), status: 'done' })).toBe(false)
+  })
+})
+
+describe('fmtStartAt', () => {
+  it('今天 / 明天 / 更远分别给出不同粒度', () => {
+    expect(fmtStartAt(new Date(2026, 9, 20, 8, 5).getTime())).toBe('今天 08:05')
+    expect(fmtStartAt(new Date(2026, 9, 21, 18, 0).getTime())).toBe('明天 18:00')
+    expect(fmtStartAt(new Date(2026, 9, 27, 9, 30).getTime())).toBe('10月27日 09:30')
   })
 })

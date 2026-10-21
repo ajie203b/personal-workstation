@@ -16,7 +16,7 @@ import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
-import { isFutureTask } from '@/lib/date'
+import { isFutureTask, futureReason } from '@/lib/date'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
@@ -163,6 +163,7 @@ export function TaskDetail() {
 
   const done = task.status === 'done'
   const future = isFutureTask(task)
+  const futureWhy = futureReason(task)
 
   return (
     <RadixDialog.Root
@@ -460,7 +461,9 @@ export function TaskDetail() {
                   variant="primary"
                   className="flex-1 justify-center"
                   disabled={future}
-                  title={future ? '未来任务，到日期后再完成' : undefined}
+                  title={future
+                    ? (futureWhy === 'start' ? '未来任务，开始时间到了再完成' : '未来任务，到截止日后再完成')
+                    : undefined}
                   onClick={() => void completeOrRestore()}
                 >
                   {future ? '未来任务' : '✓ 完成并归档'}
@@ -511,7 +514,11 @@ export function TaskDetail() {
               </Button>
             </div>
             {future && !done && (
-              <p className="text-[11px] text-p1 mt-1.5">未来任务：截止日期或开始时间还没到，暂不能勾完成。</p>
+              <p className="text-[11px] text-p1 mt-1.5">
+                {futureWhy === 'start'
+                  ? '未来任务：开始时间还没到，暂不能勾完成。'
+                  : '未来任务：截止日期还没到，暂不能勾完成。'}
+              </p>
             )}
           </div>
         </RadixDialog.Content>
