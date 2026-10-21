@@ -13,8 +13,8 @@ import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
-import { useMediaQuery } from '@/lib/useMediaQuery'
 import { repeatLabel } from '@/lib/repeat'
+import { isFutureTask } from '@/lib/date'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
@@ -34,10 +34,6 @@ const INPUT =
 export function TaskDetail() {
   const { detailId, openDetail } = useTasksUi()
   const task = useAllTasks().find((t) => t.id === detailId) ?? null
-  // 断点必须在任何 early return 之前算：下面 `if (!task) return null` 之后再调 hook，
-  // 会让「有任务 / 无任务」两种渲染的 hook 数量不一致，React 直接抛
-  // "Rendered more hooks than during the previous render"，详情整块打不开。
-  const isDesktop = useMediaQuery('(min-width: 768px)')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
   const [subDraft, setSubDraft] = useState('')
@@ -128,6 +124,10 @@ export function TaskDetail() {
       title: titleDraft.trim() || task.title,
       notes: notesDraft.trim() ? notesDraft : undefined,
     }
+    if (!wasDone && isFutureTask(merged)) {
+      useUi.getState().toast('这是未来任务，到日期后再完成')
+      return
+    }
     if (!wasDone && (merged.title !== task.title || merged.notes !== task.notes)) {
       pendingRef.current = null
       await updateTask(task.id, { title: merged.title, notes: merged.notes })
@@ -163,6 +163,7 @@ export function TaskDetail() {
   }
 
   const done = task.status === 'done'
+  const future = isFutureTask(task)
 
   return (
     <RadixDialog.Root
@@ -173,22 +174,20 @@ export function TaskDetail() {
       }
     >
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 md:bg-transparent md:pointer-events-none" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
         <RadixDialog.Content
           className={cn(
-            'pop fixed z-50 flex flex-col bg-surface',
-            // 手机：底部弹出的居中胶囊；桌面：右侧抽屉（列表不被整块盖住，可以接着点下一条）
-            'left-0 right-0 bottom-0 max-h-[86dvh] rounded-t-[20px]',
-            'md:left-auto md:right-0 md:top-0 md:bottom-0 md:w-[440px] md:max-h-none md:rounded-none md:rounded-l-[20px] md:border-l md:border-outline',
+            'pop fixed z-50 flex flex-col bg-surface overflow-hidden',
+            // 手机：底部弹出的居中胶囊；桌面：居中宽面板（比右侧抽屉能少滚很多）
+            'left-0 right-0 bottom-0 max-h-[88dvh] rounded-t-[20px]',
+            'md:inset-0 md:m-auto md:h-fit md:w-[min(780px,94vw)] md:max-h-[86dvh] md:rounded-[20px] md:border md:border-outline',
           )}
           style={{
             // 常挂转场名：打开时若来自卡片则浏览器自动插值形变，关闭时也能「长回」卡片；
             // 不支持 View Transitions 时该属性无副作用。
             viewTransitionName: MORPH_NAME,
             // 由卡片形变而来时抑制自身 scale-in，避免与转场打架；直接打开保留弹簧入场
-            animation: morphFromCard.current
-              ? undefined
-              : isDesktop ? 'drawer-in var(--dur-2) var(--ease-standard)' : 'scale-in var(--dur-2) var(--ease-spring)',
+            animation: morphFromCard.current ? undefined : 'scale-in var(--dur-2) var(--ease-spring)',
           }}
         >
           {/* 标题栏 */}
@@ -202,10 +201,10 @@ export function TaskDetail() {
             </RadixDialog.Close>
           </div>
 
-          {/* 内容区 */}
+          {/* 内容区：桌面两栏，标题/笔记/标签/子任务占满，其余设置左右排 */}
           <div className="flex-1 overflow-y-auto p-5">
-            <div className="flex flex-col gap-5">
-              <div>
+            <div className="grid gap-4 md:grid-cols-2 md:gap-x-5 md:gap-y-4">
+              <div className="md:col-span-2">
                 <label className={FIELD}>标题</label>
                 <textarea
                   value={titleDraft}
@@ -215,12 +214,12 @@ export function TaskDetail() {
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className={FIELD}>笔记</label>
                 <textarea
                   value={notesDraft}
                   onChange={(e) => setNotesDraft(e.target.value)}
-                  rows={4}
+                  rows={3}
                   placeholder="补充说明、链接…"
                   className={cn(INPUT, 'h-auto py-2.5 resize-none leading-relaxed')}
                 />
@@ -289,6 +288,9 @@ export function TaskDetail() {
                   />
                 </div>
               </div>
+              {task.repeat && (
+                <p className="text-[11px] text-on-surface-2 -mt-2 md:col-span-2">打卡任务完成后，下一次会沿用这里的时间。</p>
+              )}
 
               <div>
                 <label className={FIELD}><span className="inline-flex items-center gap-1.5"><FolderOpen size={13} /> 资料文件夹</span></label>
@@ -368,7 +370,7 @@ export function TaskDetail() {
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className={FIELD}>
                   <span className="inline-flex items-center gap-1.5">
                     <ListChecks size={13} /> 子任务{task.subtasks?.length ? `（${doneSubs}/${task.subtasks.length}）` : ''}
@@ -421,19 +423,60 @@ export function TaskDetail() {
               )}
 
               {task.repeat && (
-                <p className="text-[13px] text-on-surface-2">
+                <p className="text-[13px] text-on-surface-2 md:col-span-2">
                   重复：{repeatLabel(task.repeat, { days: task.repeatDays, monthDay: task.repeatMonthDay })}（打卡任务：完成后自动生成下一次）
                 </p>
               )}
 
-              <div className="flex items-center gap-2 pt-1">
+              {task.repeat && (
+                <div className="md:col-span-2">
+                  <label className={FIELD}>打卡次序（可选）</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={task.sortOrder ?? ''}
+                    onChange={(e) => {
+                      const n = Number(e.target.value)
+                      patch({ sortOrder: e.target.value && Number.isFinite(n) ? Math.max(1, Math.round(n)) : undefined })
+                    }}
+                    placeholder="数字越小越靠前；留空按优先级/时间排"
+                    className={INPUT}
+                  />
+                  <p className="text-[11px] text-on-surface-2 mt-1">只和同样填了次序的打卡任务比较；完成后下一次会沿用。</p>
+                </div>
+              )}
+
+              <p className="text-[11px] text-on-surface-2 md:col-span-2">
+                创建于 {new Date(task.createdAt).toLocaleString('zh-CN')} · 更新于 {new Date(task.updatedAt).toLocaleString('zh-CN')}
+              </p>
+            </div>
+          </div>
+
+          {/* 固定操作栏：不用滚到底也能完成 / 置顶 / 删除 */}
+          <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
+            {confirmDelete ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-danger">确认删除这条任务？</span>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => setConfirmDelete(false)}>取消</Button>
+                  <Button size="sm" variant="danger" onClick={() => void remove()}>删除</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
                 {done ? (
                   <Button variant="primary" className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
                     恢复为未完成
                   </Button>
                 ) : (
-                  <Button variant="primary" className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
-                    ✓ 完成并归档
+                  <Button
+                    variant="primary"
+                    className="flex-1 justify-center"
+                    disabled={future}
+                    title={future ? '未来任务，到日期后再完成' : undefined}
+                    onClick={() => void completeOrRestore()}
+                  >
+                    {future ? '未来任务' : '✓ 完成并归档'}
                   </Button>
                 )}
                 {!done && (
@@ -469,28 +512,21 @@ export function TaskDetail() {
                     <Timer size={16} />
                   </Button>
                 )}
+                <Button
+                  variant="danger"
+                  size="icon"
+                  aria-label="删除任务"
+                  title="删除任务"
+                  onClick={() => setConfirmDelete(true)}
+                  className="shrink-0"
+                >
+                  <Trash2 size={16} />
+                </Button>
               </div>
-
-              <div className="pt-2 border-t border-outline">
-                {confirmDelete ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] text-danger">确认删除这条任务？</span>
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={() => setConfirmDelete(false)}>取消</Button>
-                      <Button size="sm" variant="danger" onClick={() => void remove()}>删除</Button>
-                    </div>
-                  </div>
-                ) : (
-                  <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
-                    <Trash2 size={14} /> 删除任务
-                  </Button>
-                )}
-              </div>
-
-              <p className="text-[11px] text-on-surface-2">
-                创建于 {new Date(task.createdAt).toLocaleString('zh-CN')} · 更新于 {new Date(task.updatedAt).toLocaleString('zh-CN')}
-              </p>
-            </div>
+            )}
+            {future && !done && !confirmDelete && (
+              <p className="text-[11px] text-p1 mt-1.5">未来任务：截止日期或开始时间还没到，暂不能勾完成。</p>
+            )}
           </div>
         </RadixDialog.Content>
       </RadixDialog.Portal>

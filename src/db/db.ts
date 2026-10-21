@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import type { FanqieChapterMeta } from '@/lib/fanqie'
 
 export const TIERS = ['today', 'upcoming', 'anytime', 'someday'] as const
 export type Tier = (typeof TIERS)[number]
@@ -67,6 +68,8 @@ export interface Task {
   aiRef?: string
   subtasks?: SubTask[] // v1.3 子任务清单
   pinned?: boolean // v1.3 置顶（列表视图内沉顶）
+  /** 打卡任务的显示次序：数字越小越靠前；只和同样填了次序的任务比较 */
+  sortOrder?: number
   createdAt: number
   updatedAt: number
   doneAt?: number // 完成即入 Logbook
@@ -294,6 +297,40 @@ export interface AiUsageRow {
   ok: boolean
 }
 
+/* ============ 番茄小说下载器（v2.2） ============ */
+
+/** 本地书架里的一本书：目录元信息存一份，正文按章另存，方便断点续传 */
+export interface FanqieBook {
+  id: string
+  title: string
+  author: string
+  cover?: string
+  abstract: string
+  status: string
+  wordCount?: number
+  chapterCount: number
+  tags: string[]
+  lastChapterTitle?: string
+  updatedAt?: number
+  chapters: FanqieChapterMeta[]
+  downloadedCount: number
+  createdAt: number
+  savedAt: number
+  lastError?: string
+}
+
+export interface FanqieChapterRow {
+  /** `${bookId}:${itemId}` */
+  id: string
+  bookId: string
+  itemId: string
+  index: number
+  title: string
+  volume?: string
+  content: string
+  savedAt: number
+}
+
 class WorkstationDB extends Dexie {
   tasks!: Table<Task, string>
   settings!: Table<SettingKV, string>
@@ -310,6 +347,8 @@ class WorkstationDB extends Dexie {
   focusSessions!: Table<FocusSession, string>
   tombstones!: Table<Tombstone, string>
   folders!: Table<Folder, string>
+  fanqieBooks!: Table<FanqieBook, string>
+  fanqieChapters!: Table<FanqieChapterRow, string>
 
   constructor() {
     super('workstation')
@@ -351,6 +390,11 @@ class WorkstationDB extends Dexie {
     // 免得旧数据还能被导出、快照或 WebDAV 同步带出去
     this.version(7).stores({}).upgrade(async (tx) => {
       await tx.table('aiProviders').clear()
+    })
+    // v8（v2.2）：番茄小说本地书架（纯增表；正文不参与备份/同步）
+    this.version(8).stores({
+      fanqieBooks: 'id, savedAt',
+      fanqieChapters: 'id, bookId, index',
     })
   }
 }

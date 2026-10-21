@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, BellOff, ChevronLeft, ChevronRight, Database, Download, History, Info, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
-import { useUi, type Accent, type Density, type IntelPlacement, type ThemeMode } from '@/stores/ui'
+import { useUi, type Accent, type Density, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
@@ -127,8 +127,6 @@ function AppearanceTab() {
   const setDensity = useUi((s) => s.setDensity)
   const motion = useUi((s) => s.motion)
   const setMotion = useUi((s) => s.setMotion)
-  const intelPlacement = useUi((s) => s.intelPlacement)
-  const setIntelPlacement = useUi((s) => s.setIntelPlacement)
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
@@ -179,22 +177,6 @@ function AppearanceTab() {
             { value: 'compact', label: '紧凑' },
             { value: 'default', label: '默认' },
             { value: 'large', label: '宽松' },
-          ]}
-        />
-      </section>
-
-      <section className="card p-4">
-        <h2 className="text-[14px] font-semibold mb-1">模型智能排名</h2>
-        <p className="text-[13px] text-on-surface-2 mb-3">Artificial Analysis 榜单卡片放在哪一页；数据每日自动更新。</p>
-        <Segmented
-          ariaLabel="模型智能排名位置"
-          value={intelPlacement}
-          onChange={(v) => setIntelPlacement(v as IntelPlacement)}
-          options={[
-            { value: 'tools', label: '工具页' },
-            { value: 'today', label: '今日页' },
-            { value: 'stats', label: '统计页' },
-            { value: 'hidden', label: '隐藏' },
           ]}
         />
       </section>

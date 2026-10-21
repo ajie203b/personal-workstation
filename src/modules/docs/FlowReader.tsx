@@ -268,7 +268,13 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
             )}
             <div
               className="flow-body"
-              style={{ fontSize: liveFont, lineHeight: settings.leading }}
+              style={{
+                fontSize: liveFont,
+                lineHeight: settings.leading,
+                // 图片跟随字号缩放；max-width 反向缩回，保证放大后仍不超过正文栏宽
+                ['--flow-img-zoom' as string]: String(liveFont / 17),
+                ['--flow-img-max' as string]: `${100 / (liveFont / 17)}%`,
+              }}
               dangerouslySetInnerHTML={{ __html: seg.html }}
             />
           </section>

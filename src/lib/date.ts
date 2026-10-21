@@ -7,6 +7,19 @@ export function todayStr(): string {
   return format(new Date(), 'yyyy-MM-dd')
 }
 
+/**
+ * 未来任务：截止日期晚于今天，或开始时间还没到。
+ * 这类任务不允许提前勾完成，避免把未来计划从清单里点没。
+ */
+export function isFutureTask(
+  task: { due?: string; startAt?: number; status?: string },
+  today = todayStr(),
+  now = Date.now(),
+): boolean {
+  if (task.status === 'done') return false
+  return (!!task.due && task.due > today) || (task.startAt != null && task.startAt > now)
+}
+
 export function toDateStr(d: Date): string {
   return format(d, 'yyyy-MM-dd')
 }

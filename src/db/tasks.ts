@@ -22,6 +22,7 @@ export interface NewTaskInput {
   folderId?: string
   docRef?: Task['docRef']
   aiRef?: string
+  sortOrder?: number
 }
 
 export async function addTask(input: NewTaskInput): Promise<Task> {
@@ -43,6 +44,7 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
     folderId: input.folderId,
     docRef: input.docRef,
     aiRef: input.aiRef,
+    sortOrder: input.sortOrder,
     createdAt: now,
     updatedAt: now,
   }
@@ -99,6 +101,7 @@ export async function toggleDone(task: Task): Promise<Task | null> {
       repeatMonthDay: task.repeatMonthDay,
       docRef: task.docRef,
       aiRef: task.aiRef,
+      sortOrder: task.sortOrder,
       createdAt: now,
       updatedAt: now,
     }
@@ -172,6 +175,10 @@ export async function restoreTask(task: Task): Promise<void> {
 export function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+    // 打卡任务的自定义次序：只在两边都填了次序时生效，不影响普通任务的优先级排序
+    if (a.sortOrder != null && b.sortOrder != null && a.sortOrder !== b.sortOrder) {
+      return a.sortOrder - b.sortOrder
+    }
     if (a.priority !== b.priority) return a.priority - b.priority
     const ad = a.due ?? '9999-12-31'
     const bd = b.due ?? '9999-12-31'

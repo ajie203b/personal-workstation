@@ -9,4 +9,7 @@
     <string name="shortcut_quickadd_long">快速添加任务</string>
     <string name="shortcut_today">今日</string>
     <string name="shortcut_today_long">打开今日清单</string>
+    <!-- 今日待办小组件（桌面 / 小米负一屏） -->
+    <string name="task_widget_name">今日待办</string>
+    <string name="task_widget_desc">显示今天未完成的任务，点开回到今日页</string>
 </resources>

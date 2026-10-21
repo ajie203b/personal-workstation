@@ -1,6 +1,6 @@
 import { Clock, FileText, Flag, ListChecks, Pin, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, type Task } from '@/db/db'
-import { fmtDue } from '@/lib/date'
+import { fmtDue, isFutureTask } from '@/lib/date'
 import { repeatLabel } from '@/lib/repeat'
 import { cn } from '@/lib/cn'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
@@ -22,6 +22,7 @@ interface Props {
 export function TaskItem({ task, focused, overlay, flip }: Props) {
   const openDetail = useTasksUi((s) => s.openDetail)
   const done = task.status === 'done'
+  const future = isFutureTask(task)
   const due = task.due ? fmtDue(task.due, task.dueTime) : null
   const overdue = due?.overdue && !done
 
@@ -41,7 +42,12 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
       )}
     >
       <div className="flex items-start gap-3">
-        <CheckCircle checked={done} onChange={() => void toggleTaskWithUndo(task)} label={done ? '恢复任务' : '完成任务'} />
+        <CheckCircle
+          checked={done}
+          disabled={future}
+          onChange={() => void toggleTaskWithUndo(task)}
+          label={future ? '未来任务，到日期后再完成' : done ? '恢复任务' : '完成任务'}
+        />
         {/* macOS 提醒事项式优先级圆点：取代整卡彩色描边，克制不吵 */}
         {task.priority < 3 && (
           <span
@@ -74,6 +80,9 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
                   <Clock size={12} />
                   {due.text}
                 </span>
+              )}
+              {future && (
+                <span className="inline-flex items-center text-[11px] text-p1">未来任务</span>
               )}
               {task.repeat && (
                 <span className="inline-flex items-center gap-1 text-[12px] text-on-surface-2">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ExternalLink, RefreshCw, Sparkles } from 'lucide-react'
 import type { IntelData } from '@/lib/intelligence'
 import { getLastIntelFetch, loadCachedIntel, refreshIntel } from '@/lib/intelligence'
@@ -23,6 +23,9 @@ export function IntelligenceCard() {
   const [data, setData] = useState<IntelData | null>(null)
   const [at, setAt] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ x: number; left: number } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -86,8 +89,35 @@ export function IntelligenceCard() {
         </button>
       </div>
 
-      {/* 横向滑动：内容比屏幕宽时左右拖动，纵向仍可滚页面 */}
-      <div className="overflow-x-auto overscroll-x-contain -mx-1 px-1 pb-1" style={{ touchAction: 'pan-x pan-y' }}>
+      {/* 横向滑动：触屏左右滑，桌面按住拖动（不再只靠底部滚动条） */}
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto overscroll-x-contain -mx-1 px-1 pb-1 cursor-grab active:cursor-grabbing select-none"
+        style={{ touchAction: 'pan-x pan-y' }}
+        onPointerDown={(e) => {
+          if (e.pointerType !== 'mouse') return
+          const el = scrollRef.current
+          if (!el) return
+          dragRef.current = { x: e.clientX, left: el.scrollLeft }
+          setDragging(true)
+          el.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e) => {
+          const el = scrollRef.current
+          const d = dragRef.current
+          if (!el || !d) return
+          e.preventDefault()
+          el.scrollLeft = d.left - (e.clientX - d.x)
+        }}
+        onPointerUp={(e) => {
+          if (!dragRef.current) return
+          dragRef.current = null
+          setDragging(false)
+          scrollRef.current?.releasePointerCapture(e.pointerId)
+        }}
+        onPointerCancel={() => { dragRef.current = null; setDragging(false) }}
+        onDragStart={(e) => e.preventDefault()}
+      >
         {data ? (
           <Bars data={data} />
         ) : (
@@ -95,11 +125,13 @@ export function IntelligenceCard() {
             src={`${import.meta.env.BASE_URL}intelligence/seed.png`}
             alt="Artificial Analysis 智能指数排名"
             draggable={false}
-            className="h-[300px] w-auto max-w-none rounded-[10px] select-none"
+            className="h-[300px] w-auto max-w-none rounded-[10px] select-none pointer-events-none"
           />
         )}
       </div>
-      <p className="text-[11px] text-on-surface-2 mt-2">左右滑动看完整榜单 · 每日自动更新</p>
+      <p className="text-[11px] text-on-surface-2 mt-2">
+        {dragging ? '拖动中…' : '按住拖动或左右滑动看完整榜单'} · 每日自动更新
+      </p>
     </section>
   )
 }

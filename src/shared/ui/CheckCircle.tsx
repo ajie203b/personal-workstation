@@ -7,6 +7,8 @@ interface Props {
   onChange: () => void
   className?: string
   label?: string
+  /** 未来任务等场景：保留勾选框位置，但不可点 */
+  disabled?: boolean
 }
 
 /** 微光点角度：不对称分布，比均匀放射更克制 */
@@ -28,7 +30,7 @@ const prefersReduced = () =>
  * 单色（状态绿）、短促、不撒花：只在「未完成→完成」播放，取消完成不放。
  * 延迟窗口内再点一次可反悔取消。减弱动效下整层跳过、立即提交。
  */
-export function CheckCircle({ checked, onChange, className, label }: Props) {
+export function CheckCircle({ checked, onChange, className, label, disabled }: Props) {
   const [burst, setBurst] = useState(0)
   /** 提交前的本地「已勾选」视觉：绿底对勾先出现，特效播完再真正变更 */
   const [pendingDone, setPendingDone] = useState(false)
@@ -39,6 +41,7 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
 
   const click = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (disabled) return
 
     // 延迟窗口内再点一次 = 反悔：取消本次完成，不发生任何状态变更
     if (timer.current) {
@@ -75,11 +78,14 @@ export function CheckCircle({ checked, onChange, className, label }: Props) {
       type="button"
       role="checkbox"
       aria-checked={shown}
+      aria-disabled={disabled || undefined}
       aria-label={label ?? '完成任务'}
+      title={label}
       onClick={click}
       className={cn(
         'touch-target relative shrink-0 grid place-items-center w-[22px] h-[22px] mt-[2px] rounded-full border-[1.5px]',
         'transition-all duration-150 ease-standard cursor-pointer active:scale-90',
+        disabled && 'opacity-40 cursor-not-allowed active:scale-100',
         shown
           ? 'bg-ok border-ok'
           : 'border-on-surface-2/60 hover:border-primary bg-transparent',

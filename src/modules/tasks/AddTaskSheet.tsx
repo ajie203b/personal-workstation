@@ -31,6 +31,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   // 手动时间：datetime-local 的值（'' = 没选，沿用文本里解析出来的）
   const [startInput, setStartInput] = useState('')
   const [dueInput, setDueInput] = useState('')
+  const [habitTime, setHabitTime] = useState('')
+  const [habitOrder, setHabitOrder] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -40,6 +42,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       setFreqOverride('daily')
       setStartInput('')
       setDueInput('')
+      setHabitTime('')
+      setHabitOrder('')
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [open])
@@ -63,7 +67,10 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
     // 手动选的时间优先于文本解析
     const due = dueInput ? dueInput.slice(0, 10) : (p.due ?? (tier === 'today' && todayContext ? todayStr() : undefined))
-    const dueTime = dueInput ? dueInput.slice(11, 16) : p.dueTime
+    const dueTime = dueInput
+      ? dueInput.slice(11, 16)
+      : (mode === 'repeat' && habitTime) ? habitTime : p.dueTime
+    const sortOrder = mode === 'repeat' && habitOrder.trim() ? Math.max(1, Math.round(Number(habitOrder))) : undefined
     // 只填截止时，开始时间默认为现在（需求：不填开始就从现在开始）
     const startAt = startInput ? new Date(startInput).getTime() : due ? Date.now() : undefined
     try {
@@ -78,6 +85,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
         repeat: effectiveRepeat,
         repeatDays: keepsDetectedDays ? parsed.repeatDays : undefined,
         repeatMonthDay: keepsDetectedDays ? parsed.repeatMonthDay : undefined,
+        sortOrder: Number.isFinite(sortOrder) ? sortOrder : undefined,
       }))
     } catch {
       /* 失败态由按钮呈现，这里不制造未处理的 Promise 拒绝 */
@@ -183,6 +191,30 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
                 { value: 'monthly', label: '每月' },
               ]}
             />
+          )}
+          {mode === 'repeat' && (
+            <div className="grid grid-cols-2 gap-2.5">
+              <label className="block">
+                <span className="block text-[12px] font-medium text-on-surface-2 mb-1">打卡时间</span>
+                <input
+                  type="time"
+                  value={habitTime}
+                  onChange={(e) => setHabitTime(e.target.value)}
+                  className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+                />
+              </label>
+              <label className="block">
+                <span className="block text-[12px] font-medium text-on-surface-2 mb-1">次序</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={habitOrder}
+                  onChange={(e) => setHabitOrder(e.target.value)}
+                  placeholder="可选，越小越靠前"
+                  className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+                />
+              </label>
+            </div>
           )}
           <p className="text-[11px] text-on-surface-2 leading-relaxed">
             {mode === 'repeat'
