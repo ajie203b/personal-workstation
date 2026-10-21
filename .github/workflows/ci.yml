@@ -23,23 +23,13 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # 不用 npm ci：Windows 上生成的锁文件在 Linux 上装不全原生平台包
+      # （npm/cli#4828，rollup / lightningcss / @tailwindcss/oxide 会依次 MODULE_NOT_FOUND）。
+      # 删掉锁文件做一次干净解析，锁文件仍由本机 npm install 维护。
       - name: Install
-        run: npm ci
-
-      # 锁文件是在 Windows 上生成的，里面没有 linux 平台的 optional 依赖；
-      # npm ci 之后 vitest（rollup）、vite build（lightningcss / esbuild）都会 MODULE_NOT_FOUND。
-      # 按本地已安装的版本补装对应二进制，--no-save 不动 package.json 与锁文件。
-      - name: Ensure linux native binaries
         run: |
-          ARGS=()
-          for SPEC in "rollup:@rollup/rollup-linux-x64-gnu" "lightningcss:lightningcss-linux-x64-gnu" "esbuild:@esbuild/linux-x64"; do
-            DIR="${SPEC%%:*}"
-            PKG="${SPEC#*:}"
-            VER=$(node -p "require('./node_modules/$DIR/package.json').version" 2>/dev/null || true)
-            if [ -n "$VER" ]; then ARGS+=("$PKG@$VER"); fi
-          done
-          printf '补装：%s\n' "${ARGS[*]}"
-          npm install --no-save --no-audit --no-fund "${ARGS[@]}"
+          rm -f package-lock.json
+          npm install --no-audit --no-fund
 
       - name: Type check
         run: npx tsc -b
