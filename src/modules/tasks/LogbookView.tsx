@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { History, RotateCcw } from 'lucide-react'
+import { Check, History, RotateCcw } from 'lucide-react'
 import { useAllTasks, deriveDone } from '@/db/hooks'
-import { deleteTask, restoreTask, toggleDone } from '@/db/tasks'
-import { TIER_LABEL, type Task } from '@/db/db'
-import { CheckCircle } from '@/shared/ui/CheckCircle'
+import { deleteTask, toggleDone } from '@/db/tasks'
+import type { Task } from '@/db/db'
+import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { useUi } from '@/stores/ui'
@@ -57,28 +57,23 @@ export function LogbookView() {
           <div className="flex flex-col gap-2">
             {tasks.map((t) => (
               <div key={t.id} className="card px-4 py-2.5 flex items-center gap-3">
-                <CheckCircle checked onChange={() => void toggleDone(t)} label="恢复任务" />
+                <span className="grid place-items-center w-[22px] h-[22px] rounded-full bg-ok text-on-primary shrink-0" aria-hidden>
+                  <Check size={13} strokeWidth={3} />
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] line-through text-on-surface-2 truncate">{t.title}</p>
                   <p className="text-[11px] text-on-surface-2/70 mt-0.5">
                     {new Date(t.doneAt ?? t.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 完成
                   </p>
                 </div>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { void toggleDone(t); toast('已恢复任务') }}
                   aria-label="恢复任务"
-                  title="恢复任务"
-                  onClick={() => {
-                    void deleteTask(t).then(() => {
-                      const restored: Task = { ...t, status: 'todo', doneAt: undefined, updatedAt: Date.now() }
-                      void restoreTask(restored)
-                      toast(`已恢复到「${TIER_LABEL[t.tier] ?? '原清单'}」`)
-                    })
-                  }}
-                  className="grid place-items-center w-9 h-9 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-primary transition-colors"
                 >
-                  <RotateCcw size={16} />
-                </button>
+                  <RotateCcw size={14} /> 恢复
+                </Button>
               </div>
             ))}
           </div>

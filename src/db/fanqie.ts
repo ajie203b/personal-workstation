@@ -93,14 +93,3 @@ export async function deleteFanqieBook(bookId: string): Promise<void> {
   })
 }
 
-/** 重下：清掉正文但保留书目与目录 */
-export async function resetFanqieBook(bookId: string): Promise<void> {
-  await db.transaction('rw', [db.fanqieBooks, db.fanqieChapters], async () => {
-    await db.fanqieChapters.where('bookId').equals(bookId).delete()
-    await db.fanqieBooks.update(bookId, {
-      downloadedCount: 0,
-      lastError: undefined,
-      savedAt: Date.now(),
-    })
-  })
-}

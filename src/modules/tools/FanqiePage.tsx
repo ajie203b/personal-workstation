@@ -14,6 +14,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
+import { BackButton } from '@/shared/ui/BackButton'
+import { EmptyState } from '@/shared/ui/EmptyState'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { useUi } from '@/stores/ui'
@@ -50,7 +52,6 @@ export function FanqiePage() {
 
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState('')
   const [results, setResults] = useState<FanqieSearchItem[] | null>(null)
   const [book, setBook] = useState<FanqieBookInfo | null>(null)
   const [loadingBook, setLoadingBook] = useState(false)
@@ -92,17 +93,20 @@ export function FanqiePage() {
 
   const scrollTop = () => document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' })
 
+  /** 三个入口（搜索 / 粘贴链接 / 书架）共用同一套打开状态 */
+  const applyBook = (info: FanqieBookInfo) => {
+    setBook(info)
+    setRangeMode('auto')
+    setFrom('1')
+    setTo(String(info.chapters.length || info.chapterCount))
+    scrollTop()
+  }
+
   const openBook = async (bookId: string) => {
     setLoadingBook(true)
     setError('')
-    setSearchError('')
     try {
-      const info = await fetchFanqieBookById(bookId)
-      setBook(info)
-      setRangeMode('auto')
-      setFrom('1')
-      setTo(String(info.chapters.length || info.chapterCount))
-      scrollTop()
+      applyBook(await fetchFanqieBookById(bookId))
     } catch (e) {
       setError(bookErrorMessage(e))
     } finally {
@@ -113,7 +117,6 @@ export function FanqiePage() {
   const doSearch = async () => {
     const q = query.trim()
     if (!q || busy) return
-    setSearchError('')
     setError('')
     setResults(null)
     setBook(null)
@@ -121,14 +124,9 @@ export function FanqiePage() {
     if (ref) {
       setLoadingBook(true)
       try {
-        const info = await fetchFanqieBookByRef(ref)
-        setBook(info)
-        setRangeMode('auto')
-        setFrom('1')
-        setTo(String(info.chapters.length || info.chapterCount))
-        scrollTop()
+        applyBook(await fetchFanqieBookByRef(ref))
       } catch (e) {
-        setSearchError(searchErrorMessage(e))
+        setError(searchErrorMessage(e))
       } finally {
         setLoadingBook(false)
       }
@@ -141,7 +139,7 @@ export function FanqiePage() {
       setResults(items)
       if (items.length === 1) await openBook(items[0].bookId)
     } catch (e) {
-      setSearchError(searchErrorMessage(e))
+      setError(searchErrorMessage(e))
     } finally {
       setSearching(false)
     }
@@ -165,15 +163,10 @@ export function FanqiePage() {
   }
 
   const openLibraryBook = (b: FanqieBook) => {
-    setBook(libraryToInfo(b))
     setResults(null)
     setQuery(b.title)
     setError('')
-    setSearchError('')
-    setRangeMode('auto')
-    setFrom('1')
-    setTo(String(b.chapters.length || b.chapterCount))
-    scrollTop()
+    applyBook(libraryToInfo(b))
   }
 
   const readBook = async (b: FanqieBook) => {
@@ -234,16 +227,10 @@ export function FanqiePage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
-      <button
-        type="button"
-        onClick={() => navigate('/tools')}
-        className="inline-flex w-fit items-center gap-1 text-[13px] text-on-surface-2 hover:text-on-surface cursor-pointer -mt-1"
-      >
-        <ChevronLeft size={16} /> 工具
-      </button>
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="-mt-1 w-fit" />
 
       <header className="flex items-start gap-3">
-        <span className="grid place-items-center w-11 h-11 rounded-[14px] bg-danger/10 text-danger shrink-0">
+        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-danger/10 text-danger shrink-0">
           <BookOpen size={21} strokeWidth={2} />
         </span>
         <div className="min-w-0">
@@ -296,10 +283,10 @@ export function FanqiePage() {
         </p>
       </form>
 
-      {searchError && (
+      {error && (
         <div className="card p-3.5 flex items-start gap-2.5 border-danger/25">
           <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" />
-          <p className="text-[12.5px] leading-relaxed">{searchError}</p>
+          <p className="text-[12.5px] leading-relaxed">{error}</p>
         </div>
       )}
 
@@ -318,25 +305,19 @@ export function FanqiePage() {
       )}
 
       {!book && results && results.length === 0 && (
-        <div className="card p-8 text-center text-[12.5px] text-on-surface-2">没搜到这本书，换个书名或作者试试</div>
-      )}
-
-      {!book && !results && !searchError && !busy && (
-        <div className="card p-8 flex flex-col items-center text-center gap-2">
-          <span className="grid place-items-center w-11 h-11 rounded-full bg-surface-3 text-on-surface-2">
-            <Search size={19} />
-          </span>
-          <p className="text-[13.5px] font-medium">搜一本番茄小说</p>
-          <p className="text-[11.5px] text-on-surface-2 leading-relaxed max-w-[320px]">
-            输入书名或作者，选中后可以按全部 / 前 20 章 / 自定义范围下载。正文不登录也能下。
-          </p>
+        <div className="card">
+          <EmptyState compact icon={Search} title="没搜到这本书" hint="换个书名或作者试试，也可以直接粘贴书籍链接或 ID。" />
         </div>
       )}
 
-      {error && (
-        <div className="card p-3.5 flex items-start gap-2.5 border-danger/25">
-          <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" />
-          <p className="text-[12.5px] leading-relaxed">{error}</p>
+      {!book && !results && !error && !busy && (
+        <div className="card">
+          <EmptyState
+            compact
+            icon={Search}
+            title="搜一本番茄小说"
+            hint="输入书名或作者，选中后可以按全部 / 前 20 章 / 自定义范围下载。正文不登录也能下。"
+          />
         </div>
       )}
 
@@ -360,6 +341,26 @@ export function FanqiePage() {
           )}
 
           <BookCard book={book} downloaded={downloadedIds.size} />
+
+          <section className="card p-4 flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <h2 className="text-[13px] font-semibold">本地进度</h2>
+              <p className="text-[11.5px] text-on-surface-2 mt-1">
+                已存 <span className="text-on-surface tabular-nums">{downloadedIds.size}</span> / {book.chapters.length || book.chapterCount} 章
+              </p>
+              {localBook?.lastError && (
+                <p className="text-[11.5px] text-danger mt-1.5 leading-relaxed">上次错误：{localBook.lastError}</p>
+              )}
+            </div>
+            <a
+              href={`https://fanqienovel.com/page/${book.bookId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[12px] text-primary hover:underline shrink-0"
+            >
+              官网页面 <ExternalLink size={12} />
+            </a>
+          </section>
 
           <section className="card p-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -443,7 +444,7 @@ export function FanqiePage() {
         <p className="text-[11.5px] text-on-surface-2 mt-1">正文和进度都只存本机；可随时导出或导入文档工作站阅读。</p>
 
         {library.length === 0 ? (
-          <div className="py-8 text-center text-[12.5px] text-on-surface-2">还没有下载过书</div>
+          <EmptyState compact icon={BookOpen} title="书架还是空的" hint="搜到书后下载正文，就会出现在这里。" />
         ) : (
           <div className="mt-2 divide-y divide-outline">
             {library.map((b) => (
@@ -461,30 +462,9 @@ export function FanqiePage() {
         )}
       </section>
 
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_300px] md:items-start">
-        <p className="text-[11px] text-on-surface-2 leading-relaxed px-1">
-          仅用于个人离线阅读，请支持正版、不要传播下载内容。正文接口来自公开 FQWeb 节点，可能限流或临时不可用。
-        </p>
-        {book && (
-          <section className="card p-4">
-            <h2 className="text-[13px] font-semibold">这本的进度</h2>
-            <p className="text-[11.5px] text-on-surface-2 mt-1">
-              本地已存 <span className="text-on-surface tabular-nums">{downloadedIds.size}</span> / {book.chapters.length || book.chapterCount} 章
-            </p>
-            {localBook?.lastError && (
-              <p className="text-[11.5px] text-danger mt-1.5 leading-relaxed">上次错误：{localBook.lastError}</p>
-            )}
-            <a
-              href={`https://fanqienovel.com/page/${book.bookId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[12px] text-primary mt-2 hover:underline"
-            >
-              官网页面 <ExternalLink size={12} />
-            </a>
-          </section>
-        )}
-      </div>
+      <p className="text-[11px] text-on-surface-2 leading-relaxed px-1">
+        仅用于个人离线阅读，请支持正版、不要传播下载内容。正文接口来自公开 FQWeb 节点，可能限流或临时不可用。
+      </p>
 
       <Dialog
         open={Boolean(confirmDelete)}

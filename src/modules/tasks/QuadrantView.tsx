@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
-import { Flame, AlertTriangle, CalendarClock, Archive } from 'lucide-react'
+import { Flame, AlertTriangle, CalendarClock, Archive, ArrowLeftRight } from 'lucide-react'
 import type { Task } from '@/db/db'
-import { sortTasks } from '@/db/tasks'
+import { sortTasks, updateTask } from '@/db/tasks'
+import { Button } from '@/shared/ui/Button'
 import { daysFromToday } from '@/lib/date'
 import { cn } from '@/lib/cn'
 
@@ -90,19 +91,20 @@ function TaskQuadItem({ task, onOpen }: { task: Task; onOpen: (id: string) => vo
           {task.title}
         </span>
         {/* 手动改判：点击移动到下一象限 */}
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label={`移动象限（当前${quad}）`}
+          title="移到下一象限"
           onClick={(e) => {
             e.stopPropagation()
-            // 切换优先级以移动象限
             const nextPriority: Record<Quadrant, 0 | 1 | 2 | 3> = { q1: 2, q2: 0, q3: 3, q4: 1 }
-            void import('@/db/tasks').then(({ updateTask }) => void updateTask(task.id, { priority: nextPriority[quad] }))
+            void updateTask(task.id, { priority: nextPriority[quad] })
           }}
-          className="text-[10px] text-on-surface-2 hover:text-primary cursor-pointer shrink-0 mt-0.5"
-          title="移动象限"
+          className="touch-target w-7 h-7 rounded-[7px] shrink-0 mt-0.5"
         >
-          ⇄
-        </button>
+          <ArrowLeftRight size={13} />
+        </Button>
       </div>
       {task.due && (
         <span className={cn('text-[10.5px] mt-0.5 inline-block', overdue ? 'text-danger font-medium' : 'text-on-surface-2')}>

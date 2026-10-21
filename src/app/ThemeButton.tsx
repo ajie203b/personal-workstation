@@ -12,14 +12,6 @@ const META: Record<ThemeMode, { icon: typeof Sun; label: string }> = {
 }
 const MODES: ThemeMode[] = ['system', 'light', 'dark']
 
-/** 从按钮位置记下扩散原点，CSS 的 ::view-transition-new(root) 用它画圆（多处共用） */
-export function markOrigin(e: React.MouseEvent<HTMLElement>) {
-  const rect = e.currentTarget.getBoundingClientRect()
-  const root = document.documentElement
-  root.style.setProperty('--vt-x', `${rect.left + rect.width / 2}px`)
-  root.style.setProperty('--vt-y', `${rect.top + rect.height / 2}px`)
-}
-
 /** 侧栏主题入口：三档菜单，跟设置页「跟随系统 / 浅色 / 深色」保持一致 */
 export function ThemeButton({ compact = false }: { compact?: boolean }) {
   const mode = useUi((s) => s.themeMode)

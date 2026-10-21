@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, BellOff, ChevronLeft, ChevronRight, Database, Download, History, Info, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
+import { Bell, BellOff, ChevronRight, Database, Download, History, Info, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
 import { useUi, type Accent, type Density, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Dialog } from '@/shared/ui/Sheet'
+import { BackButton } from '@/shared/ui/BackButton'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { todayStr } from '@/lib/date'
 import { isNative } from '@/lib/native'
 import { cn } from '@/lib/cn'
+import { formatBytes } from '@/lib/format'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
 import {
   getAutoBackupEnabled, listBackups, restoreBackup, setAutoBackupEnabled, writeSnapshot,
@@ -93,13 +95,7 @@ export function SettingsPage() {
         {/* 内容：手机二级页才显示，桌面常显 */}
         <div className={cn('flex-1 min-w-0 md:block', mobileOpen ? 'block' : 'hidden')}>
           {mobileOpen && (
-            <button
-              type="button"
-              onClick={() => setMobileOpen(false)}
-              className="md:hidden mb-3 inline-flex items-center gap-1 text-[13px] text-on-surface-2 hover:text-on-surface cursor-pointer"
-            >
-              <ChevronLeft size={15} /> 设置
-            </button>
+            <BackButton text="设置" label="返回设置" onClick={() => setMobileOpen(false)} className="md:hidden mb-3" />
           )}
           {content}
         </div>
@@ -110,7 +106,7 @@ export function SettingsPage() {
 
 /** macOS 系统设置同款强调色（与 index.css 中 data-accent 调板的浅色值一致） */
 const ACCENTS: { value: Accent; color: string; label: string }[] = [
-  { value: 'blue', color: '#0A6CFE', label: '蓝色' },
+  { value: 'blue', color: '#2C55B8', label: '蓝色' },
   { value: 'purple', color: '#7D4FBE', label: '紫色' },
   { value: 'pink', color: '#D6417B', label: '粉色' },
   { value: 'red', color: '#D63C41', label: '红色' },
@@ -465,7 +461,7 @@ function WebdavCard() {
             onChange={(e) => setCfg({ ...cfg, url: e.target.value })}
             onBlur={() => patch({ url: cfg.url })}
             placeholder="https://dav.jianguoyun.com/dav/个人工作站/"
-            className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+            className="w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60"
           />
         </label>
         <div className="grid grid-cols-2 gap-2">
@@ -476,7 +472,7 @@ function WebdavCard() {
               onChange={(e) => setCfg({ ...cfg, username: e.target.value })}
               onBlur={() => patch({ username: cfg.username })}
               autoComplete="username"
-              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+              className="w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60"
             />
           </label>
           <label className="block">
@@ -487,7 +483,7 @@ function WebdavCard() {
               onBlur={() => patch({ password: cfg.password })}
               type="password"
               autoComplete="current-password"
-              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+              className="w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60"
             />
           </label>
         </div>
@@ -519,12 +515,6 @@ function WebdavCard() {
   )
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return '<1 KB'
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
 /** 自动备份：OPFS 滚动快照（保留最近 3 份）+ 恢复 */
 function AutoBackupCard() {
   const [on, setOn] = useState(true)
@@ -532,7 +522,7 @@ function AutoBackupCard() {
   const toast = useUi((s) => s.toast)
 
   const refresh = () => {
-    void listBackups().then((list) => setBackups(list.filter((b) => b.name.startsWith('snapshot-'))))
+    void listBackups().then(setBackups)
   }
 
   useEffect(() => {
@@ -573,7 +563,7 @@ function AutoBackupCard() {
             <div key={b.name} className="flex items-center gap-2 h-9 px-3 rounded-[10px] bg-surface-2">
               <span className="flex-1 text-[12.5px] tabular-nums">
                 {new Date(b.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                <span className="text-on-surface-2 ml-2">{formatSize(b.size)}</span>
+                <span className="text-on-surface-2 ml-2">{formatBytes(b.size)}</span>
               </span>
               <HoldToConfirm
                 variant="neutral"

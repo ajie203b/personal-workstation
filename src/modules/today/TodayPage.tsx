@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronRight, Clock3, History, Keyboard, Plus, Sparkles, X } from 'lucide-react'
 import { useAllAnnotations, useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
-import { isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
+import { addDaysStr, isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
 import { dueCards } from '@/lib/review'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
@@ -317,9 +317,7 @@ function TodayReview({
 function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
   const suggestions = useMemo(() => {
     const today = todayStr()
-    const threeDays = new Date()
-    threeDays.setDate(threeDays.getDate() + 3)
-    const threeDaysStr = `${threeDays.getFullYear()}-${String(threeDays.getMonth() + 1).padStart(2, '0')}-${String(threeDays.getDate()).padStart(2, '0')}`
+    const threeDaysStr = addDaysStr(3)
 
     return all
       .filter((t) => t.status !== 'done' && t.tier !== 'today' && t.tier !== 'someday')

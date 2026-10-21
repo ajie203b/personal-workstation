@@ -3,8 +3,7 @@ import { Inbox, Check, Plus, Trash2 } from 'lucide-react'
 import type { Task } from '@/db/db'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
-import { deleteTask, restoreTask } from '@/db/tasks'
-import { toggleTaskWithUndo } from './taskActions'
+import { deleteTaskWithUndo, toggleTaskWithUndo } from './taskActions'
 import { TaskItem } from './TaskItem'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Button } from '@/shared/ui/Button'
@@ -32,12 +31,8 @@ const NAV_DIR: Record<string, 1 | -1> = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1
 export function TaskList({ tasks, emptyTitle, emptyHint, scope }: Props) {
   const { focusId, setFocusId, openDetail } = useTasksUi()
   const openAddSheet = useUi((s) => s.openAddSheet)
-  const toast = useUi((s) => s.toast)
-  // 左滑删除：软删除 + 4 秒撤销（与详情里的删除走同一条路径）
-  const removeTask = async (t: Task) => {
-    await deleteTask(t)
-    toast('已删除任务', { label: '撤销', run: () => void restoreTask(t) })
-  }
+  // 左滑删除：软删除 + 撤销（与详情里的删除走同一条路径）
+  const removeTask = (t: Task) => deleteTaskWithUndo(t)
   const containerRef = useRef<HTMLUListElement>(null)
   // 按键处理读最新数据，避免把 tasks 塞进依赖导致每帧重绑监听
   const latest = useRef({ tasks, focusId })

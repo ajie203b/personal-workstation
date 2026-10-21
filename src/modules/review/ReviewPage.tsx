@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { ArrowLeft, BookOpen, Sparkles } from 'lucide-react'
+import { BookOpen, Sparkles } from 'lucide-react'
 import type { Annotation } from '@/db/db'
 import { useAllAnnotations, useDocs } from '@/db/hooks'
 import { updateAnnotation } from '@/db/docs'
 import { dueCards, previewInterval, reviewNext, type ReviewRating } from '@/lib/review'
 import { todayStr } from '@/lib/date'
 import { cn } from '@/lib/cn'
+import { BackButton } from '@/shared/ui/BackButton'
+import { Button } from '@/shared/ui/Button'
+import { EmptyState } from '@/shared/ui/EmptyState'
 
 const RATINGS: { key: ReviewRating; label: string; cls: string }[] = [
   { key: 'again', label: '忘了', cls: 'border-danger/40 text-danger hover:bg-danger/10' },
@@ -79,13 +82,7 @@ export function ReviewPage() {
   return (
     <div className="h-full flex flex-col bg-surface">
       <header className="glass relative z-30 shrink-0 flex items-center gap-2 h-14 px-3 md:px-4 border-b border-outline/70">
-        <button
-          onClick={() => navigate('/today')}
-          aria-label="返回今日"
-          className="grid place-items-center w-10 h-10 rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
-        >
-          <ArrowLeft size={19} />
-        </button>
+        <BackButton label="返回今日" onClick={() => navigate('/today')} className="w-10 h-10" />
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-semibold leading-tight">高亮复习</p>
           <p className="text-[11px] text-on-surface-2 leading-tight">
@@ -94,35 +91,25 @@ export function ReviewPage() {
           </p>
         </div>
         {doc && card && (
-          <button
-            onClick={openSource}
-            className="flex items-center gap-1.5 h-9 px-3 rounded-[10px] text-[12.5px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
-          >
+          <Button variant="ghost" size="sm" onClick={openSource}>
             <BookOpen size={15} /> 原文
-          </button>
+          </Button>
         )}
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {!card ? (
-          <div className="h-full grid place-items-center px-6 text-center">
-            <div className="max-w-sm">
-              <span className="grid place-items-center w-14 h-14 rounded-full bg-surface-2 text-on-surface-2 mx-auto mb-4">
-                <Sparkles size={22} />
-              </span>
-              <p className="text-[15px] font-semibold">{rated > 0 ? '这一轮过完了' : '今天没有需要复习的高亮'}</p>
-              <p className="text-[13px] text-on-surface-2 mt-1.5 leading-relaxed">
-                {rated > 0
-                  ? `一共过了 ${rated} 张，评过的卡片按间隔再回来。${totalDue > 20 ? `今天还有 ${totalDue - 20} 张到期，明天继续。` : ''}`
-                  : '在文档里划词高亮后，第二天起会进入复习队列；评论和原文都会一起带回来。'}
-              </p>
-              <button
-                onClick={() => navigate('/today')}
-                className="mt-5 h-9 px-4 rounded-[10px] bg-primary text-white text-[13px] font-medium cursor-pointer"
-              >
-                回到今日
-              </button>
-            </div>
+          <div className="h-full grid place-items-center px-6">
+            <EmptyState
+              className="max-w-sm"
+              icon={Sparkles}
+              title={rated > 0 ? '这一轮过完了' : '今天没有需要复习的高亮'}
+              hint={rated > 0
+                ? `一共过了 ${rated} 张，评过的卡片按间隔再回来。${totalDue > 20 ? `今天还有 ${totalDue - 20} 张到期，明天继续。` : ''}`
+                : '在文档里划词高亮后，第二天起会进入复习队列；评论和原文都会一起带回来。'}
+            >
+              <Button variant="primary" size="sm" onClick={() => navigate('/today')}>回到今日</Button>
+            </EmptyState>
           </div>
         ) : (
           <div className="mx-auto w-full max-w-2xl px-4 md:px-8 py-6 flex flex-col gap-4">
@@ -135,7 +122,7 @@ export function ReviewPage() {
             </div>
 
             <div className="card p-5 min-h-[220px] flex flex-col">
-              <p className={cn('text-[16px] leading-relaxed whitespace-pre-wrap', revealed ? 'text-on-surface' : 'text-on-surface')}>
+              <p className="text-[16px] leading-relaxed whitespace-pre-wrap text-on-surface">
                 “{card.text}”
               </p>
               {revealed && (
@@ -149,12 +136,9 @@ export function ReviewPage() {
             </div>
 
             {!revealed ? (
-              <button
-                onClick={() => setRevealed(true)}
-                className="h-11 rounded-[12px] bg-primary text-white text-[14px] font-medium cursor-pointer hover:opacity-95"
-              >
-                显示答案 <span className="text-white/70 text-[12px] ml-1">空格</span>
-              </button>
+              <Button variant="primary" className="w-full h-11 rounded-[12px] text-[14px]" onClick={() => setRevealed(true)}>
+                显示答案 <span className="opacity-70 text-[12px] ml-1">空格</span>
+              </Button>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {RATINGS.map((r, i) => (

@@ -1,4 +1,4 @@
-import { toggleDone, undoToggleDone } from '@/db/tasks'
+import { deleteTask, restoreTask, toggleDone, undoToggleDone } from '@/db/tasks'
 import type { Task } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { registerUndo } from '@/lib/undo'
@@ -30,6 +30,19 @@ export async function toggleTaskWithUndo(task: Task): Promise<void> {
     run: undoOnce,
   })
   registerUndo(`完成「${shortTitle(task.title)}」`, undoOnce)
+}
+
+/** 删除 + 6 秒撤销：列表左滑和详情删除共用同一条路径，避免两处文案/墓碑处理分叉 */
+export async function deleteTaskWithUndo(task: Task): Promise<void> {
+  await deleteTask(task)
+  let used = false
+  const undoOnce = () => {
+    if (used) return
+    used = true
+    void restoreTask(task)
+  }
+  useUi.getState().toast('已删除任务', { label: '撤销', run: undoOnce })
+  registerUndo(`删除「${shortTitle(task.title)}」`, undoOnce)
 }
 
 function shortTitle(title: string): string {

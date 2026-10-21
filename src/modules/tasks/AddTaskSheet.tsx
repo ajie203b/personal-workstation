@@ -63,7 +63,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
 
   const submit = async () => {
     if (!hasContent || saveState !== 'idle') return
-    const p = parseQuickAdd(value)
+    const p = parsed
     let tier = inferTier(p, defaultTier)
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
     // 手动选的时间优先于文本解析
@@ -197,7 +197,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
                   value={habitOrder}
                   onChange={(e) => setHabitOrder(e.target.value)}
                   placeholder="可选，越小越靠前"
-                  className="w-full h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+                  className="w-full h-10 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
                 />
               </label>
             </div>

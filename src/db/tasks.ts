@@ -128,10 +128,6 @@ export async function moveTier(id: string, tier: Tier): Promise<void> {
   await updateTask(id, { tier })
 }
 
-export async function setPriority(id: string, priority: Priority): Promise<void> {
-  await updateTask(id, { priority })
-}
-
 /** 删除：返回快照供撤销；同时取消提醒，并立墓碑供同步判重 */
 export async function deleteTask(task: Task): Promise<Task> {
   await db.transaction('rw', [db.tasks, db.tombstones], async () => {
@@ -168,7 +164,11 @@ export async function rolloverTasks(tasks: Task[], toDate: string = addDaysStr(1
 }
 
 export async function restoreTask(task: Task): Promise<void> {
-  await db.tasks.put(task)
+  // 撤销删除时连同墓碑一起摘掉，否则下次同步会把刚恢复的任务再删一次
+  await db.transaction('rw', [db.tasks, db.tombstones], async () => {
+    await db.tasks.put(task)
+    await db.tombstones.delete(task.id)
+  })
 }
 
 /** 排序：置顶沉顶 → 优先级 P0→P3 → 截止日期 → 创建时间 */

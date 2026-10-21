@@ -31,8 +31,8 @@ const sizeCls: Record<Size, string> = {
 const stateCls: Record<ButtonState, string> = {
   idle: '',
   loading: 'bg-surface-3 text-on-surface-2 border border-outline shadow-none',
-  success: 'bg-success text-white hover:opacity-100 shadow-none',
-  error: 'bg-danger text-white hover:opacity-100 shadow-none',
+  success: 'bg-ok text-on-primary hover:opacity-100 shadow-none',
+  error: 'bg-danger text-on-primary hover:opacity-100 shadow-none',
 }
 
 function StateIcon({ state }: { state: Exclude<ButtonState, 'idle'> }) {

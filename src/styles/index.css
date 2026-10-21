@@ -120,6 +120,8 @@
 :root[data-density='large'] body { font-size: 17px; }
 
 /* 强调色（macOS 系统设置同款）：覆盖 --primary 系令牌，全站零硬编码随之换色 */
+:root[data-accent='blue'] { --primary: #2C55B8; --primary-soft: #EAEFF9; }
+.dark[data-accent='blue'] { --primary: #9FB6E8; --primary-soft: #242F47; }
 :root[data-accent='purple'] { --primary: #7D4FBE; --primary-soft: #F1EAF9; }
 .dark[data-accent='purple'] { --primary: #C4A4EC; --primary-soft: #33284A; }
 :root[data-accent='pink'] { --primary: #D6417B; --primary-soft: #FAE9F1; }
@@ -910,64 +912,6 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.03; }
 .theme-transition,
 .theme-transition * {
   transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease !important;
-}
-
-/* ============================================================
-   二态主题开关（拟物）
-   质感取自 Uiverse bright-dolphin-91（Yaya12085，MIT）：内阴影凹槽轨道 + 金属旋钮 + hover 3D 倾斜。
-   只保留 浅色 / 深色 两档：两枚图标槽位 + 一颗滑动旋钮，不再有「跟随系统」。
-   ============================================================ */
-/* 扁平主题开关（macOS 式分段控件）：取消拟物凹槽/金属旋钮/3D 倾斜 */
-.theme-switch {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: var(--surface-3);
-  border: 1px solid var(--outline);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.theme-switch-knob {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc(50% - 4px);
-  border-radius: 9px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.08));
-  transition: transform var(--dur-2) var(--ease-emph);
-}
-.theme-switch-knob[data-pos='1'] { transform: translateX(calc(100% + 2px)); }
-
-.theme-switch-slot {
-  position: relative;
-  z-index: 1;
-  flex: 1 1 0;
-  min-width: 64px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  cursor: pointer;
-  color: var(--on-surface-2);
-  font-size: 13px;
-  font-weight: 500;
-  transition: color var(--dur-1) var(--ease-standard);
-}
-.theme-switch-slot[aria-checked='true'] { color: var(--on-surface); }
-.theme-switch-slot:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
-  border-radius: 9px;
 }
 
 /* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */

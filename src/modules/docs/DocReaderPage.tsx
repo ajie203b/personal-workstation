@@ -1247,7 +1247,7 @@ function PanelHead<V extends string>({
               className={cn(
                 'h-7 px-2.5 rounded-[8px] text-[12.5px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer',
                 active
-                  ? 'bg-surface text-on-surface shadow-[0_1px_2px_rgba(32,31,29,0.07)]'
+                  ? 'bg-surface text-on-surface shadow-sm'
                   : 'text-on-surface-2 hover:text-on-surface hover:bg-surface-3/60',
               )}
             >
@@ -1310,9 +1310,9 @@ function Stepper({ label, value, onMinus, onPlus }: { label: string; value: stri
     <div className="flex items-center justify-between">
       <span className="text-[12px] font-medium text-on-surface-2">{label}</span>
       <div className="flex items-center gap-2">
-        <button className="w-7 h-7 rounded-lg bg-surface-3 text-on-surface-2 hover:text-on-surface cursor-pointer" onClick={onMinus}>−</button>
-        <span className="text-[13px] font-medium w-12 text-center">{value}</span>
-        <button className="w-7 h-7 rounded-lg bg-surface-3 text-on-surface-2 hover:text-on-surface cursor-pointer" onClick={onPlus}>+</button>
+        <button type="button" aria-label={`减小${label}`} className="touch-target w-7 h-7 rounded-lg bg-surface-3 text-on-surface-2 hover:text-on-surface cursor-pointer" onClick={onMinus}>−</button>
+        <span className="text-[13px] font-medium w-12 text-center tabular-nums">{value}</span>
+        <button type="button" aria-label={`增大${label}`} className="touch-target w-7 h-7 rounded-lg bg-surface-3 text-on-surface-2 hover:text-on-surface cursor-pointer" onClick={onPlus}>+</button>
       </div>
     </div>
   )
@@ -1619,7 +1619,7 @@ function RightContent({
                   onClick={() => {
                     window.location.hash = `#/tasks?tier=${t.tier}&focus=${t.id}`
                   }}
-                  className="group w-full text-left rounded-[12px] border border-outline/70 bg-surface px-3 py-2.5 hover:border-outline hover:-translate-y-px transition-[border-color,transform] cursor-pointer"
+                  className="group w-full text-left rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 hover:border-primary/30 hover:-translate-y-px transition-[border-color,transform] cursor-pointer"
                 >
                   <div className="flex items-start gap-2">
                     <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-primary/70 shrink-0" />
@@ -1646,7 +1646,7 @@ function RightContent({
         <div className="pt-2 flex flex-col gap-2">
           <p className="text-[11px] text-on-surface-2 px-1.5 pb-0.5 tabular-nums">{annotations.length} 条批注</p>
           {annotations.map((a) => (
-            <article key={a.id} className="group relative rounded-[12px] border border-outline/70 bg-surface overflow-hidden transition-colors hover:border-outline">
+            <article key={a.id} className="group relative rounded-[12px] border border-outline bg-surface-2 overflow-hidden transition-colors hover:border-primary/30">
               <span className={cn('absolute left-0 top-0 bottom-0 w-[3px]', annotationColorClass(a))} aria-hidden />
               <div className="pl-3 pr-2.5 py-2.5">
                 {a.kind === 'shot' && a.img && (

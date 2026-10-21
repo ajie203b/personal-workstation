@@ -263,7 +263,3 @@ export const useFanqie = create<FanqieState>((set, get) => ({
   },
 }))
 
-/** 供书架页判断是否有章节写入（避免把 total 0 当成已完成） */
-export async function refreshDownloadedCount(bookId: string): Promise<number> {
-  return countFanqieChapters(bookId)
-}

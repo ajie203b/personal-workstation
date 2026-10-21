@@ -26,7 +26,7 @@ const SELF_SCROLLING = /^\/docs\//
  * 沉浸模式：阅读器 / 编辑器 / 高亮复习自己带工具栏，全局顶栏与底栏全部让位。
  * 手机上原来顶栏 56 + 阅读器工具栏 56 + 底栏 56 ≈ 170px 被三套壳吃掉，正文只剩一条缝。
  */
-const IMMERSIVE = [/^\/docs\/.+/, /^\/docs\/new$/, /^\/review$/]
+const IMMERSIVE = [/^\/docs\/.+/, /^\/review$/]
 
 export function AppShell() {
   useThemeEffect()

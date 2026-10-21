@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as RadixDialog from '@radix-ui/react-dialog'
-import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock } from 'lucide-react'
+import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock, ChevronDown } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type SubTask, type Task, type Tier } from '@/db/db'
 import { db } from '@/db/db'
-import { deleteTask, postponeTask, restoreTask, updateTask } from '@/db/tasks'
+import { postponeTask, updateTask } from '@/db/tasks'
 import { createFolder, linkTaskFolder } from '@/db/folders'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { toggleTaskWithUndo } from './taskActions'
+import { deleteTaskWithUndo, toggleTaskWithUndo } from './taskActions'
 import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
 import { DateTimeField, TimePicker } from '@/shared/ui/TimePicker'
+import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
@@ -35,7 +36,6 @@ const INPUT =
 export function TaskDetail() {
   const { detailId, openDetail } = useTasksUi()
   const task = useAllTasks().find((t) => t.id === detailId) ?? null
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
   const [subDraft, setSubDraft] = useState('')
   const [focusMinutes, setFocusMinutes] = useState<number | null>(null)
@@ -59,7 +59,6 @@ export function TaskDetail() {
 
   useEffect(() => {
     if (!detailId) void flushSave()
-    setConfirmDelete(false)
   }, [detailId, flushSave])
   useEffect(() => {
     if (task) {
@@ -158,9 +157,8 @@ export function TaskDetail() {
   const doneSubs = (task.subtasks ?? []).filter((s) => s.done).length
 
   const remove = async () => {
-    await deleteTask(task)
     openDetail(null)
-    useUi.getState().toast('已删除任务', { label: '撤销', run: () => void restoreTask(task) })
+    await deleteTaskWithUndo(task)
   }
 
   const done = task.status === 'done'
@@ -327,15 +325,18 @@ export function TaskDetail() {
                       新建文件夹并关联
                     </Button>
                     {folders.length > 0 && (
-                      <select
-                        aria-label="关联已有文件夹"
-                        value=""
-                        onChange={(e) => { if (e.target.value) void linkTaskFolder(task.id, e.target.value) }}
-                        className={cn(INPUT, 'h-9 flex-1 min-w-0')}
-                      >
-                        <option value="">关联已有文件夹…</option>
-                        {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                      </select>
+                      <div className="relative flex-1 min-w-0">
+                        <select
+                          aria-label="关联已有文件夹"
+                          value=""
+                          onChange={(e) => { if (e.target.value) void linkTaskFolder(task.id, e.target.value) }}
+                          className={cn(INPUT, 'h-9 appearance-none pr-8')}
+                        >
+                          <option value="">关联已有文件夹…</option>
+                          {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-2" />
+                      </div>
                     )}
                   </div>
                 )}
@@ -380,17 +381,11 @@ export function TaskDetail() {
                 <div className="flex flex-col gap-1 mb-2">
                   {(task.subtasks ?? []).map((s) => (
                     <div key={s.id} className="group flex items-center gap-2 h-9 px-2.5 rounded-[10px] bg-surface-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleSub(s.id)}
-                        aria-label={s.done ? '取消完成子任务' : '完成子任务'}
-                        className={cn(
-                          'grid place-items-center w-4.5 h-4.5 rounded-full border-2 shrink-0 cursor-pointer transition-colors',
-                          s.done ? 'bg-ok border-ok text-white' : 'border-outline hover:border-primary',
-                        )}
-                      >
-                        {s.done && <span className="text-[9px] leading-none">✓</span>}
-                      </button>
+                      <CheckCircle
+                        checked={s.done}
+                        onChange={() => toggleSub(s.id)}
+                        label={s.done ? '取消完成子任务' : '完成子任务'}
+                      />
                       <span className={cn('flex-1 text-[13px] truncate', s.done && 'line-through text-on-surface-2')}>{s.title}</span>
                       <button
                         type="button"
@@ -453,82 +448,69 @@ export function TaskDetail() {
             </div>
           </div>
 
-          {/* 固定操作栏：不用滚到底也能完成 / 置顶 / 删除 */}
+          {/* 固定操作栏：不用滚到底也能完成 / 置顶 / 删除；删除后 6 秒内可撤销 */}
           <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
-            {confirmDelete ? (
-              <div className="animate-fade-up flex items-end justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[13px] text-danger">确认删除这条任务？</p>
-                  <p className="text-[11.5px] text-on-surface-2 mt-0.5">删除后仍可在提示条里撤销，关联的到期提醒会一并取消。</p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button size="sm" onClick={() => setConfirmDelete(false)}>取消</Button>
-                  <Button size="sm" variant="danger" onClick={() => void remove()}>删除</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                {done ? (
-                  <Button variant="primary" className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
-                    恢复为未完成
-                  </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    className="flex-1 justify-center"
-                    disabled={future}
-                    title={future ? '未来任务，到日期后再完成' : undefined}
-                    onClick={() => void completeOrRestore()}
-                  >
-                    {future ? '未来任务' : '✓ 完成并归档'}
-                  </Button>
-                )}
-                {!done && (
-                  <Button
-                    aria-label={task.status === 'doing' ? '停止进行中' : '标记进行中'}
-                    title={task.status === 'doing' ? '停止进行中' : '标记为进行中'}
-                    onClick={() => patch({ status: task.status === 'doing' ? 'todo' : 'doing' })}
-                    className="shrink-0 w-10 px-0 justify-center"
-                  >
-                    <span className={cn('w-2.5 h-2.5 rounded-full', task.status === 'doing' ? 'bg-ok animate-ai-pulse' : 'bg-on-surface-2/40')} />
-                  </Button>
-                )}
+            <div className="flex items-center gap-1.5">
+              {done ? (
+                <Button variant="primary" className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
+                  恢复为未完成
+                </Button>
+              ) : (
                 <Button
-                  aria-label={task.pinned ? '取消置顶' : '置顶'}
-                  title={task.pinned ? '取消置顶' : '置顶到列表顶部'}
-                  onClick={() => { patch({ pinned: !task.pinned || undefined }); openDetail(null) }}
+                  variant="primary"
+                  className="flex-1 justify-center"
+                  disabled={future}
+                  title={future ? '未来任务，到日期后再完成' : undefined}
+                  onClick={() => void completeOrRestore()}
+                >
+                  {future ? '未来任务' : '✓ 完成并归档'}
+                </Button>
+              )}
+              {!done && (
+                <Button
+                  aria-label={task.status === 'doing' ? '停止进行中' : '标记进行中'}
+                  title={task.status === 'doing' ? '停止进行中' : '标记为进行中'}
+                  onClick={() => patch({ status: task.status === 'doing' ? 'todo' : 'doing' })}
                   className="shrink-0 w-10 px-0 justify-center"
                 >
-                  {task.pinned ? <PinOff size={16} /> : <Pin size={16} />}
+                  <span className={cn('w-2.5 h-2.5 rounded-full', task.status === 'doing' ? 'bg-ok animate-ai-pulse' : 'bg-on-surface-2/40')} />
                 </Button>
-                {!done && (
-                  <Button
-                    aria-label="开始专注"
-                    title="开始专注（番茄钟绑定本任务）"
-                    onClick={() => {
-                      // 写「待开始专注」指令：FocusTimer 挂载后消费它，弹出选时小框并自动开始
-                      try { localStorage.setItem('ws-focus-start', JSON.stringify({ taskId: task.id, at: Date.now() })) } catch { /* ignore */ }
-                      openDetail(null)
-                      window.location.hash = `#/today?focus-task=${task.id}`
-                    }}
-                    className="shrink-0 w-10 px-0 justify-center"
-                  >
-                    <Timer size={16} />
-                  </Button>
-                )}
+              )}
+              <Button
+                aria-label={task.pinned ? '取消置顶' : '置顶'}
+                title={task.pinned ? '取消置顶' : '置顶到列表顶部'}
+                onClick={() => { patch({ pinned: !task.pinned || undefined }); openDetail(null) }}
+                className="shrink-0 w-10 px-0 justify-center"
+              >
+                {task.pinned ? <PinOff size={16} /> : <Pin size={16} />}
+              </Button>
+              {!done && (
                 <Button
-                  variant="danger"
-                  size="icon"
-                  aria-label="删除任务"
-                  title="删除任务"
-                  onClick={() => setConfirmDelete(true)}
-                  className="shrink-0"
+                  aria-label="开始专注"
+                  title="开始专注（番茄钟绑定本任务）"
+                  onClick={() => {
+                    // 写「待开始专注」指令：FocusTimer 挂载后消费它，弹出选时小框并自动开始
+                    try { localStorage.setItem('ws-focus-start', JSON.stringify({ taskId: task.id, at: Date.now() })) } catch { /* ignore */ }
+                    openDetail(null)
+                    window.location.hash = `#/today?focus-task=${task.id}`
+                  }}
+                  className="shrink-0 w-10 px-0 justify-center"
                 >
-                  <Trash2 size={16} />
+                  <Timer size={16} />
                 </Button>
-              </div>
-            )}
-            {future && !done && !confirmDelete && (
+              )}
+              <Button
+                variant="danger"
+                size="icon"
+                aria-label="删除任务"
+                title="删除任务（可撤销）"
+                onClick={() => void remove()}
+                className="shrink-0"
+              >
+                <Trash2 size={16} />
+              </Button>
+            </div>
+            {future && !done && (
               <p className="text-[11px] text-p1 mt-1.5">未来任务：截止日期或开始时间还没到，暂不能勾完成。</p>
             )}
           </div>
