@@ -32,6 +32,10 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # 榜单抓取脚本的解析逻辑（字段命名坑、RSC 拆包）用 node 自带 test runner 跑
+      - name: Script tests
+        run: npm run test:scripts
+
       # 构建放最后：它内部还会再跑一次 tsc，但那一步失败时前面的单测结果已经可见
       - name: Build
         run: npm run build
