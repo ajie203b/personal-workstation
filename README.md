@@ -2,7 +2,7 @@
 
 任务清单 × 文档工作站的一体化个人工作台。**本地优先、数据不出本机（只下载公开排行榜数据，不上传任何内容）、单人不设账号**。
 
-> v2.2.1 · 在线版：<https://ajie203b.github.io/personal-workstation/>
+> v2.2.2 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 两种形态：**安卓 App**（完全离线、无需服务器）与 **网页版 PWA**。
 
 ## 获取与安装
