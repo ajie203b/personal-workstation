@@ -26,6 +26,14 @@ jobs:
       - name: Install
         run: npm ci
 
+      # 锁文件是在 Windows 上生成的，里面没有 @rollup/rollup-linux-x64-gnu 这个平台包；
+      # npm ci 之后 vitest / vite build 会直接 MODULE_NOT_FOUND（CI 从加上那天就一直红在这里）。
+      # 按本地安装的 rollup 版本补装对应二进制，--no-save 不动 package.json / 锁文件。
+      - name: Ensure rollup native binary
+        run: |
+          ROLLUP_VERSION=$(node -p "require('./node_modules/rollup/package.json').version")
+          npm install --no-save --no-audit --no-fund "@rollup/rollup-linux-x64-gnu@$ROLLUP_VERSION"
+
       - name: Type check
         run: npx tsc -b
 
