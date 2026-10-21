@@ -867,6 +867,7 @@ export function DocReaderPage() {
                 <button
                   key={c}
                   aria-label={`高亮-${c}`}
+                  title={`高亮-${c}`}
                   onClick={() => void createAnnotation(c)}
                   className={`w-7 h-7 rounded-full hl-${c} border border-outline/60 hover:scale-110 transition-transform cursor-pointer`}
                 />
@@ -874,6 +875,7 @@ export function DocReaderPage() {
               <span className="w-px h-5 bg-outline mx-1" />
               <button
                 aria-label="复制选中文本"
+                title="复制选中文本"
                 className="grid place-items-center w-7 h-7 rounded-lg text-on-surface-2 hover:bg-surface-3"
                 onClick={() => {
                   void navigator.clipboard.writeText(selection.text)

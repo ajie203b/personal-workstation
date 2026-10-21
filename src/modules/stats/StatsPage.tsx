@@ -174,7 +174,7 @@ export function StatsPage() {
       <div className="-mx-4 px-4 md:mx-0 md:px-0 flex gap-3 overflow-x-auto pb-1 snap-x md:grid md:grid-cols-4 md:overflow-visible">
         <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<CheckCircle2 size={16} />} label="累计完成" value={doneTasks.length} unit="件" /></div>
         <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<Flame size={16} />} label="连续打卡" value={streak} unit="天" accent="var(--p0)" /></div>
-        <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<Timer size={16} />} label="专注总时长" value={Math.round((totalFocus / 60) * 10) / 10} unit="小时" accent="var(--ok)" decimals={1} /></div>
+        <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<Timer size={16} />} label="专注总时长" value={Math.round((totalFocus / 60) * 10) / 10} unit="小时" accent="var(--primary)" decimals={1} /></div>
         <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<Highlighter size={16} />} label="批注总数" value={annotations.length} unit="条" /></div>
       </div>
 
@@ -219,7 +219,7 @@ export function StatsPage() {
                       background:
                         cell.count === 0
                           ? 'var(--surface-3)'
-                          : `color-mix(in srgb, ${metric === 'focus' ? 'var(--ok)' : 'var(--primary)'} ${Math.round(20 + (cell.count / maxCount) * 80)}%, transparent)`,
+                          : `color-mix(in srgb, var(--primary) ${Math.round(20 + (cell.count / maxCount) * 80)}%, transparent)`,
                     }}
                   />
                 ))}
@@ -244,7 +244,7 @@ export function StatsPage() {
               <div key={m} className="rounded-[12px] bg-surface-2 px-3 py-3 text-center">
                 <p className="text-[12px] text-on-surface-2">{METRIC_LABEL[m]}{focusMode ? '（分钟）' : ''}</p>
                 <p className="text-[22px] font-bold tabular-nums mt-1">{current}</p>
-                <p className={cn('text-[11px] mt-0.5 tabular-nums', delta > 0 ? 'text-ok' : 'text-on-surface-2/70')}>
+                <p className={cn('text-[11px] mt-0.5 tabular-nums', delta > 0 ? 'text-primary' : 'text-on-surface-2/70')}>
                   {delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '— 持平'} · 上期 {previous}
                 </p>
                 {/* 两根柱子：本期高亮、上期弱化，入场时从 0 长到各自高度；

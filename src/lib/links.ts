@@ -38,7 +38,8 @@ function headingBySlug(slug: string): HTMLElement | null {
  * 这里改成白名单：http(s)/mailto/tel/data:image 与相对地址放行，其它（javascript: 等）清空。
  */
 export function transformDocUrl(url: string): string {
-  if (/^(https?:|mailto:|tel:|data:image\/)/i.test(url)) return url
+  // hl: 是自写文档的高亮标记，交给 MdReader 自己渲染
+  if (/^(https?:|mailto:|tel:|data:image\/|hl:)/i.test(url)) return url
   if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) return url
   return ''
 }

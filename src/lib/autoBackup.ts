@@ -40,7 +40,8 @@ async function backupsDir(): Promise<FileSystemDirectoryHandle> {
 function stamp(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+  // 精确到秒：同一分钟内连点两次「生成快照」不会复用同一目录互相覆盖
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
 
 /** OPFS 的 entries() 在部分 TS lib 版本里没有异步迭代器声明 */
@@ -91,6 +92,18 @@ export interface BackupInfo {
   at: number
 }
 
+/** 目录快照的完整体积：老快照没有 meta.json，或 meta 里没记 bytes 时逐文件相加 */
+async function dirBytes(dir: FileSystemDirectoryHandle): Promise<number> {
+  let total = 0
+  for (const [, handle] of await entriesOf(dir)) {
+    try {
+      if (handle.kind === 'file') total += (await (handle as FileSystemFileHandle).getFile()).size
+      else total += await dirBytes(handle as FileSystemDirectoryHandle)
+    } catch { /* 读不到的文件跳过，别让一份坏快照拖垮整个列表 */ }
+  }
+  return total
+}
+
 export async function listBackups(): Promise<BackupInfo[]> {
   if (!opfsAvailable()) return []
   const dir = await backupsDir()
@@ -109,11 +122,14 @@ export async function listBackups(): Promise<BackupInfo[]> {
       const snap = handle as FileSystemDirectoryHandle
       const metaFile = await (await snap.getFileHandle('meta.json')).getFile()
       const meta = JSON.parse(await metaFile.text()) as { at?: number; bytes?: number }
-      out.push({ name, size: meta.bytes ?? 0, at: meta.at ?? metaFile.lastModified })
+      // 老版本的 meta 里没有 bytes，别直接把 0 当成「空快照」显示
+      const size = meta.bytes && meta.bytes > 0 ? meta.bytes : await dirBytes(snap)
+      out.push({ name, size, at: meta.at ?? metaFile.lastModified })
     } catch {
       try {
-        const metaFile = await (await (handle as FileSystemDirectoryHandle).getFileHandle('data.json')).getFile()
-        out.push({ name, size: metaFile.size, at: metaFile.lastModified })
+        const snap = handle as FileSystemDirectoryHandle
+        const metaFile = await (await snap.getFileHandle('data.json')).getFile()
+        out.push({ name, size: await dirBytes(snap), at: metaFile.lastModified })
       } catch { /* 半截快照，忽略 */ }
     }
   }

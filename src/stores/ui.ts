@@ -99,7 +99,8 @@ export const useUi = create<UiState>()(
       toast: (message, action) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, action }] }))
-        setTimeout(() => get().dismissToast(id), 4000)
+        // 带「撤销」的多留两秒：误删后要来得及反应，普通提示仍 4 秒
+        setTimeout(() => get().dismissToast(id), action ? 6000 : 4000)
       },
       dismissToast: (id) => { set((s) => ({ toasts: s.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) })); setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 160) },
     }),

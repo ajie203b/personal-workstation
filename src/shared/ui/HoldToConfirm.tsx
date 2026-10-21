@@ -46,7 +46,7 @@ export function HoldToConfirm({
     <>
       <button
         type="button"
-        aria-label={`${label}（按住 ${Math.round(holdMs / 1000)} 秒确认）`}
+        aria-label={`${label}（按住 ${formatHoldSeconds(holdMs)} 秒确认）`}
         {...bind}
         className={cn(
           'relative inline-flex items-center justify-center gap-2 h-9 px-4 rounded-full select-none cursor-pointer',
@@ -88,6 +88,12 @@ export function HoldToConfirm({
       </Dialog>
     </>
   )
+}
+
+/** 1.5 秒显示成「1.5」，别四舍五入成 2 秒和说明打架 */
+function formatHoldSeconds(ms: number): string {
+  const sec = ms / 1000
+  return Number.isInteger(sec) ? String(sec) : sec.toFixed(1)
 }
 
 /** 进度环颜色：起步半透明 → 走满纯色，越接近完成越「确定」 */

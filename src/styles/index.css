@@ -67,12 +67,13 @@
   --primary: #9FB6E8;
   --on-primary: #152239;
   --primary-soft: #242F47;
-  --surface: #1F1E21;
-  --surface-2: #27262A;
-  --surface-3: #302F33;
-  --outline: #3B3A3F;
+  /* 层级拉开：页面底 → 卡片 → 卡片内控件，各差一档；弱化文字提亮到 AA */
+  --surface: #1B1A1D;
+  --surface-2: #2A292E;
+  --surface-3: #35343A;
+  --outline: #47464D;
   --on-surface: #E8E7E4;
-  --on-surface-2: #9C9A96;
+  --on-surface-2: #B0B0B6;
 
   --p0: #F26D6D;
   --p1: #F0B451;
@@ -82,7 +83,7 @@
   --ok: #34C48C;
   --danger: #F26D6D;
 
-  --glass-bg: rgba(31, 30, 33, 0.72);
+  --glass-bg: rgba(27, 26, 29, 0.72);
   --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.5);
   --elev-card: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 28px -18px rgba(0, 0, 0, .65);
 }
@@ -324,6 +325,30 @@ select:focus-visible {
   will-change: transform;
 }
 .press:active { transform: translateY(1px) scale(0.985); }
+
+/* 图标按钮提示：鼠标悬停与键盘聚焦都能看到名称，不再只靠 title */
+.tip { position: relative; }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 4px 8px;
+  border-radius: 7px;
+  background: var(--on-surface);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-1) var(--ease-standard);
+  z-index: 60;
+}
+.tip:hover::after,
+.tip:focus-visible::after { opacity: 1; }
 
 /* 卡片内输入聚焦 → 卡片边框亮起（与外轮廓重合的反馈） */
 .card:focus-within {

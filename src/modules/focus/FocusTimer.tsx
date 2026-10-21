@@ -189,7 +189,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
       <div className="flex items-center gap-2">
         <Timer size={16} className="text-on-surface-2" />
         <span className="text-[13px] font-semibold text-on-surface-2">
-          {store.phase === 'work' ? '专注中' : '休息中'}
+          {store.running ? (store.phase === 'work' ? '专注中' : '休息中') : '未开始'}
         </span>
       </div>
 

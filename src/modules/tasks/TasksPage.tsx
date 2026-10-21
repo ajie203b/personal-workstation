@@ -125,7 +125,8 @@ export function TasksPage() {
         )}
       </div>
 
-      {view === 'list' && (
+      {/* 所有视图共用同一个快速添加：看板 / 日历 / 四象限不再只能拖拽 */}
+      {!isLogbook && (
         <div className="hidden md:block">
           <QuickAdd
             defaultTier={tier}

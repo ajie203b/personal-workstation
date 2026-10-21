@@ -276,6 +276,7 @@ function DataTab() {
         <h2 className="text-[14px] font-semibold mb-1 text-danger">危险区</h2>
         <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。按住 1.5 秒才会执行（键盘用户会走二次确认）。</p>
         <HoldToConfirm
+          holdMs={1500}
           label="清空所有数据"
           className="h-10 px-5"
           dialogTitle="清空所有数据？"
@@ -508,7 +509,7 @@ function WebdavCard() {
       </div>
 
       {note && (
-        <p className={cn('text-[12px] leading-relaxed', note.ok ? 'text-ok' : 'text-danger')}>{note.text}</p>
+        <p className={cn('text-[12px] leading-relaxed', note.ok ? 'text-primary' : 'text-danger')}>{note.text}</p>
       )}
       <p className="text-[11.5px] text-on-surface-2">
         {last ? `上次同步：${new Date(last).toLocaleString('zh-CN')}` : '还没有同步过'}
@@ -516,6 +517,12 @@ function WebdavCard() {
       </p>
     </section>
   )
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return '<1 KB'
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 /** 自动备份：OPFS 滚动快照（保留最近 3 份）+ 恢复 */
@@ -566,7 +573,7 @@ function AutoBackupCard() {
             <div key={b.name} className="flex items-center gap-2 h-9 px-3 rounded-[10px] bg-surface-2">
               <span className="flex-1 text-[12.5px] tabular-nums">
                 {new Date(b.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                <span className="text-on-surface-2 ml-2">{(b.size / 1024).toFixed(0)} KB</span>
+                <span className="text-on-surface-2 ml-2">{formatSize(b.size)}</span>
               </span>
               <HoldToConfirm
                 variant="neutral"

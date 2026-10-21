@@ -455,9 +455,12 @@ export function TaskDetail() {
           {/* 固定操作栏：不用滚到底也能完成 / 置顶 / 删除 */}
           <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
             {confirmDelete ? (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] text-danger">确认删除这条任务？</span>
-                <div className="flex gap-2">
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] text-danger">确认删除这条任务？</p>
+                  <p className="text-[11.5px] text-on-surface-2 mt-0.5">删除后仍可在提示条里撤销，关联的到期提醒会一并取消。</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
                   <Button size="sm" onClick={() => setConfirmDelete(false)}>取消</Button>
                   <Button size="sm" variant="danger" onClick={() => void remove()}>删除</Button>
                 </div>
