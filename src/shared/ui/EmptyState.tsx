@@ -1,9 +1,10 @@
 import type { LucideIcon } from 'lucide-react'
+import type { AppIcon } from '@/shared/icons'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
 interface Props {
-  icon: LucideIcon
+  icon: LucideIcon | AppIcon
   title: string
   hint?: string
   children?: ReactNode
