@@ -17,6 +17,7 @@ import { Spotlight } from '@/shared/Spotlight'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { useUi } from '@/stores/ui'
 import { initAppActions } from '@/lib/appActions'
+import { completeById } from '@/modules/tasks/taskActions'
 import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
 import { syncTaskWidget } from '@/lib/taskWidget'
@@ -62,10 +63,15 @@ function GlobalAddSheet() {
 
 export default function App() {
   const navigate = useNavigate()
-  // 桌面快捷方式 / 通知点击 / 冷启动深链（原生壳内才有）
+  // 桌面快捷方式 / 通知点击 / 小组件勾选 / 冷启动深链（原生壳内才有）
   useEffect(() => {
     let dispose: (() => void) | undefined
-    void initAppActions((route) => navigate(route)).then((d) => { dispose = d })
+    void initAppActions(
+      (route) => navigate(route),
+      (action) => {
+        if (action.type === 'complete') void completeById(action.id)
+      },
+    ).then((d) => { dispose = d })
     void pruneTombstones()
     void maybeAutoSync()
     return () => dispose?.()
