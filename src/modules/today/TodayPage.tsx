@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { Check, ChevronRight, Clock3, History, Keyboard, Plus, Sparkles, X } from 'lucide-react'
+import { Check, ChevronRight, Clock3, History, Keyboard, Plus, X } from 'lucide-react'
+import { IconDone } from '@/shared/icons'
 import { useAllAnnotations, useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
@@ -277,7 +278,7 @@ function TodayReview({
     <section className="card px-3.5 py-2.5 md:px-4 md:py-3">
       <div className="flex items-center gap-2.5 flex-wrap">
         <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-primary-soft text-primary shrink-0">
-          <Sparkles size={16} />
+          <IconDone size={17} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-x-2.5 gap-y-1 flex-wrap">

@@ -124,10 +124,6 @@
 }
 .no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot { animation: none !important; display: none !important; }
 
-/* 界面密度（对应 macOS 字号档） */
-:root[data-density='compact'] body { font-size: 13px; }
-:root[data-density='large'] body { font-size: 17px; }
-
 /* 强调色（macOS 系统设置同款）：覆盖 --primary 系令牌，全站零硬编码随之换色 */
 :root[data-accent='blue'] { --primary: #2C55B8; --primary-soft: #EAEFF9; }
 .dark[data-accent='blue'] { --primary: #9FB6E8; --primary-soft: #242F47; }
