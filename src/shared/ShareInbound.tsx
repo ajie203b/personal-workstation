@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Link2 } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
+import { fmtDateTime } from '@/lib/date'
 
 /**
  * PWA share_target 落地页（v1.3）：
@@ -30,7 +31,7 @@ export function ShareInbound() {
     void import('@/db/docs').then(async ({ importDoc }) => {
       try {
         const file = new File(
-          [`# ${title}\n\n${body}\n\n> 来自系统分享 · ${new Date().toLocaleString('zh-CN')}\n`],
+          [`# ${title}\n\n${body}\n\n> 来自系统分享 · ${fmtDateTime(new Date())}\n`],
           `${title}.md`,
           { type: 'text/markdown' },
         )

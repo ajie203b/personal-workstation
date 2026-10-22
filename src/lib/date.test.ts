@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { daysFromToday, fmtDue, fmtStartAt, futureReason, isFutureTask, nextWeekday, todayStr } from './date'
+import { daysFromToday, fmtDate, fmtDateTime, fmtDue, fmtListDate, fmtMonth, fmtStartAt, fmtTime, futureReason, isFutureTask, nextWeekday, todayStr } from './date'
 
 /**
  * 固定「今天」= 2026-10-20（周二），本周（周一起）= 10-19 ~ 10-25。
@@ -11,6 +11,30 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
+})
+
+describe('界面日期格式', () => {
+  const date = new Date(2026, 9, 22, 15, 25, 26)
+
+  it('列表使用中文月日，跨年时保留年份', () => {
+    expect(fmtListDate(date)).toBe('10月22日')
+    expect(fmtListDate(new Date(2025, 9, 22))).toBe('2025年10月22日')
+  })
+
+  it('详情使用完整日期和分钟，不显示秒', () => {
+    expect(fmtDateTime(date.getTime())).toBe('2026/10/22 15:25')
+    expect(fmtDateTime(new Date(2026, 0, 2, 0, 5, 59))).toBe('2026/01/02 00:05')
+  })
+
+  it('日历的日期和月份使用中文单位且不插入空格', () => {
+    expect(fmtDate('2026-10-22')).toBe('2026年10月22日')
+    expect(fmtMonth(new Date(2026, 9, 1))).toBe('2026年10月')
+  })
+
+  it('日期键按本地日解析，不偏移到前一天', () => {
+    expect(fmtListDate('2026-01-02')).toBe('1月2日')
+    expect(fmtTime(date)).toBe('15:25')
+  })
 })
 
 describe('todayStr', () => {

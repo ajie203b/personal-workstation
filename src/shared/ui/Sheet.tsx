@@ -1,6 +1,6 @@
 import * as RadixDialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 
@@ -127,6 +127,7 @@ export function Sheet({
         />
         <RadixDialog.Content
           data-app-modal="sheet"
+          aria-describedby={undefined}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
@@ -178,23 +179,33 @@ export function Dialog({
   /** 默认 400px；宽短弹窗传 w-[min(620px,92vw)] */
   widthClass?: string
 }) {
+  const descriptionId = useId()
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
         <RadixDialog.Content
           data-app-modal="dialog"
+          aria-describedby={description ? descriptionId : undefined}
           className={cn(
             'dialog-panel pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-5',
             // 矮视口/宽弹窗（添加任务 620px）时内容会顶出屏幕且无法滚动
-            'flex flex-col max-h-[min(86dvh,720px)] overflow-y-auto',
+            'flex flex-col max-h-[min(86dvh,720px)] overflow-y-auto overscroll-contain',
             widthClass,
           )}
           style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         >
-          <RadixDialog.Title className="text-[17px] font-semibold">{title}</RadixDialog.Title>
+          <div className="flex items-start justify-between gap-3">
+            <RadixDialog.Title className="min-w-0 text-[17px] font-semibold">{title}</RadixDialog.Title>
+            <RadixDialog.Close
+              aria-label="关闭"
+              className="grid place-items-center w-9 h-9 -mt-1 -mr-1 shrink-0 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
+            >
+              <X size={18} aria-hidden />
+            </RadixDialog.Close>
+          </div>
           {description && (
-            <RadixDialog.Description className="mt-1.5 text-[13px] text-on-surface-2 leading-relaxed">
+            <RadixDialog.Description id={descriptionId} className="mt-1.5 text-[13px] text-on-surface-2 leading-relaxed">
               {description}
             </RadixDialog.Description>
           )}

@@ -73,15 +73,6 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
               {checkinCount}/{checkinTotal}
             </span>
           )}
-          {task.priority < 3 && (
-            <span
-              className="absolute -right-1 -top-0.5 w-[7px] h-[7px] rounded-full border border-surface pointer-events-none"
-              style={{ background: PRIORITY_VAR[task.priority], opacity: done ? 0.45 : 1 }}
-              title={task.priority === 0 ? '紧急' : task.priority === 1 ? '重要' : '普通'}
-              role="img"
-              aria-label={task.priority === 0 ? '紧急任务' : task.priority === 1 ? '重要任务' : '普通优先级'}
-            />
-          )}
         </div>
 
         <div className="flex-1 min-w-0">
@@ -94,8 +85,14 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
             {task.title}
           </p>
           {/* 只设了开始时间的任务没有截止/标签，以前整行都不渲染，连「未来任务」都看不见 */}
-          {(due || task.tags.length > 0 || task.repeat || task.docRef || task.status === 'doing' || future) && (
+          {(task.priority < 3 || due || task.tags.length > 0 || task.repeat || task.docRef || task.status === 'doing' || future) && (
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mt-1.5 text-ui-caption">
+              {task.priority < 3 && (
+                <span className="inline-flex items-center gap-1.5 text-on-surface-2">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PRIORITY_VAR[task.priority] }} aria-hidden />
+                  P{task.priority} {['紧急', '重要', '普通'][task.priority]}
+                </span>
+              )}
               {task.status === 'doing' && (
                 <span className="inline-flex items-center gap-1.5 text-ok">
                   <span className="w-1.5 h-1.5 rounded-full bg-ok" />

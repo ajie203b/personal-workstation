@@ -4,7 +4,7 @@ import { db } from '@/db/db'
 import { addAnnotation, deleteAnnotation, updateAnnotation } from '@/db/docs'
 import { exportAnnotationsToDoc } from '../exportAnnotations'
 import { annotationAnchor } from './locator'
-import { taskAnchorOf, type HlColor, type Selection } from './types'
+import { type HlColor, type Selection } from './types'
 
 interface Options {
   doc: Doc | undefined
@@ -42,8 +42,8 @@ export function useDocAnnotations({ doc, selection, clearSelection, toast, onExp
       const base = doc.kind === 'pdf'
         ? { docHash: doc.hash, page: (selection as Extract<Selection, { kind: 'pdf' }>).page, rects: (selection as Extract<Selection, { kind: 'pdf' }>).rects, text: selection.text, color }
         : doc.kind === 'md'
-          ? { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'md' }>).blockIdx, text: selection.text, color }
-          : { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'flow' }>).segIdx, text: selection.text, color }
+          ? { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'md' }>).blockIdx, textAnchors: (selection as Extract<Selection, { kind: 'md' }>).textAnchors, text: selection.text, color }
+          : { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'flow' }>).segIdx, textAnchors: (selection as Extract<Selection, { kind: 'flow' }>).textAnchors, text: selection.text, color }
       const ann = await addAnnotation(base)
       if (withTask) setTaskSeed({ ann, doc })
       else toast('已添加高亮')
@@ -78,7 +78,7 @@ export function useDocAnnotations({ doc, selection, clearSelection, toast, onExp
       tags: ['批注'],
       notes: taskNotes.trim() || undefined,
     })
-    await db.tasks.update(t.id, { docRef: { docId: d.id, anchor: `${taskAnchorOf(ann)}#${ann.id}`, label: d.title } })
+    await db.tasks.update(t.id, { docRef: { docId: d.id, anchor: `${annotationAnchor(d, ann)}#${ann.id}`, label: d.title } })
     toast('任务已创建')
     setTaskSeed(null)
     setTaskTitle('')

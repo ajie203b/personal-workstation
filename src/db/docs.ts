@@ -1,4 +1,5 @@
 import { db, type Annotation, type Doc, type DocKind, type DocSettings, type ReadingPosition } from './db'
+import { annotationAnchor } from '@/lib/docLocator'
 import { uid } from '@/lib/id'
 import { markDeleted } from '@/lib/tombstones'
 
@@ -245,7 +246,7 @@ export async function deleteBookmark(id: string): Promise<void> {
 /** 批注一键转任务：携带引用深链与摘录（方案 2.5） */
 export async function annotationToTask(ann: Annotation, doc: Doc, priority?: 0 | 1 | 2 | 3): Promise<string> {
   const { addTask } = await import('./tasks')
-  const anchor = doc.kind === 'pdf' ? `p${ann.page}` : `b${ann.blockIdx}`
+  const anchor = annotationAnchor(doc, ann)
   const task = await addTask({
     title: ann.text.length > 40 ? `${ann.text.slice(0, 40)}…` : ann.text,
     tier: 'anytime',

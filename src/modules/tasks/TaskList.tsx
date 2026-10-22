@@ -18,7 +18,7 @@ interface Props {
   emptyHint?: string
   /** 键盘导航作用域 id，避免多列表互相抢焦点 */
   scope: string
-  /** 空态只在手机上收紧（首页首屏空间紧） */
+  /** 首页使用紧凑空态，给建议与专注控件留出空间 */
   denseEmpty?: boolean
 }
 

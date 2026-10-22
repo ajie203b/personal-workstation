@@ -45,6 +45,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
       // 没写截止就是无穷远：清单归属由 tier 表达，不硬塞一个「今天」当截止
       due: p.due,
       dueTime: p.dueTime,
+      startAt: p.startAt,
       tags: p.tags,
       repeat: p.repeat,
       repeatDays: p.repeatDays,

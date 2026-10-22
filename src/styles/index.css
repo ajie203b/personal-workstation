@@ -13,6 +13,8 @@
   --primary: #2C55B8;
   --on-primary: #FFFFFF;
   --primary-soft: #EAEFF9;
+  --primary-action: var(--primary);
+  --on-primary-action: #FFFFFF;
   --canvas: #F6F7F9;
   --surface: #FFFFFF;
   --surface-2: #F3F5F8;
@@ -29,7 +31,8 @@
 
   /* 状态色 */
   --ok: #22A06B;
-  --danger: #E5484D;
+  --danger: #D5353F;
+  --on-danger: #FFFFFF;
 
   /* HIG 玻璃材质：仅顶栏 / 侧栏 / ⌘K 面板 */
   --glass-bg: rgba(255, 255, 255, 0.86);
@@ -69,6 +72,7 @@
   --primary: #9FB6E8;
   --on-primary: #152239;
   --primary-soft: #242F47;
+  --primary-action: #426CC8;
   /* 层级拉开：页面底 → 卡片 → 卡片内控件，各差一档；弱化文字提亮到 AA */
   --canvas: #181C24;
   --surface: #222833;
@@ -85,6 +89,7 @@
 
   --ok: #34C48C;
   --danger: #F26D6D;
+  --on-danger: #2F1212;
 
   --glass-bg: rgba(34, 40, 51, 0.88);
   --shadow-pop: 0 20px 64px -12px rgba(0, 0, 0, .5);
@@ -126,14 +131,21 @@
 .dark[data-accent='blue'] { --primary: #9FB6E8; --primary-soft: #242F47; }
 :root[data-accent='purple'] { --primary: #7D4FBE; --primary-soft: #F1EAF9; }
 .dark[data-accent='purple'] { --primary: #C4A4EC; --primary-soft: #33284A; }
-:root[data-accent='pink'] { --primary: #D6417B; --primary-soft: #FAE9F1; }
+.dark[data-accent='purple'] { --primary-action: #8753BD; }
+:root[data-accent='pink'] { --primary: #B53470; --primary-soft: #FAE9F1; }
+:root[data-accent='pink'] { --primary-action: #B53470; }
 .dark[data-accent='pink'] { --primary: #F191B6; --primary-soft: #452438; }
+.dark[data-accent='pink'] { --primary-action: #B53470; }
 :root[data-accent='red'] { --primary: #D63C41; --primary-soft: #FAE9EA; }
 .dark[data-accent='red'] { --primary: #F08085; --primary-soft: #462224; }
-:root[data-accent='orange'] { --primary: #E07B1F; --primary-soft: #FBF0E2; }
+.dark[data-accent='red'] { --primary-action: #C63743; }
+:root[data-accent='orange'] { --primary: #A8510F; --primary-soft: #FBF0E2; }
+:root[data-accent='orange'] { --primary-action: #A8510F; }
 .dark[data-accent='orange'] { --primary: #F2AC60; --primary-soft: #47301A; }
-:root[data-accent='green'] { --primary: #2F9E5F; --primary-soft: #E7F4EC; }
+:root[data-accent='green'] { --primary: #247944; --primary-soft: #E7F4EC; }
+:root[data-accent='green'] { --primary-action: #247944; }
 .dark[data-accent='green'] { --primary: #5FC78C; --primary-soft: #1E3527; }
+.dark[data-accent='green'] { --primary-action: #247944; }
 
 /* Tailwind v4：把语义变量映射为工具类（inline = 直接引用 var，随主题切换） */
 @theme inline {
@@ -141,6 +153,8 @@
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
   --color-primary-soft: var(--primary-soft);
+  --color-primary-action: var(--primary-action);
+  --color-on-primary-action: var(--on-primary-action);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
@@ -153,6 +167,7 @@
   --color-p3: var(--p3);
   --color-ok: var(--ok);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
 
   --font-sans: system-ui, -apple-system, "SF Pro Text", "PingFang SC", "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -319,7 +334,7 @@ body {
 ::selection { background: color-mix(in srgb, var(--primary) 30%, var(--surface)); color: var(--on-surface); }
 
 :focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 1.5px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -362,7 +377,7 @@ select:focus-visible {
 .tip:focus-visible::after { opacity: 1; }
 
 /* 卡片内输入聚焦 → 卡片边框亮起（与外轮廓重合的反馈） */
-.card:focus-within {
+.card:has(input:focus-visible, textarea:focus-visible, select:focus-visible) {
   border-color: color-mix(in srgb, var(--primary) 55%, transparent);
 }
 

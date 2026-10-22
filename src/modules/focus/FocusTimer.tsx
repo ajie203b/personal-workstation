@@ -201,32 +201,22 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
             aria-hidden
             className="focus-breathe absolute inset-1 rounded-full"
             style={{
-              background:
-                store.phase === 'work'
-                  ? 'radial-gradient(circle, color-mix(in srgb, var(--ok) 24%, transparent) 0%, transparent 68%)'
-                  : 'radial-gradient(circle, color-mix(in srgb, var(--primary) 24%, transparent) 0%, transparent 68%)',
+              background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 24%, transparent) 0%, transparent 68%)',
             }}
           />
         )}
         <svg viewBox="0 0 140 140" className="relative w-full h-full -rotate-90">
-          {/* 渐变描边：运行中更「活」，休息态换暖蓝 */}
-          <defs>
-            <linearGradient id="focus-grad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor={store.phase === 'work' ? 'var(--ok)' : 'var(--primary)'} />
-              <stop offset="1" stopColor={store.phase === 'work' ? '#1F9E6B' : '#6E97DB'} />
-            </linearGradient>
-          </defs>
           <circle cx="70" cy="70" r="60" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
           <circle
             cx="70" cy="70" r="60" fill="none"
-            stroke="url(#focus-grad)"
+            stroke="var(--primary)"
             strokeWidth="8" strokeLinecap="round"
             strokeDasharray={`${progress * 2 * Math.PI * 60} ${2 * Math.PI * 60}`}
             style={{ transition: 'stroke-dasharray 1s linear' }}
           />
         </svg>
         <div className="absolute inset-0 grid place-items-center">
-          <span className={cn('text-[28px] font-bold tabular-nums', store.phase === 'work' ? 'text-ok' : 'text-primary')}>
+          <span className="text-[28px] font-bold tabular-nums text-primary">
             {mm}:{ss}
           </span>
         </div>
@@ -246,23 +236,22 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
         />
       </div>
 
-      {/* 控制：主按钮加了一圈柔光，暂停态换成浅绿描边，避免和背景糊在一起 */}
+      {/* 控制跟随强调色；暂停态使用浅底描边，与运行态区分 */}
       <div className="flex items-center gap-3.5">
         <button
           onClick={toggle}
           className={cn(
-            'grid place-items-center w-14 h-14 rounded-full cursor-pointer active:scale-95',
+            'grid place-items-center w-11 h-11 rounded-full cursor-pointer active:scale-95',
             'transition-[transform,background-color,color,box-shadow] duration-200',
             store.running
-              ? 'bg-ok/12 text-ok ring-1 ring-ok/30 hover:bg-ok/18'
-              : 'bg-ok text-white hover:brightness-[1.06]',
+              ? 'bg-primary/12 text-primary ring-1 ring-primary/30 hover:bg-primary/18'
+              : 'bg-primary-action text-on-primary-action hover:brightness-[1.06]',
           )}
-          style={store.running ? undefined : { boxShadow: '0 8px 20px -8px color-mix(in srgb, var(--ok) 70%, transparent)' }}
+          style={store.running ? undefined : { boxShadow: '0 8px 20px -8px color-mix(in srgb, var(--primary) 70%, transparent)' }}
           aria-label={store.running ? '暂停' : '开始'}
         >
-          {/* 图标画布 = 重置按钮直径 44px：播放三角形按黄金分割取尺寸，
-              与旁边的重置钮视觉重量一致（主按钮仍是 56px） */}
-          <PlayPauseIcon playing={store.running} size={44} />
+          {/* 32px 画布让播放三角形高约 17px，与 44px 按钮之间留出充足空隙 */}
+          <PlayPauseIcon playing={store.running} size={32} />
         </button>
         <button
           onClick={reset}
@@ -297,7 +286,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
       {/* 今日专注统计 */}
       <div className="flex items-center gap-2 text-[12px] text-on-surface-2 w-full justify-center">
         <Coffee size={14} />
-        <span>今日 {todayStats.sessions} 个番茄 · {todayStats.minutes} 分钟</span>
+        <span className="whitespace-nowrap">{`今日 ${todayStats.sessions} 个番茄 · ${todayStats.minutes} 分钟`}</span>
       </div>
 
       {/* 「开始专注」选时小框：选好立即开跑；关掉小框则只保留任务绑定 */}
@@ -313,7 +302,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
               key={m}
               type="button"
               onClick={() => startWithMinutes(Number(m))}
-              className="h-12 rounded-[12px] bg-surface-2 border border-outline text-[15px] font-semibold hover:border-ok/60 hover:bg-ok/10 hover:text-ok active:scale-95 transition-all cursor-pointer"
+              className="h-12 rounded-[12px] bg-surface-2 border border-outline text-[15px] font-semibold hover:border-primary/60 hover:bg-primary/10 hover:text-primary active:scale-95 transition-colors cursor-pointer"
             >
               {m} 分钟
             </button>

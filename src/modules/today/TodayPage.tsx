@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ChevronRight, Clock3, History, Keyboard, Plus, Sparkles, X } from 'lucide-react'
+import { Check, ChevronRight, Clock3, History, Keyboard, Plus, Sparkles, X } from 'lucide-react'
 import { useAllAnnotations, useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
@@ -82,7 +82,7 @@ export function TodayPage() {
             <Plus size={24} strokeWidth={2.4} />
           </button>
         </div>
-        {/* 手机空态时这句和下面的「今天没有安排」重复，收起来把首屏让给专注控件 */}
+        {/* 手机空态时收起重复说明，把首屏让给专注控件 */}
         <p className={cn('text-[13px] text-on-surface-2 mt-1', todayTasks.length === 0 && 'hidden md:block')}>
           {todayTasks.length > 0
             ? `今天有 ${todayTasks.length} 件事等你处理，一件件来。`
@@ -106,11 +106,12 @@ export function TodayPage() {
             scope="today"
             denseEmpty
             tasks={todayTasks}
-            emptyTitle="今天没有安排"
+            emptyTitle="今日暂无待办"
             emptyHint="点加号（桌面在右上角、手机在右下角），或按 N 快速添加；写「每天」可创建打卡任务。"
           />
           {/* 空态下面直接给下一步：没有任务、也没导入过文档的新用户最需要这个 */}
           {todayTasks.length === 0 && <GettingStarted />}
+          <SmartSuggestions all={all} />
 
           {anytimeTasks.length > 0 && (
             <>
@@ -154,9 +155,9 @@ export function TodayPage() {
             <h2 className="text-[13px] font-semibold text-on-surface-2 mb-3">进度</h2>
             <div className="grid grid-cols-2 gap-3">
               <Kpi value={todayTasks.length} label="今日待办" />
-              <Kpi value={todayDone.length} label="今日完成" tone="ok" />
-              <Kpi value={weekDone} label="本周完成" tone="ok" />
-              <Kpi value={totalDone} label="累计完成" tone="ok" />
+              <Kpi value={todayDone.length} label="今日完成" />
+              <Kpi value={weekDone} label="本周完成" />
+              <Kpi value={totalDone} label="累计完成" />
             </div>
           </section>
 
@@ -164,7 +165,6 @@ export function TodayPage() {
         </aside>
       </div>
 
-      <SmartSuggestions all={all} />
     </div>
   )
 }
@@ -192,22 +192,6 @@ function ProgressRing({ done, total, className }: { done: number; total: number;
           strokeDashoffset={C * (1 - pct)}
           style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
         />
-        {/* 全部完成时环里点亮一枚小勾，替代原来的数字 */}
-        {full && (
-          <path
-            d="M12.6 18.4 L16.6 22.2 L23.6 14.6"
-            fill="none"
-            stroke="var(--ok)"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              animation: 'scale-in var(--dur-2) var(--ease-spring)',
-              transformBox: 'fill-box',
-              transformOrigin: 'center',
-            }}
-          />
-        )}
       </svg>
     </div>
   )
@@ -308,7 +292,8 @@ function TodayReview({
             <div className="hidden md:flex items-center gap-1.5 mt-1.5 overflow-x-auto whitespace-nowrap">
               {todayDone.slice(0, 6).map((t) => (
                 <span key={t.id} className="inline-flex items-center gap-1 max-w-[180px] px-2 py-0.5 rounded-md bg-ok/10 text-[11px] text-ok">
-                  <span className="truncate">✓ {t.title}</span>
+                  <Check size={12} className="shrink-0" aria-hidden />
+                  <span className="truncate">{t.title}</span>
                 </span>
               ))}
               {todayDone.length > 6 && <span className="text-[11px] text-on-surface-2 px-1">还有 {todayDone.length - 6} 件</span>}
@@ -356,7 +341,7 @@ function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
   if (suggestions.length === 0) return null
 
   return (
-    <section className="card p-4">
+    <section className="card p-4 mt-3">
       <div className="flex items-center gap-2 mb-2.5">
         <Clock3 size={14} className="text-on-surface-2" />
         <span className="text-[12px] font-medium text-on-surface-2 tracking-wide">今日建议</span>
@@ -423,10 +408,10 @@ function RecentReads() {
   )
 }
 
-function Kpi({ value, label, tone }: { value: number; label: string; tone?: 'ok' }) {
+function Kpi({ value, label }: { value: number; label: string }) {
   return (
     <div className="rounded-[12px] bg-surface px-3 py-2.5 border border-outline/60">
-      <b className={`block text-[22px] leading-7 font-bold ${tone === 'ok' ? 'text-ok' : 'text-primary'}`}>{value}</b>
+      <b className="block text-[22px] leading-7 font-bold text-primary">{value}</b>
       <span className="text-[12px] text-on-surface-2">{label}</span>
     </div>
   )

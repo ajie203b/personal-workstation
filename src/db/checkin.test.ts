@@ -27,11 +27,9 @@ const read = async (id: string) => {
 }
 
 describe('新建任务的时间默认值', () => {
-  it('没写开始时间 → 从现在开始', async () => {
-    const before = Date.now()
+  it('没写开始时间 → 保持未设置', async () => {
     const t = await addTask({ title: '整理桌面', tier: 'anytime' })
-    expect(t.startAt).toBeGreaterThanOrEqual(before)
-    expect(t.startAt).toBeLessThanOrEqual(Date.now())
+    expect(t.startAt).toBeUndefined()
   })
 
   it('没写截止时间 → 无穷远（undefined，不参与逾期判断）', async () => {

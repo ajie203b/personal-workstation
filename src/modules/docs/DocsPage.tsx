@@ -5,9 +5,9 @@ import type { Doc, Folder } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
 import { deleteDoc, importDoc } from '@/db/docs'
 import { createFolder, deleteFolder, setDocFolder } from '@/db/folders'
-import { useDocsLive, useRecentDocs, useAllAnnotations } from '@/db/hooks'
+import { useDocsLive, useAllAnnotations } from '@/db/hooks'
 import { dueCards } from '@/lib/review'
-import { todayStr } from '@/lib/date'
+import { fmtListDate, todayStr } from '@/lib/date'
 import { DocCardSkeleton } from '@/shared/ui/Skeleton'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
@@ -20,7 +20,6 @@ import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem as DropdownIte
 import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 import { morphOpen } from '@/lib/viewTransition'
-import { usePressTilt } from '@/lib/usePressTilt'
 import { formatBytes } from '@/lib/format'
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
@@ -262,10 +261,6 @@ export function DocsPage() {
         </div>
       </div>
 
-      {/* 打开最多的几篇：比「本地优先 · 按内容指纹去重」那句开发者注释有用。
-          在某个文件夹里时先不显示 —— 这里横跨全部文档，会和「只看这个夹」的语境打架 */}
-      {!activeFolder && <ContinueReading />}
-
       <div className="flex items-start gap-5">
         {/* 桌面：文件夹变成左侧一列目录树；手机仍在顶部横滑 */}
         <FolderTree
@@ -452,7 +447,7 @@ export function DocsPage() {
         <div className="flex justify-end gap-2">
           <Button onClick={() => setFolderToDelete(null)}>取消</Button>
           <Button
-            variant="primary"
+            variant="destructive"
             onClick={() => {
               const f = folderToDelete
               setFolderToDelete(null)
@@ -478,7 +473,7 @@ export function DocsPage() {
         <div className="flex justify-end gap-2">
           <Button onClick={() => setPendingDelete(null)}>取消</Button>
           <Button
-            variant="primary"
+            variant="destructive"
             onClick={() => {
               const d = pendingDelete
               setPendingDelete(null)
@@ -520,8 +515,8 @@ function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead,
           </span>
           <span className="block text-ui-caption text-on-surface-2 leading-5 truncate">
             {d.lastOpenedAt
-              ? `上次阅读 ${new Date(d.lastOpenedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
-              : `添加于 ${new Date(d.addedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
+              ? `上次阅读 ${fmtListDate(d.lastOpenedAt)}`
+              : `添加于 ${fmtListDate(d.addedAt)}`}
             {folderName && ` · ${folderName}`}
           </span>
           {hit && (
@@ -657,61 +652,6 @@ function ImportingCard({ name, at }: { name: string; at: number }) {
     >
       <Icon size={15} className="text-on-surface-2" />
       {children}
-    </button>
-  )
-}
-
-/**
- * 继续阅读：打开过的那几篇横向铺一排。
- * 比原来那句「本地优先 · 按内容指纹去重 · 阅读进度自动记忆」有用 ——
- * 那句话是写给开发看的，用户进来想知道的是「接着上次读哪本」。
- */
-function ContinueReading() {
-  const recent = useRecentDocs(6)
-  const withProgress = useLiveQuery(
-    async () => {
-      const rows = await db.positions.toArray()
-      return Object.fromEntries(rows.map((r) => [r.hash, Math.round((r.progressPct ?? 0) * 100)]))
-    },
-    [],
-    {} as Record<string, number>,
-  )
-  if (recent.length === 0) return null
-  return (
-    <section className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-2">
-        <h2 className="text-[13px] font-semibold text-on-surface-2">继续阅读</h2>
-        <span className="text-[11.5px] text-on-surface-2/70">接着上次的位置</span>
-      </div>
-      <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 snap-x">
-        {recent.map((d) => (
-          <RecentDocCard key={d.id} doc={d} pct={withProgress[d.hash] ?? 0} />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-/** 继续阅读小卡：桌面按住时轻微倾斜，松手回弹 */
-function RecentDocCard({ doc: d, pct }: { doc: Doc; pct: number }) {
-  const tilt = usePressTilt<HTMLButtonElement>(1.5)
-  return (
-    <button
-      ref={tilt.ref}
-      {...tilt.tiltProps}
-      type="button"
-      onClick={() => openDoc({ docId: d.id })}
-      className="tilt-card snap-start shrink-0 w-[210px] card card-hover text-left px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer overflow-hidden"
-    >
-      <span className="flex items-center gap-1.5 text-[11px] text-on-surface-2">
-        <BookOpen size={12} />
-        {DOC_KIND_LABEL[d.kind]}
-        <span className="ml-auto tabular-nums">{pct}%</span>
-      </span>
-      <span className="text-[13px] font-medium truncate">{d.title}</span>
-      <span className="h-1 rounded-full bg-surface-3 overflow-hidden">
-        <span className="block h-full rounded-full bg-primary origin-left" style={{ width: `${pct}%` }} />
-      </span>
     </button>
   )
 }

@@ -5,7 +5,7 @@ import {
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 
-type Variant = 'primary' | 'ghost' | 'outline' | 'danger'
+type Variant = 'primary' | 'ghost' | 'outline' | 'danger' | 'destructive'
 type Size = 'sm' | 'md' | 'icon'
 /** 提交按钮三段变化：idle → loading → success/error → idle */
 export type ButtonState = 'idle' | 'loading' | 'success' | 'error'
@@ -18,10 +18,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantCls: Record<Variant, string> = {
-  primary: 'bg-primary text-on-primary hover:opacity-90 active:opacity-80 shadow-sm',
+  primary: 'bg-primary-action text-on-primary-action hover:opacity-90 active:opacity-80 shadow-sm',
   ghost: 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
   outline: 'border border-outline text-on-surface hover:bg-surface-3',
   danger: 'text-danger hover:bg-danger/10',
+  destructive: 'bg-danger text-on-danger hover:opacity-90 active:opacity-80 shadow-sm',
 }
 const sizeCls: Record<Size, string> = {
   sm: 'h-9 px-3 rounded-[10px] text-ui-caption gap-1.5',

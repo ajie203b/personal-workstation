@@ -13,7 +13,7 @@ import { CalendarView } from './CalendarView'
 import { QuadrantView } from './QuadrantView'
 import { LogbookView } from './LogbookView'
 import { Segmented } from '@/shared/ui/Segmented'
-import { todayStr } from '@/lib/date'
+import { fmtListDate, todayStr } from '@/lib/date'
 import { cn } from '@/lib/cn'
 
 type View = 'list' | 'board' | 'calendar' | 'quadrant'
@@ -72,9 +72,9 @@ export function TasksPage() {
   const completeTask = (t: typeof all[number]) => { void toggleTaskWithUndo(t) }
 
   const emptyMap: Record<Tier, { title: string; hint: string }> = {
-    today: { title: '今天没有安排', hint: '从「随时池」拖几件过来，或直接添加。完成的一天会自动归档进日志。' },
+    today: { title: '今日暂无待办', hint: '从「随时」挑几件过来，或直接添加。完成的任务会自动归档进日志。' },
     upcoming: { title: '近期没有排期', hint: '添加时写「明天」「下周三」「10月8日」会自动进入这里。' },
-    anytime: { title: '随时池是空的', hint: '想到什么记什么，不设日期的任务都住在这里。' },
+    anytime: { title: '随时清单是空的', hint: '想到什么记什么，不设日期的任务都住在这里。' },
     someday: { title: '将来也许是空的', hint: '那些「说不定哪天会做」的想法，放这里最合适。' },
   }
 
@@ -175,7 +175,7 @@ export function TasksPage() {
       </div>
 
       {!isLogbook && tier === 'today' && visible.length > 0 && (
-        <p className="text-[12px] text-on-surface-2 px-1">今天 · {today} · 按 ? 查看快捷键</p>
+        <p className="text-[12px] text-on-surface-2 px-1">今天 · {fmtListDate(today)} · 按 ? 查看快捷键</p>
       )}
     </div>
   )

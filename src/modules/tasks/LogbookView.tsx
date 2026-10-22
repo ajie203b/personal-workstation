@@ -7,7 +7,7 @@ import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { useUi } from '@/stores/ui'
-import { parseDateStr, todayStr, toDateStr, WEEKDAY_CN } from '@/lib/date'
+import { fmtTime, parseDateStr, todayStr, toDateStr, WEEKDAY_CN } from '@/lib/date'
 
 /** Logbook 日志：完成的任务自动归档，按日期分组，可恢复 / 删除 */
 export function LogbookView() {
@@ -63,7 +63,7 @@ export function LogbookView() {
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] line-through text-on-surface-2 truncate">{t.title}</p>
                   <p className="text-[11px] text-on-surface-2/70 mt-0.5">
-                    {new Date(t.doneAt ?? t.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 完成
+                    {fmtTime(t.doneAt ?? t.updatedAt)} 完成
                   </p>
                 </div>
                 <Button

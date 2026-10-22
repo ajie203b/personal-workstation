@@ -1,6 +1,7 @@
 import type { Annotation, Doc } from '@/db/db'
 import { db } from '@/db/db'
 import { importDoc } from '@/db/docs'
+import { fmtDateTime } from '@/lib/date'
 
 /**
  * 批注一键导出为笔记（v1.3）：全部高亮/截图 + 评论 → 一篇 Markdown 文档收进文档库。
@@ -32,7 +33,7 @@ export async function buildAnnotationMarkdown(doc: Doc, annotations: Annotation[
   const lines: string[] = [
     `# 《${doc.title}》批注笔记`,
     '',
-    `> 共 ${sorted.length} 条批注 · 导出于 ${new Date().toLocaleString('zh-CN')} · 个人工作站`,
+    `> 共 ${sorted.length} 条批注 · 导出于 ${fmtDateTime(new Date())} · 个人工作站`,
     '',
   ]
 

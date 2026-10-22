@@ -2,14 +2,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { saveScrollAndProgress } from '@/db/docs'
-import type { Annotation, DocSettings } from '@/db/db'
+import type { Annotation, AnnotationTextAnchor, DocSettings } from '@/db/db'
 import { handleDocLink, transformDocUrl } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
 import { remarkHighlight } from './mdHighlight'
+import { collectTextAnchors, wrapText } from './reader/textAnchors'
 
 export interface MdSelectionInfo {
   text: string
   blockIdx: number
+  textAnchors: AnnotationTextAnchor[]
   /** 浮条锚点（容器坐标）：below=true 表示应显示在选区下方（靠近顶部时翻转） */
   popover: { left: number; y: number; below: boolean }
 }
@@ -125,8 +127,15 @@ export function MdReader({
     })
     for (const ann of annotations) {
       if (ann.blockIdx == null || !ann.text) continue
-      const block = el.querySelector(`#b${ann.blockIdx}`)
-      if (block) wrapText(block as HTMLElement, ann.text, ann.id, ann.color)
+      const blocks = Array.from(el.children) as HTMLElement[]
+      if (ann.textAnchors?.length) {
+        for (const anchor of ann.textAnchors) {
+          const block = blocks[anchor.blockIdx]
+          if (block) wrapText(block, anchor.text, ann.id, ann.color, anchor)
+        }
+      } else {
+        if (!wrapText(blocks.slice(ann.blockIdx), ann.text, ann.id, ann.color)) wrapText(blocks, ann.text, ann.id, ann.color)
+      }
     }
   }, [annotations, md])
 
@@ -219,14 +228,16 @@ export function MdReader({
       onSelection(null)
       return
     }
-    const node = sel.anchorNode
-    const blockEl = (node instanceof Element ? node : node?.parentElement)?.closest('[id^="b"]')
-    if (!blockEl) {
+    const range = sel.getRangeAt(0)
+    const body = bodyRef.current
+    if (!body?.contains(range.startContainer) || !body.contains(range.endContainer)) {
       onSelection(null)
       return
     }
-    const blockIdx = Number((blockEl as HTMLElement).id.slice(1))
-    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    const textAnchors = collectTextAnchors(range, Array.from(body.children) as HTMLElement[])
+    if (!textAnchors.length) { onSelection(null); return }
+    const blockIdx = textAnchors[0].blockIdx
+    const rect = range.getBoundingClientRect()
     // 视口坐标（浮条为 fixed 定位，不受滚动容器裁剪）
     const topAbs = rect.top
     const bottomAbs = rect.bottom
@@ -234,6 +245,7 @@ export function MdReader({
     onSelection({
       text,
       blockIdx,
+      textAnchors,
       popover: {
         left: rect.left + rect.width / 2,
         y: below ? bottomAbs : topAbs,
@@ -300,54 +312,4 @@ export function MdReader({
       </div>
     </div>
   )
-}
-
-/**
- * 在元素内找到目标文本（可跨文本节点）并包上 mark（MD/Flow 阅读器共用）。
- *
- * 必须逐文本节点包：跨列表项选区时整个 Range 无法 surroundContents，旧的兜底
- * extractContents + insertNode 会把 <mark> 塞进 <ul>、里面还带着 <li>，
- * 浏览器重新解析后上下各多出一个空列表项 —— 就是「转任务后多出黑点」。
- * 逐节点包出来的多个 mark 共享同一个 data-ann，清除与闪烁逻辑不受影响。
- */
-export function wrapText(root: HTMLElement, text: string, annId: string, color: string): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  const nodes: Text[] = []
-  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
-  const joined = nodes.map((n) => n.data).join('')
-  const idx = joined.indexOf(text)
-  if (idx < 0) return
-  const endIdx = idx + text.length
-
-  const targets: { node: Text; start: number; end: number }[] = []
-  let consumed = 0
-  for (const n of nodes) {
-    const start = consumed
-    const end = consumed + n.data.length
-    consumed = end
-    if (end <= idx || start >= endIdx) continue
-    targets.push({
-      node: n,
-      start: Math.max(0, idx - start),
-      end: Math.min(n.data.length, endIdx - start),
-    })
-  }
-
-  // 倒序处理：先改后面的节点，前面节点的偏移量不受影响
-  for (const t of targets.reverse()) {
-    if (!t.node.isConnected) continue
-    // 纯空白不包（列表项之间的换行文本节点，包了没有意义还可能被浏览器挪位）
-    if (!t.node.data.slice(t.start, t.end).trim()) continue
-    const range = document.createRange()
-    range.setStart(t.node, t.start)
-    range.setEnd(t.node, t.end)
-    const mark = document.createElement('mark')
-    mark.className = `hl-${color}`
-    mark.dataset.ann = annId
-    try {
-      range.surroundContents(mark)
-    } catch {
-      /* 单个文本节点内理论上不会失败；失败就跳过这一段 */
-    }
-  }
 }

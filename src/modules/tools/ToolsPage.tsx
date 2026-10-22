@@ -43,13 +43,13 @@ export function ToolsPage() {
             ref={tilt.ref}
             {...tilt.tiltProps}
             to="/tools/fanqie"
-            aria-label="打开番茄小说下载器"
+            aria-label="番茄小说"
             className={cn(
               'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
               'flex flex-col overflow-hidden select-none',
             )}
           >
-            <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-danger/10 text-danger shrink-0">
+            <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
               <BookOpen size={21} strokeWidth={2} />
             </span>
             <span

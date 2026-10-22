@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import type { Annotation, DocSettings } from '@/db/db'
+import type { Annotation, AnnotationTextAnchor, DocSettings } from '@/db/db'
 import type { FlowDoc } from './flowDoc'
 import { saveScrollAndProgress } from '@/db/docs'
 import { handleDocLink } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
-import { wrapText } from './MdReader'
+import { collectTextAnchors, wrapText } from './reader/textAnchors'
 
 export interface FlowSelectionInfo {
   text: string
   segIdx: number
+  textAnchors: AnnotationTextAnchor[]
   /** 浮条锚点（视口坐标）：below=true 表示应显示在选区下方 */
   popover: { left: number; y: number; below: boolean }
 }
@@ -131,7 +132,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     return () => container.removeEventListener('scroll', report)
   }, [report, scrollRef])
 
-  // 批注 → <mark> 包裹（定位到所属 segment 的正文）
+  // 批注逐片回放，跨章节也保留精确选区；旧批注按起点及摘录兼容定位。
   useLayoutEffect(() => {
     const roots = segRefs.current
     // 先清掉旧 mark
@@ -146,8 +147,22 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     }
     for (const ann of annotations) {
       if (ann.blockIdx == null || !ann.text) continue
-      const root = roots[ann.blockIdx]?.querySelector('.flow-body') as HTMLElement | null
-      if (root) wrapText(root, ann.text, ann.id, ann.color)
+      if (ann.textAnchors?.length) {
+        for (const anchor of ann.textAnchors) {
+          const root = roots[anchor.blockIdx]
+          if (root) wrapText(root, anchor.text, ann.id, ann.color, anchor)
+        }
+      } else {
+        const sections = roots.filter((root): root is HTMLElement => !!root)
+        const bodies = roots.map((root) => root?.querySelector<HTMLElement>('.flow-body') ?? null)
+        const fromBodies = bodies.slice(ann.blockIdx).filter((root): root is HTMLElement => !!root)
+        // 旧摘录优先匹配正文，避免同名的合成章节标题抢走正文高亮。
+        if (wrapText(fromBodies, ann.text, ann.id, ann.color)) continue
+        const fromSections = roots.slice(ann.blockIdx).filter((root): root is HTMLElement => !!root)
+        if (wrapText(fromSections, ann.text, ann.id, ann.color)) continue
+        if (wrapText(bodies.filter((root): root is HTMLElement => !!root), ann.text, ann.id, ann.color)) continue
+        wrapText(sections, ann.text, ann.id, ann.color)
+      }
     }
   }, [annotations, flow])
 
@@ -206,18 +221,21 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       onSelection(null)
       return
     }
-    const node = sel.anchorNode
-    const segEl = (node instanceof Element ? node : node?.parentElement)?.closest('section[data-seg]') as HTMLElement | null
-    if (!segEl) {
+    const range = sel.getRangeAt(0)
+    const roots = segRefs.current
+    if (!roots.some((root) => root?.contains(range.startContainer)) || !roots.some((root) => root?.contains(range.endContainer))) {
       onSelection(null)
       return
     }
-    const segIdx = Number(segEl.dataset.seg)
-    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    const textAnchors = collectTextAnchors(range, roots)
+    if (!textAnchors.length) { onSelection(null); return }
+    const segIdx = textAnchors[0].blockIdx
+    const rect = range.getBoundingClientRect()
     const below = rect.top < 90
     onSelection({
       text,
       segIdx,
+      textAnchors,
       popover: {
         left: rect.left + rect.width / 2,
         y: below ? rect.bottom : rect.top,

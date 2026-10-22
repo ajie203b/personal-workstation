@@ -4,7 +4,7 @@ import { CheckCircle2, Flame, Highlighter, Timer } from 'lucide-react'
 import { db } from '@/db/db'
 import { migrateLegacyFocusRecords } from '@/db/focus'
 import { cn } from '@/lib/cn'
-import { toDateStr } from '@/lib/date'
+import { fmtListDate, toDateStr } from '@/lib/date'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
 
 /** 统计页（v1.3）：完成热力图 + 周报 + 标签分布 + 专注排行。全部本地数据。 */
@@ -197,7 +197,7 @@ export function StatsPage() {
         <div className="overflow-x-auto pb-1">
           <div className="flex gap-[3px] w-max">
             <div className="flex flex-col gap-[3px] pt-0 mr-1 text-[9px] text-on-surface-2 select-none">
-              {['一', '', '三', '', '五', '', '日'].map((w, i) => (
+              {['一', '二', '三', '四', '五', '六', '日'].map((w, i) => (
                 <span key={i} className="h-[13px] leading-[13px]">{w}</span>
               ))}
             </div>
@@ -210,7 +210,7 @@ export function StatsPage() {
                 {col.map((cell) => (
                   <span
                     key={cell.key}
-                    title={`${cell.key} · ${cell.count} ${METRIC_LABEL[metric]}`}
+                    title={`${fmtListDate(cell.key)} · ${cell.count} ${METRIC_LABEL[metric]}`}
                     className="w-[13px] h-[13px] rounded-[3px] shrink-0 transition-[background] duration-200"
                     style={{
                       background:

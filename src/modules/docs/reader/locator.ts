@@ -1,6 +1,7 @@
 import type { Annotation, Doc, ReadingPosition } from '@/db/db'
 import { db } from '@/db/db'
 import { addBookmark } from '@/db/docs'
+import { annotationAnchor, FLOW_KINDS } from '@/lib/docLocator'
 
 /**
  * 阅读器的定位串工具（p3 / b7 / f2）。
@@ -10,7 +11,7 @@ import { addBookmark } from '@/db/docs'
  * 这些函数原先散在 DocReaderPage 里，抽出来才能被 hook 与侧栏组件共用。
  */
 
-export const FLOW_KINDS: readonly Doc['kind'][] = ['epub', 'docx', 'pptx', 'txt']
+export { annotationAnchor, FLOW_KINDS }
 
 /** 页/块/章 在文案里的单位名 */
 const FLOW_UNIT: Partial<Record<Doc['kind'], string>> = { epub: '章', pptx: '片', docx: '节', txt: '节' }
@@ -19,13 +20,6 @@ export function anchorOf(progress: NonNullable<ReadingPosition['progress']>): st
   if (progress.kind === 'pdf') return `p${progress.page}`
   if (progress.kind === 'flow') return `f${progress.segIdx}`
   return `b${progress.blockIdx}`
-}
-
-/** 批注定位锚点：pdf=p 页码；md=b 块号；flow(epub/docx/pptx/txt)=f 章节号（blockIdx 存 segIdx） */
-export function annotationAnchor(doc: Doc, a: Annotation): string {
-  if (doc.kind === 'pdf') return `p${a.page}`
-  if (FLOW_KINDS.includes(doc.kind)) return `f${a.blockIdx}`
-  return `b${a.blockIdx}`
 }
 
 /** 阅读进度回调给的序号 → 定位串 */
