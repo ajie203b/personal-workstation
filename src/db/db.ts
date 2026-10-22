@@ -115,6 +115,8 @@ export interface Doc {
   lastOpenedAt?: number
   /** 所属文件夹（v2.1） */
   folderId?: string
+  /** 来源网址（v3.3 网页转文档）：同一链接再抓时提示更新而不是重复入库 */
+  sourceUrl?: string
 }
 
 /** 文档文件夹（v2.1）：给长期任务收拢资料，任务与文件夹互相链接 */
@@ -125,6 +127,29 @@ export interface Folder {
   taskId?: string
   createdAt: number
   updatedAt: number
+}
+
+/** 手写签名（v3.3 PDF 工具箱）：透明 PNG dataURL，拖到 PDF 页面上用 */
+export interface SignatureRow {
+  id: string
+  name: string
+  /** canvas.toDataURL('image/png') 的透明底签名 */
+  dataUrl: string
+  width: number
+  height: number
+  createdAt: number
+}
+
+/** 二维码历史（v3.3）：生成与扫码都记一条，方便复用 */
+export interface QrHistoryRow {
+  id: string
+  /** generate | scan */
+  action: 'generate' | 'scan'
+  /** 原始内容（文本 / WiFi 串 / vCard…） */
+  content: string
+  /** 生成才有：内容模板类型 */
+  kind?: 'text' | 'url' | 'wifi' | 'vcard' | 'email' | 'sms'
+  createdAt: number
 }
 
 /** 沉浸排版设置（按文档记忆，方案 2.2） */
@@ -369,6 +394,8 @@ class WorkstationDB extends Dexie {
   folders!: Table<Folder, string>
   fanqieBooks!: Table<FanqieBook, string>
   fanqieChapters!: Table<FanqieChapterRow, string>
+  signatures!: Table<SignatureRow, string>
+  qrHistory!: Table<QrHistoryRow, string>
 
   constructor() {
     super('workstation')
@@ -415,6 +442,12 @@ class WorkstationDB extends Dexie {
     this.version(8).stores({
       fanqieBooks: 'id, savedAt',
       fanqieChapters: 'id, bookId, index',
+    })
+    // v9（v3.3）：工具矩阵——文档来源网址、手写签名、二维码历史（纯增字段/表）
+    this.version(9).stores({
+      docs: 'id, hash, kind, lastOpenedAt, folderId, sourceUrl',
+      signatures: 'id, createdAt',
+      qrHistory: 'id, action, createdAt',
     })
   }
 }

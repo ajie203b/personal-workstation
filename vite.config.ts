@@ -22,10 +22,12 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       // PDF.js 中日韩字符映射与标准字体（CJK 文档文本提取/渲染必需）
+      // + onnxruntime-web 的 wasm/JS 运行时（OCR / 证件照推理用）
       viteStaticCopy({
         targets: [
           { src: 'node_modules/pdfjs-dist/cmaps', dest: 'pdfjs' },
           { src: 'node_modules/pdfjs-dist/standard_fonts', dest: 'pdfjs' },
+          { src: 'node_modules/onnxruntime-web/dist/*.{wasm,mjs}', dest: 'ort' },
         ],
       }),
       ...(lan ? [basicSsl()] : []),
@@ -64,6 +66,15 @@ export default defineConfig(({ mode }) => {
         workbox: {
           navigateFallback: 'index.html',
           globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,bcmap,pfb,ttf}'],
+          // ONNX 模型与 ort 运行时体积大且按需用，不进预缓存；ort 走运行时 CacheFirst
+          globIgnores: ['**/*.onnx', '**/ort/**'],
+          runtimeCaching: [
+            {
+              urlPattern: /\/ort\/.+$/,
+              handler: 'CacheFirst',
+              options: { cacheName: 'ort-runtime', expiration: { maxEntries: 32 } },
+            },
+          ],
         },
         devOptions: { enabled: false },
       }),

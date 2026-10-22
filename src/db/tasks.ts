@@ -1,4 +1,4 @@
-import { db, type Annotation, type AiMessage, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type ReadingPosition, type Folder, type SettingKV, type Task, type Tier, type Tombstone } from './db'
+import { db, type Annotation, type AiMessage, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type QrHistoryRow, type ReadingPosition, type Folder, type SettingKV, type SignatureRow, type Task, type Tier, type Tombstone } from './db'
 import type { Table } from 'dexie'
 import { uid } from '@/lib/id'
 import { addDaysStr, parseDateStr, todayStr } from '@/lib/date'
@@ -279,6 +279,9 @@ interface ExportPayload {
   focusSessions: FocusSession[]
   tombstones: Tombstone[]
   folders: Folder[]
+  /** v3.3 工具矩阵：手写签名 / 二维码历史（可选，老备份没有） */
+  signatures?: SignatureRow[]
+  qrHistory?: QrHistoryRow[]
   /** 手动导出的 JSON：文档本体内联 base64 */
   blobRows?: { hash: string; type: string; data: string }[]
   /** 目录式快照：文档本体在 blobs/<hash>，这里只留清单 */
@@ -296,7 +299,7 @@ const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt',
  * 有意不含 aiProviders：那张表存的是明文 apiKey，AI 面板下线后已无用途，
  * 导出 / 自动快照 / WebDAV 同步（同样走这个函数）都不该把它带出去。
  */
-type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders'>
+type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders' | 'signatures' | 'qrHistory'>
 
 async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
   const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiSessions, aiMessages, aiUsage, docText, focusSessions] = await Promise.all([
@@ -315,6 +318,8 @@ async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
   ])
   const tombstones = await db.tombstones.toArray()
   const folders = await db.folders.toArray()
+  const signatures = await db.signatures.toArray()
+  const qrHistory = await db.qrHistory.toArray()
   return {
     // 设备本地的口令 / 时间戳不进导出，避免同步或备份时把 WebDAV 口令带出去
     data: {
@@ -331,6 +336,8 @@ async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
       focusSessions,
       tombstones,
       folders,
+      signatures,
+      qrHistory,
     },
     blobs: blobs.map((r) => ({ hash: r.hash, type: r.blob.type, blob: r.blob })),
   }
@@ -401,6 +408,8 @@ const IMPORT_TABLES: [string, Table<any, any>][] = [
   ['focusSessions', db.focusSessions],
   ['tombstones', db.tombstones],
   ['folders', db.folders],
+  ['signatures', db.signatures],
+  ['qrHistory', db.qrHistory],
 ]
 
 /**
@@ -467,6 +476,8 @@ async function writeAll(raw: unknown, mode: ImportMode): Promise<ImportResult> {
       if (has('focusSessions')) await db.focusSessions.bulkPut(data.focusSessions as FocusSession[])
       if (has('tombstones')) await db.tombstones.bulkPut(data.tombstones as Tombstone[])
       if (has('folders')) await db.folders.bulkPut(data.folders as Folder[])
+      if (has('signatures')) await db.signatures.bulkPut(data.signatures as SignatureRow[])
+      if (has('qrHistory')) await db.qrHistory.bulkPut(data.qrHistory as QrHistoryRow[])
     },
   )
   return result

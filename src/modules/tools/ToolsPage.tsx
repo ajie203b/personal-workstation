@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { BookOpen, Clapperboard } from 'lucide-react'
+import { BookOpen, Clapperboard, FileStack, Newspaper, QrCode, ScanFace, ScanText, type LucideIcon } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
@@ -8,16 +8,35 @@ import { cn } from '@/lib/cn'
 import { usePressTilt } from '@/lib/usePressTilt'
 
 /**
- * 工具页（v2.2）：模型智能排名永远置顶，下面是小工具入口。
- * 榜单不再提供换位置/隐藏选项；工具卡只露一眼能扫完的信息，
- * 具体链接、章节、导出都放到详情页。
+ * 工具页（v2.2 起配置化）：模型智能排名永远置顶，下面是小工具入口。
+ * 小工具卡一律 1:1（与番茄小说卡同尺寸，见 MEMORY 排版约束），
+ * 新增工具在 TOOL_CARDS 里加一项即可。
  */
+interface ToolCard {
+  to: string
+  icon: LucideIcon
+  title: string
+  sub: string
+  /** 右上角徽标文案；不填走 fallbackBadge */
+  badge?: string
+}
+
+const TOOL_CARDS: ToolCard[] = [
+  { to: '/tools/fanqie', icon: BookOpen, title: '番茄小说', sub: '下载到本地书架' },
+  { to: '/tools/media', icon: Clapperboard, title: '无水印下载', sub: '视频、图集解析', badge: '抖音 / B站' },
+  { to: '/tools/qrcode', icon: QrCode, title: '二维码', sub: '生成与扫码' },
+  { to: '/tools/pdf', icon: FileStack, title: 'PDF 工具箱', sub: '合并、签名、水印' },
+  { to: '/tools/article', icon: Newspaper, title: '文章离线', sub: '网页转文档 / EPUB' },
+  { to: '/tools/idphoto', icon: ScanFace, title: '证件照', sub: '换底色、排版打印' },
+  { to: '/tools/ocr', icon: ScanText, title: '本地 OCR', sub: '拍照取字，不上传' },
+]
+
 export function ToolsPage() {
   const localBooks = useLiveQuery(() => db.fanqieBooks.count(), []) ?? 0
   const job = useFanqie((s) => s.job)
   const tilt = usePressTilt<HTMLAnchorElement>()
 
-  const badge = job?.phase === 'running'
+  const fanqieBadge = job?.phase === 'running'
     ? `下载中 ${job.done}/${job.total}`
     : job?.phase === 'paused'
       ? '已暂停'
@@ -39,52 +58,41 @@ export function ToolsPage() {
       <section className="flex flex-col gap-2">
         <h2 className="text-[13px] font-semibold text-on-surface-2 px-1">小工具</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          <Link
-            ref={tilt.ref}
-            {...tilt.tiltProps}
-            to="/tools/fanqie"
-            aria-label="番茄小说"
-            className={cn(
-              'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
-              'flex flex-col overflow-hidden select-none',
-            )}
-          >
-            <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
-              <BookOpen size={21} strokeWidth={2} />
-            </span>
-            <span
+          {TOOL_CARDS.map((t) => (
+            <Link
+              key={t.to}
+              ref={t.to === '/tools/fanqie' ? tilt.ref : undefined}
+              {...(t.to === '/tools/fanqie' ? tilt.tiltProps : {})}
+              to={t.to}
+              aria-label={t.title}
               className={cn(
-                'absolute top-4 right-3.5 max-w-[calc(100%-4.5rem)] truncate text-[10.5px] tabular-nums',
-                job?.phase === 'running' ? 'text-primary font-medium' : 'text-on-surface-2',
+                'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
+                'flex flex-col overflow-hidden select-none',
               )}
             >
-              {badge}
-            </span>
-            <span className="mt-auto min-w-0">
-              <span className="block text-[15px] font-semibold leading-5">番茄小说</span>
-              <span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">下载到本地书架</span>
-            </span>
-          </Link>
-
-          <Link
-            to="/tools/media"
-            aria-label="无水印下载"
-            className={cn(
-              'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
-              'flex flex-col overflow-hidden select-none',
-            )}
-          >
-            <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
-              <Clapperboard size={21} strokeWidth={2} />
-            </span>
-            <span className="absolute top-4 right-3.5 truncate text-[10.5px] text-on-surface-2 tabular-nums">
-              抖音 / B站
-            </span>
-            <span className="mt-auto min-w-0">
-              <span className="block text-[15px] font-semibold leading-5">无水印下载</span>
-              <span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">视频、图集解析</span>
-            </span>
-          </Link>
+              <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
+                <t.icon size={21} strokeWidth={2} />
+              </span>
+              {t.to === '/tools/fanqie' ? (
+                <span
+                  className={cn(
+                    'absolute top-4 right-3.5 max-w-[calc(100%-4.5rem)] truncate text-[10.5px] tabular-nums',
+                    job?.phase === 'running' ? 'text-primary font-medium' : 'text-on-surface-2',
+                  )}
+                >
+                  {fanqieBadge}
+                </span>
+              ) : t.badge ? (
+                <span className="absolute top-4 right-3.5 truncate text-[10.5px] text-on-surface-2 tabular-nums">
+                  {t.badge}
+                </span>
+              ) : null}
+              <span className="mt-auto min-w-0">
+                <span className="block text-[15px] font-semibold leading-5">{t.title}</span>
+                <span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">{t.sub}</span>
+              </span>
+            </Link>
+          ))}
         </div>
       </section>
     </div>

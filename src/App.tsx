@@ -32,6 +32,11 @@ const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => 
 const ToolsPage = lazy(() => import('@/modules/tools/ToolsPage').then((m) => ({ default: m.ToolsPage })))
 const FanqiePage = lazy(() => import('@/modules/tools/FanqiePage').then((m) => ({ default: m.FanqiePage })))
 const MediaParsePage = lazy(() => import('@/modules/tools/MediaParsePage').then((m) => ({ default: m.MediaParsePage })))
+const QrPage = lazy(() => import('@/modules/tools/qr/QrPage').then((m) => ({ default: m.QrPage })))
+const PdfToolPage = lazy(() => import('@/modules/tools/pdf/PdfToolPage').then((m) => ({ default: m.PdfToolPage })))
+const ArticleToolPage = lazy(() => import('@/modules/tools/article/ArticleToolPage').then((m) => ({ default: m.ArticleToolPage })))
+const IdPhotoPage = lazy(() => import('@/modules/tools/idphoto/IdPhotoPage').then((m) => ({ default: m.IdPhotoPage })))
+const OcrPage = lazy(() => import('@/modules/tools/ocr/OcrPage').then((m) => ({ default: m.OcrPage })))
 
 const RouteLoader = <PageSkeleton />
 
@@ -108,6 +113,11 @@ export default function App() {
             <Route path="tools" element={<ToolsPage />} />
             <Route path="tools/fanqie" element={<FanqiePage />} />
             <Route path="tools/media" element={<MediaParsePage />} />
+            <Route path="tools/qrcode" element={<QrPage />} />
+            <Route path="tools/pdf" element={<PdfToolPage />} />
+            <Route path="tools/article" element={<ArticleToolPage />} />
+            <Route path="tools/idphoto" element={<IdPhotoPage />} />
+            <Route path="tools/ocr" element={<OcrPage />} />
             <Route path="review" element={<ReviewPage />} />
             <Route path="docs" element={<DocsPage />} />
             <Route path="docs/new" element={<MdEditorRoute />} />

@@ -227,6 +227,20 @@ export function validateSnapshot(raw: unknown): ValidatedSnapshot {
     num(p, r, 'ts', path)
   })
 
+  checkRows(p, raw, 'signatures', (r, path) => {
+    str(p, r, 'id', path)
+    str(p, r, 'name', path)
+    str(p, r, 'dataUrl', path)
+    num(p, r, 'createdAt', path)
+  })
+
+  checkRows(p, raw, 'qrHistory', (r, path) => {
+    str(p, r, 'id', path)
+    str(p, r, 'action', path)
+    str(p, r, 'content', path, true)
+    num(p, r, 'createdAt', path)
+  })
+
   checkRows(p, raw, 'settings', (r, path) => {
     str(p, r, 'key', path)
     if (r.value === undefined) p.add(`${path}.value`, '缺失')
