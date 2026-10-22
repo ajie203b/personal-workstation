@@ -33,7 +33,7 @@ export async function buildAnnotationMarkdown(doc: Doc, annotations: Annotation[
   const lines: string[] = [
     `# 《${doc.title}》批注笔记`,
     '',
-    `> 共 ${sorted.length} 条批注 · 导出于 ${fmtDateTime(new Date())} · 个人工作站`,
+    `> 共 ${sorted.length} 条批注 · 导出于 ${fmtDateTime(new Date())} · Kairos`,
     '',
   ]
 

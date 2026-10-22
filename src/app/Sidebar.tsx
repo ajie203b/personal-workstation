@@ -57,7 +57,7 @@ export function Sidebar() {
           className="hidden lg:block text-[15px] font-semibold tracking-wide overflow-hidden whitespace-nowrap transition-opacity duration-200"
           style={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : undefined }}
         >
-          个人工作站
+          Kairos
         </span>
         <button
           type="button"
