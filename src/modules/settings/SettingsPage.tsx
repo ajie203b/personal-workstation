@@ -12,7 +12,7 @@ import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pw
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { fmtDateTime, todayStr } from '@/lib/date'
 import { saveBlob } from '@/lib/saveFile'
-import { isNative } from '@/lib/native'
+import { isNative, isTauri } from '@/lib/native'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
@@ -442,6 +442,12 @@ function WebdavCard() {
           「账户信息 → 安全选项 → 第三方应用管理」里生成，不是登录密码。
         </p>
       </div>
+
+      {!isNative() && !isTauri() && (
+        <p className="text-[12.5px] leading-relaxed text-danger">
+          网页版受浏览器跨域限制，连不上坚果云。电脑上请安装 Windows 桌面版（GitHub Releases 里的 Kairos 安装包），手机用安卓 App。
+        </p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block">

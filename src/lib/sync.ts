@@ -2,7 +2,7 @@ import { CapacitorHttp } from '@capacitor/core'
 import type { Table } from 'dexie'
 import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
 import { exportSnapshotParts } from '@/db/tasks'
-import { isNative } from './native'
+import { isNative, isTauri } from './native'
 import { mergePayloads, type SyncPayload } from './syncMerge'
 import { planReconcile } from './syncReconcile'
 
@@ -109,11 +109,23 @@ async function dav(
     }
   }
 
+  if (isTauri()) {
+    // 桌面版：请求由 Rust 发出，不吃跨域限制
+    const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
+    let r: Response
+    try {
+      r = await tauriFetch(url, { method, headers, body, connectTimeout: 15000 })
+    } catch {
+      throw new Error('连不上同步服务器：请检查网络')
+    }
+    return { status: r.status, text: await r.text(), etag: r.headers.get('etag') ?? undefined }
+  }
+
   let res: Response
   try {
     res = await fetch(url, { method, headers, body })
   } catch {
-    throw new Error('请求被浏览器拦截：网页版 WebDAV 需要服务端允许跨域（安卓 App 内由原生发请求，不受影响）')
+    throw new Error('网页版连不上坚果云（坚果云不允许浏览器跨域）：请用安卓 App 或 Windows 桌面版同步')
   }
   return { status: res.status, text: await res.text(), etag: res.headers.get('etag') ?? undefined }
 }
