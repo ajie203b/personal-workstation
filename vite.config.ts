@@ -33,8 +33,8 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.png', 'icons/apple-touch-icon.png', 'intelligence.json'],
         manifest: {
-          name: '个人工作站',
-          short_name: '工作站',
+          name: 'Kairos',
+          short_name: 'Kairos',
           description: '任务清单 × 文档工作站的一体化个人工作台',
           lang: 'zh-CN',
           dir: 'ltr',
