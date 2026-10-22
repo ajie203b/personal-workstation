@@ -5,6 +5,7 @@ import type { Task } from '@/db/db'
 vi.mock('@capacitor/core', () => ({
   Capacitor: { isNativePlatform: () => false },
   CapacitorHttp: { request: vi.fn() },
+  registerPlugin: () => ({ request: vi.fn() }),
 }))
 vi.mock('@capacitor/local-notifications', () => ({
   LocalNotifications: {

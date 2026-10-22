@@ -1,4 +1,4 @@
-import { CapacitorHttp } from '@capacitor/core'
+import { CapacitorHttp, registerPlugin } from '@capacitor/core'
 import type { Table } from 'dexie'
 import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
 import { exportSnapshotParts } from '@/db/tasks'
@@ -82,6 +82,19 @@ function headerOf(headers: Record<string, string> | undefined, name: string): st
   return hit ? headers[hit] : undefined
 }
 
+/** CapacitorHttp（HttpURLConnection）能发的方法；其余走 WebdavNative */
+const STANDARD_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'TRACE', 'PATCH'])
+
+interface WebdavNativePlugin {
+  request(opts: {
+    url: string
+    method: string
+    headers: Record<string, string>
+    body?: string
+  }): Promise<{ status: number; data?: string; etag?: string }>
+}
+const WebdavNative = registerPlugin<WebdavNativePlugin>('WebdavNative')
+
 async function dav(
   cfg: WebdavConfig,
   method: string,
@@ -91,6 +104,12 @@ async function dav(
 ): Promise<DavResponse> {
   const headers: Record<string, string> = { Authorization: authHeader(cfg), ...extra }
   if (body != null) headers['Content-Type'] = 'application/json; charset=utf-8'
+
+  if (isNative() && !STANDARD_METHODS.has(method)) {
+    // HttpURLConnection 不认 MKCOL 之类的方法，交给原生 OkHttp 插件
+    const res = await WebdavNative.request({ url, method, headers, body })
+    return { status: res.status, text: res.data ?? '', etag: res.etag }
+  }
 
   if (isNative()) {
     const res = await CapacitorHttp.request({

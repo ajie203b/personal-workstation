@@ -1,0 +1,55 @@
+name: Android build check
+
+# 只验证安卓工程能编译（原生插件 Java 改动在这里先过一遍）；
+# 正式 APK 仍在本机用自己的签名打，这里的 debug 包签名不同，别拿去覆盖安装。
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install
+        run: |
+          rm -f package-lock.json
+          npm install --no-audit --no-fund
+      - name: Build web
+        run: npx vite build
+      - name: Sync
+        run: npx cap sync android
+      - name: Dummy keystore
+        # build.gradle 缺 keystore.properties 会直接 fail；CI 只编 debug，生成一次性假签名占位
+        working-directory: android
+        run: |
+          keytool -genkeypair -keystore ci-dummy.keystore -alias ci -storepass cidummy -keypass cidummy \
+            -keyalg RSA -keysize 2048 -validity 1 -dname "CN=ci" -noprompt
+          printf 'storeFile=../ci-dummy.keystore\nstorePassword=cidummy\nkeyAlias=ci\nkeyPassword=cidummy\n' > keystore.properties
+      - name: Gradle
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          set +e
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee /tmp/gradle.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != 0 ]; then
+            # 把关键报错打成注解，不登录也能在 Actions 页面看到
+            grep -A6 -E "What went wrong|error:|e: " /tmp/gradle.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $status
