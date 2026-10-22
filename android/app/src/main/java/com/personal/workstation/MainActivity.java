@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // 本地插件必须在 super.onCreate 之前注册，Bridge 创建时才会带上它
         registerPlugin(TaskWidgetPlugin.class);
+        registerPlugin(FileExportPlugin.class);
         super.onCreate(savedInstanceState);
         // 整页缩放会把 UI 一起放大，且不同机型表现不一致；文档内的缩放由前端自己实现。
         WebView webView = getBridge().getWebView();

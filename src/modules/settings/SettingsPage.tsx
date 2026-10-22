@@ -11,6 +11,7 @@ import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { fmtDateTime, todayStr } from '@/lib/date'
+import { saveBlob } from '@/lib/saveFile'
 import { isNative } from '@/lib/native'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
@@ -206,14 +207,9 @@ function DataTab() {
       await runExport(async () => {
         const json = await exportAll()
         const blob = new Blob([json], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
         // 本地日期，别用 toISOString（UTC 会让凌晨导出的文件名变成昨天）
-        a.download = `个人工作站备份-${todayStr()}.json`
-        a.click()
-        setTimeout(() => URL.revokeObjectURL(url), 10000)
-        toast('备份已导出')
+        const where = await saveBlob(blob, `个人工作站备份-${todayStr()}.json`)
+        toast(`备份已导出 → ${where}`)
       })
     } catch {
       toast('导出失败，请重试')

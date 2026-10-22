@@ -206,18 +206,8 @@ ${spine}
   return zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip', compression: 'DEFLATE' })
 }
 
-/** 浏览器 / WebView 里的另存为 */
-export function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.rel = 'noopener'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 2000)
-}
+/** 浏览器 / WebView 里的另存为（原生壳内由原生写「下载」，见 lib/saveFile.ts） */
+export { saveBlob } from './saveFile'
 
 /** 导入文档工作站阅读（EPUB 去重由 importDoc 的 hash 负责） */
 export async function importFanqieToDocs(book: FanqieBook, chapters: FanqieChapterRow[]): Promise<string> {
