@@ -25,6 +25,9 @@ export interface WebdavConfig {
   auto: boolean
 }
 
+/** 坚果云预设目录：用户只需填账号和应用密码 */
+export const JIANGUOYUN_URL = 'https://dav.jianguoyun.com/dav/Kairos/'
+
 const CFG_KEY = 'webdav'
 const LAST_KEY = 'lastSyncAt'
 const LAST_ERROR_KEY = 'lastSyncError'
