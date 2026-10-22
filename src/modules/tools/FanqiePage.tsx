@@ -200,8 +200,8 @@ export function FanqiePage() {
         return
       }
       const blob = format === 'txt' ? buildFanqieTxt(b, rows) : await buildFanqieEpub(b, rows)
-      saveBlob(blob, `${sanitizeFilename(b.title)}.${format}`)
-      toast(`已导出 ${format.toUpperCase()}（${rows.length} 章）`)
+      const where = await saveBlob(blob, `${sanitizeFilename(b.title)}.${format}`)
+      toast(`已导出 ${format.toUpperCase()}（${rows.length} 章）→ ${where}`)
     } catch (e) {
       toast(e instanceof Error ? e.message : '导出失败')
     } finally {
@@ -441,7 +441,7 @@ export function FanqiePage() {
           <h2 className="text-[13.5px] font-semibold">本地书架</h2>
           <span className="text-[11.5px] text-on-surface-2 tabular-nums">{library.length} 本</span>
         </div>
-        <p className="text-[11.5px] text-on-surface-2 mt-1">正文和进度都只存本机；可随时导出或导入文档工作站阅读。</p>
+        <p className="text-[11.5px] text-on-surface-2 mt-1">正文和进度都只存本机；导出的 TXT / EPUB 存到「下载/个人工作站」，也可导入文档工作站阅读。</p>
 
         {library.length === 0 ? (
           <EmptyState compact icon={BookOpen} title="书架还是空的" hint="搜到书后下载正文，就会出现在这里。" />
