@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, BellOff, ChevronRight, Database, Download, History, Info, LayoutGrid, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
-import { useUi, type Accent, type Density, type ThemeMode } from '@/stores/ui'
+import { useUi, type Accent, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
@@ -28,7 +28,7 @@ import {
 type Tab = 'appearance' | 'data' | 'sync' | 'about'
 
 const SECTIONS: { id: Tab; label: string; hint: string; icon: typeof Palette }[] = [
-  { id: 'appearance', label: '外观', hint: '主题、强调色、密度、动效', icon: Palette },
+  { id: 'appearance', label: '外观', hint: '主题、强调色、动效', icon: Palette },
   { id: 'data', label: '数据', hint: '备份、自动快照、清空', icon: Database },
   { id: 'sync', label: '同步', hint: 'WebDAV 跨设备共用数据', icon: RefreshCw },
   { id: 'about', label: '关于', hint: '版本、更新、安装', icon: Info },
@@ -120,8 +120,6 @@ function AppearanceTab() {
   const setThemeMode = useUi((s) => s.setThemeMode)
   const accent = useUi((s) => s.accent)
   const setAccent = useUi((s) => s.setAccent)
-  const density = useUi((s) => s.density)
-  const setDensity = useUi((s) => s.setDensity)
   const motion = useUi((s) => s.motion)
   const setMotion = useUi((s) => s.setMotion)
 
@@ -162,20 +160,6 @@ function AppearanceTab() {
             />
           ))}
         </div>
-      </section>
-
-      <section className="card p-4">
-        <h2 className="text-[14px] font-semibold mb-3">界面密度</h2>
-        <Segmented
-          ariaLabel="界面密度"
-          value={density}
-          onChange={(v) => setDensity(v as Density)}
-          options={[
-            { value: 'compact', label: '紧凑' },
-            { value: 'default', label: '默认' },
-            { value: 'large', label: '宽松' },
-          ]}
-        />
       </section>
 
       <section className="card p-4 flex items-center justify-between gap-4">

@@ -7,8 +7,6 @@ export type Theme = 'light' | 'dark'
 export type ThemeMode = 'system' | 'light' | 'dark'
 /** 强调色（macOS 系统设置同款 6 色） */
 export type Accent = 'blue' | 'purple' | 'pink' | 'red' | 'orange' | 'green'
-/** 界面密度（对应 macOS 字号档） */
-export type Density = 'compact' | 'default' | 'large'
 
 /** 阅读器两侧栏：宽度按设备记忆，折叠状态同文档无关 */
 export interface ReaderPanels {
@@ -44,7 +42,6 @@ interface UiState {
   theme: Theme
   themeMode: ThemeMode
   accent: Accent
-  density: Density
   /** 应用内动效总开关（独立于系统 prefers-reduced-motion） */
   motion: boolean
   sidebarCollapsed: boolean
@@ -59,7 +56,6 @@ interface UiState {
   setTheme: (t: Theme) => void
   setThemeMode: (m: ThemeMode) => void
   setAccent: (a: Accent) => void
-  setDensity: (d: Density) => void
   setMotion: (v: boolean) => void
   setSidebarCollapsed: (v: boolean) => void
   setHaptics: (v: boolean) => void
@@ -78,7 +74,6 @@ export const useUi = create<UiState>()(
       theme: 'light',
       themeMode: 'light',
       accent: 'blue',
-      density: 'default',
       motion: true,
       sidebarCollapsed: false,
       haptics: true,
@@ -90,7 +85,6 @@ export const useUi = create<UiState>()(
       setTheme: (theme) => set({ theme, themeMode: theme }),
       setThemeMode: (themeMode) => set({ themeMode }),
       setAccent: (accent) => set({ accent }),
-      setDensity: (density) => set({ density }),
       setMotion: (motion) => set({ motion }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setHaptics: (haptics) => set({ haptics }),
@@ -110,7 +104,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'ws-ui',
-      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, density: s.density, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, readerPanels: s.readerPanels }),
+      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, readerPanels: s.readerPanels }),
       // 旧版本 theme 曾允许 'system'，现在收敛进 themeMode 并保留合法值
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UiState> & { theme?: string }
@@ -123,7 +117,6 @@ export const useUi = create<UiState>()(
           themeMode: mode,
           theme: mode === 'system' ? current.theme : mode,
           accent: p.accent ?? 'blue',
-          density: p.density ?? 'default',
           motion: p.motion !== false,
           haptics: p.haptics !== false,
           readerPanels: normalizeReaderPanels(p.readerPanels),
