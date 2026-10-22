@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { BookOpen } from 'lucide-react'
+import { IconBook } from '@/shared/icons'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
@@ -50,7 +50,7 @@ export function ToolsPage() {
             )}
           >
             <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
-              <BookOpen size={21} strokeWidth={2} />
+              <IconBook size={22} />
             </span>
             <span
               className={cn(
