@@ -1,5 +1,5 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { isNative } from './native'
+import { isNative, isTauri } from './native'
 import type { FanqieBookInfo, FanqieChapterMeta, FanqieRef } from './fanqie'
 import { chapterHtmlToText, decodeHtmlEntities } from './fanqie'
 import { decodeFanqieText, hasUnknownFanqieGlyphs } from './fanqieFont'
@@ -93,10 +93,33 @@ async function nativeFetchText(url: string, timeoutMs: number, accept: string): 
   return typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '')
 }
 
+/** 桌面版（Tauri）：由 Rust 发请求，不吃跨域限制，Bing 搜索也不用本机代理 */
+async function tauriFetchText(url: string, timeoutMs: number, accept: string): Promise<string> {
+  const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await tauriFetch(url, {
+      headers: { 'User-Agent': DESKTOP_UA, Accept: accept },
+      connectTimeout: 15_000,
+      signal: ctrl.signal,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.text()
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+/** 是否能绕开浏览器跨域（安卓原生壳 / Windows 桌面壳） */
+function canBypassCors(): boolean {
+  return isNative() || isTauri()
+}
+
 async function fetchText(url: string, timeoutMs: number, accept = 'application/json, text/plain, */*') {
-  return isNative()
-    ? nativeFetchText(url, timeoutMs, accept)
-    : webFetchText(url, timeoutMs, accept)
+  if (isNative()) return nativeFetchText(url, timeoutMs, accept)
+  if (isTauri()) return tauriFetchText(url, timeoutMs, accept)
+  return webFetchText(url, timeoutMs, accept)
 }
 
 /** 依次试“直连端口”和“Cloudflare 前置域名”；两个地址都挂了才算不可用 */
@@ -411,7 +434,7 @@ export function parseBingRss(xml: string): Array<{ bookId: string; title: string
 async function fetchBingRss(query: string): Promise<string> {
   const url = BING_RSS + encodeURIComponent(`site:fanqienovel.com/page ${query}`)
   const accept = 'application/rss+xml, application/xml, text/xml, */*'
-  if (isNative()) return nativeFetchText(url, 20_000, accept)
+  if (canBypassCors()) return fetchText(url, 20_000, accept)
   // Bing 不返回 CORS 头，网页版只能走本机代理；下载正文不需要代理
   try {
     return await webFetchText(LOCAL_PROXY + encodeURIComponent(url), 20_000, accept)
@@ -436,8 +459,8 @@ async function searchBing(query: string): Promise<FanqieSearchItem[]> {
   if (!hits.length) {
     const url = BING_RSS + encodeURIComponent(`site:fanqienovel.com ${query}`)
     try {
-      const retry = isNative()
-        ? await nativeFetchText(url, 20_000, 'application/rss+xml, text/xml, */*')
+      const retry = canBypassCors()
+        ? await fetchText(url, 20_000, 'application/rss+xml, text/xml, */*')
         : await webFetchText(LOCAL_PROXY + encodeURIComponent(url), 20_000, 'application/rss+xml, text/xml, */*')
       hits = parseBingRss(retry)
     } catch {
@@ -483,7 +506,7 @@ export async function searchFanqieBooks(query: string): Promise<FanqieSearchItem
   let items: FanqieSearchItem[] = []
   // FQWeb 的 /search 在公共节点上经常报错，而且网页端 CORS 头是 null；
   // 网页直接走 Bing，安卓上才先试一下 FQWeb（它不受 CORS 限制）。
-  if (isNative()) {
+  if (canBypassCors()) {
     try {
       items = await searchFqweb(query)
     } catch {

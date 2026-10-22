@@ -33,7 +33,7 @@ import {
 } from '@/lib/fanqieFqweb'
 import { buildFanqieEpub, buildFanqieTxt, importFanqieToDocs, sanitizeFilename, saveBlob } from '@/lib/fanqieExport'
 import { openExternal } from '@/lib/links'
-import { isNative } from '@/lib/native'
+import { isNative, isTauri } from '@/lib/native'
 import { cn } from '@/lib/cn'
 
 /**
@@ -281,7 +281,7 @@ export function FanqiePage() {
         </div>
         <p className="text-[11.5px] text-on-surface-2 mt-2 leading-relaxed">
           建议输入完整书名；也可以直接粘贴番茄书籍 / 章节链接或纯数字 ID。
-          {!isNative() && ' 网页版搜索需要先运行 node scripts/fanqie-proxy.mjs；下载正文不需要代理。'}
+          {!isNative() && !isTauri() && ' 网页版搜索需要先运行 node scripts/fanqie-proxy.mjs；下载正文不需要代理。'}
         </p>
       </form>
 

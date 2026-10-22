@@ -1,5 +1,7 @@
 import { CapacitorHttp } from '@capacitor/core'
 import { isNative } from './native'
+import { corsFreeFetch } from './tauriHttp'
+import { explainNetError } from './netFetch'
 import { sanitizeFilename } from './fanqieExport'
 import { saveBlob } from './saveFile'
 
@@ -54,7 +56,7 @@ async function httpGetText(url: string, headers: Record<string, string>): Promis
     if (res.status >= 400) throw new Error(`HTTP ${res.status}`)
     return { body: typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? ''), finalUrl: res.url || url }
   }
-  const res = await fetch(url, { headers, redirect: 'follow' })
+  const res = await corsFreeFetch(url, { headers, redirect: 'follow' }).catch((e) => { throw explainNetError(e) })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return { body: await res.text(), finalUrl: res.url || url }
 }
@@ -80,7 +82,7 @@ async function httpGetBlob(url: string, headers: Record<string, string>): Promis
     if (typeof data === 'string') return base64ToBlob(data)
     return new Blob([data])
   }
-  const res = await fetch(url, { headers })
+  const res = await corsFreeFetch(url, { headers }).catch((e) => { throw explainNetError(e) })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.blob()
 }

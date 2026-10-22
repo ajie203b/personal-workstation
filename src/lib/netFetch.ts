@@ -1,5 +1,6 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { isNative } from './native'
+import { isNative, isTauri } from './native'
+import { corsFreeFetch } from './tauriHttp'
 
 /**
  * 工具矩阵的公共抓取通道（v3.3）。
@@ -15,6 +16,17 @@ export const BROWSER_UA =
 
 /** 网页版跨域兜底：本机小代理（GET http://127.0.0.1:8787/?url=<encodeURIComponent>） */
 export const LOCAL_PROXY = 'http://127.0.0.1:8787/?url='
+
+/**
+ * 网页版被浏览器跨域拦下时 fetch 只抛一句英文 "Failed to fetch"，用户看不懂；
+ * 换成能照着做的中文提示。原生壳 / 桌面版不会走到这里。
+ */
+export function explainNetError(e: unknown): unknown {
+  if (e instanceof TypeError && !isNative() && !isTauri()) {
+    return new Error('网页版被浏览器跨域拦下了，这个功能请用安卓 App 或 Windows 桌面版')
+  }
+  return e
+}
 
 export interface FetchOptions {
   accept?: string
@@ -62,14 +74,14 @@ export async function fetchText(url: string, opts: FetchOptions = {}): Promise<F
     }
     return await webFetchText(url, opts, timeoutMs)
   } catch (e) {
-    if (opts.proxyFallback && !isNative()) {
+    if (opts.proxyFallback && !isNative() && !isTauri()) {
       try {
         return await webFetchText(LOCAL_PROXY + encodeURIComponent(url), opts, timeoutMs)
       } catch {
-        throw e
+        throw explainNetError(e)
       }
     }
-    throw e
+    throw explainNetError(e)
   }
 }
 
@@ -77,7 +89,7 @@ async function webFetchText(url: string, opts: FetchOptions, timeoutMs: number):
   const ctrl = new AbortController()
   const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const res = await fetch(url, {
+    const res = await corsFreeFetch(url, {
       headers: headersOf(opts),
       cache: 'no-store',
       signal: ctrl.signal,
@@ -116,7 +128,7 @@ export async function fetchBytes(url: string, opts: FetchOptions = {}): Promise<
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
     return bytes.buffer
   }
-  const res = await fetch(url, { headers: headersOf(opts), signal: AbortSignal.timeout(timeoutMs) })
+  const res = await corsFreeFetch(url, { headers: headersOf(opts), signal: AbortSignal.timeout(timeoutMs) })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.arrayBuffer()
 }
@@ -161,7 +173,7 @@ export async function fetchTextSmart(url: string, opts: FetchOptions = {}): Prom
       const contentType = res.headers?.['content-type'] ?? res.headers?.['Content-Type'] ?? ''
       return finish(bytes, contentType, res.url || url)
     }
-    const res = await fetch(url, {
+    const res = await corsFreeFetch(url, {
       headers: headersOf(opts),
       cache: 'no-store',
       signal: AbortSignal.timeout(timeoutMs),
@@ -173,7 +185,7 @@ export async function fetchTextSmart(url: string, opts: FetchOptions = {}): Prom
   try {
     return await run()
   } catch (e) {
-    if (opts.proxyFallback && !isNative()) {
+    if (opts.proxyFallback && !isNative() && !isTauri()) {
       try {
         return await (async () => {
           const res = await fetch(LOCAL_PROXY + encodeURIComponent(url), {
@@ -184,10 +196,10 @@ export async function fetchTextSmart(url: string, opts: FetchOptions = {}): Prom
           return finish(new Uint8Array(await res.arrayBuffer()), res.headers.get('content-type') ?? '', url)
         })()
       } catch {
-        throw e
+        throw explainNetError(e)
       }
     }
-    throw e
+    throw explainNetError(e)
   }
 }
 

@@ -343,7 +343,7 @@ export function ArticleToolPage() {
 
       <p className="text-[11px] text-on-surface-2 leading-relaxed px-1">
         仅用于个人离线收藏，请支持原作者、不要传播存档内容。图片下载失败会保留原链接（离线后可能不显示）；
-        网页版跨域抓取依赖本机代理，微信图床防盗链在网页版走代理路径，未在真机验证。
+        网页版受浏览器跨域限制，大多数网站抓不了，可以直接粘贴文章正文；安卓 App / Windows 桌面版可直接抓链接。
       </p>
     </div>
   )
