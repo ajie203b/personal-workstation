@@ -35,7 +35,7 @@ export function AppShell() {
   const openAddSheet = useUi((s) => s.openAddSheet)
   const focusActive = useFocusActive()
   const section = `/${pathname.split('/')[1] || ''}`
-  const title = PAGE_TITLE[pathname] ?? PAGE_TITLE[section] ?? '个人工作站'
+  const title = PAGE_TITLE[pathname] ?? PAGE_TITLE[section] ?? 'Kairos'
 
   // 同一会话内重复进入某视图时不再重放入场动画（P0：去掉反复切页的「晃」）
   const seen = useRef(new Set<string>())
