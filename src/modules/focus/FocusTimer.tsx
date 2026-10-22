@@ -12,6 +12,7 @@ import { todayStr } from '@/lib/date'
 import { haptic } from '@/lib/haptics'
 import { useUi } from '@/stores/ui'
 import { Segmented } from '@/shared/ui/Segmented'
+import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { PlayPauseIcon } from '@/shared/ui/PlayPauseIcon'
 import { Dialog } from '@/shared/ui/Sheet'
 
@@ -262,20 +263,20 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
         </button>
       </div>
 
-      {/* 绑定任务：完成一个番茄即计入该任务耗时 */}
+      {/* 绑定任务：完成一个番茄即计入该任务耗时（自绘下拉，别用原生 select） */}
       <div className="w-full flex items-center gap-2">
         <Target size={14} className="text-on-surface-2 shrink-0" />
-        <select
+        <SelectMenu
           value={taskId}
-          onChange={(e) => pickTask(e.target.value)}
-          aria-label="专注绑定任务"
-          className="flex-1 h-8 px-2 rounded-[8px] bg-surface-2 border border-outline text-[12px] outline-none focus:border-primary/60 cursor-pointer min-w-0"
-        >
-          <option value="">不绑定任务</option>
-          {candidates.map((t) => (
-            <option key={t.id} value={t.id}>{t.title.slice(0, 24)}</option>
-          ))}
-        </select>
+          onChange={pickTask}
+          ariaLabel="专注绑定任务"
+          title="绑定任务"
+          triggerClassName="flex-1 h-8 px-2 rounded-[8px] text-[12px]"
+          options={[
+            { value: '', label: '不绑定任务' },
+            ...candidates.map((t) => ({ value: t.id, label: t.title })),
+          ]}
+        />
       </div>
       {boundTask && (
         <p className="text-[11px] text-on-surface-2 -mt-2 text-center truncate w-full">

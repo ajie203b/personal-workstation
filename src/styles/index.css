@@ -45,6 +45,8 @@
   --dur-2: 220ms;
   --dur-3: 300ms;
   --dur-4: 640ms;
+  /* 同组元素依次出现的间隔（ui-motion：30–60ms 一档） */
+  --stagger: 35ms;
   --radius-xs: 6px;
   --radius-sm: 10px;
   --radius-md: 12px;
@@ -105,7 +107,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --dur-1: 80ms; --dur-2: 80ms; --dur-3: 80ms; --dur-4: 80ms; }
+  :root { --dur-1: 80ms; --dur-2: 80ms; --dur-3: 80ms; --dur-4: 80ms; --stagger: 0ms; }
   *, *::before, *::after {
     transition-duration: 80ms !important;
     animation-duration: 80ms !important;
@@ -114,7 +116,7 @@
 }
 
 /* 应用内动效总开关（设置页可关，独立于系统 prefers-reduced-motion） */
-.no-motion { --dur-1: 0.01ms; --dur-2: 0.01ms; --dur-3: 0.01ms; --dur-4: 0.01ms; }
+.no-motion { --dur-1: 0.01ms; --dur-2: 0.01ms; --dur-3: 0.01ms; --dur-4: 0.01ms; --stagger: 0ms; }
 .no-motion *, .no-motion *::before, .no-motion *::after {
   transition-duration: 0.01ms !important;
   animation-duration: 0.01ms !important;
@@ -565,6 +567,60 @@ select:focus-visible {
 .time-panel {
   transform-origin: top center;
   animation: fade-up 220ms var(--ease-standard) both;
+}
+
+/* ---------------- 自绘单选下拉（SelectMenu） ----------------
+   替代原生 <select>（安卓 WebView 的原生弹窗是系统深色单选框，画风不符）。
+   动画只用 scale/translate/opacity 独立属性，不碰 Radix 定位用的 transform。 */
+@keyframes select-in {
+  from { opacity: 0; scale: 0.96; translate: 0 -5px; }
+  to { opacity: 1; scale: 1; translate: 0 0; }
+}
+@keyframes select-out {
+  to { opacity: 0; scale: 0.97; translate: 0 -3px; }
+}
+@keyframes select-sheet-in {
+  from { opacity: 0.7; translate: 0 100%; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes select-sheet-out {
+  to { opacity: 0; translate: 0 18%; }
+}
+.select-menu {
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-popper-transform-origin, top center));
+}
+/* 进场：从触发按钮长出来；退场沿原路收回（Presence 等 animationend 再卸载） */
+.select-menu-open { animation: select-in var(--dur-2) var(--ease-soft-spring) both; }
+.select-menu-closed { animation: select-out var(--dur-1) var(--ease-standard) both; }
+/* 手机：底部浮层升起（与 Sheet / TimePicker 同一形态语言）。
+   注意：Radix 的定位 transform 在 [data-radix-popper-content-wrapper] 包裹层上，
+   包裹层一旦带 transform，内部 fixed 元素就以它为基准 —— 所以必须钉包裹层，
+   内层只负责样式与动画。旧 WebView 不认 :has() 时自动退回锚定下拉（仍可用）。 */
+@media (max-width: 767px) {
+  [data-radix-popper-content-wrapper]:has(.select-menu) {
+    position: fixed !important;
+    left: 0.75rem !important;
+    right: 0.75rem !important;
+    top: auto !important;
+    bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+    width: min(380px, 92vw) !important;
+    min-width: 0 !important;
+    margin-inline: auto !important;
+    transform: none !important;
+    transition: none;
+  }
+  .select-menu {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+  .select-menu-open { animation: select-sheet-in var(--dur-3) var(--ease-soft-spring) both; }
+  .select-menu-closed { animation: select-sheet-out var(--dur-2) var(--ease-standard) both; }
+}
+/* 选项依次浮现（ui-motion：同组间隔 30–60ms；减弱动效时 --stagger 归零） */
+.select-row {
+  animation: menu-item-in var(--dur-2) var(--ease-standard) both;
+  animation-delay: calc(var(--i, 0) * var(--stagger));
 }
 
 /* ---------------- 撤销提示条（ui-motion 59） ---------------- */
