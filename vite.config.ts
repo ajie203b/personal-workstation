@@ -27,7 +27,11 @@ export default defineConfig(({ mode }) => {
         targets: [
           { src: 'node_modules/pdfjs-dist/cmaps', dest: 'pdfjs' },
           { src: 'node_modules/pdfjs-dist/standard_fonts', dest: 'pdfjs' },
-          { src: 'node_modules/onnxruntime-web/dist/*.{wasm,mjs}', dest: 'ort' },
+          // ort 只要 wasm 运行时的两个变体（基础 + webgpu/jsep），其余 bundle 系列百来 MB 不要
+          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', dest: 'ort' },
+          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs', dest: 'ort' },
+          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm', dest: 'ort' },
+          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs', dest: 'ort' },
         ],
       }),
       ...(lan ? [basicSsl()] : []),
