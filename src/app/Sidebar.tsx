@@ -1,5 +1,6 @@
 import { NavLink, useLocation, useNavigate } from 'react-router'
-import { ChevronsLeft, ChevronsRight, Settings } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { IconSettings } from '@/shared/icons'
 import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
 import { useUi } from '@/stores/ui'
@@ -123,7 +124,7 @@ export function Sidebar() {
             pathname.startsWith('/settings') ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
           )}
         >
-          <Settings size={18} strokeWidth={1.9} />
+          <IconSettings size={18} />
         </button>
         <ThemeButton compact={collapsed} />
       </div>
