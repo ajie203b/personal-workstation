@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest'
-import { transformDocUrl } from './links'
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const state = vi.hoisted(() => ({ native: false }))
+
+vi.mock('@capacitor/core', () => ({
+  Capacitor: { isNativePlatform: () => state.native },
+}))
+
+import { openExternal, transformDocUrl } from './links'
 
 describe('transformDocUrl', () => {
   it('放行 http(s) / mailto / tel', () => {
@@ -19,5 +27,35 @@ describe('transformDocUrl', () => {
   it('其它协议清空', () => {
     expect(transformDocUrl('javascript:alert(1)')).toBe('')
     expect(transformDocUrl('data:text/html;base64,AAA')).toBe('')
+  })
+})
+
+describe('openExternal', () => {
+  beforeEach(() => {
+    state.native = false
+  })
+
+  it('网页端开新标签', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    openExternal('https://example.com/a')
+    expect(open).toHaveBeenCalledWith('https://example.com/a', '_blank')
+    open.mockRestore()
+  })
+
+  it('安卓壳走同窗锚点跳转（window.open 会被 WebView 静默丢掉）', () => {
+    state.native = true
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    let clicked = ''
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clicked = this.getAttribute('href') ?? ''
+      })
+    openExternal('https://example.com/b')
+    expect(clicked).toBe('https://example.com/b')
+    expect(open).not.toHaveBeenCalled()
+    expect(document.querySelectorAll('a')).toHaveLength(0) // 用完即拆
+    click.mockRestore()
+    open.mockRestore()
   })
 })
