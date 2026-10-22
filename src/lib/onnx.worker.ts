@@ -16,7 +16,8 @@ function configure(): void {
   if (configured) return
   configured = true
   ort.env.wasm.numThreads = 1
-  ort.env.wasm.wasmPaths = './ort/'
+  // 不设 wasmPaths：onnxruntime-web 的 bundle 自带 jsep 的 .mjs，.wasm 由 Vite 打进 assets/。
+  // 以前设成相对的 './ort/'，ort 会按 Worker 脚本位置解析成 assets/ort/（不存在）→ 推理初始化 404。
 }
 
 interface TensorMsg {

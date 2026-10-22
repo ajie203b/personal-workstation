@@ -20,6 +20,16 @@ export interface ModelSpec {
   onProgress?: (ratio: number) => void
 }
 
+/**
+ * App 根地址：主线程用 document.baseURI；Worker 里没有 document，
+ * 构建后 Worker 脚本在 <根>/assets/ 下，往上一级就是根。
+ * 用来解析清单里的相对路径（App 自带的小模型文件，如 models/ppocr_keys_v1.txt）。
+ */
+function appBase(): string {
+  if (typeof document !== 'undefined') return document.baseURI
+  return new URL('../', self.location.href).href
+}
+
 function keyUrl(id: string, version: string): Request {
   return new Request(`https://model-cache.local/${encodeURIComponent(id)}@${encodeURIComponent(version)}`)
 }
@@ -35,11 +45,28 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
   if (hit) return hit.arrayBuffer()
 
   let lastError = '所有镜像都下载失败'
-  for (const url of spec.urls) {
+  for (const raw of spec.urls) {
+    let url = raw
+    let host = raw
     try {
-      const res = await fetch(url, { cache: 'force-cache' })
+      const u = new URL(raw, appBase())
+      url = u.href
+      host = u.host
+    } catch {
+      // 保持原样交给 fetch
+    }
+    try {
+      // 连接卡住（国内连不上的境外源常见）20 秒就换下一个镜像；开始收数据后不再限时
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 20000)
+      let res: Response
+      try {
+        res = await fetch(url, { cache: 'force-cache', signal: ctrl.signal })
+      } finally {
+        clearTimeout(timer)
+      }
       if (!res.ok) {
-        lastError = `HTTP ${res.status}`
+        lastError = `${host} HTTP ${res.status}`
         continue
       }
       const body = res.body
@@ -71,7 +98,8 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
       spec.onProgress?.(1)
       return buf
     } catch (e) {
-      lastError = e instanceof Error ? e.message : '下载失败'
+      const msg = e instanceof Error ? (e.name === 'AbortError' ? '连接超时' : e.message) : '下载失败'
+      lastError = `${host} ${msg}`
     }
   }
   throw new Error(`模型 ${spec.id} 下载失败：${lastError}`)

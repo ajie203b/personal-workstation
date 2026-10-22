@@ -28,10 +28,7 @@ import { facePointsFromNormalized, type FacePoints } from './idphotoCrop'
  *    ZHKKKe/MODNet 官方权重导出的 ONNX，供 transformers.js 使用；
  *    输入名 `input` [1,3,H,W] float32（(v/255-0.5)/0.5 归一化），输出 `output` [1,1,H,W] alpha。
  *    https://www.modelscope.cn/models/Xenova/modnet
- * 2. hf-mirror `wuchendi/MODNet`（HuggingFace 国内镜像）—— 同款 Optimum 导出
- *    （onnx/model.onnx），仓库 preprocessor_config.json 给出 mean/std = 0.5/0.5。
- *    https://huggingface.co/wuchendi/MODNet
- * 3. hf-mirror / huggingface 的 `Xenova/modnet` 兜底。
+ * 2. huggingface 的 `Xenova/modnet` 兜底（hf-mirror 现已 308 跳回 huggingface.co，国内不可用，已移除）。
  *
  * 权重均为 MODNet 官方（Apache-2.0）转换而来；v1 用 fp32 全量（约 25MB），
  * 网络差时可换同一仓库的 onnx/model_quantized.onnx。
@@ -42,25 +39,37 @@ export const MODNET_SPEC = {
   version: '2025-05-16',
   urls: [
     'https://www.modelscope.cn/models/Xenova/modnet/resolve/master/onnx/model.onnx',
-    'https://hf-mirror.com/wuchendi/MODNet/resolve/main/onnx/model.onnx',
-    'https://hf-mirror.com/Xenova/modnet/resolve/main/onnx/model.onnx',
     'https://huggingface.co/Xenova/modnet/resolve/main/onnx/model.onnx',
   ],
 } satisfies Omit<ModelSpec, 'onProgress'>
 
-/** MediaPipe wasm（FaceDetector / ImageSegmenter 共用）：jsDelivr 主、npmmirror 国内备 */
-export const VISION_WASM_URLS = [
+/** App 自带资源的绝对地址（安卓 https://localhost/、Pages 子路径都对） */
+function localAsset(path: string): string {
+  return new URL(path, document.baseURI).href
+}
+
+/**
+ * MediaPipe wasm（FaceDetector / ImageSegmenter 共用）：
+ * App 自带（构建时从 node_modules 拷进 mediapipe/）→ jsDelivr → npmmirror。
+ * 国内 jsDelivr 时好时坏，自带的优先。
+ */
+export const VISION_WASM_URLS = (): string[] => [
+  localAsset('mediapipe'),
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm',
   'https://registry.npmmirror.com/@mediapipe/tasks-vision/1.1.1/files/wasm',
 ]
 
-/** BlazeFace 短距人脸检测（MediaPipe 官方模型托管，6 个关键点） */
-export const FACE_DETECTOR_URL =
-  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite'
+/** BlazeFace 短距人脸检测（6 个关键点）：App 自带（public/models）→ MediaPipe 官方（storage.googleapis.com，国内不通） */
+export const FACE_DETECTOR_URLS = (): string[] => [
+  localAsset('models/blaze_face_short_range.tflite'),
+  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite',
+]
 
 /** 自拍人像分割（降级抠图用；输出人物置信度当 alpha） */
-export const SELFIE_SEGMENTER_URL =
-  'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite'
+export const SELFIE_SEGMENTER_URLS = (): string[] => [
+  localAsset('models/selfie_segmenter.tflite'),
+  'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+]
 
 /** 工作图像素（RGBA，与 canvas ImageData 同布局） */
 export interface RgbaImage {
@@ -98,20 +107,35 @@ function toCanvas(image: RgbaImage): HTMLCanvasElement {
 // ---------- MediaPipe wasm（带镜像回退） ----------
 
 type VisionFileset = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
-let visionFileset: VisionFileset | null = null
 
-async function getVisionFileset(): Promise<VisionFileset> {
-  if (visionFileset) return visionFileset
-  let last: Error | null = null
-  for (const url of VISION_WASM_URLS) {
+/**
+ * 依次试 wasm 来源 × 模型来源 × GPU/CPU，直到建出来。
+ * forVisionTasks 本身不发请求，真正下载在 createFromOptions，所以回退必须包住它。
+ */
+async function createVisionTask<T>(
+  modelUrls: string[],
+  make: (fileset: VisionFileset, modelAssetPath: string, delegate: 'GPU' | 'CPU') => Promise<T>,
+): Promise<T> {
+  let last: unknown = null
+  for (const wasm of VISION_WASM_URLS()) {
+    let fileset: VisionFileset
     try {
-      visionFileset = await FilesetResolver.forVisionTasks(url)
-      return visionFileset
+      fileset = await FilesetResolver.forVisionTasks(wasm)
     } catch (e) {
-      last = e instanceof Error ? e : new Error(String(e))
+      last = e
+      continue
+    }
+    for (const model of modelUrls) {
+      for (const delegate of ['GPU', 'CPU'] as const) {
+        try {
+          return await make(fileset, model, delegate)
+        } catch (e) {
+          last = e
+        }
+      }
     }
   }
-  throw new Error(`人脸/分割组件没拉下来，换个网络再试（${last?.message ?? 'wasm 加载失败'}）`)
+  throw last instanceof Error ? last : new Error(String(last ?? '加载失败'))
 }
 
 // ---------- 人脸定位 ----------
@@ -123,22 +147,17 @@ let faceDetector: FaceDetector | null = null
  * GPU 委托失败自动退 CPU；模型/组件下载失败抛中文错误。
  */
 export async function detectFacePoints(image: RgbaImage): Promise<FacePoints | null> {
-  const fileset = await getVisionFileset()
   if (!faceDetector) {
-    const make = (delegate: 'GPU' | 'CPU') =>
-      FaceDetector.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: FACE_DETECTOR_URL, delegate },
-        runningMode: 'IMAGE',
-        minDetectionConfidence: 0.4,
-      })
     try {
-      faceDetector = await make('GPU')
-    } catch {
-      try {
-        faceDetector = await make('CPU')
-      } catch (e) {
-        throw new Error(`人脸模型没拉下来，换个网络再试（${e instanceof Error ? e.message : String(e)}）`)
-      }
+      faceDetector = await createVisionTask(FACE_DETECTOR_URLS(), (fileset, modelAssetPath, delegate) =>
+        FaceDetector.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath, delegate },
+          runningMode: 'IMAGE',
+          minDetectionConfidence: 0.4,
+        }),
+      )
+    } catch (e) {
+      throw new Error(`人脸模型加载失败（${e instanceof Error ? e.message : String(e)}）`)
     }
   }
   const result = faceDetector.detect(toCanvas(image))
@@ -193,23 +212,18 @@ async function runModnet(
 
 /** 降级路径：ImageSegmenter 自拍分割，人物置信度当 alpha（边缘较粗） */
 async function runSelfieSegmenter(image: RgbaImage): Promise<Float32Array> {
-  const fileset = await getVisionFileset()
-  const make = (delegate: 'GPU' | 'CPU') =>
-    ImageSegmenter.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: SELFIE_SEGMENTER_URL, delegate },
-      runningMode: 'IMAGE',
-      outputConfidenceMasks: true,
-      outputCategoryMask: false,
-    })
   let segmenter: ImageSegmenter
   try {
-    segmenter = await make('GPU')
-  } catch {
-    try {
-      segmenter = await make('CPU')
-    } catch (e) {
-      throw new Error(`分割模型没拉下来，换个网络再试（${e instanceof Error ? e.message : String(e)}）`)
-    }
+    segmenter = await createVisionTask(SELFIE_SEGMENTER_URLS(), (fileset, modelAssetPath, delegate) =>
+      ImageSegmenter.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath, delegate },
+        runningMode: 'IMAGE',
+        outputConfidenceMasks: true,
+        outputCategoryMask: false,
+      }),
+    )
+  } catch (e) {
+    throw new Error(`分割模型加载失败（${e instanceof Error ? e.message : String(e)}）`)
   }
   try {
     const result = segmenter.segment(toCanvas(image))

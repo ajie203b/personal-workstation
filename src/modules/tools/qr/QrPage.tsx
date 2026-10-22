@@ -772,11 +772,11 @@ export function QrPage() {
           <section className="card p-4 flex flex-col gap-3">
             <h2 className="text-[13.5px] font-semibold">识别图片中的二维码</h2>
             <div className="flex items-center gap-2 flex-wrap">
+              {/* 不带 capture：安卓上带 capture 只开相机进不了相册；实时扫码用旁边的摄像头按钮 */}
               <input
                 ref={scanInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0]
@@ -785,7 +785,7 @@ export function QrPage() {
                 }}
               />
               <Button onClick={() => scanInputRef.current?.click()} variant="primary" disabled={decoding} className="h-9 px-4">
-                {decoding ? <Loader2 size={15} className="animate-spin" /> : <ScanLine size={15} />} 拍照 / 相册
+                {decoding ? <Loader2 size={15} className="animate-spin" /> : <ScanLine size={15} />} 从相册选
               </Button>
               <Button
                 onClick={() => (camActive ? stopCamera() : void startCamera())}
