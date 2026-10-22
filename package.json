@@ -1,7 +1,7 @@
 {
   "name": "personal-workstation",
   "private": true,
-  "version": "3.2.2",
+  "version": "3.3.0",
   "type": "module",
   "description": "个人工作站：任务清单 × 文档工作站（本地优先 PWA + 安卓 App，数据不出本机）",
   "scripts": {
