@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { AlignLeft, BookOpen, ChevronRight, FileText, FileSpreadsheet, FileType2, FolderInput, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Presentation, Search, Sparkles, Trash2 } from 'lucide-react'
+import { BookOpen, ChevronRight, FileText, FileType2, FolderInput, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
+import { FileTypeIcon } from '@/shared/FileTypeIcon'
 import type { Doc, Folder } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
 import { deleteDoc, importDoc } from '@/db/docs'
@@ -505,8 +506,8 @@ function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead,
   return (
     <article id={`doc-${d.id}`} className="card card-hover group relative flex items-start overflow-hidden">
       <button type="button" onClick={onOpen} aria-label={`阅读 ${d.title}`} className="flex flex-1 min-w-0 items-start gap-3 p-4 pr-1 text-left cursor-pointer">
-        <span className="grid place-items-center w-10 h-12 rounded-[10px] bg-primary-soft text-primary shrink-0" aria-hidden>
-          <KindIcon kind={d.kind} />
+        <span className="grid place-items-center w-10 h-12 rounded-[10px] bg-surface-2 shrink-0" aria-hidden>
+          <FileTypeIcon kind={d.kind} size={30} />
         </span>
         <span className="flex-1 min-w-0">
           <span className="block text-ui-body font-medium leading-6 line-clamp-2">{d.title}</span>
@@ -562,18 +563,6 @@ function FolderChip({ active, onClick, children }: { active: boolean; onClick: (
       {children}
     </button>
   )
-}
-
-function KindIcon({ kind }: { kind: Doc['kind'] }) {
-  const size = 20
-  switch (kind) {
-    case 'pdf': return <FileText size={size} />
-    case 'epub': return <BookOpen size={size} />
-    case 'docx': return <FileSpreadsheet size={size} />
-    case 'pptx': return <Presentation size={size} />
-    case 'txt': return <AlignLeft size={size} />
-    default: return <FileType2 size={size} />
-  }
 }
 
 function segLabel(kind: Doc['kind'], seg: number): string {
