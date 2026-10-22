@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.personal.workstation',
-  appName: '个人工作站',
+  appName: 'Kairos',
   webDir: 'dist',
   // 资源以 https://localhost 提供，IndexedDB 获得持久化安全上下文
   server: {
