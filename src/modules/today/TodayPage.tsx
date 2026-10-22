@@ -170,7 +170,7 @@ export function TodayPage() {
 }
 
 /**
- * 今日完成度小环：手机上一眼看到 3/8，替代原来四张占地方的数字卡。
+ * 今日完成度小环：手机上一眼看到进度（不再写 3/8 的数字，环本身就是答案）。
  * 环的进度用 stroke-dashoffset 过渡，减少动效时由全局兜底压平。
  */
 function ProgressRing({ done, total, className }: { done: number; total: number; className?: string }) {
@@ -179,24 +179,36 @@ function ProgressRing({ done, total, className }: { done: number; total: number;
   const pct = done / total
   const R = 15
   const C = 2 * Math.PI * R
+  const full = done >= total
   return (
-    <div className={className} aria-label={`今日完成 ${done} / ${total}`}>
-      <div className="relative w-12 h-12">
-        <svg viewBox="0 0 36 36" className="w-12 h-12 -rotate-90">
-          <circle cx="18" cy="18" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="3.5" />
-          <circle
-            cx="18" cy="18" r={R} fill="none"
-            stroke={pct >= 1 ? 'var(--ok)' : 'var(--primary)'}
-            strokeWidth="3.5" strokeLinecap="round"
-            strokeDasharray={C}
-            strokeDashoffset={C * (1 - pct)}
-            style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
+    <div className={className} role="img" aria-label={`今日完成 ${done} / ${total}`} title={`今日完成 ${done} / ${total}`}>
+      <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+        <circle cx="18" cy="18" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="3.2" />
+        <circle
+          cx="18" cy="18" r={R} fill="none"
+          stroke={full ? 'var(--ok)' : 'var(--primary)'}
+          strokeWidth="3.2" strokeLinecap="round"
+          strokeDasharray={C}
+          strokeDashoffset={C * (1 - pct)}
+          style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
+        />
+        {/* 全部完成时环里点亮一枚小勾，替代原来的数字 */}
+        {full && (
+          <path
+            d="M12.6 18.4 L16.6 22.2 L23.6 14.6"
+            fill="none"
+            stroke="var(--ok)"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              animation: 'scale-in var(--dur-2) var(--ease-spring)',
+              transformBox: 'fill-box',
+              transformOrigin: 'center',
+            }}
           />
-        </svg>
-        <span className="absolute inset-0 grid place-items-center text-[12px] font-semibold tabular-nums leading-none">
-          {done}<span className="text-on-surface-2 font-normal">/{total}</span>
-        </span>
-      </div>
+        )}
+      </svg>
     </div>
   )
 }

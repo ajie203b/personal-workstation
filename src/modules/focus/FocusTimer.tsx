@@ -246,24 +246,29 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
         />
       </div>
 
-      {/* 控制 */}
-      <div className="flex items-center gap-3">
+      {/* 控制：主按钮加了一圈柔光，暂停态换成浅绿描边，避免和背景糊在一起 */}
+      <div className="flex items-center gap-3.5">
         <button
           onClick={toggle}
           className={cn(
-            'grid place-items-center w-12 h-12 rounded-full cursor-pointer transition-all',
-            store.running ? 'bg-surface-3 text-on-surface' : 'bg-ok text-white shadow-sm hover:brightness-110',
+            'grid place-items-center w-14 h-14 rounded-full cursor-pointer active:scale-95',
+            'transition-[transform,background-color,color,box-shadow] duration-200',
+            store.running
+              ? 'bg-ok/12 text-ok ring-1 ring-ok/30 hover:bg-ok/18'
+              : 'bg-ok text-white hover:brightness-[1.06]',
           )}
+          style={store.running ? undefined : { boxShadow: '0 8px 20px -8px color-mix(in srgb, var(--ok) 70%, transparent)' }}
           aria-label={store.running ? '暂停' : '开始'}
         >
-          {<PlayPauseIcon playing={store.running} size={20} />}
+          {/* 图标画布 = 按钮直径：三角形按黄金分割占满（外接圆直径 0.618×按钮） */}
+          <PlayPauseIcon playing={store.running} size={56} />
         </button>
         <button
           onClick={reset}
-          className="grid place-items-center w-10 h-10 rounded-full bg-surface-3 text-on-surface-2 hover:text-on-surface cursor-pointer"
+          className="grid place-items-center w-11 h-11 rounded-full bg-surface-3 text-on-surface-2 hover:text-on-surface active:scale-95 transition-[transform,color,background-color] duration-200 cursor-pointer"
           aria-label="重置"
         >
-          <RotateCcw size={16} />
+          <RotateCcw size={17} />
         </button>
       </div>
 

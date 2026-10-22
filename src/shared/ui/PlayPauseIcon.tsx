@@ -1,50 +1,68 @@
 import { cn } from '@/lib/cn'
 
 /**
- * 播放 ⇄ 暂停的图标变形（ui-motion 38「Play ⇄ Pause Morph」）。
+ * 播放 ⇄ 暂停图标（v3.2）。
  *
- * 不是两个图标硬切：左边那根竖条在「播放」态被 clip-path 削成三角形并横向拉宽，
- * 右边那根同时横向收成 0 —— 像同一块图形被捏成另一个形状。
- * 两根都是 4 顶点多边形，clip-path 才能插值；只动 transform / clip-path，不触发重排。
+ * 播放键是**等边三角形**：三个顶点落在以按钮中心为圆心的同一个圆上，
+ * 于是三角形的重心恰好落在圆心 —— 这就是「三角形中心和圆心重合」的严格几何做法。
+ *
+ * 尺寸按**黄金分割**：三角形的外接圆直径 = 图标画布的 0.618（半径 0.309），
+ * 于是等边三角形的边长 = 0.618 × √3/2 ≈ 0.535 × 画布边长。
+ * 传入 size = 按钮直径时，三角形边长约为按钮的 54%、高度约 46%，
+ * 既饱满又不顶到圆边（标准播放键的视觉重量就在这个区间）。
+ *
+ * 旧实现用 clip-path + scaleX 近似：clip 的百分比参照的是**变换前**的盒子，
+ * 再叠加 border-radius 削角，Chromium 里渲染出来的三角既不等边、看着也偏左。
+ * 改用 SVG 直接给坐标，等边、居中、比例都是算出来的，不用跟渲染顺序较劲。
+ *
+ * 暂停键是两根圆角竖条，整体居中；两态之间用淡入 + 轻微缩放衔接
+ * （--dur-2 / --ease-standard，与站内其它动效同一套令牌）。
  */
+
+/** 黄金分割：外接圆直径占画布的比例 */
+const PHI = 0.618
+
 export function PlayPauseIcon({ playing, size = 20, className }: { playing: boolean; size?: number; className?: string }) {
-  const barW = Math.round(size * 0.26)
-  const barH = Math.round(size * 0.86)
-  const gap = Math.round(size * 0.16)
-  // 播放态：左条当三角形用，要更宽一点才撑得住视觉重心
-  const playWiden = 1.55
+  const transition = 'opacity var(--dur-2) var(--ease-standard), transform var(--dur-2) var(--ease-spring)'
+  // 画布 24 单位；三角形外接圆半径 = 0.309 × 24
+  const r = (PHI / 2) * 24
+  const cx = 12
+  const cy = 12
+  // 三个顶点：正右 + 左上 + 左下（等边，外接圆圆心 = 重心 = 画布中心）
+  const p1 = `${(cx + r).toFixed(2)} ${cy}`
+  const p2 = `${(cx - r / 2).toFixed(2)} ${(cy - (r * Math.sqrt(3)) / 2).toFixed(2)}`
+  const p3 = `${(cx - r / 2).toFixed(2)} ${(cy + (r * Math.sqrt(3)) / 2).toFixed(2)}`
   return (
     <span
       className={cn('relative inline-flex items-center justify-center', className)}
-      style={{ width: size, height: barH }}
+      style={{ width: size, height: size }}
       aria-hidden
     >
-      <span
-        className="absolute rounded-[2px] bg-current"
+      {/* 播放：等边三角形，重心 = 圆心 */}
+      <svg
+        viewBox="0 0 24 24"
+        className="absolute inset-0 h-full w-full"
         style={{
-          width: barW,
-          height: barH,
-          left: `calc(50% - ${(barW + gap / 2) * (playing ? 1 : playWiden / 2)}px)`,
-          transformOrigin: 'left center',
-          transform: playing ? 'scaleX(1)' : `scaleX(${playWiden})`,
-          clipPath: playing
-            ? 'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)'
-            : 'polygon(0% 0%, 100% 50%, 0% 100%, 0% 50%)',
-          transition: 'transform 220ms cubic-bezier(.22,.61,.36,1), clip-path 220ms cubic-bezier(.22,.61,.36,1), left 220ms cubic-bezier(.22,.61,.36,1)',
+          opacity: playing ? 0 : 1,
+          transform: playing ? 'scale(.78) rotate(-10deg)' : 'scale(1) rotate(0deg)',
+          transition,
         }}
-      />
-      <span
-        className="absolute rounded-[2px] bg-current"
+      >
+        <path d={`M${p1} L${p2} L${p3} Z`} fill="currentColor" />
+      </svg>
+      {/* 暂停：两根圆角竖条，整体居中 */}
+      <svg
+        viewBox="0 0 24 24"
+        className="absolute inset-0 h-full w-full"
         style={{
-          width: barW,
-          height: barH,
-          left: `calc(50% + ${gap / 2}px)`,
-          transformOrigin: 'left center',
-          transform: playing ? 'scaleX(1)' : 'scaleX(0)',
           opacity: playing ? 1 : 0,
-          transition: 'transform 220ms cubic-bezier(.22,.61,.36,1), opacity 160ms linear',
+          transform: playing ? 'scale(1) rotate(0deg)' : 'scale(.78) rotate(10deg)',
+          transition,
         }}
-      />
+      >
+        <rect x="7.4" y="6.8" width="3.4" height="10.4" rx="1.3" fill="currentColor" />
+        <rect x="13.2" y="6.8" width="3.4" height="10.4" rx="1.3" fill="currentColor" />
+      </svg>
     </span>
   )
 }

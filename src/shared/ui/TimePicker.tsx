@@ -25,21 +25,60 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
   const [hour, setHour] = useState('09')
   const [minute, setMinute] = useState('00')
   const rootRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
+    /**
+     * 点面板外关闭 —— 但只有「轻点」才算。
+     * 手机上弹出的面板常常要滚动页面才能看全，手指从面板外开始往上一划，
+     * 旧实现（pointerdown 就直接关）会让人以为「这也不能碰、那也不能碰」；
+     * 现在按下后只要有 8px 位移就当成滚动，不关闭。
+     */
+    let startX = 0
+    let startY = 0
+    let moved = false
+    let tracking = false
     const onDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      if (rootRef.current?.contains(e.target as Node)) return
+      startX = e.clientX
+      startY = e.clientY
+      moved = false
+      tracking = true
+    }
+    const onMove = (e: PointerEvent) => {
+      if (!tracking) return
+      if (Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8) moved = true
+    }
+    const onUp = () => {
+      if (!tracking) return
+      tracking = false
+      if (!moved) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
     document.addEventListener('pointerdown', onDown)
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    document.addEventListener('pointercancel', onUp)
     window.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.removeEventListener('pointercancel', onUp)
       window.removeEventListener('keydown', onKey)
     }
+  }, [open])
+
+  // 面板展开后把它滚进可视区：手机上一屏放不下时，不用先摸黑往下拖
+  useEffect(() => {
+    if (!open) return
+    const t = window.setTimeout(() => {
+      panelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, 40)
+    return () => window.clearTimeout(t)
   }, [open])
 
   const toggle = () => {
@@ -83,7 +122,26 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
       </button>
 
       {open && (
-        <div role="dialog" aria-label="选择时间" className="time-panel rounded-[10px] border border-outline bg-surface-2 p-2.5">
+        <>
+          {/* 手机端轻遮罩：只压暗背景提示「这是浮层」，不拦截触摸。
+              真正关闭靠「面板外轻点」（上面 pointer 逻辑：位移小于 8px 才算点击，
+              滑动页面不会误退出）——滑到面板外面就把时间选择器关掉，是最烦人的那种行为 */}
+          <div
+            aria-hidden
+            className="fixed inset-0 z-40 bg-black/25 pointer-events-none md:hidden"
+          />
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label="选择时间"
+            // 手机端浮到底部（宽度够放 6 列分钟），桌面端仍然就地展开，不遮挡内容
+            className={cn(
+              'time-panel rounded-[10px] border border-outline bg-surface-2 p-2.5 overflow-y-auto overscroll-contain',
+              'fixed left-1/2 -translate-x-1/2 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 w-[min(380px,92vw)] max-h-[72dvh]',
+              'md:static md:z-auto md:w-auto md:max-h-[min(62vh,440px)] md:translate-x-0 md:bottom-auto',
+            )}
+            style={{ animation: 'scale-in var(--dur-1) var(--ease-standard)' }}
+          >
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12px] font-semibold text-on-surface-2">选择时间</span>
             <span className="text-[13px] font-semibold text-primary tabular-nums">{hour}:{minute}</span>
@@ -141,12 +199,14 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5 mt-2.5">
+          {/* 操作条钉在面板底部：面板可滚动时（手机上尤其需要），
+              「清除 / 现在 / 完成」始终留在视线里，不用滑到最底才找得到 */}
+          <div className="sticky bottom-0 -mx-2.5 -mb-2.5 mt-2.5 flex items-center gap-1.5 px-2.5 py-2 border-t border-outline/60 bg-surface-2 rounded-b-[10px]">
             {allowClear && (
               <button
                 type="button"
                 onClick={() => commit(undefined)}
-                className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+                className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer whitespace-nowrap"
               >
                 清除
               </button>
@@ -154,19 +214,20 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
             <button
               type="button"
               onClick={() => commit(nowValue)}
-              className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+              className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer whitespace-nowrap"
             >
               现在
             </button>
             <button
               type="button"
               onClick={() => commit(`${hour}:${minute}`)}
-              className="ml-auto h-8 px-3 rounded-[8px] bg-primary text-on-primary text-[12px] font-medium inline-flex items-center gap-1 cursor-pointer active:scale-[0.97] transition-transform"
+              className="ml-auto h-8 px-3 rounded-[8px] bg-primary text-on-primary text-[12px] font-medium inline-flex items-center gap-1 cursor-pointer active:scale-[0.97] transition-transform whitespace-nowrap"
             >
               <Check size={13} /> 完成
             </button>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   )
