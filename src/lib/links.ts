@@ -1,4 +1,4 @@
-import { isNative } from './native'
+import { isNative, isTauri } from './native'
 
 /**
  * 文档正文里的链接（v2.0）。
@@ -37,6 +37,11 @@ export function handleDocLink(
  * ACTION_VIEW 交给系统浏览器，WebView 自己不换页——所以走一次锚点跳转最稳。
  */
 export function openExternal(url: string): void {
+  if (isTauri()) {
+    // 桌面版：交给系统默认浏览器
+    void import('@tauri-apps/plugin-opener').then((m) => m.openUrl(url))
+    return
+  }
   if (isNative()) {
     const a = document.createElement('a')
     a.href = url

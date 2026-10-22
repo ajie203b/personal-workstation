@@ -15,13 +15,13 @@ import {
   Loader2,
   Mail,
   MessageSquare,
-  QrCode,
   ScanLine,
   Trash2,
   Upload,
   Wifi,
   X,
 } from 'lucide-react'
+import { IconQr } from '@/shared/icons'
 import QRCodeStyling from 'qr-code-styling'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
@@ -440,7 +440,7 @@ export function QrPage() {
     { value: 'square', label: '方块' },
   ]
   const tabOptions: SegmentOption<'generate' | 'scan'>[] = [
-    { value: 'generate', label: '生成', icon: QrCode },
+    { value: 'generate', label: '生成', icon: IconQr },
     { value: 'scan', label: '扫码', icon: ScanLine },
   ]
 
@@ -455,7 +455,7 @@ export function QrPage() {
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <QrCode size={21} strokeWidth={2} />
+          <IconQr size={22} />
         </span>
         <div className="min-w-0">
           <h1 className="text-[20px] md:text-[22px] font-bold leading-7">二维码</h1>

@@ -1,18 +1,18 @@
-import { CalendarCheck, ChartLine, FileText, ListTodo, Wrench, type LucideIcon } from 'lucide-react'
+import { IconDocs, IconStats, IconTasks, IconToday, IconTools, type AppIcon } from '@/shared/icons'
 
 export interface NavItem {
   path: string
   label: string
-  icon: LucideIcon
+  icon: AppIcon
 }
 
 /** 主导航（设置在顶栏齿轮 / 侧栏底部） */
 export const NAV_ITEMS: NavItem[] = [
-  { path: '/today', label: '今日', icon: CalendarCheck },
-  { path: '/tasks', label: '任务清单', icon: ListTodo },
-  { path: '/docs', label: '文档工作站', icon: FileText },
-  { path: '/stats', label: '统计', icon: ChartLine },
-  { path: '/tools', label: '工具', icon: Wrench },
+  { path: '/today', label: '今日', icon: IconToday },
+  { path: '/tasks', label: '任务清单', icon: IconTasks },
+  { path: '/docs', label: '文档工作站', icon: IconDocs },
+  { path: '/stats', label: '统计', icon: IconStats },
+  { path: '/tools', label: '工具', icon: IconTools },
 ]
 
 /** 页面标题映射（含非导航页） */

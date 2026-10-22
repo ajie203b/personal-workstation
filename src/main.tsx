@@ -5,13 +5,15 @@ import App from './App'
 import './styles/index.css'
 import { registerSW } from 'virtual:pwa-register'
 import { initInstallPrompt } from './lib/pwa'
-import { isNative, initAndroidBackButton } from './lib/native'
+import { isNative, isTauri, initAndroidBackButton } from './lib/native'
 import { ErrorBoundary } from './shared/ErrorBoundary'
 
 // PWA（Service Worker + 安装提示）仅在浏览器环境启用；
 // 原生安卓壳内资源已内嵌 APK，无需 SW，改为接管系统返回键。
 if (isNative()) {
   void initAndroidBackButton()
+} else if (isTauri()) {
+  // 桌面版：资源已打进安装包，不需要 Service Worker，也没有「安装应用」
 } else {
   registerSW({ immediate: true })
   initInstallPrompt()

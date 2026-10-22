@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import type { AppIcon } from '@/shared/icons'
 import { cn } from '@/lib/cn'
 
 export interface SegmentOption<T extends string> {
@@ -10,7 +11,7 @@ export interface SegmentOption<T extends string> {
   /** 可选：前导色点（如优先级色） */
   dot?: string
   /** 可选：手机上只显示图标，文字到 md 才出现（省地方给窄屏） */
-  icon?: LucideIcon
+  icon?: LucideIcon | AppIcon
 }
 
 interface Props<T extends string> {

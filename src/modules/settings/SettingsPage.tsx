@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, BellOff, ChevronRight, Database, Download, History, Info, LayoutGrid, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
-import { useUi, type Accent, type Density, type ThemeMode } from '@/stores/ui'
+import { useUi, type Accent, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
@@ -12,7 +12,7 @@ import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pw
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { fmtDateTime, todayStr } from '@/lib/date'
 import { saveBlob } from '@/lib/saveFile'
-import { isNative } from '@/lib/native'
+import { isNative, isTauri } from '@/lib/native'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
@@ -21,16 +21,16 @@ import {
   type BackupInfo,
 } from '@/lib/autoBackup'
 import {
-  getLastSyncAt, getLastSyncError, getWebdavConfig, setWebdavConfig, syncNow, testWebdav,
+  JIANGUOYUN_URL, getLastSyncAt, getLastSyncError, getWebdavConfig, setWebdavConfig, syncNow,
   type SyncFailure, type WebdavConfig,
 } from '@/lib/sync'
 
 type Tab = 'appearance' | 'data' | 'sync' | 'about'
 
 const SECTIONS: { id: Tab; label: string; hint: string; icon: typeof Palette }[] = [
-  { id: 'appearance', label: '外观', hint: '主题、强调色、密度、动效', icon: Palette },
+  { id: 'appearance', label: '外观', hint: '主题、强调色、动效', icon: Palette },
   { id: 'data', label: '数据', hint: '备份、自动快照、清空', icon: Database },
-  { id: 'sync', label: '同步', hint: 'WebDAV 跨设备共用数据', icon: RefreshCw },
+  { id: 'sync', label: '同步', hint: '用坚果云跨设备共用数据', icon: RefreshCw },
   { id: 'about', label: '关于', hint: '版本、更新、安装', icon: Info },
 ]
 
@@ -120,8 +120,6 @@ function AppearanceTab() {
   const setThemeMode = useUi((s) => s.setThemeMode)
   const accent = useUi((s) => s.accent)
   const setAccent = useUi((s) => s.setAccent)
-  const density = useUi((s) => s.density)
-  const setDensity = useUi((s) => s.setDensity)
   const motion = useUi((s) => s.motion)
   const setMotion = useUi((s) => s.setMotion)
 
@@ -162,20 +160,6 @@ function AppearanceTab() {
             />
           ))}
         </div>
-      </section>
-
-      <section className="card p-4">
-        <h2 className="text-[14px] font-semibold mb-3">界面密度</h2>
-        <Segmented
-          ariaLabel="界面密度"
-          value={density}
-          onChange={(v) => setDensity(v as Density)}
-          options={[
-            { value: 'compact', label: '紧凑' },
-            { value: 'default', label: '默认' },
-            { value: 'large', label: '宽松' },
-          ]}
-        />
       </section>
 
       <section className="card p-4 flex items-center justify-between gap-4">
@@ -280,7 +264,7 @@ function DataTab() {
   )
 }
 
-/** 同步分区：WebDAV 内容不少，单独一页，顶部就是上次同步时间与「立即同步」 */
+/** 同步分区：坚果云预设，只填账号和应用密码 */
 function SyncTab() {
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
@@ -388,43 +372,45 @@ function NotifyCard() {
 }
 
 
-/** WebDAV 同步（v2.0）：可选、本地优先；口令只存本机，不随同步/备份导出 */
+/**
+ * 坚果云同步：默认只填账号 + 应用密码，目录固定为 JIANGUOYUN_URL；
+ * 用别家 WebDAV 的在「高级」里改地址。口令只存本机，不随同步/备份导出。
+ */
 function WebdavCard() {
   const toast = useUi((s) => s.toast)
-  const [cfg, setCfg] = useState<WebdavConfig>({ url: '', username: '', password: '', auto: false })
+  const [cfg, setCfg] = useState<WebdavConfig>({ url: JIANGUOYUN_URL, username: '', password: '', auto: true })
   const [last, setLast] = useState<number | null>(null)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [lastError, setLastError] = useState<SyncFailure | null>(null)
-  const [busy, setBusy] = useState<'test' | 'sync' | null>(null)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     void Promise.all([getWebdavConfig(), getLastSyncAt(), getLastSyncError()]).then(([c, l, err]) => {
-      if (c) setCfg(c)
+      if (c) setCfg({ ...c, url: c.url || JIANGUOYUN_URL })
       setLast(l)
       setLastError(err)
     })
   }, [])
 
+  const custom = cfg.url.trim() !== '' && cfg.url.trim() !== JIANGUOYUN_URL
+  const ready = cfg.username.trim() !== '' && cfg.password !== ''
+
   const persist = async (next: WebdavConfig) => {
-    setCfg(next)
-    await setWebdavConfig(next)
+    const fixed = { ...next, url: next.url.trim() || JIANGUOYUN_URL }
+    setCfg(fixed)
+    await setWebdavConfig(fixed)
   }
   const patch = (p: Partial<WebdavConfig>) => void persist({ ...cfg, ...p })
 
-  const test = async () => {
-    if (busy) return
-    setBusy('test')
-    setNote(null)
-    const r = await testWebdav(cfg)
-    setNote({ ok: r.ok, text: r.message })
-    setBusy(null)
-  }
-
   const sync = async () => {
     if (busy) return
-    setBusy('sync')
+    if (!ready) {
+      setNote({ ok: false, text: '请先填写坚果云账号和应用密码' })
+      return
+    }
+    setBusy(true)
     setNote(null)
-    await setWebdavConfig(cfg)
+    await persist(cfg)
     try {
       const r = await syncNow()
       setLast(r.at)
@@ -441,56 +427,51 @@ function WebdavCard() {
       setLastError({ at: Date.now(), message: text })
       toast(text)
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
   }
 
+  const inputCls = 'w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60'
+
   return (
     <section className="card p-4 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[14px] font-semibold mb-0.5">WebDAV 同步（可选）</h2>
-          <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
-            用坚果云等 WebDAV 目录在手机和电脑之间共用同一份数据。本地优先，不同步也能照常用；
-            口令只存在本机，不随同步或备份导出。
-          </p>
-        </div>
+      <div>
+        <h2 className="text-[14px] font-semibold mb-0.5">坚果云同步</h2>
+        <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
+          手机和电脑填同一个坚果云账号，就共用同一份任务、文档和批注。应用密码在坚果云网页版
+          「账户信息 → 安全选项 → 第三方应用管理」里生成，不是登录密码。
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-2">
+      {!isNative() && !isTauri() && (
+        <p className="text-[12.5px] leading-relaxed text-danger">
+          网页版受浏览器跨域限制，连不上坚果云。电脑上请安装 Windows 桌面版（GitHub Releases 里的 Kairos 安装包），手机用安卓 App。
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block">
-          <span className="block text-[12px] font-medium text-on-surface-2 mb-1">目录地址</span>
+          <span className="block text-[12px] font-medium text-on-surface-2 mb-1">坚果云账号</span>
           <input
-            value={cfg.url}
-            onChange={(e) => setCfg({ ...cfg, url: e.target.value })}
-            onBlur={() => patch({ url: cfg.url })}
-            placeholder="https://dav.jianguoyun.com/dav/个人工作站/"
-            className="w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60"
+            value={cfg.username}
+            onChange={(e) => setCfg({ ...cfg, username: e.target.value })}
+            onBlur={() => patch({ username: cfg.username.trim() })}
+            placeholder="注册邮箱或手机号"
+            autoComplete="username"
+            className={inputCls}
           />
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">用户名</span>
-            <input
-              value={cfg.username}
-              onChange={(e) => setCfg({ ...cfg, username: e.target.value })}
-              onBlur={() => patch({ username: cfg.username })}
-              autoComplete="username"
-              className="w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60"
-            />
-          </label>
-          <label className="block">
-            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">应用密码</span>
-            <input
-              value={cfg.password}
-              onChange={(e) => setCfg({ ...cfg, password: e.target.value })}
-              onBlur={() => patch({ password: cfg.password })}
-              type="password"
-              autoComplete="current-password"
-              className="w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60"
-            />
-          </label>
-        </div>
+        <label className="block">
+          <span className="block text-[12px] font-medium text-on-surface-2 mb-1">应用密码</span>
+          <input
+            value={cfg.password}
+            onChange={(e) => setCfg({ ...cfg, password: e.target.value })}
+            onBlur={() => patch({ password: cfg.password })}
+            type="password"
+            autoComplete="current-password"
+            className={inputCls}
+          />
+        </label>
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -498,14 +479,9 @@ function WebdavCard() {
           <JellySwitch checked={cfg.auto} onChange={() => patch({ auto: !cfg.auto })} label="自动同步" />
           打开应用时自动同步（间隔 ≥ 10 分钟）
         </label>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" state={busy === 'test' ? 'loading' : 'idle'} onClick={() => void test()}>
-            测试连接
-          </Button>
-          <Button variant="primary" size="sm" state={busy === 'sync' ? 'loading' : 'idle'} onClick={() => void sync()}>
-            立即同步
-          </Button>
-        </div>
+        <Button variant="primary" size="sm" state={busy ? 'loading' : 'idle'} onClick={() => void sync()}>
+          立即同步
+        </Button>
       </div>
 
       {note && (
@@ -516,10 +492,24 @@ function WebdavCard() {
           上次同步失败（{fmtDateTime(lastError.at)}）：{lastError.message}
         </p>
       )}
-      <p className="text-[11.5px] text-on-surface-2">
-        {last ? `上次同步：${fmtDateTime(last)}` : '还没有同步过'}
-        {' · '}网页版需要 WebDAV 服务端允许跨域；安卓 App 内由原生请求，不受此限制
-      </p>
+      <p className="text-[11.5px] text-on-surface-2">{last ? `上次同步：${fmtDateTime(last)}` : '还没有同步过'}</p>
+
+      <details className="group" open={custom || undefined}>
+        <summary className="cursor-pointer select-none text-[12px] text-on-surface-2 list-none flex items-center gap-1">
+          <ChevronRight size={13} className="transition-transform group-open:rotate-90" />
+          高级：使用其他 WebDAV
+        </summary>
+        <label className="block mt-2">
+          <span className="block text-[12px] font-medium text-on-surface-2 mb-1">目录地址（留空即坚果云）</span>
+          <input
+            value={custom ? cfg.url : ''}
+            onChange={(e) => setCfg({ ...cfg, url: e.target.value })}
+            onBlur={() => patch({ url: cfg.url })}
+            placeholder={JIANGUOYUN_URL}
+            className={inputCls}
+          />
+        </label>
+      </details>
     </section>
   )
 }
@@ -657,8 +647,8 @@ function AboutTab() {
               「今日待办」小组件会显示今天没做完的任务和打卡进度（如 2/8）。点勾选圈直接完成或打卡，点标题定位到那条任务，右上「+」快速添加。
             </p>
             <ol className="mt-2.5 flex flex-col gap-1.5 text-[12.5px] text-on-surface-2 leading-relaxed list-decimal pl-4">
-              <li>桌面：长按空白处 →「添加工具 / 小组件」→ 找到「个人工作站 · 今日待办」拖出来。</li>
-              <li>小米负一屏：桌面右滑到最左 → 点右上「+」→ 小部件 → 搜索「个人工作站」；主列表没有的话，滑到列表底部找「安卓小部件」分类。</li>
+              <li>桌面：长按空白处 →「添加工具 / 小组件」→ 找到「Kairos · 今日待办」拖出来。</li>
+              <li>小米负一屏：桌面右滑到最左 → 点右上「+」→ 小部件 → 搜索「Kairos」；主列表没有的话，滑到列表底部找「安卓小部件」分类。</li>
               <li>格子可以拉宽：2×2 显示 3 条，4×2 显示 4 条，会自动切换排版。</li>
             </ol>
             <p className="text-[11px] text-on-surface-2/80 mt-2">

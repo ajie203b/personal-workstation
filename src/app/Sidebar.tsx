@@ -1,5 +1,6 @@
 import { NavLink, useLocation, useNavigate } from 'react-router'
-import { ChevronsLeft, ChevronsRight, Settings } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { IconSettings } from '@/shared/icons'
 import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
 import { useUi } from '@/stores/ui'
@@ -29,10 +30,7 @@ export function Sidebar() {
   const all = useAllTasks()
   const counts = countByTier(all)
 
-  const onBrandClick = () => {
-    if (pathname.startsWith('/settings')) navigate('/today')
-    else navigate('/settings')
-  }
+  const onBrandClick = () => navigate('/today')
 
   return (
     <aside
@@ -46,18 +44,18 @@ export function Sidebar() {
         {/* 折叠后宽度只够放一个控件：品牌让位给「展开」，展开态两者都在 */}
         <button
           type="button"
-          aria-label="进入设置（再点返回）"
-          title="设置"
+          aria-label="回到今日"
+          title="今日"
           onClick={onBrandClick}
           className={cn('shrink-0 cursor-pointer rounded-[10px] active:opacity-80 select-none', collapsed && 'lg:hidden')}
         >
           <BrandMark />
         </button>
         <span
-          className="hidden lg:block text-[15px] font-semibold tracking-wide overflow-hidden whitespace-nowrap transition-opacity duration-200"
+          className="hidden lg:block text-[17px] font-bold tracking-[0.01em] overflow-hidden whitespace-nowrap transition-opacity duration-200"
           style={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : undefined }}
         >
-          个人工作站
+          Kairos
         </span>
         <button
           type="button"
@@ -123,7 +121,7 @@ export function Sidebar() {
             pathname.startsWith('/settings') ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
           )}
         >
-          <Settings size={18} strokeWidth={1.9} />
+          <IconSettings size={18} />
         </button>
         <ThemeButton compact={collapsed} />
       </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Clapperboard, Download, Loader2, Search } from 'lucide-react'
+import { Download, Loader2, Search } from 'lucide-react'
+import { IconMovie } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
@@ -66,7 +67,7 @@ export function MediaParsePage() {
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <Clapperboard size={21} strokeWidth={2} />
+          <IconMovie size={22} />
         </span>
         <div className="min-w-0">
           <h1 className="text-[20px] md:text-[22px] font-bold leading-7">无水印下载</h1>
@@ -147,7 +148,7 @@ export function MediaParsePage() {
         </section>
       ) : (
         !busy && (
-          <EmptyState icon={Clapperboard} title="还没有解析结果" hint="粘贴抖音或 B站的分享链接，点「解析」试试。" />
+          <EmptyState icon={IconMovie} title="还没有解析结果" hint="粘贴抖音或 B站的分享链接，点「解析」试试。" />
         )
       )}
 

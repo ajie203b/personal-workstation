@@ -1,4 +1,5 @@
 import { openExternal } from './links'
+import { isTauri } from './native'
 
 export interface UpdateInfo {
   hasUpdate: boolean
@@ -108,5 +109,6 @@ function compareVersions(a: string, b: string): number {
 
 /** 打开下载链接（系统浏览器；安卓壳里 window.open 会静默失败，走 openExternal） */
 export function openDownload(url: string): void {
-  openExternal(url)
+  // 桌面版下载的是 Windows 安装包，不是 APK：统一去 Release 页面挑
+  openExternal(isTauri() ? RELEASE_PAGE : url)
 }

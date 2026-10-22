@@ -11,7 +11,7 @@ function resolveTheme(): 'light' | 'dark' {
 }
 
 function apply() {
-  const { accent, density, motion } = useUi.getState()
+  const { accent, motion } = useUi.getState()
   const resolved = resolveTheme()
   const dark = resolved === 'dark'
   // 同步派生 theme：让侧栏主题按钮等只读场景在「跟随系统」档也显示正确状态
@@ -20,7 +20,7 @@ function apply() {
   root.classList.add('theme-transition')
   root.classList.toggle('dark', dark)
   root.dataset.accent = accent
-  root.dataset.density = density
+  delete root.dataset.density
   root.classList.toggle('no-motion', !motion)
   setTimeout(() => root.classList.remove('theme-transition'), 300)
   // 同步 meta theme-color
@@ -50,11 +50,10 @@ export function setThemeWithTransition(next: Theme) {
   }
 }
 
-/** 应用主题 + 强调色 + 密度 + 动效开关；system 档监听系统外观变化 */
+/** 应用主题 + 强调色 + 动效开关；system 档监听系统外观变化 */
 export function useThemeEffect() {
   const themeMode = useUi((s) => s.themeMode)
   const accent = useUi((s) => s.accent)
-  const density = useUi((s) => s.density)
   const motion = useUi((s) => s.motion)
   useEffect(() => {
     apply()
@@ -63,5 +62,5 @@ export function useThemeEffect() {
     const onChange = () => apply()
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
-  }, [themeMode, accent, density, motion])
+  }, [themeMode, accent, motion])
 }

@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { BookOpen, Clapperboard, FileStack, Newspaper, QrCode, ScanFace, ScanText, type LucideIcon } from 'lucide-react'
+import { IconArticle, IconBadge, IconBook, IconMovie, IconPdf, IconQr, IconScan, type AppIcon } from '@/shared/icons'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
@@ -10,25 +10,26 @@ import { usePressTilt } from '@/lib/usePressTilt'
 /**
  * 工具页（v2.2 起配置化）：模型智能排名永远置顶，下面是小工具入口。
  * 小工具卡一律 1:1（与番茄小说卡同尺寸，见 MEMORY 排版约束），
- * 新增工具在 TOOL_CARDS 里加一项即可。
+ * 新增工具在 TOOL_CARDS 里加一项即可。图标用 @/shared/icons 的
+ * Material Symbols 体系（与导航/功能卡一致）。
  */
 interface ToolCard {
   to: string
-  icon: LucideIcon
+  icon: AppIcon
   title: string
   sub: string
-  /** 右上角徽标文案；不填走 fallbackBadge */
+  /** 右上角徽标文案；不填不显示 */
   badge?: string
 }
 
 const TOOL_CARDS: ToolCard[] = [
-  { to: '/tools/fanqie', icon: BookOpen, title: '番茄小说', sub: '下载到本地书架' },
-  { to: '/tools/media', icon: Clapperboard, title: '无水印下载', sub: '视频、图集解析', badge: '抖音 / B站' },
-  { to: '/tools/qrcode', icon: QrCode, title: '二维码', sub: '生成与扫码' },
-  { to: '/tools/pdf', icon: FileStack, title: 'PDF 工具箱', sub: '合并、签名、水印' },
-  { to: '/tools/article', icon: Newspaper, title: '文章离线', sub: '网页转文档 / EPUB' },
-  { to: '/tools/idphoto', icon: ScanFace, title: '证件照', sub: '换底色、排版打印' },
-  { to: '/tools/ocr', icon: ScanText, title: '本地 OCR', sub: '拍照取字，不上传' },
+  { to: '/tools/fanqie', icon: IconBook, title: '番茄小说', sub: '下载到本地书架' },
+  { to: '/tools/media', icon: IconMovie, title: '无水印下载', sub: '视频、图集解析', badge: '抖音 / B站' },
+  { to: '/tools/qrcode', icon: IconQr, title: '二维码', sub: '生成与扫码' },
+  { to: '/tools/pdf', icon: IconPdf, title: 'PDF 工具箱', sub: '合并、签名、水印' },
+  { to: '/tools/article', icon: IconArticle, title: '文章离线', sub: '网页转文档 / EPUB' },
+  { to: '/tools/idphoto', icon: IconBadge, title: '证件照', sub: '换底色、排版打印' },
+  { to: '/tools/ocr', icon: IconScan, title: '本地 OCR', sub: '拍照取字，不上传' },
 ]
 
 export function ToolsPage() {
@@ -71,7 +72,7 @@ export function ToolsPage() {
               )}
             >
               <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
-                <t.icon size={21} strokeWidth={2} />
+                <t.icon size={22} />
               </span>
               {t.to === '/tools/fanqie' ? (
                 <span

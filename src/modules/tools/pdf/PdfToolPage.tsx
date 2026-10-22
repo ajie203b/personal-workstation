@@ -10,6 +10,7 @@ import {
   Stamp,
   Wrench,
 } from 'lucide-react'
+import { IconPdf } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Segmented, type SegmentOption } from '@/shared/ui/Segmented'
 import { MergePanel } from './MergePanel'
@@ -48,7 +49,7 @@ export function PdfToolPage() {
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <FileStack size={21} strokeWidth={2} />
+          <IconPdf size={22} />
         </span>
         <div className="min-w-0">
           <h1 className="text-[20px] md:text-[22px] font-bold leading-7">PDF 工具箱</h1>

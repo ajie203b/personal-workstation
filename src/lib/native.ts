@@ -5,6 +5,11 @@ export function isNative(): boolean {
   return Capacitor.isNativePlatform()
 }
 
+/** 是否运行在 Tauri 桌面壳内（Windows 桌面版） */
+export function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
 /**
  * 安卓返回键：非首页时后退一步，首页时退出应用。
  * 必须在原生壳内调用（@capacitor/app 的监听会接管系统返回键默认行为）。
