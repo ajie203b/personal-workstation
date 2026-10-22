@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, Clock3, Flag, Hash, Repeat } from 'lucide-react'
+import { CalendarDays, Clock3, Flag, Hash, Repeat, Target, Timer } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { repeatLabel } from '@/lib/repeat'
 import { addTask } from '@/db/tasks'
-import { todayStr, fmtDue } from '@/lib/date'
+import { fmtDue } from '@/lib/date'
 import { PRIORITY_VAR, type RepeatKind, type Tier } from '@/db/db'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
-import { DateTimeField, TimePicker } from '@/shared/ui/TimePicker'
+import { DateTimeField } from '@/shared/ui/TimePicker'
+import { HabitTimesField } from './HabitTimesField'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -32,8 +33,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   // 手动时间：datetime-local 的值（'' = 没选，沿用文本里解析出来的）
   const [startInput, setStartInput] = useState('')
   const [dueInput, setDueInput] = useState('')
-  const [habitTime, setHabitTime] = useState('')
-  const [habitOrder, setHabitOrder] = useState('')
+  const [habitTimes, setHabitTimes] = useState<string[]>([])
+  const [habitCount, setHabitCount] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -43,8 +44,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       setFreqOverride('daily')
       setStartInput('')
       setDueInput('')
-      setHabitTime('')
-      setHabitOrder('')
+      setHabitTimes([])
+      setHabitCount('')
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [open])
@@ -67,13 +68,21 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
     let tier = inferTier(p, defaultTier)
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
     // 手动选的时间优先于文本解析
-    const due = dueInput ? dueInput.slice(0, 10) : (p.due ?? (tier === 'today' && todayContext ? todayStr() : undefined))
+    // 截止留空 = 无穷远（需求）：以前今日页会补一个「今天」，结果一新建就背着逾期压力
+    const due = dueInput ? dueInput.slice(0, 10) : p.due
+    // 打卡时间点：手动加的优先，其次用标题里解析到的（可能多个）
+    const detectedTimes = p.repeatTimes?.length ? p.repeatTimes : p.dueTime ? [p.dueTime] : []
+    const times = mode === 'repeat' ? (habitTimes.length ? habitTimes : detectedTimes) : []
     const dueTime = dueInput
       ? dueInput.slice(11, 16)
-      : (mode === 'repeat' && habitTime) ? habitTime : p.dueTime
-    const sortOrder = mode === 'repeat' && habitOrder.trim() ? Math.max(1, Math.round(Number(habitOrder))) : undefined
-    // 只填截止时，开始时间默认为现在（需求：不填开始就从现在开始）
-    const startAt = startInput ? new Date(startInput).getTime() : due ? Date.now() : undefined
+      : times[0] ?? p.dueTime
+    // 打卡次数：手填优先，其次用标题里识别到的（「喝水8次」→ 8）
+    const countRaw = habitCount.trim() ? Number(habitCount) : p.repeatCount
+    const repeatCount = mode === 'repeat' && Number.isFinite(countRaw) && (countRaw ?? 0) > 1
+      ? Math.min(99, Math.round(countRaw as number))
+      : undefined
+    // 开始时间：没填就从现在开始（需求：检测不到开始时间默认现在）；截止留空 = 无穷远
+    const startAt = startInput ? new Date(startInput).getTime() : Date.now()
     try {
       await runSave(() => addTask({
         title: p.title,
@@ -86,7 +95,9 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
         repeat: effectiveRepeat,
         repeatDays: keepsDetectedDays ? parsed.repeatDays : undefined,
         repeatMonthDay: keepsDetectedDays ? parsed.repeatMonthDay : undefined,
-        sortOrder: Number.isFinite(sortOrder) ? sortOrder : undefined,
+        repeatCount,
+        repeatTimes: times.length > 1 ? times : undefined,
+        estimateMinutes: p.estimateMinutes,
       }))
     } catch {
       /* 失败态由按钮呈现，这里不制造未处理的 Promise 拒绝 */
@@ -117,12 +128,15 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           />
         </div>
 
-        {/* 识别预览 */}
+        {/* 识别预览：日期/时间/次数/时长/重复/优先级/标签，猜出来的会带（猜） */}
         {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 -mt-1">
             <span className="text-[11px] text-on-surface-2 mr-0.5">识别到</span>
             {parsed.due && <Chip icon={CalendarDays} text={fmtDue(parsed.due, parsed.dueTime).text} />}
+            {!parsed.due && parsed.dueTime && <Chip icon={Clock3} text={parsed.dueTime} />}
             {parsed.repeat && <Chip icon={Repeat} text={repeatLabel(parsed.repeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay })} />}
+            {parsed.repeatCount != null && parsed.repeatCount > 1 && <Chip icon={Target} text={`${parsed.repeatCount} 次`} />}
+            {parsed.estimateMinutes != null && <Chip icon={Timer} text={`约 ${parsed.estimateMinutes} 分钟`} />}
             {parsed.priority != null && <Chip icon={Flag} text={`P${parsed.priority}`} color={PRIORITY_VAR[parsed.priority]} />}
             {parsed.tags.map((t) => <Chip key={t} icon={Hash} text={t} />)}
           </div>
@@ -133,7 +147,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
           <div className="flex items-center gap-2 text-[13px]">
             <Clock3 size={14} className="text-on-surface-2" />
             <span>时间</span>
-            <span className="text-[11px] text-on-surface-2">只选截止时，开始时间默认为现在</span>
+            <span className="text-[11px] text-on-surface-2">留空即：现在开始、无截止（∞）</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
@@ -184,27 +198,30 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
             />
           )}
           {mode === 'repeat' && (
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-[1fr_96px] items-start gap-2.5">
               <div>
-                <span className="block text-[12px] font-medium text-on-surface-2 mb-1">打卡时间</span>
-                <TimePicker value={habitTime} onChange={(v) => setHabitTime(v ?? '')} placeholder="选择时间" allowClear />
+                <span className="block text-[12px] font-medium text-on-surface-2 mb-1">打卡时间点（可多个）</span>
+                <HabitTimesField value={habitTimes} onChange={setHabitTimes} />
               </div>
               <label className="block">
-                <span className="block text-[12px] font-medium text-on-surface-2 mb-1">次序</span>
+                <span className="block text-[12px] font-medium text-on-surface-2 mb-1">次数</span>
                 <input
                   type="number"
                   min={1}
-                  value={habitOrder}
-                  onChange={(e) => setHabitOrder(e.target.value)}
-                  placeholder="可选，越小越靠前"
-                  className="w-full h-10 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+                  max={99}
+                  inputMode="numeric"
+                  value={habitCount}
+                  onChange={(e) => setHabitCount(e.target.value)}
+                  placeholder={parsed.repeatCount ? String(parsed.repeatCount) : '1'}
+                  className="w-full h-10 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60 tabular-nums"
                 />
+                <span className="block text-[10.5px] text-on-surface-2 mt-1 leading-tight">一个周期打几次</span>
               </label>
             </div>
           )}
           <p className="text-[11px] text-on-surface-2 leading-relaxed">
             {mode === 'repeat'
-              ? '打卡任务：完成后会自动创建下一天（周期）的同款任务，连续记录在日志里。'
+              ? '打卡任务：每点一次勾记一次，打满「次数」才归档并生成下一周期；时间点可填多个（如早 8 点、晚 9 点）。'
               : '单次任务：完成后进入日志归档。'}
           </p>
         </div>

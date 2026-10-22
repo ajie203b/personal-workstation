@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as RadixDialog from '@radix-ui/react-dialog'
-import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock, ChevronDown } from 'lucide-react'
+import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock, ChevronDown, Clock3, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type SubTask, type Task, type Tier } from '@/db/db'
 import { db } from '@/db/db'
-import { postponeTask, updateTask } from '@/db/tasks'
+import { checkinProgress, postponeTask, updateTask } from '@/db/tasks'
 import { createFolder, linkTaskFolder } from '@/db/folders'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { deleteTaskWithUndo, toggleTaskWithUndo } from './taskActions'
+import { checkInWithUndo, deleteTaskWithUndo, toggleTaskWithUndo } from './taskActions'
+import { HabitTimesField } from './HabitTimesField'
 import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
-import { DateTimeField, TimePicker } from '@/shared/ui/TimePicker'
+import { TimePicker } from '@/shared/ui/TimePicker'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
-import { isFutureTask, futureReason } from '@/lib/date'
+import { futureReason, isFutureTask, todayStr } from '@/lib/date'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
@@ -39,6 +40,9 @@ export function TaskDetail() {
   const [tagDraft, setTagDraft] = useState('')
   const [subDraft, setSubDraft] = useState('')
   const [focusMinutes, setFocusMinutes] = useState<number | null>(null)
+  // 打卡任务：时间点与次数（受控编辑，次数失焦才落库，避免输入中把 1 写成 12）
+  const [habitTimes, setHabitTimes] = useState<string[]>([])
+  const [habitCount, setHabitCount] = useState('')
   const folders = useLiveQuery(() => db.folders.toArray(), [], [])
   const folderDocCount = useLiveQuery(
     () => (task?.folderId ? db.docs.where('folderId').equals(task.folderId).count() : 0),
@@ -64,6 +68,8 @@ export function TaskDetail() {
     if (task) {
       setTitleDraft(task.title)
       setNotesDraft(task.notes ?? '')
+      setHabitTimes(task.repeatTimes?.length ? task.repeatTimes : task.dueTime ? [task.dueTime] : [])
+      setHabitCount(task.repeatCount && task.repeatCount > 1 ? String(task.repeatCount) : '')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id])
@@ -112,6 +118,18 @@ export function TaskDetail() {
   if (!task) return null
 
   const patch = (p: Partial<Task>) => void updateTask(task.id, p)
+
+  // 开始时间拆成「日期 + 时间」两格：手机上并排一行，桌面也只需一格宽
+  const startValue = localDateTimeValue(task.startAt)
+  const startDate = startValue.slice(0, 10)
+  const startTime = startValue.length >= 16 ? startValue.slice(11, 16) : ''
+  const setStart = (date: string, time: string) => {
+    if (!date) {
+      patch({ startAt: undefined })
+      return
+    }
+    patch({ startAt: new Date(`${date}T${time || '09:00'}`).getTime() })
+  }
 
   /**
    * 完成/恢复：先把未落盘的草稿写库并带进 toggleDone，
@@ -164,6 +182,21 @@ export function TaskDetail() {
   const done = task.status === 'done'
   const future = isFutureTask(task)
   const futureWhy = futureReason(task)
+  // 打卡任务：次数没打满前，主按钮是「打卡 +1」而不是归档
+  const habit = !!task.repeat
+  const { count: habitCountDone, total: habitTotal } = checkinProgress(task)
+
+  const checkIn = async () => {
+    await flushSave()
+    const merged: Task = {
+      ...task,
+      title: titleDraft.trim() || task.title,
+      notes: notesDraft.trim() ? notesDraft : undefined,
+    }
+    const willFinish = habitCountDone + 1 >= habitTotal
+    await checkInWithUndo(merged)
+    if (willFinish) openDetail(null)
+  }
 
   return (
     <RadixDialog.Root
@@ -180,8 +213,9 @@ export function TaskDetail() {
           className={cn(
             'dialog-panel pop fixed z-50 flex flex-col bg-surface overflow-hidden',
             // 手机：底部弹出的居中胶囊；桌面：居中宽面板（比右侧抽屉能少滚很多）
-            'left-0 right-0 bottom-0 max-h-[88dvh] rounded-t-[20px]',
-            'md:inset-0 md:m-auto md:h-fit md:w-[min(780px,94vw)] md:max-h-[86dvh] md:rounded-[20px] md:border md:border-outline',
+            'left-0 right-0 bottom-0 max-h-[92dvh] rounded-t-[20px]',
+            // v3.1：加宽到 1040 —— 桌面四列把原来三屏的字段压成一屏
+            'md:inset-0 md:m-auto md:h-fit md:w-[min(1040px,96vw)] md:max-h-[92dvh] md:rounded-[20px] md:border md:border-outline',
           )}
           style={{
             // 常挂转场名：打开时若来自卡片则浏览器自动插值形变，关闭时也能「长回」卡片；
@@ -202,31 +236,31 @@ export function TaskDetail() {
             </RadixDialog.Close>
           </div>
 
-          {/* 内容区：桌面两栏，标题/笔记/标签/子任务占满，其余设置左右排 */}
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="grid gap-4 md:grid-cols-2 md:gap-x-5 md:gap-y-4">
-              <div className="md:col-span-2">
+          {/* 内容区：桌面四列 —— 标题/笔记横跨整行，其余属性铺开，尽量一屏放下 */}
+          <div className="flex-1 overflow-y-auto p-4 md:p-5">
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-x-4 md:gap-y-3.5">
+              <div className="col-span-2 md:col-span-4">
                 <label className={FIELD}>标题</label>
                 <textarea
                   value={titleDraft}
                   onChange={(e) => setTitleDraft(e.target.value)}
                   rows={2}
-                  className={cn(INPUT, 'h-auto py-2.5 resize-none leading-relaxed text-[15px]')}
+                  className={cn(INPUT, 'h-auto py-2 resize-none leading-relaxed text-[15px]')}
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div className="col-span-2 md:col-span-4">
                 <label className={FIELD}>笔记</label>
                 <textarea
                   value={notesDraft}
                   onChange={(e) => setNotesDraft(e.target.value)}
-                  rows={3}
+                  rows={2}
                   placeholder="补充说明、链接…"
-                  className={cn(INPUT, 'h-auto py-2.5 resize-none leading-relaxed')}
+                  className={cn(INPUT, 'h-auto py-2 resize-none leading-relaxed')}
                 />
               </div>
 
-              <div>
+              <div className="col-span-2 md:col-span-1">
                 <label className={FIELD}>所属清单</label>
                 <Segmented
                   size="sm"
@@ -236,7 +270,7 @@ export function TaskDetail() {
                 />
               </div>
 
-              <div>
+              <div className="col-span-2 md:col-span-1">
                 <label className={FIELD}>优先级</label>
                 <Segmented
                   size="sm"
@@ -250,49 +284,61 @@ export function TaskDetail() {
                 />
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className={cn(FIELD, 'mb-0')}><span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> 开始时间</span></label>
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1.5 gap-1">
+                  <label className={cn(FIELD, 'mb-0 truncate')}><span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> 开始时间</span></label>
                   <button
                     type="button"
                     onClick={() => void postponeTask(task)}
-                    className="text-[12px] text-primary hover:underline cursor-pointer"
+                    className="shrink-0 text-[11.5px] text-primary hover:underline cursor-pointer whitespace-nowrap"
                   >
-                    截止顺延一天
+                    顺延一天
                   </button>
                 </div>
-                <DateTimeField
-                  ariaLabel="开始时间"
-                  value={localDateTimeValue(task.startAt)}
-                  onChange={(v) => patch({ startAt: v ? new Date(v).getTime() : undefined })}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={FIELD}>截止日期</label>
+                {/* 日期与时间并排：竖着排会让手机详情白白多出两行 */}
+                <div className="grid grid-cols-2 gap-2">
                   <input
                     type="date"
+                    aria-label="开始日期"
+                    value={startDate}
+                    onChange={(e) => setStart(e.target.value, startTime)}
+                    className={INPUT}
+                  />
+                  <TimePicker
+                    value={startTime}
+                    onChange={(t) => setStart(startDate || todayStr(), t ?? '')}
+                    placeholder="不设时间"
+                    allowClear
+                  />
+                </div>
+              </div>
+
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1.5 gap-1">
+                  <label className={cn(FIELD, 'mb-0 truncate')}>截止日期 / 时间</label>
+                  {!task.due && <span className="shrink-0 text-[10.5px] text-on-surface-2/80" title="没有截止日期 = 无穷远">∞ 无截止</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    aria-label="截止日期"
                     value={task.due ?? ''}
                     onChange={(e) => patch({ due: e.target.value || undefined })}
                     className={INPUT}
                   />
-                </div>
-                <div>
-                  <label className={FIELD}>时间</label>
                   <TimePicker
                     value={task.dueTime}
                     onChange={(v) => patch({ dueTime: v })}
-                    placeholder="选择时间"
+                    placeholder="不设时间"
                     allowClear
                   />
                 </div>
               </div>
               {task.repeat && (
-                <p className="text-[11px] text-on-surface-2 -mt-2 md:col-span-2">打卡任务完成后，下一次会沿用这里的时间。</p>
+                <p className="col-span-2 md:col-span-2 text-[11px] text-on-surface-2 self-end pb-2.5">打卡任务完成后，下一次会沿用这里的时间。</p>
               )}
 
-              <div>
+              <div className="col-span-2">
                 <label className={FIELD}><span className="inline-flex items-center gap-1.5"><FolderOpen size={13} /> 资料文件夹</span></label>
                 {task.folderId ? (
                   <div className="flex items-center gap-2">
@@ -343,7 +389,7 @@ export function TaskDetail() {
                 )}
               </div>
 
-              <div>
+              <div className="col-span-2 md:col-span-1">
                 <label className={FIELD}>标签</label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {task.tags.map((t) => (
@@ -373,7 +419,39 @@ export function TaskDetail() {
                 />
               </div>
 
-              <div className="md:col-span-2">
+              {task.repeat && (
+                <div className="col-span-2 md:col-span-1">
+                  <label className={FIELD}>每周期次数</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    inputMode="numeric"
+                    aria-label="每周期打卡次数"
+                    value={habitCount}
+                    onChange={(e) => setHabitCount(e.target.value)}
+                    onBlur={() => {
+                      const n = Math.round(Number(habitCount))
+                      patch({ repeatCount: habitCount.trim() && Number.isFinite(n) && n > 1 ? Math.min(99, n) : undefined })
+                    }}
+                    placeholder="1"
+                    className={cn(INPUT, 'tabular-nums')}
+                  />
+                  <p className="text-[10.5px] text-on-surface-2 mt-1">打满才归档；1 = 一次即完成</p>
+                </div>
+              )}
+
+              {task.repeat && (
+                <div className="col-span-2 md:col-span-4">
+                  <label className={FIELD}>打卡时间点（可多个）</label>
+                  <HabitTimesField
+                    value={habitTimes}
+                    onChange={(list) => patch({ repeatTimes: list.length > 1 ? list : undefined, dueTime: list[0] })}
+                  />
+                </div>
+              )}
+
+              <div className="col-span-2 md:col-span-4">
                 <label className={FIELD}>
                   <span className="inline-flex items-center gap-1.5">
                     <ListChecks size={13} /> 子任务{task.subtasks?.length ? `（${doneSubs}/${task.subtasks.length}）` : ''}
@@ -413,37 +491,24 @@ export function TaskDetail() {
                 </div>
               </div>
 
-              {focusMinutes != null && focusMinutes > 0 && (
-                <p className="text-[12px] text-on-surface-2 inline-flex items-center gap-1.5">
-                  <Timer size={13} /> 累计专注 {focusMinutes} 分钟
+              {(task.estimateMinutes != null || (focusMinutes != null && focusMinutes > 0) || task.repeat) && (
+                <p className="col-span-2 md:col-span-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-on-surface-2">
+                  {task.estimateMinutes != null && (
+                    <span className="inline-flex items-center gap-1.5"><Clock3 size={13} /> 预计 {task.estimateMinutes} 分钟</span>
+                  )}
+                  {focusMinutes != null && focusMinutes > 0 && (
+                    <span className="inline-flex items-center gap-1.5"><Timer size={13} /> 累计专注 {focusMinutes} 分钟</span>
+                  )}
+                  {task.repeat && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Repeat size={13} /> 重复：{repeatLabel(task.repeat, { days: task.repeatDays, monthDay: task.repeatMonthDay })}
+                      {task.repeatCount && task.repeatCount > 1 ? ` · 每周期 ${task.repeatCount} 次` : ''}
+                    </span>
+                  )}
                 </p>
               )}
 
-              {task.repeat && (
-                <p className="text-[13px] text-on-surface-2 md:col-span-2">
-                  重复：{repeatLabel(task.repeat, { days: task.repeatDays, monthDay: task.repeatMonthDay })}（打卡任务：完成后自动生成下一次）
-                </p>
-              )}
-
-              {task.repeat && (
-                <div className="md:col-span-2">
-                  <label className={FIELD}>打卡次序（可选）</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={task.sortOrder ?? ''}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      patch({ sortOrder: e.target.value && Number.isFinite(n) ? Math.max(1, Math.round(n)) : undefined })
-                    }}
-                    placeholder="数字越小越靠前；留空按优先级/时间排"
-                    className={INPUT}
-                  />
-                  <p className="text-[11px] text-on-surface-2 mt-1">只和同样填了次序的打卡任务比较；完成后下一次会沿用。</p>
-                </div>
-              )}
-
-              <p className="text-[11px] text-on-surface-2 md:col-span-2">
+              <p className="col-span-2 md:col-span-4 text-[10.5px] text-on-surface-2/80">
                 创建于 {new Date(task.createdAt).toLocaleString('zh-CN')} · 更新于 {new Date(task.updatedAt).toLocaleString('zh-CN')}
               </p>
             </div>
@@ -464,9 +529,13 @@ export function TaskDetail() {
                   title={future
                     ? (futureWhy === 'start' ? '未来任务，开始时间到了再完成' : '未来任务，到截止日后再完成')
                     : undefined}
-                  onClick={() => void completeOrRestore()}
+                  onClick={() => void (habit ? checkIn() : completeOrRestore())}
                 >
-                  {future ? '未来任务' : '✓ 完成并归档'}
+                  {future
+                    ? '未来任务'
+                    : habit
+                      ? (habitTotal > 1 ? `打卡 +1（${habitCountDone}/${habitTotal}）` : '✓ 打卡')
+                      : '✓ 完成并归档'}
                 </Button>
               )}
               {!done && (

@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  今日待办小组件（v3.1）：
+  - minWidth/minHeight 收到 110dp，才能被放进小米负一屏的 2x2 小格子；
+    宽格子仍是完整 4 行（TaskWidgetProvider 按 minWidth 自动切布局）
+  - widgetCategory 同时声明 home_screen 与 keyguard：部分负一屏实现只列 keyguard 类别
+  - updatePeriodMillis=0：刷新由 App 内数据变更驱动，避免系统每 30 分钟唤醒一次
+-->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/task_widget_desc"
     android:initialLayout="@layout/widget_tasks"
-    android:minHeight="190dp"
-    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minWidth="110dp"
     android:previewLayout="@layout/widget_tasks"
     android:resizeMode="horizontal|vertical"
-    android:targetCellHeight="3"
-    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:targetCellWidth="2"
     android:updatePeriodMillis="0"
-    android:widgetCategory="home_screen" />
+    android:widgetCategory="home_screen|keyguard" />

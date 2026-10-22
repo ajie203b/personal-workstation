@@ -18,6 +18,11 @@ export interface NewTaskInput {
   repeat?: Task['repeat']
   repeatDays?: number[]
   repeatMonthDay?: number
+  /** 每个周期要打卡的次数（默认 1） */
+  repeatCount?: number
+  /** 打卡时间点（可多个） */
+  repeatTimes?: string[]
+  estimateMinutes?: number
   status?: Task['status']
   startAt?: number
   folderId?: string
@@ -26,6 +31,13 @@ export interface NewTaskInput {
   sortOrder?: number
 }
 
+/**
+ * 新建任务。
+ *
+ * v3.1 时间语义（用户需求）：**检测不到开始时间就从现在开始，检测不到截止时间就是无穷远**。
+ * 所以 startAt 缺省取 Date.now()，due 缺省保持 undefined（= ∞，不参与逾期判断）。
+ * 这样新建的任务立刻可做、不会被「未来任务」锁住，也不会因为没写日期被算成逾期。
+ */
 export async function addTask(input: NewTaskInput): Promise<Task> {
   const now = Date.now()
   const task: Task = {
@@ -41,7 +53,10 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
     repeat: input.repeat,
     repeatDays: input.repeatDays,
     repeatMonthDay: input.repeatMonthDay,
-    startAt: input.startAt,
+    repeatCount: input.repeatCount,
+    repeatTimes: input.repeatTimes,
+    estimateMinutes: input.estimateMinutes,
+    startAt: input.startAt ?? now,
     folderId: input.folderId,
     docRef: input.docRef,
     aiRef: input.aiRef,
@@ -55,7 +70,7 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
 }
 
 /** 影响提醒调度的字段：变化时才重排通知，避免编辑标题时反复取消/注册 */
-const REMINDER_KEYS = ['due', 'dueTime', 'status'] as const
+const REMINDER_KEYS = ['due', 'dueTime', 'repeatTimes', 'status'] as const
 
 export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | 'createdAt'>>): Promise<void> {
   await db.tasks.update(id, { ...patch, updatedAt: Date.now() })
@@ -87,6 +102,7 @@ export async function toggleDone(task: Task): Promise<Task | null> {
     await db.tasks.update(task.id, { status: 'done', doneAt: now, updatedAt: now })
     if (!task.repeat) return
     const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr(), { days: task.repeatDays, monthDay: task.repeatMonthDay })
+    const nextStart = nextCycleStart(nextDue, task.repeatTimes?.[0] ?? task.dueTime)
     const next: Task = {
       id: uid(),
       title: task.title,
@@ -100,6 +116,12 @@ export async function toggleDone(task: Task): Promise<Task | null> {
       repeat: task.repeat,
       repeatDays: task.repeatDays,
       repeatMonthDay: task.repeatMonthDay,
+      // 打卡次数与时间点跟着下一周期走，进度从 0 重新开始
+      repeatCount: task.repeatCount,
+      repeatTimes: task.repeatTimes,
+      estimateMinutes: task.estimateMinutes,
+      checkin: undefined,
+      startAt: nextStart,
       docRef: task.docRef,
       aiRef: task.aiRef,
       sortOrder: task.sortOrder,
@@ -113,6 +135,56 @@ export async function toggleDone(task: Task): Promise<Task | null> {
   const spawned = spawnedRef.next
   if (spawned) void syncTaskNotification(spawned)
   return spawned
+}
+
+/* ---------------- 打卡（v3.1：自定义时间与次数） ---------------- */
+
+export interface CheckInResult {
+  /** 是否已打满次数（任务归档，重复任务还会生成下一次） */
+  completed: boolean
+  /** 本周期已打卡次数 */
+  count: number
+  /** 本周期目标次数 */
+  total: number
+  spawned: Task | null
+}
+
+/** 周期间的清零键：有截止日用截止日，没有（∞）就按天算 */
+function checkinCycleKey(task: Task): string {
+  return task.due ?? todayStr()
+}
+
+/** 打卡进度：次数以 repeatCount 为准（默认 1），跨周期自动归零 */
+export function checkinProgress(task: Task): { count: number; total: number } {
+  const total = Math.max(1, Math.round(task.repeatCount ?? 1))
+  const fresh = task.checkin && task.checkin.due === checkinCycleKey(task) ? task.checkin.count : 0
+  return { count: Math.max(0, Math.min(fresh, total)), total }
+}
+
+/**
+ * 打卡一次：没打满就只 +1，打满才走「完成」流程（归档 + 生成下一次）。
+ * 返回结果让 UI 能显示「已打卡 2/3」而不是一句笼统的已完成。
+ */
+export async function checkInTask(task: Task): Promise<CheckInResult> {
+  const { count, total } = checkinProgress(task)
+  const at = Date.now()
+  if (total <= 1 || count + 1 >= total) {
+    const spawned = await toggleDone({ ...task, checkin: { due: checkinCycleKey(task), count: total, at } })
+    return { completed: true, count: total, total, spawned }
+  }
+  await db.tasks.update(task.id, {
+    checkin: { due: checkinCycleKey(task), count: count + 1, at },
+    updatedAt: at,
+  })
+  return { completed: false, count: count + 1, total, spawned: null }
+}
+
+/** 下一次任务的开始时刻：截止日当天 0 点，有打卡时间就取第一个时间点 */
+function nextCycleStart(due: string, time?: string): number {
+  const base = parseDateStr(due).getTime()
+  if (!time) return base
+  const [h, m] = time.split(':').map(Number)
+  return base + (h || 0) * 3600000 + (m || 0) * 60000
 }
 
 /** 撤销「勾选完成」：回到原状态（含 doing），并删除完成时生成的下一次任务 */

@@ -19,6 +19,19 @@ function notifIdFor(taskId: string): number {
   return (Math.abs(h) % 0x5fffffff) + 1
 }
 
+/** 打卡任务最多排 4 个时间点（再多也提醒不过来，反而吵） */
+export const MAX_REMINDER_SLOTS = 4
+
+/**
+ * 第 n 个提醒的通知 id：第 0 个沿用任务 id 的哈希，
+ * 其余按固定步长错开 —— 同一任务的多条提醒必须各有独立 id，否则后一条会顶掉前一条。
+ */
+function notifIdForSlot(taskId: string, slot: number): number {
+  const base = notifIdFor(taskId)
+  if (slot <= 0) return base
+  return ((base + slot * 1_000_003) % 0x5fffffff) + 1
+}
+
 export async function getNotifyEnabled(): Promise<boolean> {
   const row = await db.settings.get(SETTINGS_KEY)
   return row?.value === true
@@ -43,6 +56,23 @@ export function reminderDateFor(task: Pick<Task, 'due' | 'dueTime'>): Date | nul
   return new Date(y, m - 1, d, hh, mm, 0)
 }
 
+/**
+ * 一个任务的所有提醒时刻（v3.1）：打卡任务写了多个时间点就各排一条，
+ * 没写 repeatTimes 时退回单个 dueTime。
+ */
+export function reminderDatesFor(task: Pick<Task, 'due' | 'dueTime' | 'repeatTimes'>): Date[] {
+  if (!task.due) return []
+  const [y, m, d] = task.due.split('-').map(Number)
+  if (!y || !m || !d) return []
+  const times = task.repeatTimes?.length ? task.repeatTimes : [task.dueTime]
+  const out: Date[] = []
+  for (const t of times.slice(0, MAX_REMINDER_SLOTS)) {
+    const { hh, mm } = parseTimeOfDay(t)
+    out.push(new Date(y, m - 1, d, hh, mm, 0))
+  }
+  return out
+}
+
 /** 解析 HH:mm；非法或越界时退回 09:00（0 点是合法值，不能被当成缺省） */
 export function parseTimeOfDay(value: string | undefined): { hh: number; mm: number } {
   const m = /^(\d{1,2}):(\d{1,2})$/.exec((value ?? '').trim())
@@ -56,24 +86,34 @@ export function parseTimeOfDay(value: string | undefined): { hh: number; mm: num
 /** 单个任务：按当前状态与到期时间注册/取消提醒（写入路径末尾调用） */
 export async function syncTaskNotification(task: Task): Promise<void> {
   if (!isNative() || !(await getNotifyEnabled())) return
-  const id = notifIdFor(task.id)
+  // 先把这个任务的所有时间槽取消干净：时间点从 3 个改成 1 个时，
+  // 多出来的旧提醒必须一起撤掉，否则会一直响
   try {
-    await LocalNotifications.cancel({ notifications: [{ id }] })
+    await LocalNotifications.cancel({
+      notifications: Array.from({ length: MAX_REMINDER_SLOTS }, (_, i) => ({ id: notifIdForSlot(task.id, i) })),
+    })
   } catch { /* 尚未注册时 cancel 部分机型报错，忽略 */ }
   if (task.status === 'done') return
-  const at = reminderDateFor(task)
-  if (!at || at.getTime() <= Date.now()) return
+  const now = Date.now()
+  const slots = reminderDatesFor(task)
+    .map((at, slot) => ({ at, slot }))
+    .filter((s) => s.at.getTime() > now)
+  if (!slots.length) return
   const perm = await LocalNotifications.checkPermissions()
   if (perm.display !== 'granted') return
-  await LocalNotifications.schedule({ notifications: [taskNotification(task, at)] })
+  await LocalNotifications.schedule({
+    notifications: slots.map((s) => taskNotification(task, s.at, s.slot, slots.length)),
+  })
 }
 
 /** 单条 / 全量重排共用同一份通知载荷，避免改一处漏一处 */
-function taskNotification(task: Task, at: Date) {
+function taskNotification(task: Task, at: Date, slot = 0, slots = 1) {
+  const time = task.repeatTimes?.[slot] ?? task.dueTime
+  const progress = task.repeatCount && task.repeatCount > 1 ? `（第 ${slot + 1}/${slots} 次）` : ''
   return {
-    id: notifIdFor(task.id),
-    title: task.dueTime ? '任务提醒' : '今天有任务到期',
-    body: task.title + (task.dueTime ? ` · ${task.dueTime}` : ''),
+    id: notifIdForSlot(task.id, slot),
+    title: time ? '任务提醒' : '今天有任务到期',
+    body: task.title + (time ? ` · ${time}` : '') + progress,
     schedule: { at, allowWhileIdle: true },
     ongoing: false,
     extra: { taskId: task.id, tier: task.tier },
@@ -86,12 +126,17 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
   await cancelAllTaskNotifications()
   const perm = await LocalNotifications.checkPermissions()
   if (perm.display !== 'granted') return
+  const now = Date.now()
   for (const t of tasks) {
     if (t.status === 'done') continue
-    const at = reminderDateFor(t)
-    if (!at || at.getTime() <= Date.now()) continue
+    const slots = reminderDatesFor(t)
+      .map((at, slot) => ({ at, slot }))
+      .filter((s) => s.at.getTime() > now)
+    if (!slots.length) continue
     try {
-      await LocalNotifications.schedule({ notifications: [taskNotification(t, at)] })
+      await LocalNotifications.schedule({
+        notifications: slots.map((s) => taskNotification(t, s.at, s.slot, slots.length)),
+      })
     } catch { /* 单条失败不阻塞 */ }
   }
 }
@@ -99,7 +144,9 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
 async function cancelAllTaskNotifications(): Promise<void> {
   try {
     const tasks = await db.tasks.toArray()
-    const notifications = tasks.map((t) => ({ id: notifIdFor(t.id) }))
+    const notifications = tasks.flatMap((t) =>
+      Array.from({ length: MAX_REMINDER_SLOTS }, (_, i) => ({ id: notifIdForSlot(t.id, i) })),
+    )
     if (notifications.length) await LocalNotifications.cancel({ notifications })
   } catch { /* ignore */ }
 }

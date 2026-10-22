@@ -11,5 +11,5 @@
     <string name="shortcut_today_long">打开今日清单</string>
     <!-- 今日待办小组件（桌面 / 小米负一屏） -->
     <string name="task_widget_name">今日待办</string>
-    <string name="task_widget_desc">显示今天未完成的任务，点开回到今日页</string>
+    <string name="task_widget_desc">今日待办与打卡进度；2x2 可放进小米负一屏，点单条直达任务</string>
 </resources>

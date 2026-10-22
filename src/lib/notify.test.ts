@@ -10,7 +10,7 @@ vi.mock('@capacitor/local-notifications', () => ({
   },
 }))
 
-const { parseTimeOfDay, reminderDateFor } = await import('./notify')
+const { parseTimeOfDay, reminderDateFor, reminderDatesFor } = await import('./notify')
 
 describe('reminderDateFor', () => {
   it('00:30 就是当天 00:30（旧实现被算成 09:30）', () => {
@@ -43,5 +43,35 @@ describe('reminderDateFor', () => {
   it('没有截止日就不排提醒', () => {
     expect(reminderDateFor({ due: undefined, dueTime: '00:30' })).toBeNull()
     expect(reminderDateFor({ due: '2026-10', dueTime: '00:30' })).toBeNull()
+  })
+})
+
+describe('reminderDatesFor（打卡任务多个时间点）', () => {
+  it('两个时间点各排一条', () => {
+    const list = reminderDatesFor({
+      due: '2026-10-21',
+      dueTime: '08:00',
+      repeatTimes: ['08:00', '21:00'],
+    })
+    expect(list.map((d) => `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`)).toEqual(['8:00', '21:00'])
+    expect(list.every((d) => d.getDate() === 21)).toBe(true)
+  })
+
+  it('没有 repeatTimes 时退回 dueTime', () => {
+    const list = reminderDatesFor({ due: '2026-10-21', dueTime: '07:15' })
+    expect(list).toHaveLength(1)
+    expect(list[0].getHours()).toBe(7)
+  })
+
+  it('没有截止日 → 空数组', () => {
+    expect(reminderDatesFor({ due: undefined, dueTime: '08:00' })).toEqual([])
+  })
+
+  it('超过 4 个时间点只排前 4 个', () => {
+    const list = reminderDatesFor({
+      due: '2026-10-21',
+      repeatTimes: ['01:00', '05:00', '09:00', '13:00', '17:00', '21:00'],
+    })
+    expect(list).toHaveLength(4)
   })
 })

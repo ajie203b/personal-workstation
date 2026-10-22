@@ -1,8 +1,8 @@
-import { deleteTask, restoreTask, toggleDone, undoToggleDone } from '@/db/tasks'
+import { checkinProgress, checkInTask, deleteTask, restoreTask, toggleDone, undoToggleDone, updateTask } from '@/db/tasks'
 import type { Task } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { registerUndo } from '@/lib/undo'
-import { isFutureTask } from '@/lib/date'
+import { isFutureTask, todayStr } from '@/lib/date'
 
 /**
  * 勾选完成 / 恢复。完成会让任务消失（重复任务还会生成下一次），属于不可见变更，
@@ -30,6 +30,43 @@ export async function toggleTaskWithUndo(task: Task): Promise<void> {
     run: undoOnce,
   })
   registerUndo(`完成「${shortTitle(task.title)}」`, undoOnce)
+}
+
+/**
+ * 打卡任务专用：一次点击 = 打一次卡。
+ * 次数没打满只 +1 并留在列表里（显示 2/3），打满才归档并生成下一次；
+ * 撤销时把计数一起退回去，避免恢复后直接算满。
+ */
+export async function checkInWithUndo(task: Task): Promise<void> {
+  if (task.status !== 'done' && isFutureTask(task)) {
+    useUi.getState().toast('这是未来任务，到日期后再打')
+    return
+  }
+  if (task.status === 'done') {
+    await toggleDone(task)
+    return
+  }
+  const before = checkinProgress(task).count
+  const result = await checkInTask(task)
+  if (!result.completed) {
+    useUi.getState().toast(`已打卡 ${result.count}/${result.total}`)
+    return
+  }
+  let used = false
+  const undoOnce = () => {
+    if (used) return
+    used = true
+    void undoToggleDone(task, result.spawned).then(() =>
+      updateTask(task.id, {
+        checkin: { due: task.due ?? todayStr(), count: before, at: Date.now() },
+      }),
+    )
+  }
+  useUi.getState().toast(
+    result.total > 1 ? `已打满 ${result.total} 次，归档` : `已完成「${shortTitle(task.title)}」`,
+    { label: '撤销', run: undoOnce },
+  )
+  registerUndo(`打卡「${shortTitle(task.title)}」`, undoOnce)
 }
 
 /** 删除 + 6 秒撤销：列表左滑和详情删除共用同一条路径，避免两处文案/墓碑处理分叉 */

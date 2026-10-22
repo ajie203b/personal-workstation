@@ -60,18 +60,18 @@ export function TodayPage() {
   const date = useMemo(() => new Date(), [today])
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-3 pb-24 md:pb-14 flex flex-col gap-3 md:gap-4 cascade">
+    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-2 pb-24 md:pb-14 flex flex-col gap-2.5 md:gap-4 cascade">
       <Milestone total={todayTasks.length} done={todayDone.length} />
       <header className="pt-0.5">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[13px] text-on-surface-2">{greeting(date)}</p>
-            <h1 className="text-[28px] md:text-[32px] font-semibold leading-[36px] md:leading-[40px] tracking-tight mt-0.5">
+            <p className="text-[12.5px] text-on-surface-2">{greeting(date)}</p>
+            <h1 className="text-[24px] md:text-[32px] font-semibold leading-[30px] md:leading-[40px] tracking-tight mt-0.5">
               {fmtWeekdayLong(date)}
             </h1>
           </div>
           {/* 手机：一枚小进度环顶替原来那 4 张数字卡（完成 3/8 一眼可见，不占一屏） */}
-          <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} className="md:hidden shrink-0 mb-1.5" />
+          <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} className="md:hidden shrink-0 mb-0.5" />
           <button
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
@@ -90,7 +90,10 @@ export function TodayPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-4 items-start">
+      {/* 今日回顾置顶（v3.1）：先看结论再看清单，手机上也不用滑到底才知道今天收成 */}
+      <TodayReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 md:gap-4 items-start">
         {/* 今日任务 */}
         <section className="md:col-span-3 min-w-0">
           <div className="flex items-baseline gap-2 px-1 mb-2">
@@ -143,7 +146,7 @@ export function TodayPage() {
             <FocusTimer initialTaskId={focusTaskParam} />
           </div>
 
-          <div className="order-2 md:order-none min-w-0">
+          <div className="order-2 md:order-none min-w-0 hidden md:block">
             <RecentReads />
           </div>
 
@@ -161,7 +164,6 @@ export function TodayPage() {
         </aside>
       </div>
 
-      <TodayReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
       <SmartSuggestions all={all} />
     </div>
   )
@@ -276,7 +278,7 @@ function TodayReview({
   }
 
   return (
-    <section className="card px-3.5 py-3 md:px-4">
+    <section className="card px-3.5 py-2.5 md:px-4 md:py-3">
       <div className="flex items-center gap-2.5 flex-wrap">
         <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-primary-soft text-primary shrink-0">
           <Sparkles size={16} />

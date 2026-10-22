@@ -1,18 +1,24 @@
 import { isNative } from './native'
 
 /**
- * 外部入口（v2.0）：安卓桌面快捷方式与通知点击都从这里进。
+ * 外部入口（v2.0）：安卓桌面快捷方式、通知点击、负一屏小组件都从这里进。
  * - 快捷方式走自定义 scheme：com.personal.workstation://quickadd / today
+ * - 小组件单行：com.personal.workstation://task?id=xxx → 定位到任务
  * - 通知带 extra.taskId，点开后定位到对应任务详情
  * 冷启动与运行中各有一条路径，统一转换成应用内路由。
  */
 export function parseAppUrl(url: string): string | null {
   if (!url) return null
-  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i.exec(url)
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)(?:\?([^#]*))?/i.exec(url)
   if (!m) return null
   const host = m[1].toLowerCase()
+  const query = new URLSearchParams(m[2] ?? '')
   if (host === 'quickadd') return '/today?quickadd=1'
   if (host === 'today') return '/today'
+  if (host === 'task') {
+    const id = query.get('id')
+    return id ? `/tasks?focus=${encodeURIComponent(id)}` : '/today'
+  }
   return null
 }
 
