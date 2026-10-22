@@ -17,7 +17,7 @@ import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
-import { futureReason, isFutureTask, todayStr } from '@/lib/date'
+import { fmtDue, fmtStartAt, futureReason, isFutureTask, todayStr } from '@/lib/date'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
@@ -43,6 +43,8 @@ export function TaskDetail() {
   // 打卡任务：时间点与次数（受控编辑，次数失焦才落库，避免输入中把 1 写成 12）
   const [habitTimes, setHabitTimes] = useState<string[]>([])
   const [habitCount, setHabitCount] = useState('')
+  // 手机端时间默认收起：详情第一屏留给标题/清单/优先级，需要时点「时间」再展开
+  const [showTime, setShowTime] = useState(false)
   const folders = useLiveQuery(() => db.folders.toArray(), [], [])
   const folderDocCount = useLiveQuery(
     () => (task?.folderId ? db.docs.where('folderId').equals(task.folderId).count() : 0),
@@ -130,6 +132,8 @@ export function TaskDetail() {
     }
     patch({ startAt: new Date(`${date}T${time || '09:00'}`).getTime() })
   }
+  // 手机上收起时这一行告诉用户「现在是什么时间状态」，不用展开也能读懂
+  const timeSummary = `${task.startAt != null ? fmtStartAt(task.startAt) : '现在开始'} · ${task.due ? fmtDue(task.due, task.dueTime).text : '∞ 无截止'}`
 
   /**
    * 完成/恢复：先把未落盘的草稿写库并带进 toggleDone，
@@ -284,54 +288,82 @@ export function TaskDetail() {
                 />
               </div>
 
-              <div className="col-span-2">
-                <div className="flex items-center justify-between mb-1.5 gap-1">
-                  <label className={cn(FIELD, 'mb-0 truncate')}><span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> 开始时间</span></label>
-                  <button
-                    type="button"
-                    onClick={() => void postponeTask(task)}
-                    className="shrink-0 text-[11.5px] text-primary hover:underline cursor-pointer whitespace-nowrap"
-                  >
-                    顺延一天
-                  </button>
-                </div>
-                {/* 日期与时间并排：竖着排会让手机详情白白多出两行 */}
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="date"
-                    aria-label="开始日期"
-                    value={startDate}
-                    onChange={(e) => setStart(e.target.value, startTime)}
-                    className={INPUT}
-                  />
-                  <TimePicker
-                    value={startTime}
-                    onChange={(t) => setStart(startDate || todayStr(), t ?? '')}
-                    placeholder="不设时间"
-                    allowClear
-                  />
-                </div>
-              </div>
+              {/* 时间：手机默认收起（点「时间」才展开），桌面常驻展开。
+                  md:contents 让这一组在桌面直接摊进四列网格，手机才是一个可折叠块 */}
+              <div className="col-span-2 md:contents">
+                <button
+                  type="button"
+                  onClick={() => setShowTime((v) => !v)}
+                  aria-expanded={showTime}
+                  aria-label="设置开始时间与截止时间"
+                  className="md:hidden w-full flex items-center gap-2 h-11 px-3 rounded-[10px] bg-surface-2 border border-outline text-left cursor-pointer active:scale-[0.99] transition-transform"
+                >
+                  <CalendarClock size={14} className="text-on-surface-2 shrink-0" />
+                  <span className="text-[13px] font-medium shrink-0">时间</span>
+                  <span className="ml-auto text-[12px] text-on-surface-2 truncate">{timeSummary}</span>
+                  <ChevronDown size={15} className={cn('text-on-surface-2 shrink-0 transition-transform duration-200', showTime && 'rotate-180')} />
+                </button>
+                <div
+                  className={cn(
+                    'md:contents md:max-h-none md:opacity-100 md:visible',
+                    showTime ? 'max-h-[560px] opacity-100 visible' : 'max-h-0 opacity-0 overflow-hidden invisible',
+                  )}
+                  style={{
+                    transition: 'max-height var(--dur-2) var(--ease-standard), opacity var(--dur-2) var(--ease-standard)',
+                  }}
+                >
+                  <div className="grid grid-cols-1 gap-3 md:contents">
+                    <div className="col-span-2">
+                      <div className="flex items-center justify-between mb-1.5 gap-1">
+                        <label className={cn(FIELD, 'mb-0 truncate')}><span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> 开始时间</span></label>
+                        <button
+                          type="button"
+                          onClick={() => void postponeTask(task)}
+                          className="shrink-0 text-[11.5px] text-primary hover:underline cursor-pointer whitespace-nowrap"
+                        >
+                          顺延一天
+                        </button>
+                      </div>
+                      {/* 日期与时间并排：竖着排会让手机详情白白多出两行 */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="date"
+                          aria-label="开始日期"
+                          value={startDate}
+                          onChange={(e) => setStart(e.target.value, startTime)}
+                          className={INPUT}
+                        />
+                        <TimePicker
+                          value={startTime}
+                          onChange={(t) => setStart(startDate || todayStr(), t ?? '')}
+                          placeholder="不设时间"
+                          allowClear
+                        />
+                      </div>
+                    </div>
 
-              <div className="col-span-2">
-                <div className="flex items-center justify-between mb-1.5 gap-1">
-                  <label className={cn(FIELD, 'mb-0 truncate')}>截止日期 / 时间</label>
-                  {!task.due && <span className="shrink-0 text-[10.5px] text-on-surface-2/80" title="没有截止日期 = 无穷远">∞ 无截止</span>}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="date"
-                    aria-label="截止日期"
-                    value={task.due ?? ''}
-                    onChange={(e) => patch({ due: e.target.value || undefined })}
-                    className={INPUT}
-                  />
-                  <TimePicker
-                    value={task.dueTime}
-                    onChange={(v) => patch({ dueTime: v })}
-                    placeholder="不设时间"
-                    allowClear
-                  />
+                    <div className="col-span-2">
+                      <div className="flex items-center justify-between mb-1.5 gap-1">
+                        <label className={cn(FIELD, 'mb-0 truncate')}>截止日期 / 时间</label>
+                        {!task.due && <span className="shrink-0 text-[10.5px] text-on-surface-2/80" title="没有截止日期 = 无穷远">∞ 无截止</span>}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="date"
+                          aria-label="截止日期"
+                          value={task.due ?? ''}
+                          onChange={(e) => patch({ due: e.target.value || undefined })}
+                          className={INPUT}
+                        />
+                        <TimePicker
+                          value={task.dueTime}
+                          onChange={(v) => patch({ dueTime: v })}
+                          placeholder="不设时间"
+                          allowClear
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               {task.repeat && (
