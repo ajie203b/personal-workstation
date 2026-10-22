@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
-import { CalendarDays, ChevronDown, Columns3, Grid2x2, List } from 'lucide-react'
+import { CalendarDays, Columns3, Grid2x2, List } from 'lucide-react'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
 import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
@@ -13,6 +13,7 @@ import { CalendarView } from './CalendarView'
 import { QuadrantView } from './QuadrantView'
 import { LogbookView } from './LogbookView'
 import { Segmented } from '@/shared/ui/Segmented'
+import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { fmtListDate, todayStr } from '@/lib/date'
 import { cn } from '@/lib/cn'
 
@@ -83,20 +84,19 @@ export function TasksPage() {
       <div className="flex items-center gap-2">
         <h1 className="hidden md:block text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
 
-        {/* 手机：5 个页签横滚看不到边，改成下拉选择；桌面仍是分段控件 */}
-        <div className="md:hidden relative">
-          <select
-            aria-label="切换清单"
+        {/* 手机：5 个页签横滚看不到边，改成自绘下拉；桌面仍是分段控件 */}
+        <div className="md:hidden">
+          <SelectMenu
+            ariaLabel="切换清单"
+            title="切换清单"
             value={isLogbook ? 'logbook' : tier}
-            onChange={(e) => setParam('tier', e.target.value)}
-            className="appearance-none h-9 pl-3 pr-8 rounded-[10px] bg-surface-2 border border-outline text-[14px] font-semibold outline-none focus:border-primary/60"
-          >
-            {TIERS.map((t) => (
-              <option key={t} value={t}>{TIER_LABEL[t]}（{counts[t] ?? 0}）</option>
-            ))}
-            <option value="logbook">日志（{doneCount}）</option>
-          </select>
-          <ChevronDown size={15} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-2 pointer-events-none" />
+            onChange={(v) => setParam('tier', v)}
+            triggerClassName="h-9 rounded-[10px] text-[14px] font-semibold"
+            options={[
+              ...TIERS.map((t) => ({ value: t as string, label: `${TIER_LABEL[t]}（${counts[t] ?? 0}）` })),
+              { value: 'logbook', label: `日志（${doneCount}）` },
+            ]}
+          />
         </div>
 
         {!isLogbook && (

@@ -15,6 +15,7 @@ import { TimePicker } from '@/shared/ui/TimePicker'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
+import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
 import { fmtDateTime, fmtDue, fmtStartAt, futureReason, isFutureTask, todayStr } from '@/lib/date'
@@ -405,17 +406,16 @@ export function TaskDetail() {
                       新建文件夹并关联
                     </Button>
                     {folders.length > 0 && (
-                      <div className="relative flex-1 min-w-0">
-                        <select
-                          aria-label="关联已有文件夹"
+                      <div className="flex-1 min-w-0">
+                        <SelectMenu
                           value=""
-                          onChange={(e) => { if (e.target.value) void linkTaskFolder(task.id, e.target.value) }}
-                          className={cn(INPUT, 'h-9 appearance-none pr-8')}
-                        >
-                          <option value="">关联已有文件夹…</option>
-                          {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                        </select>
-                        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-2" />
+                          onChange={(v) => { if (v) void linkTaskFolder(task.id, v) }}
+                          options={folders.map((f) => ({ value: f.id, label: f.name }))}
+                          ariaLabel="关联已有文件夹"
+                          placeholder="关联已有文件夹…"
+                          title="关联文件夹"
+                          triggerClassName="w-full pr-2 text-[14px]"
+                        />
                       </div>
                     )}
                   </div>
