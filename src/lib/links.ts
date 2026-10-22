@@ -1,3 +1,5 @@
+import { isNative } from './native'
+
 /**
  * 文档正文里的链接（v2.0）。
  * 应用是 hash 路由，正文里的相对链接或 #锚点一变地址就会被路由当成页面路径，
@@ -20,10 +22,31 @@ export function handleDocLink(
     return true
   }
   if (/^(https?:|mailto:|tel:)/i.test(href)) {
-    window.open(href, '_blank')
+    openExternal(href)
     return true
   }
   return true
+}
+
+/**
+ * 外链交给系统浏览器。
+ *
+ * 安卓壳里不能用 `window.open(url, '_blank')`：WebView 没开多窗口、Capacitor 也没接
+ * WebChromeClient.onCreateWindow，点了会**静默失败**（「检查更新→下载」、正文外链都是）。
+ * 同窗导航会触发 shouldOverrideUrlLoading → Bridge.launchIntent，外部 host 被原生用
+ * ACTION_VIEW 交给系统浏览器，WebView 自己不换页——所以走一次锚点跳转最稳。
+ */
+export function openExternal(url: string): void {
+  if (isNative()) {
+    const a = document.createElement('a')
+    a.href = url
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    return
+  }
+  window.open(url, '_blank')
 }
 
 function headingBySlug(slug: string): HTMLElement | null {

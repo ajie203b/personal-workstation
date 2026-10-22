@@ -31,6 +31,7 @@ import {
   type FanqieSearchItem,
 } from '@/lib/fanqieFqweb'
 import { buildFanqieEpub, buildFanqieTxt, importFanqieToDocs, sanitizeFilename, saveBlob } from '@/lib/fanqieExport'
+import { openExternal } from '@/lib/links'
 import { isNative } from '@/lib/native'
 import { cn } from '@/lib/cn'
 
@@ -354,8 +355,8 @@ export function FanqiePage() {
             </div>
             <a
               href={`https://fanqienovel.com/page/${book.bookId}`}
-              target="_blank"
               rel="noreferrer"
+              onClick={(e) => { e.preventDefault(); openExternal(`https://fanqienovel.com/page/${book.bookId}`) }}
               className="inline-flex items-center gap-1 text-[12px] text-primary hover:underline shrink-0"
             >
               官网页面 <ExternalLink size={12} />

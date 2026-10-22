@@ -1,3 +1,5 @@
+import { openExternal } from './links'
+
 export interface UpdateInfo {
   hasUpdate: boolean
   /** 是否真的查到了远端版本；false 时界面提示「暂时没查到」而不是冒充已是最新 */
@@ -104,7 +106,7 @@ function compareVersions(a: string, b: string): number {
   return 0
 }
 
-/** 打开下载链接（系统浏览器） */
+/** 打开下载链接（系统浏览器；安卓壳里 window.open 会静默失败，走 openExternal） */
 export function openDownload(url: string): void {
-  window.open(url, '_blank')
+  openExternal(url)
 }
