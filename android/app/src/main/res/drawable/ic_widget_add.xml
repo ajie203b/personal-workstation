@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件右上角「+」：快速添加任务 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12,5v14M5,12h14"
+        android:strokeColor="#2C55B8"
+        android:strokeLineCap="round"
+        android:strokeWidth="2" />
+</vector>

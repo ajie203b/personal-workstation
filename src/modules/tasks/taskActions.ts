@@ -1,8 +1,27 @@
 import { checkinProgress, checkInTask, deleteTask, restoreTask, toggleDone, undoToggleDone, updateTask } from '@/db/tasks'
-import type { Task } from '@/db/db'
+import { db, type Task } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { registerUndo } from '@/lib/undo'
 import { isFutureTask, todayStr } from '@/lib/date'
+
+/**
+ * 小组件勾选（com.personal.workstation://complete?id=）的落地：
+ * 与列表勾选同一套语义——重复任务打卡、普通任务完成，未来任务拦下并提示。
+ * 小组件那边只带 id，任务状态要现取，别拿快照里的旧数据。
+ */
+export async function completeById(id: string): Promise<void> {
+  const task = await db.tasks.get(id)
+  if (!task) {
+    useUi.getState().toast('这条任务已经不在了')
+    return
+  }
+  if (task.status === 'done') {
+    useUi.getState().toast('这条任务已经完成了')
+    return
+  }
+  if (task.repeat) await checkInWithUndo(task)
+  else await toggleTaskWithUndo(task)
+}
 
 /**
  * 勾选完成 / 恢复。完成会让任务消失（重复任务还会生成下一次），属于不可见变更，

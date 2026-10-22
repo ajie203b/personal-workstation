@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseAppUrl, routeForNotification } from './appActions'
+import { parseAppAction, parseAppUrl, routeForNotification } from './appActions'
 
 describe('parseAppUrl', () => {
   it('快捷方式：快速添加', () => {
@@ -23,6 +23,25 @@ describe('parseAppUrl', () => {
     expect(parseAppUrl('com.personal.workstation://unknown')).toBeNull()
     expect(parseAppUrl('https://example.com/quickadd')).toBeNull()
     expect(parseAppUrl('')).toBeNull()
+  })
+})
+
+describe('parseAppAction', () => {
+  it('小组件勾选 → complete 动作', () => {
+    expect(parseAppAction('com.personal.workstation://complete?id=abc123')).toEqual({ type: 'complete', id: 'abc123' })
+    expect(parseAppAction('com.personal.workstation://COMPLETE?id=x')).toEqual({ type: 'complete', id: 'x' })
+  })
+  it('id 里的特殊字符按 URL 解码', () => {
+    expect(parseAppAction('com.personal.workstation://complete?id=a%26b')?.id).toBe('a&b')
+  })
+  it('缺 id 或其它 host 不算动作', () => {
+    expect(parseAppAction('com.personal.workstation://complete')).toBeNull()
+    expect(parseAppAction('com.personal.workstation://complete?id=')).toBeNull()
+    expect(parseAppAction('com.personal.workstation://task?id=x')).toBeNull()
+    expect(parseAppAction('')).toBeNull()
+  })
+  it('complete 不产生页面路由', () => {
+    expect(parseAppUrl('com.personal.workstation://complete?id=abc')).toBeNull()
   })
 })
 

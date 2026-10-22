@@ -47,11 +47,23 @@
             android:label="@string/task_widget_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <!-- 小米 Widget 展现刷新（负一屏曝光时触发） -->
+                <action android:name="miui.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
+            <!-- 小米 Widget 标识：没这个 meta 的只会出现在「安卓小部件」分类，
+                 负一屏「+」的小部件主列表里看不到（小米小部件技术规范 4） -->
+            <meta-data
+                android:name="miuiWidget"
+                android:value="true" />
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/task_widget_info" />
         </receiver>
+
+        <!-- 小米 Widget 版本号（小米小部件技术规范 10） -->
+        <meta-data
+            android:name="miuiWidgetVersion"
+            android:value="1" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

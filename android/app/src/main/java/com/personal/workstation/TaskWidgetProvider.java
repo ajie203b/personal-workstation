@@ -25,12 +25,16 @@ import org.json.JSONObject;
  * 窄格子用 compact 版，桌面上仍是完整的 4 条待办。
  *
  * 数据由 TaskWidgetPlugin 从网页侧同步；点击整张卡回到今日页，
- * 点单条任务则带着 id 深链过去（com.personal.workstation://task?id=…）。
+ * 点单条任务带着 id 深链过去（com.personal.workstation://task?id=…），
+ * 勾选圈是「完成/打卡」（…://complete?id=…），右上「+」是快速添加（…://quickadd）。
  */
 public class TaskWidgetProvider extends AppWidgetProvider {
 
     static final String PREFS = "task_widget";
     static final String KEY = "payload";
+
+    /** 小米 Widget 展现刷新（曝光触发，见小米小部件技术规范 2） */
+    private static final String MIUI_APPWIDGET_UPDATE = "miui.appwidget.action.APPWIDGET_UPDATE";
 
     /** 小于这个宽度就用紧凑布局（2x2 大约 110–180dp） */
     private static final int COMPACT_WIDTH_DP = 220;
@@ -40,6 +44,16 @@ public class TaskWidgetProvider extends AppWidgetProvider {
     private static final int COLOR_ACCENT = Color.parseColor("#2C55B8");
     private static final int COLOR_DANGER = Color.parseColor("#E5484D");
     private static final int COLOR_WARN = Color.parseColor("#B7791F");
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        // 小米负一屏曝光刷新与系统 APPWIDGET_UPDATE 走同一条重建逻辑
+        if (MIUI_APPWIDGET_UPDATE.equals(intent.getAction())) {
+            refreshAll(context);
+            return;
+        }
+        super.onReceive(context, intent);
+    }
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
@@ -94,8 +108,15 @@ public class TaskWidgetProvider extends AppWidgetProvider {
             R.id.widget_root,
             appIntent(context, Uri.parse("com.personal.workstation://today"), 0)
         );
+        // 右上「+」：快速添加
+        views.setOnClickPendingIntent(
+            R.id.widget_add,
+            appIntent(context, Uri.parse("com.personal.workstation://quickadd"), 1)
+        );
 
-        int[] rowIds = {R.id.widget_task_1, R.id.widget_task_2, R.id.widget_task_3, R.id.widget_task_4};
+        int[] rowIds = {R.id.widget_row_1, R.id.widget_row_2, R.id.widget_row_3, R.id.widget_row_4};
+        int[] textIds = {R.id.widget_task_1, R.id.widget_task_2, R.id.widget_task_3, R.id.widget_task_4};
+        int[] checkIds = {R.id.widget_check_1, R.id.widget_check_2, R.id.widget_check_3, R.id.widget_check_4};
         int maxRows = compact ? 3 : 4;
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -139,22 +160,30 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                         // 打卡任务显示 2/3，普通任务显示时间；两者都有时时间在前
                         String suffix = countTotal > 1 ? count + "/" + countTotal : "";
                         String head = time.isEmpty() ? "" : time + "  ";
-                        String line = "•  " + head + title + (suffix.isEmpty() ? "" : "  " + suffix);
-                        views.setTextViewText(rowIds[i], line);
+                        String line = head + title + (suffix.isEmpty() ? "" : "  " + suffix);
+                        views.setTextViewText(textIds[i], line);
                         views.setTextColor(
-                            rowIds[i],
+                            textIds[i],
                             overdue || priority == 0 ? COLOR_DANGER : priority == 1 ? COLOR_WARN : COLOR_TEXT
                         );
 
-                        // 单条点击 → 定位到这条任务（负一屏里点开就能直接干活）
                         String id = task.optString("id", "");
                         if (!id.isEmpty()) {
+                            // 点标题 → 定位到这条任务；点勾选圈 → 完成 / 打卡一次
                             views.setOnClickPendingIntent(
-                                rowIds[i],
+                                textIds[i],
                                 appIntent(
                                     context,
                                     Uri.parse("com.personal.workstation://task?id=" + Uri.encode(id)),
                                     100 + i
+                                )
+                            );
+                            views.setOnClickPendingIntent(
+                                checkIds[i],
+                                appIntent(
+                                    context,
+                                    Uri.parse("com.personal.workstation://complete?id=" + Uri.encode(id)),
+                                    200 + i
                                 )
                             );
                         }
