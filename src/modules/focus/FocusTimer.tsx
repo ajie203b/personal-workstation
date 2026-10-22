@@ -260,8 +260,9 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
           style={store.running ? undefined : { boxShadow: '0 8px 20px -8px color-mix(in srgb, var(--ok) 70%, transparent)' }}
           aria-label={store.running ? '暂停' : '开始'}
         >
-          {/* 图标画布 = 按钮直径：三角形按黄金分割占满（外接圆直径 0.618×按钮） */}
-          <PlayPauseIcon playing={store.running} size={56} />
+          {/* 图标画布 = 重置按钮直径 44px：播放三角形按黄金分割取尺寸，
+              与旁边的重置钮视觉重量一致（主按钮仍是 56px） */}
+          <PlayPauseIcon playing={store.running} size={44} />
         </button>
         <button
           onClick={reset}
