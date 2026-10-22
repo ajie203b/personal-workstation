@@ -146,6 +146,14 @@ export function validateSnapshot(raw: unknown): ValidatedSnapshot {
     optStr(p, r, 'notes', path)
     optStr(p, r, 'folderId', path)
     strArray(p, r, 'tags', path)
+    // v3.1 打卡：次数、多个时间点、预计用时、当前周期进度
+    optNum(p, r, 'repeatCount', path)
+    optNum(p, r, 'estimateMinutes', path)
+    strArray(p, r, 'repeatTimes', path)
+    if (r.checkin !== undefined && r.checkin !== null) {
+      if (!isObj(r.checkin)) p.add(`${path}.checkin`, '应为对象')
+      else optNum(p, r.checkin, 'count', `${path}.checkin`)
+    }
   })
 
   checkRows(p, raw, 'docs', (r, path) => {

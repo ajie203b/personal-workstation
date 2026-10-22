@@ -271,3 +271,91 @@ describe('不该误伤', () => {
     expect(parse('明天').title).toBe('明天')
   })
 })
+
+/* ---------------- v3.1：从标题里尽可能多挖信息 ---------------- */
+
+describe('打卡次数', () => {
+  it('每天 喝水 8 次 → 次数 8', () => {
+    expect(parse('每天 喝水 8 次')).toMatchObject({ title: '喝水', repeat: 'daily', repeatCount: 8 })
+  })
+  it('连写「每天喝水8次」也认', () => {
+    expect(parse('每天喝水8次')).toMatchObject({ title: '喝水', repeat: 'daily', repeatCount: 8 })
+  })
+  it('中文数字「3 遍」', () => {
+    expect(parse('每天背单词3遍')).toMatchObject({ repeatCount: 3 })
+  })
+  it('只有次数没有周期 → 猜成每天打卡', () => {
+    expect(parse('深蹲20次')).toMatchObject({ repeat: 'daily', repeatCount: 20, guesses: ['每天'] })
+  })
+  it('「第3次」「这次」「每次」不是次数', () => {
+    expect(parse('第3次 提交表单').repeatCount).toBeUndefined()
+    expect(parse('这次 复习').repeatCount).toBeUndefined()
+    expect(parse('每次 都要记').repeatCount).toBeUndefined()
+  })
+})
+
+describe('多个打卡时间点', () => {
+  it('每天8点、21点 喝水 → 两个时间点', () => {
+    const p = parse('每天8点、21点 喝水')
+    expect(p.dueTime).toBe('08:00')
+    expect(p.repeatTimes).toEqual(['08:00', '21:00'])
+    expect(p.title).toBe('喝水')
+    expect(p.title).not.toContain('、')
+  })
+  it('非重复任务只取第一个时间', () => {
+    const p = parse('明天 8点、21点 巡检')
+    expect(p.dueTime).toBe('08:00')
+    expect(p.repeatTimes).toBeUndefined()
+  })
+})
+
+describe('预计用时', () => {
+  it('读30分钟书 → 30 分钟', () => {
+    expect(parse('读30分钟书')).toMatchObject({ estimateMinutes: 30, title: '读书' })
+  })
+  it('练琴一个半小时 → 90 分钟', () => {
+    expect(parse('练琴一个半小时')).toMatchObject({ estimateMinutes: 90 })
+  })
+  it('半小时后 提醒我 → 相对时间，不是时长', () => {
+    const p = parse('半小时后 提醒我')
+    expect(p.estimateMinutes).toBeUndefined()
+    expect(p.dueTime).toBe('11:00')
+    expect(p.due).toBe('2026-10-20')
+    expect(p.title).toBe('提醒我')
+  })
+})
+
+describe('只写时段 → 猜一个默认时刻', () => {
+  it('明天上午 交材料 → 明天 09:00', () => {
+    const p = parse('明天上午 交材料')
+    expect(p).toMatchObject({ title: '交材料', due: '2026-10-21', dueTime: '09:00' })
+    expect(p.guesses).toContain('上午≈09:00')
+  })
+  it('晚上 复盘 → 20:00', () => {
+    expect(parse('晚上 复盘')).toMatchObject({ dueTime: '20:00' })
+  })
+})
+
+describe('关键词 → 优先级（只是猜，不改标题）', () => {
+  it('紧急 → P0', () => {
+    expect(parse('紧急 交报告')).toMatchObject({ priority: 0 })
+  })
+  it('务必 → P1', () => {
+    expect(parse('务必 回复邮件')).toMatchObject({ priority: 1 })
+  })
+  it('有空 → P3', () => {
+    expect(parse('有空 整理书架')).toMatchObject({ priority: 3 })
+  })
+  it('显式 P2 不被关键词覆盖', () => {
+    expect(parse('紧急 交报告 P2')).toMatchObject({ priority: 2 })
+  })
+})
+
+describe('周区间', () => {
+  it('周一到周五 → 工作日', () => {
+    expect(parse('周一到周五 跑步')).toMatchObject({ repeat: 'weekdays', title: '跑步' })
+  })
+  it('周六到周日 → 每周六日', () => {
+    expect(parse('周六到周日 兼职')).toMatchObject({ repeat: 'weekly', repeatDays: [0, 6] })
+  })
+})

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, Flag, Hash, Repeat } from 'lucide-react'
+import { CalendarDays, Clock3, Flag, Hash, Repeat, Target, Timer } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { addTask } from '@/db/tasks'
-import { todayStr, fmtDue } from '@/lib/date'
+import { fmtDue } from '@/lib/date'
 import { repeatLabel } from '@/lib/repeat'
 import { PRIORITY_VAR, type Tier } from '@/db/db'
 import { cn } from '@/lib/cn'
@@ -42,12 +42,16 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
       title: p.title,
       tier,
       priority: p.priority,
-      due: p.due ?? (tier === 'today' && todayContext && !p.repeat ? todayStr() : undefined),
+      // 没写截止就是无穷远：清单归属由 tier 表达，不硬塞一个「今天」当截止
+      due: p.due,
       dueTime: p.dueTime,
       tags: p.tags,
       repeat: p.repeat,
       repeatDays: p.repeatDays,
       repeatMonthDay: p.repeatMonthDay,
+      repeatCount: p.repeatCount,
+      repeatTimes: p.repeatTimes,
+      estimateMinutes: p.estimateMinutes,
     })
     setValue('')
     inputRef.current?.focus()
@@ -92,7 +96,10 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
         <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
           <span className="text-[11px] text-on-surface-2 mr-0.5">识别到</span>
           {parsed.due && <PreviewChip icon={CalendarDays} text={fmtDue(parsed.due, parsed.dueTime).text} />}
+          {!parsed.due && parsed.dueTime && <PreviewChip icon={Clock3} text={parsed.dueTime} />}
           {parsed.repeat && <PreviewChip icon={Repeat} text={repeatLabel(parsed.repeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay })} />}
+          {parsed.repeatCount != null && parsed.repeatCount > 1 && <PreviewChip icon={Target} text={`${parsed.repeatCount} 次`} />}
+          {parsed.estimateMinutes != null && <PreviewChip icon={Timer} text={`约 ${parsed.estimateMinutes} 分钟`} />}
           {parsed.priority != null && (
             <PreviewChip
               icon={Flag}

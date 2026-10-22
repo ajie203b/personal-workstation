@@ -2,9 +2,10 @@ import { Clock, FileText, ListChecks, Pin, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, type Task } from '@/db/db'
 import { fmtDue, fmtStartAt, futureReason, isFutureTask } from '@/lib/date'
 import { repeatLabel } from '@/lib/repeat'
+import { checkinProgress } from '@/db/tasks'
 import { cn } from '@/lib/cn'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
-import { toggleTaskWithUndo } from './taskActions'
+import { checkInWithUndo, toggleTaskWithUndo } from './taskActions'
 import { openDoc } from '@/shared/DeepLink'
 import { useTasksUi } from '@/stores/tasks'
 import { morphOpen } from '@/lib/viewTransition'
@@ -26,6 +27,11 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
   const futureWhy = futureReason(task)
   const due = task.due ? fmtDue(task.due, task.dueTime) : null
   const overdue = due?.overdue && !done
+  // 打卡任务：点勾是「打一次卡」，打满 repeatCount 次才归档
+  const habit = !!task.repeat
+  const { count: checkinCount, total: checkinTotal } = habit ? checkinProgress(task) : { count: 0, total: 1 }
+  const checkedOut = habit && checkinCount >= checkinTotal
+  const habitTimes = task.repeatTimes?.length ? task.repeatTimes : task.dueTime ? [task.dueTime] : []
 
   return (
     <div
@@ -37,7 +43,7 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
       onClick={overlay ? undefined : () => morphOpen(() => document.getElementById(`task-${task.id}`), () => openDetail(task.id))}
       className={cn(
         // 悬停/按压反馈统一由 .card-hover 的 transform + 描边承担，不再逐帧改阴影
-        'card task-card card-hover relative px-4 py-3.5 cursor-pointer select-none',
+        'card task-card card-hover relative px-3.5 py-3 md:px-4 md:py-3.5 cursor-pointer select-none',
         focused && 'ring-2 ring-primary/50',
         done && 'opacity-60',
       )}
@@ -46,13 +52,27 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
         <div className="relative shrink-0 mt-0.5">
           <CheckCircle
             className="mt-0"
-            checked={done}
+            checked={done || (habit && checkinTotal > 1 && checkedOut)}
             disabled={future}
-            onChange={() => void toggleTaskWithUndo(task)}
+            onChange={() => void (habit ? checkInWithUndo(task) : toggleTaskWithUndo(task))}
             label={future
               ? (futureWhy === 'start' ? '未来任务，开始时间到了再完成' : '未来任务，到截止日后再完成')
-              : done ? '恢复任务' : '完成任务'}
+              : done ? '恢复任务'
+                : habit && checkinTotal > 1 ? `打卡（${checkinCount}/${checkinTotal}）`
+                  : '完成任务'}
           />
+          {/* 打卡进度：1/3 这样的数字比一句「进行中」更能说明还差几次 */}
+          {habit && checkinTotal > 1 && !done && (
+            <span
+              className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1 rounded-full text-[9px] font-semibold tabular-nums leading-[13px] border border-surface"
+              style={{
+                background: checkedOut ? 'var(--ok)' : 'var(--surface-3)',
+                color: checkedOut ? '#fff' : 'var(--on-surface-2)',
+              }}
+            >
+              {checkinCount}/{checkinTotal}
+            </span>
+          )}
           {task.priority < 3 && (
             <span
               className="absolute -right-1 -top-0.5 w-[7px] h-[7px] rounded-full border border-surface pointer-events-none"
@@ -99,6 +119,13 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
                 <span className="inline-flex items-center gap-1 text-on-surface-2">
                   <Repeat size={14} aria-hidden />
                   {repeatLabel(task.repeat, { days: task.repeatDays, monthDay: task.repeatMonthDay })}
+                  {checkinTotal > 1 && <b className="font-semibold text-on-surface tabular-nums">×{checkinTotal}</b>}
+                  {/* 第一个时间点已经在「今天 08:00」里显示过了，这里只补其余的 */}
+                  {habitTimes.length > 1 && (
+                    <span className="tabular-nums text-[11px]">
+                      · {habitTimes.slice(1, 4).join(' ')}{habitTimes.length > 4 ? ` +${habitTimes.length - 4}` : ''}
+                    </span>
+                  )}
                 </span>
               )}
               {task.docRef && (

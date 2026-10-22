@@ -1058,7 +1058,10 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 .flow-body code { font-family: var(--font-mono); font-size: 0.875em; background: var(--md-code-bg); border: 1px solid color-mix(in srgb, var(--md-rule) 70%, transparent); padding: 0.14em 0.4em; border-radius: 6px; }
 .flow-body pre { background: var(--md-code-bg); border: 1px solid var(--md-rule); border-radius: 12px; padding: 14px 16px; overflow-x: auto; margin: 1.2em 0; line-height: 1.65; }
 .flow-body pre code { background: transparent; border: 0; padding: 0; }
-.flow-body img { display: block; max-width: var(--flow-img-max, 100%); max-height: 72vh; object-fit: contain; margin: 1.2em auto; border-radius: 10px; zoom: var(--flow-img-zoom, 1); }
+/* 图片不跟字号缩放：旧实现用 zoom + 反向 max-width 抵消，两者叠加后
+   在 Chromium 里正好反过来（放大字号图片变小、缩小字号图片变大）。
+   正文栏宽由 --reader-width 控制，图片只需铺满栏宽并保持比例。 */
+.flow-body img { display: block; max-width: 100%; max-height: 72vh; height: auto; object-fit: contain; margin: 1.2em auto; border-radius: 10px; cursor: zoom-in; }
 .flow-body table { border-collapse: collapse; margin: 1.2em 0; width: 100%; font-size: 0.92em; line-height: 1.55; }
 .flow-body th, .flow-body td { border: 1px solid color-mix(in srgb, var(--md-rule) 82%, transparent); padding: 8px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .flow-body th { background: var(--md-quote); font-weight: 600; }

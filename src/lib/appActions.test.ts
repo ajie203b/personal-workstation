@@ -12,6 +12,13 @@ describe('parseAppUrl', () => {
   it('大小写不敏感', () => {
     expect(parseAppUrl('com.personal.workstation://QUICKADD')).toBe('/today?quickadd=1')
   })
+  it('小组件点单条任务 → 定位到该任务', () => {
+    expect(parseAppUrl('com.personal.workstation://task?id=abc123')).toBe('/tasks?focus=abc123')
+    expect(parseAppUrl('com.personal.workstation://task')).toBe('/today')
+  })
+  it('任务 id 里的特殊字符要转义', () => {
+    expect(parseAppUrl('com.personal.workstation://task?id=a%26b')).toBe('/tasks?focus=a%26b')
+  })
   it('不认识的地址返回 null', () => {
     expect(parseAppUrl('com.personal.workstation://unknown')).toBeNull()
     expect(parseAppUrl('https://example.com/quickadd')).toBeNull()

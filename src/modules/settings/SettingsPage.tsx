@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, BellOff, ChevronRight, Database, Download, History, Info, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
+import { Bell, BellOff, ChevronRight, Database, Download, History, Info, LayoutGrid, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
 import { useUi, type Accent, type Density, type ThemeMode } from '@/stores/ui'
 import { clearAllData, exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
@@ -652,12 +652,31 @@ function AboutTab() {
       </section>
 
       {isNative() ? (
-        <section className="card p-4">
-          <h2 className="text-[14px] font-semibold mb-1.5">安装状态</h2>
-          <p className="text-[13px] text-on-surface-2 leading-relaxed">
-            已作为安卓应用安装运行 · 数据保存在应用沙箱内，卸载应用会同时删除数据，重要节点请先到「数据」页导出备份。
-          </p>
-        </section>
+        <>
+          <section className="card p-4">
+            <h2 className="text-[14px] font-semibold mb-1.5 inline-flex items-center gap-1.5">
+              <LayoutGrid size={15} className="text-on-surface-2" /> 桌面 / 负一屏小组件
+            </h2>
+            <p className="text-[13px] text-on-surface-2 leading-relaxed">
+              「今日待办」小组件会显示今天没做完的任务和打卡进度（如 2/8）。点整张卡回今日页，点某一条直接定位到那条任务。
+            </p>
+            <ol className="mt-2.5 flex flex-col gap-1.5 text-[12.5px] text-on-surface-2 leading-relaxed list-decimal pl-4">
+              <li>桌面：长按空白处 →「添加工具 / 小组件」→ 找到「个人工作站 · 今日待办」拖出来。</li>
+              <li>小米负一屏：桌面右滑到最左 → 点「+」或「编辑卡片」→ 小组件 → 选 2×2 尺寸放进去。</li>
+              <li>格子可以拉宽：2×2 显示 3 条，4×2 显示 4 条，会自动切换排版。</li>
+            </ol>
+            <p className="text-[11px] text-on-surface-2/80 mt-2">
+              负一屏的入口位置各版本略有差异（智能助理 / 我的卡片）；找不到时先在桌面添加一次，负一屏的小组件列表里就会出现。
+            </p>
+          </section>
+
+          <section className="card p-4">
+            <h2 className="text-[14px] font-semibold mb-1.5">安装状态</h2>
+            <p className="text-[13px] text-on-surface-2 leading-relaxed">
+              已作为安卓应用安装运行 · 数据保存在应用沙箱内，卸载应用会同时删除数据，重要节点请先到「数据」页导出备份。
+            </p>
+          </section>
+        </>
       ) : (
         <section className="card p-4">
           <h2 className="text-[14px] font-semibold mb-1.5">安装到设备</h2>

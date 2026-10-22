@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { Annotation, DocSettings } from '@/db/db'
 import type { FlowDoc } from './flowDoc'
@@ -46,6 +47,8 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   const lastReportedPct = useRef(-1)
   const segRefs = useRef<(HTMLElement | null)[]>([])
   const [flashSeg, setFlashSeg] = useState<number | null>(null)
+  /** 正文图片点开看大图（Word 扫描件、截图缩略图都靠它看清） */
+  const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null)
 
   // 双指缩放 = 改字号：docx/epub/pptx/txt 与 Markdown 同一套手感
   const [liveFont, setLiveFont] = useState(settings.fontSize)
@@ -84,6 +87,13 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   }, [liveFont, scrollRef])
 
   useEffect(() => { onLoaded(flow.segments.length) }, [flow.segments.length, onLoaded])
+
+  useEffect(() => {
+    if (!preview) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreview(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [preview])
 
   // 进度上报：滚动位置 → 当前 segment + 总进度
   const report = useCallback(() => {
@@ -236,13 +246,25 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   const themeCls = `theme-${settings.theme}`
 
   return (
-    // ref 必须挂在这个根节点上：滚动监听、进度上报、位置恢复、目录跳转全走 scrollRef，
-    // 漏挂时这些路径会静默空转（容器是真的能滚，只是没人听见它的 scroll 事件）
+    <>
+    {/* ref 必须挂在这个根节点上：滚动监听、进度上报、位置恢复、目录跳转全走 scrollRef，
+        漏挂时这些路径会静默空转（容器是真的能滚，只是没人听见它的 scroll 事件） */}
     <div
       ref={scrollRef}
-      // EPUB/DOCX 正文里的链接同样不能改掉 SPA 地址（详见 lib/links）
+      // EPUB/DOCX 正文里的链接同样不能改掉 SPA 地址（详见 lib/links）；
+      // 图片点开看大图 —— Word 里的图经常是整页扫描件，靠缩略图看不清
       onClick={(e) => {
-        const a = (e.target as Element).closest?.('a[href]')
+        const target = e.target as Element
+        const img = target.closest?.('img')
+        if (img) {
+          const src = img.getAttribute('src')
+          if (src) {
+            e.preventDefault()
+            setPreview({ src, alt: img.getAttribute('alt') ?? '' })
+            return
+          }
+        }
+        const a = target.closest?.('a[href]')
         if (a) handleDocLink(e, a.getAttribute('href'))
       }}
       style={{ touchAction: 'pan-x pan-y' }}
@@ -273,9 +295,6 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
               style={{
                 fontSize: liveFont,
                 lineHeight: settings.leading,
-                // 图片跟随字号缩放；max-width 反向缩回，保证放大后仍不超过正文栏宽
-                ['--flow-img-zoom' as string]: String(liveFont / 17),
-                ['--flow-img-max' as string]: `${100 / (liveFont / 17)}%`,
               }}
               dangerouslySetInnerHTML={{ __html: seg.html }}
             />
@@ -284,5 +303,30 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
         <div className="h-24" />
       </div>
     </div>
+
+    {preview && (
+      <div
+        role="dialog"
+        aria-label="查看大图"
+        onClick={() => setPreview(null)}
+        className="fixed inset-0 z-[70] bg-black/88 flex items-center justify-center p-3 md:p-8"
+        style={{ animation: 'overlay-fade var(--dur-1) var(--ease-standard)' }}
+      >
+        <img
+          src={preview.src}
+          alt={preview.alt}
+          className="max-w-full max-h-full object-contain rounded-[10px] border border-white/15"
+        />
+        <button
+          type="button"
+          aria-label="关闭大图"
+          onClick={() => setPreview(null)}
+          className="absolute top-[calc(env(safe-area-inset-top)+12px)] right-3 grid place-items-center w-10 h-10 rounded-full bg-white/12 text-white hover:bg-white/20 transition-colors cursor-pointer"
+        >
+          <X size={19} />
+        </button>
+      </div>
+    )}
+    </>
   )
 }

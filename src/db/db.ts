@@ -53,6 +53,18 @@ export interface Task {
   repeatDays?: number[]
   /** 每月重复的日号：「每月15号」→ 15 */
   repeatMonthDay?: number
+  /**
+   * 每个周期要打卡的次数（v3.1，默认 1）。
+   * 「每天喝水 8 次」→ 8：每打一次 +1，打满才归档并生成下一次。
+   * 这是**次数**，与列表里的显示位置无关（别再和 sortOrder 混在一起）。
+   */
+  repeatCount?: number
+  /** 打卡时间点（HH:mm，可多个）：「早8点 晚9点」→ ['08:00','21:00']，用于提醒与展示 */
+  repeatTimes?: string[]
+  /** 当前周期的打卡进度；due 换天（或下一次任务生成）时归零 */
+  checkin?: { due?: string; count: number; at: number }
+  /** 预计用时（分钟），来自自然语言「30分钟」；详情里展示，用于估时 */
+  estimateMinutes?: number
   /** 计划开始时间（v2.1）：只填截止时默认取创建时刻；用于详情展示与顺延 */
   startAt?: number
   /** 关联的文档文件夹（长期任务 ↔ 资料夹，v2.1） */
@@ -61,7 +73,10 @@ export interface Task {
   aiRef?: string
   subtasks?: SubTask[] // v1.3 子任务清单
   pinned?: boolean // v1.3 置顶（列表视图内沉顶）
-  /** 打卡任务的显示次序：数字越小越靠前；只和同样填了次序的任务比较 */
+  /**
+   * @deprecated v3.1 起不再使用：打卡任务的自定义项改成「次数」(repeatCount)。
+   * 旧数据里可能还有值，排序仍兼容读一次，但 UI 不再暴露。
+   */
   sortOrder?: number
   createdAt: number
   updatedAt: number

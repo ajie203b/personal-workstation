@@ -14,6 +14,16 @@ export interface ParsedTask {
   repeatDays?: number[]
   /** 每月指定几号；「每月15号」→ 15 */
   repeatMonthDay?: number
+  /** 打卡次数：「喝水8次」→ 8；「每天3次」→ 3 */
+  repeatCount?: number
+  /** 打卡时间点（可多个）：「早8点晚9点」→ ['08:00','21:00'] */
+  repeatTimes?: string[]
+  /** 预计用时（分钟）：「30分钟」「一个半小时」→ 30 / 90 */
+  estimateMinutes?: number
+  /** 从「明天开始」「现在开始」推出来的计划开始时间 */
+  startAt?: number
+  /** 推测出来的结论（预览里标注「猜」，让用户知道哪些是想当然） */
+  guesses: string[]
 }
 
 interface Token {
@@ -28,9 +38,16 @@ interface Token {
 const PERIOD_ALT = '凌晨|半夜|清晨|早晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|今早|明早|夜里|夜间'
 const HOUR_ALT = '二十[一二三四五六七八九]?|2[0-3]|[01]?\\d|十[一二三四五六七八九]?|一|两|二|三|四|五|六|七|八|九'
 
+/** 只说了时段没说几点时的默认时刻：照中国人的日常习惯取整点 */
+const PERIOD_HOUR: Record<string, number> = {
+  凌晨: 5, 半夜: 0, 夜里: 22, 夜间: 22,
+  清晨: 6, 早晨: 7, 早上: 8, 上午: 9, 今早: 8, 明早: 8,
+  中午: 12, 下午: 15, 傍晚: 18, 晚上: 20, 今晚: 20, 明晚: 20,
+}
+
 /** 中文优先的自然语言解析：「明天14:00 交报告 P1 #工作」 */
 export function parseQuickAdd(raw: string): ParsedTask {
-  const p: ParsedTask = { title: '', tags: [] }
+  const p: ParsedTask = { title: '', tags: [], guesses: [] }
   let s = ` ${raw.trim()} `
   const now = new Date()
   const nowMin = now.getHours() * 60 + now.getMinutes()
@@ -55,6 +72,78 @@ export function parseQuickAdd(raw: string): ParsedTask {
 
   // 后置日期：标题后面的日期词也能识别
   s = s.replace(/(开会|提醒|交|完成|处理)\s*(明天|今日|明天|后天)/g, '$1 $2 ')
+
+  // —— 多信息抽取（v3.1）：从标题里能挖的都挖一遍，挖不到的才留给默认值 ——
+
+  // ① 关键词 → 优先级（只有没显式写 P0–P3 时才猜；不改标题，免得「紧急联系人」被吃掉）
+  if (p.priority == null) {
+    if (/(紧急|加急|十万火急|立刻|马上|尽快|必须今天|今天就交)/.test(s)) {
+      p.priority = 0
+      p.guesses.push('P0 紧急')
+    } else if (/(重要|关键|务必|必做)/.test(s)) {
+      p.priority = 1
+      p.guesses.push('P1 重要')
+    } else if (/(不急|有空|闲了|看情况|随便)/.test(s)) {
+      p.priority = 3
+      p.guesses.push('P3 不急')
+    }
+  }
+
+  // ② 「周一到周五」→ 工作日；其它区间 → 每周这几天
+  s = s.replace(/\s(?:周|星期|礼拜)([一二三四五六日天])\s*(?:到|至|-|~)\s*(?:周|星期|礼拜)?([一二三四五六日天])(?=\s)/g, (_m, a: string, b: string) => {
+    const from = cnWeekday(a)
+    const to = cnWeekday(b)
+    const days: number[] = []
+    let cur = from
+    for (let i = 0; i < 7; i++) {
+      days.push(cur)
+      if (cur === to) break
+      cur = (cur + 1) % 7
+    }
+    if (days.length < 2) return _m
+    if (days.length === 5 && days.includes(1) && days.includes(5)) {
+      p.repeat = 'weekdays'
+    } else {
+      p.repeat = 'weekly'
+      p.repeatDays = [...days].sort((x, y) => x - y)
+    }
+    if (!p.due) p.due = nearestWeekdayDate(days)
+    return ' '
+  })
+
+  // ③ 相对时间：「半小时后」「30分钟后」「2小时后」
+  //    （必须早于「时长」解析，否则「半小时后」会被当成预计用时 30 分钟）
+  const relM = s.match(/((?:\d+(?:\.\d+)?|[一二两三四五六七八九十]+)?\s*个?\s*半?\s*(?:分钟|分|小时|钟头))\s*(?:以后|之后|后)/)
+  if (relM) {
+    const mins = parseDurationMinutes(relM[1])
+    if (mins != null && mins > 0 && mins <= 60 * 24 * 30) {
+      const at = new Date(now.getTime() + mins * 60000)
+      p.due = toDateStr(at)
+      p.dueTime = `${pad2(at.getHours())}:${pad2(at.getMinutes())}`
+      timeFromClock = true
+      s = s.replace(relM[0], '')
+    }
+  }
+
+  // ④ 打卡次数：「喝水 8 次」「每天 3 遍」（「第3次」「这次」「每次」不算）
+  const countM = s.match(/(^|[^第这那每哪几多好])(\d+|[二两三四五六七八九十]+)\s*(次|遍|回|轮)/)
+  if (countM) {
+    const n = cnToNumber(countM[2])
+    if (n != null && n >= 2 && n <= 99) {
+      p.repeatCount = n
+      s = s.replace(countM[0], countM[1])
+    }
+  }
+
+  // ⑤ 预计用时：「30分钟」「一个半小时」「2小时」（相对时间已在 ③ 消费掉）
+  const durM = s.match(/((?:\d+(?:\.\d+)?|[一二两三四五六七八九十]+)?\s*个?\s*半?\s*(?:分钟|分|小时|钟头))/)
+  if (durM) {
+    const mins = parseDurationMinutes(durM[1])
+    if (mins != null && mins > 0 && mins <= 60 * 24 * 7) {
+      p.estimateMinutes = mins
+      s = s.replace(durM[0], '')
+    }
+  }
 
   // —— 「周五前 / 下周三前」的截止词：先把「前」与后文分开，
   //    否则下一步会把它当成普通连写拆成「周五 前交作业」，标题里留下一个孤零零的「前」
@@ -91,6 +180,9 @@ export function parseQuickAdd(raw: string): ParsedTask {
     /([0-9]{1,4}[-/.年][0-9]{1,2}[-/.月][0-9]{1,2}日?|[0-9]{1,2}月[0-9]{1,2}[日号])(?=[^\s\d])/g,
     '$1 ',
   )
+  // ④ 时段词与后文连写（「明天上午交材料」→「明天 上午 交材料」）：
+  //    后面紧跟数字的不拆，「下午3点」留给时间解析整体匹配
+  s = s.replace(new RegExp(`(^|\\s)(${PERIOD_ALT})(?=[^\\s\\d])`, 'g'), '$1$2 ')
 
   // —— 重复：每天 / 每周（含「每周一三五」）/ 工作日 / 每月15号 ——
   s = s.replace(/\s(每天|每日)(?=\s)/g, () => {
@@ -122,28 +214,60 @@ export function parseQuickAdd(raw: string): ParsedTask {
     return ' '
   })
 
+  // 只写了次数没写周期（「喝水8次」）：按每日打卡理解——写次数的人多半是想天天做。
+  // 动词表挡住「提交3次表单」这类一次性动作，猜错也能在预览里看见「每天」这枚 chip。
+  if (p.repeatCount && !p.repeat && /(打卡|喝|练|背|跑|读|写|站|做|拉|弹|唱|俯卧撑|深蹲|单词)/.test(s)) {
+    p.repeat = 'daily'
+    p.guesses.push('每天')
+  }
+
   // —— 时间：14:00 / 14点 / 下午3点(半) / 中午1点 / 今晚9点 ——
   // 前导空格与时段词前缀都可选；右侧要求是边界（归一化已把连写的「3点开会」拆开），
   // 这样「第3点笔记」「7-11」这类正文不会被误当成时间。
+  //
+  // v3.1：打卡任务允许写多个时间点（「早8点 晚9点」），这里循环收集：
+  // 第一个当 dueTime，其余进 repeatTimes，提醒与列表展示都按它来。
   const timeRe = new RegExp(`\\s?(${PERIOD_ALT})?\\s?(${HOUR_ALT})点(半|[0-5]?\\d分?)?(?=\\s|[，。！？、,.!?;；]|$)`)
-  const tm = s.match(timeRe)
-  // 「第3点」是序号不是时间（归一化那边也放过它，这里再兜一次）
-  const beforeTime = tm ? s.slice(0, tm.index).trimEnd() : ''
-  if (tm && !beforeTime.endsWith('第')) {
+  const clocks: string[] = []
+  // 一句里写了多个时间点（「8点、21点」）就按字面取，不把已过的那个推到现在之后：
+  // 「明天 8点、21点 巡检」里的 8 点指的是明天，推成今晚 20:00 就错了
+  const multiClock = (s.match(/[0-9一二两三四五六七八九十]+点|[0-9]{1,2}[:：][0-5][0-9]/g) ?? []).length > 1
+  for (let guard = 0; guard < 4; guard++) {
+    const tm = s.match(timeRe)
+    if (!tm) break
+    // 「第3点」是序号不是时间（归一化那边也放过它，这里再兜一次）
+    if (s.slice(0, tm.index).trimEnd().endsWith('第')) break
     const h0 = parseHourWord(tm[2])
     const rawMin = tm[3]
     const mm = rawMin == null ? 0 : rawMin === '半' ? 30 : Number(rawMin.replace('分', ''))
-    const clock = resolveClock(h0, mm, tm[1], nowMin, Boolean(p.repeat))
-    p.dueTime = `${pad2(clock.hour)}:${pad2(mm)}`
-    dayOffset = clock.dayOffset
+    const clock = resolveClock(h0, mm, tm[1], nowMin, Boolean(p.repeat) || multiClock)
+    clocks.push(`${pad2(clock.hour)}:${pad2(mm)}`)
+    if (clocks.length === 1) dayOffset = clock.dayOffset
     timeFromClock = true
     s = s.replace(timeRe, ' ')
   }
   const hmRe = /\s([01]?\d|2[0-3])[:：]([0-5]\d)(?=\s)/
-  const hm = s.match(hmRe)
-  if (hm) {
-    p.dueTime = `${pad2(Number(hm[1]))}:${hm[2]}`
+  for (let guard = 0; guard < 4; guard++) {
+    const hm = s.match(hmRe)
+    if (!hm) break
+    clocks.push(`${pad2(Number(hm[1]))}:${hm[2]}`)
     s = s.replace(hmRe, ' ')
+  }
+  if (clocks.length) p.dueTime = clocks[0]
+  if (p.repeat && clocks.length > 1) p.repeatTimes = [...new Set(clocks)].sort()
+
+  // 只写了时段、没写几点（「明天上午 交材料」）：按常识补一个默认时刻，并标注是猜的
+  if (!p.dueTime) {
+    const pm = s.match(new RegExp(`\\s(${PERIOD_ALT})\\s`))
+    const base = pm ? PERIOD_HOUR[pm[1]] : undefined
+    if (pm && base != null) {
+      const clock = resolveClock(base, 0, pm[1], nowMin, Boolean(p.repeat))
+      p.dueTime = `${pad2(clock.hour)}:00`
+      dayOffset = clock.dayOffset
+      timeFromClock = true
+      p.guesses.push(`${pm[1]}≈${p.dueTime}`)
+      s = s.replace(pm[0], ' ')
+    }
   }
 
   // —— 日期 ——
@@ -224,7 +348,8 @@ export function parseQuickAdd(raw: string): ParsedTask {
   // 否则预览里只剩一个光秃秃的 15:30，用户看不出被识别成今天还是明天
   if (p.dueTime && !p.due && timeFromClock) p.due = addDaysStr(dayOffset)
 
-  p.title = s.replace(/\s+/g, ' ').trim()
+  // 时间/次数被挖走后，可能留下孤零零的顿号或逗号（「每天8点、21点 喝水」），清掉首尾
+  p.title = s.replace(/\s+/g, ' ').replace(/^[\s、，,。；;：:·]+|[\s、，,。；;：:·]+$/g, '').trim()
   if (!p.title) p.title = raw.trim()
   return p
 }
@@ -318,6 +443,23 @@ function parseHourWord(raw: string): number {
   return CN_NUM[raw] ?? 0
 }
 
+/**
+ * 「30分钟」「半小时」「一个半小时」「2小时」→ 分钟数。
+ * 数字可省略（「半小时」），也可带「半」（「一个半小时」= 90）。
+ * 解析不出有效值时返回 null，让调用方保留原文。
+ */
+function parseDurationMinutes(raw: string): number | null {
+  const isHour = /小时|钟头/.test(raw)
+  const half = /半/.test(raw)
+  const m = raw.match(/(\d+(?:\.\d+)?)|([一二两三四五六七八九十]+)/)
+  let n = 0
+  if (m) n = m[1] ? Number(m[1]) : (cnToNumber(m[2]) ?? 0)
+  if (half && n === 0) n = 0.5
+  else if (half) n += 0.5
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.round(isHour ? n * 60 : n)
+}
+
 /* ---------------- 日期 ---------------- */
 
 function cnWeekday(ch: string): number {
@@ -389,18 +531,29 @@ export function inferTier(parsed: ParsedTask, fallback: 'today' | 'upcoming' | '
   return fallback
 }
 
-/** 供预览展示 */
+/** 供预览展示（v3.1：把次数、多个打卡时间、预计用时也带出来，猜出来的标注「猜」） */
 export function parseSummary(parsed: ParsedTask): string[] {
   const out: string[] = []
+  const guessed = (tag: string) => parsed.guesses.includes(tag)
   if (parsed.due) {
-    out.push(fmtDue(parsed.due, parsed.dueTime ?? null).text)
+    const clock = parsed.dueTime && parsed.repeatTimes?.length && parsed.repeatTimes.length > 1
+      ? parsed.repeatTimes.join(' / ')
+      : parsed.dueTime ?? null
+    out.push(fmtDue(parsed.due, clock).text)
   } else if (parsed.dueTime) {
     // 只有时间没有日期时也要显示出来，别让预览空着
-    out.push(parsed.dueTime)
+    out.push(parsed.repeatTimes?.length && parsed.repeatTimes.length > 1
+      ? parsed.repeatTimes.join(' / ')
+      : parsed.dueTime)
   }
   if (parsed.repeat) {
-    out.push(repeatLabel(parsed.repeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay }))
+    const label = repeatLabel(parsed.repeat, { days: parsed.repeatDays, monthDay: parsed.repeatMonthDay })
+    const times = parsed.repeatCount && parsed.repeatCount > 1 ? `${label} ×${parsed.repeatCount}` : label
+    out.push(guessed('每天') && parsed.repeat === 'daily' ? `${times}（猜）` : times)
+  } else if (parsed.repeatCount && parsed.repeatCount > 1) {
+    out.push(`×${parsed.repeatCount} 次`)
   }
+  if (parsed.estimateMinutes) out.push(`约 ${parsed.estimateMinutes} 分钟`)
   if (parsed.priority != null) out.push(`P${parsed.priority}`)
   for (const t of parsed.tags) out.push(`#${t}`)
   return out
