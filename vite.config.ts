@@ -22,16 +22,14 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       // PDF.js 中日韩字符映射与标准字体（CJK 文档文本提取/渲染必需）
-      // + onnxruntime-web 的 wasm/JS 运行时（OCR / 证件照推理用）
+      // + MediaPipe vision wasm（onnxruntime 的 wasm 由 Vite 从 bundle 自动打进 assets/，无需拷贝）
       viteStaticCopy({
         targets: [
           { src: 'node_modules/pdfjs-dist/cmaps', dest: 'pdfjs' },
           { src: 'node_modules/pdfjs-dist/standard_fonts', dest: 'pdfjs' },
-          // ort 只要 wasm 运行时的两个变体（基础 + webgpu/jsep），其余 bundle 系列百来 MB 不要
-          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', dest: 'ort' },
-          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs', dest: 'ort' },
-          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm', dest: 'ort' },
-          { src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs', dest: 'ort' },
+          // MediaPipe vision wasm（证件照人脸/分割）：自带 SIMD 版，国内不依赖 jsDelivr；无 SIMD 的老机走 CDN 回退
+          { src: 'node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.js', dest: 'mediapipe' },
+          { src: 'node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.wasm', dest: 'mediapipe' },
         ],
       }),
       ...(lan ? [basicSsl()] : []),
@@ -70,11 +68,11 @@ export default defineConfig(({ mode }) => {
         workbox: {
           navigateFallback: 'index.html',
           globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,bcmap,pfb,ttf}'],
-          // ONNX 模型与 ort 运行时体积大且按需用，不进预缓存；ort 走运行时 CacheFirst
-          globIgnores: ['**/*.onnx', '**/ort/**'],
+          // ONNX 模型与 ort / MediaPipe 的 wasm 体积大且按需用，不进预缓存；wasm 走运行时 CacheFirst
+          globIgnores: ['**/*.onnx', '**/*.wasm', '**/mediapipe/**'],
           runtimeCaching: [
             {
-              urlPattern: /\/ort\/.+$/,
+              urlPattern: /(\/mediapipe\/.+|\/assets\/ort-wasm[^/]*\.wasm)$/,
               handler: 'CacheFirst',
               options: { cacheName: 'ort-runtime', expiration: { maxEntries: 32 } },
             },

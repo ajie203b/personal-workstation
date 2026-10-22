@@ -86,6 +86,7 @@ export function IdPhotoPage() {
   const [result, setResult] = useState<{ url: string; blob: Blob; kb: number } | null>(null)
 
   const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
   const faceCanvasRef = useRef<HTMLCanvasElement>(null)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -415,14 +416,28 @@ export function IdPhotoPage() {
             <p className="text-[13.5px] font-medium">① 选照片 / 拍照</p>
             <p className="text-[11px] text-on-surface-2">正面免冠，光线均匀；会自动按 EXIF 方向转正</p>
           </div>
-          <Button onClick={() => fileRef.current?.click()} className="h-9 px-4 shrink-0" disabled={Boolean(busy)}>
-            <FileImage size={15} /> {image ? '重新选' : '选照片'}
+          <Button onClick={() => fileRef.current?.click()} className="h-9 px-3 shrink-0" disabled={Boolean(busy)}>
+            <FileImage size={15} /> 相册
           </Button>
+          <Button onClick={() => cameraRef.current?.click()} className="h-9 px-3 shrink-0" disabled={Boolean(busy)}>
+            <Camera size={15} /> 拍照
+          </Button>
+          {/* 带 capture 的 input 在安卓只会开相机，所以相册和拍照分成两个入口 */}
           <input
             ref={fileRef}
             type="file"
             accept="image/*"
-            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              void onPickFile(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="user"
             className="hidden"
             onChange={(e) => {
               void onPickFile(e.target.files?.[0])

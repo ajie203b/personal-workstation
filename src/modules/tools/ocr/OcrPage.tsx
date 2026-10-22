@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import {
+  Camera,
   ClipboardCopy,
   Copy,
   FileText,
@@ -139,6 +140,7 @@ export function OcrPage() {
   const [saving, setSaving] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const workerRef = useRef<Worker | null>(null)
   const runIdRef = useRef(0)
 
@@ -310,8 +312,20 @@ export function OcrPage() {
       {/* 输入区 */}
       <section className="card p-4 flex flex-col gap-3">
         <div className="flex items-center gap-2 flex-wrap">
+          {/* 带 capture 的 input 在安卓只会开相机，所以相册和拍照分成两个入口 */}
           <input
             ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) void handleImageSource(f)
+            }}
+          />
+          <input
+            ref={cameraInputRef}
             type="file"
             accept="image/*"
             capture="environment"
@@ -323,7 +337,10 @@ export function OcrPage() {
             }}
           />
           <Button onClick={() => fileInputRef.current?.click()} variant="primary" className="h-9 px-4">
-            <ImagePlus size={15} /> 拍照 / 相册
+            <ImagePlus size={15} /> 相册
+          </Button>
+          <Button onClick={() => cameraInputRef.current?.click()} className="h-9 px-4">
+            <Camera size={15} /> 拍照
           </Button>
           {objectUrl && (
             <Button
