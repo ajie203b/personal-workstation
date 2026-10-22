@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router'
-import { Settings } from 'lucide-react'
+import { IconSettings } from '@/shared/icons'
 import { BrandMark } from '@/shared/BrandMark'
 
 /**
@@ -37,7 +37,7 @@ export function TopBar({ title }: { title: string }) {
             : 'ml-auto grid place-items-center w-10 h-10 rounded-[10px] text-on-surface-2 active:bg-surface-3 shrink-0'
         }
       >
-        <Settings size={19} strokeWidth={1.9} />
+        <IconSettings size={19} />
       </button>
     </header>
   )

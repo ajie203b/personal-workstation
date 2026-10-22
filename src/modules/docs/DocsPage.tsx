@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { BookOpen, ChevronRight, FileText, FileType2, FolderInput, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 import { FileTypeIcon } from '@/shared/FileTypeIcon'
+import { IconDocs } from '@/shared/icons'
 import type { Doc, Folder } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
 import { deleteDoc, importDoc } from '@/db/docs'
@@ -315,13 +316,13 @@ export function DocsPage() {
         </div>
       ) : docsInView.length === 0 && activeFolder ? (
         <EmptyState
-          icon={FileType2}
+          icon={IconDocs}
           title="这个文件夹还是空的"
           hint="用右上角「⋯」菜单导入，文件会自动归入当前文件夹。"
         />
       ) : docs.length === 0 && pending.length === 0 ? (
         <EmptyState
-          icon={FileType2}
+          icon={IconDocs}
           title="文档库还是空的"
           hint="导入 PDF / EPUB / Word / PPT / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
         >
