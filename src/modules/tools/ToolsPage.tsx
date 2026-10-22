@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, Clapperboard } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
@@ -63,6 +63,26 @@ export function ToolsPage() {
             <span className="mt-auto min-w-0">
               <span className="block text-[15px] font-semibold leading-5">番茄小说</span>
               <span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">下载到本地书架</span>
+            </span>
+          </Link>
+
+          <Link
+            to="/tools/media"
+            aria-label="无水印下载"
+            className={cn(
+              'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
+              'flex flex-col overflow-hidden select-none',
+            )}
+          >
+            <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
+              <Clapperboard size={21} strokeWidth={2} />
+            </span>
+            <span className="absolute top-4 right-3.5 truncate text-[10.5px] text-on-surface-2 tabular-nums">
+              抖音 / B站
+            </span>
+            <span className="mt-auto min-w-0">
+              <span className="block text-[15px] font-semibold leading-5">无水印下载</span>
+              <span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">视频、图集解析</span>
             </span>
           </Link>
         </div>

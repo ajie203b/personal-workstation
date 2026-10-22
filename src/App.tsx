@@ -31,6 +31,7 @@ const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ 
 const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => ({ default: m.ReviewPage })))
 const ToolsPage = lazy(() => import('@/modules/tools/ToolsPage').then((m) => ({ default: m.ToolsPage })))
 const FanqiePage = lazy(() => import('@/modules/tools/FanqiePage').then((m) => ({ default: m.FanqiePage })))
+const MediaParsePage = lazy(() => import('@/modules/tools/MediaParsePage').then((m) => ({ default: m.MediaParsePage })))
 
 const RouteLoader = <PageSkeleton />
 
@@ -106,6 +107,7 @@ export default function App() {
             <Route path="stats" element={<StatsPage />} />
             <Route path="tools" element={<ToolsPage />} />
             <Route path="tools/fanqie" element={<FanqiePage />} />
+            <Route path="tools/media" element={<MediaParsePage />} />
             <Route path="review" element={<ReviewPage />} />
             <Route path="docs" element={<DocsPage />} />
             <Route path="docs/new" element={<MdEditorRoute />} />
