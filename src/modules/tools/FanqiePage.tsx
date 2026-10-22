@@ -13,7 +13,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
-import { IconBook } from '@/shared/icons'
+import { IconToolNovel } from '@/shared/icons'
 import { Button } from '@/shared/ui/Button'
 import { BackButton } from '@/shared/ui/BackButton'
 import { EmptyState } from '@/shared/ui/EmptyState'
@@ -233,7 +233,7 @@ export function FanqiePage() {
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconBook size={22} />
+          <IconToolNovel size={22} />
         </span>
         <div className="min-w-0">
           <h1 className="text-[20px] md:text-[22px] font-bold leading-7">番茄小说</h1>

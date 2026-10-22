@@ -109,6 +109,7 @@ export function AppShell() {
         <button
           type="button"
           id="fab-add"
+          data-tour="add"
           onClick={onAdd}
           aria-label="添加任务"
           title="添加任务"

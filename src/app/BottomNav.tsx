@@ -84,6 +84,7 @@ export function BottomNav() {
           <NavLink
             key={item.path}
             to={item.path}
+            data-tour={item.tour}
             onClick={() => haptic('selection')}
             className={({ isActive }) =>
               cn(

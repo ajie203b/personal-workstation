@@ -76,6 +76,7 @@ export function TodayPage() {
           <button
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
+            data-tour="add"
             onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
             className="hidden md:grid place-items-center w-12 h-12 rounded-full border border-primary/20 bg-primary-soft text-primary shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-transform shrink-0 mb-1 cursor-pointer"
             style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))', color: 'var(--primary)' }}

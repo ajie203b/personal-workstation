@@ -10,7 +10,7 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react'
-import { IconArticle } from '@/shared/icons'
+import { IconToolArticle } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
@@ -205,7 +205,7 @@ export function ArticleToolPage() {
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconArticle size={22} />
+          <IconToolArticle size={22} />
         </span>
         <div className="min-w-0">
           <h1 className="text-[20px] md:text-[22px] font-bold leading-7">文章离线</h1>
@@ -334,7 +334,7 @@ export function ArticleToolPage() {
         !busy &&
         !showPaste && (
           <EmptyState
-            icon={IconArticle}
+            icon={IconToolArticle}
             title="还没有文章"
             hint="粘贴文章链接点「抓取」，或用 ?url= 预填直接进来。"
           />

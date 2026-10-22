@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { IconArticle, IconBadge, IconBook, IconMovie, IconPdf, IconQr, IconScan, type AppIcon } from '@/shared/icons'
+import { IconToolArticle, IconToolDownload, IconToolIdPhoto, IconToolNovel, IconToolOcr, IconToolPdf, IconToolQr, type AppIcon } from '@/shared/icons'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
@@ -23,13 +23,13 @@ interface ToolCard {
 }
 
 const TOOL_CARDS: ToolCard[] = [
-  { to: '/tools/fanqie', icon: IconBook, title: '番茄小说', sub: '下载到本地书架' },
-  { to: '/tools/media', icon: IconMovie, title: '无水印下载', sub: '视频、图集解析', badge: '抖音 / B站' },
-  { to: '/tools/qrcode', icon: IconQr, title: '二维码', sub: '生成与扫码' },
-  { to: '/tools/pdf', icon: IconPdf, title: 'PDF 工具箱', sub: '合并、签名、水印' },
-  { to: '/tools/article', icon: IconArticle, title: '文章离线', sub: '网页转文档 / EPUB' },
-  { to: '/tools/idphoto', icon: IconBadge, title: '证件照', sub: '换底色、排版打印' },
-  { to: '/tools/ocr', icon: IconScan, title: '本地 OCR', sub: '拍照取字，不上传' },
+  { to: '/tools/fanqie', icon: IconToolNovel, title: '番茄小说', sub: '下载到本地书架' },
+  { to: '/tools/media', icon: IconToolDownload, title: '无水印下载', sub: '视频、图集解析', badge: '抖音 / B站' },
+  { to: '/tools/qrcode', icon: IconToolQr, title: '二维码', sub: '生成与扫码' },
+  { to: '/tools/pdf', icon: IconToolPdf, title: 'PDF 工具箱', sub: '合并、签名、水印' },
+  { to: '/tools/article', icon: IconToolArticle, title: '文章离线', sub: '网页转文档 / EPUB' },
+  { to: '/tools/idphoto', icon: IconToolIdPhoto, title: '证件照', sub: '换底色、排版打印' },
+  { to: '/tools/ocr', icon: IconToolOcr, title: '本地 OCR', sub: '拍照取字，不上传' },
 ]
 
 export function ToolsPage() {

@@ -74,6 +74,7 @@ export function Sidebar() {
             key={item.path}
             to={item.path}
             aria-label={item.label}
+            data-tour={item.tour}
             onClick={() => haptic('selection')}
             title={item.label}
             className={({ isActive }) =>

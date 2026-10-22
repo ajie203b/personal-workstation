@@ -1178,3 +1178,20 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
   transition: all var(--dur-3) var(--ease-standard);
 }
 
+/* 引导目标的脉冲圈：把视线拉到高亮的控件上（减弱动效时直接不出现） */
+.spot-pulse {
+  border-radius: 14px;
+  border: 2px solid var(--primary);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .spot-pulse {
+    animation: spot-pulse 1.8s var(--ease-standard) infinite;
+  }
+}
+@keyframes spot-pulse {
+  0% { transform: scale(1); opacity: 0.55; }
+  70% { transform: scale(1.12); opacity: 0; }
+  100% { transform: scale(1.12); opacity: 0; }
+}
+

@@ -9,7 +9,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react'
-import { IconScan } from '@/shared/icons'
+import { IconToolOcr } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
@@ -297,7 +297,7 @@ export function OcrPage() {
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconScan size={22} />
+          <IconToolOcr size={22} />
         </span>
         <div className="min-w-0">
           <h1 className="text-[20px] md:text-[22px] font-bold leading-7">本地 OCR</h1>
