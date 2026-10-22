@@ -34,6 +34,13 @@ jobs:
         run: npx vite build
       - name: Sync
         run: npx cap sync android
+      - name: Dummy keystore
+        # build.gradle 缺 keystore.properties 会直接 fail；CI 只编 debug，生成一次性假签名占位
+        working-directory: android
+        run: |
+          keytool -genkeypair -keystore ci-dummy.keystore -alias ci -storepass cidummy -keypass cidummy \
+            -keyalg RSA -keysize 2048 -validity 1 -dname "CN=ci" -noprompt
+          printf 'storeFile=../ci-dummy.keystore\nstorePassword=cidummy\nkeyAlias=ci\nkeyPassword=cidummy\n' > keystore.properties
       - name: Gradle
         working-directory: android
         run: |
