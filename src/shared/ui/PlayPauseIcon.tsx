@@ -3,14 +3,12 @@ import { cn } from '@/lib/cn'
 /**
  * 播放 ⇄ 暂停图标（v3.2）。
  *
- * 播放键是**等边三角形**：三个顶点落在以按钮中心为圆心的同一个圆上，
- * 于是三角形的重心恰好落在圆心 —— 这就是「三角形中心和圆心重合」的严格几何做法。
+ * 播放键以居中的等边三角形为基础，用同色圆角描边柔化三个尖角。
  *
  * 尺寸按**黄金分割**：三角形的外接圆直径 = 画布的 0.618（半径 0.309），
  * 等边三角形的边长 = 0.618 × √3/2 ≈ 0.535 × 画布边长。
- * 画布取**重置按钮的直径 44px**（不是主按钮的 56px）：这样播放三角形与旁边
- * 那个重置钮在视觉重量上是一对（主按钮 56 / 三角 23.5，重置钮 44 / 图标 17），
- * 早先按主按钮直径铺满时三角形明显偏大，喧宾夺主。
+ * 番茄钟中画布取 32px，播放三角形边长约 17px；外层按钮直径 44px，
+ * 与旁边 17px 的重置图标保持接近的视觉大小。
  *
  * 旧实现用 clip-path + scaleX 近似：clip 的百分比参照的是**变换前**的盒子，
  * 再叠加 border-radius 削角，Chromium 里渲染出来的三角既不等边、看着也偏左。
@@ -39,7 +37,7 @@ export function PlayPauseIcon({ playing, size = 20, className }: { playing: bool
       style={{ width: size, height: size }}
       aria-hidden
     >
-      {/* 播放：等边三角形，重心 = 圆心 */}
+      {/* 播放：居中的等边三角形，三个顶点做轻微圆角 */}
       <svg
         viewBox="0 0 24 24"
         className="absolute inset-0 h-full w-full"
@@ -49,7 +47,13 @@ export function PlayPauseIcon({ playing, size = 20, className }: { playing: bool
           transition,
         }}
       >
-        <path d={`M${p1} L${p2} L${p3} Z`} fill="currentColor" />
+        <path
+          d={`M${p1} L${p2} L${p3} Z`}
+          fill="currentColor"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
       </svg>
       {/* 暂停：两根圆角竖条，整体居中 */}
       <svg

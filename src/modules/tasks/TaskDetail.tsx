@@ -17,7 +17,7 @@ import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
-import { fmtDue, fmtStartAt, futureReason, isFutureTask, todayStr } from '@/lib/date'
+import { fmtDateTime, fmtDue, fmtStartAt, futureReason, isFutureTask, todayStr } from '@/lib/date'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
@@ -133,7 +133,7 @@ export function TaskDetail() {
     patch({ startAt: new Date(`${date}T${time || '09:00'}`).getTime() })
   }
   // 手机上收起时这一行告诉用户「现在是什么时间状态」，不用展开也能读懂
-  const timeSummary = `${task.startAt != null ? fmtStartAt(task.startAt) : '现在开始'} · ${task.due ? fmtDue(task.due, task.dueTime).text : '∞ 无截止'}`
+  const timeSummary = `${task.startAt != null ? fmtStartAt(task.startAt) : '未设开始时间'} · ${task.due ? fmtDue(task.due, task.dueTime).text : '无截止时间'}`
 
   /**
    * 完成/恢复：先把未落盘的草稿写库并带进 toggleDone，
@@ -214,6 +214,7 @@ export function TaskDetail() {
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
         <RadixDialog.Content
           data-app-modal="dialog"
+          aria-describedby={undefined}
           className={cn(
             'dialog-panel pop fixed z-50 flex flex-col bg-surface overflow-hidden',
             // 手机：底部弹出的居中胶囊；桌面：居中宽面板（比右侧抽屉能少滚很多）
@@ -541,7 +542,7 @@ export function TaskDetail() {
               )}
 
               <p className="col-span-2 md:col-span-4 text-[10.5px] text-on-surface-2/80">
-                创建于 {new Date(task.createdAt).toLocaleString('zh-CN')} · 更新于 {new Date(task.updatedAt).toLocaleString('zh-CN')}
+                创建于 {fmtDateTime(task.createdAt)} · 更新于 {fmtDateTime(task.updatedAt)}
               </p>
             </div>
           </div>

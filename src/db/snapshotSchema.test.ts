@@ -58,4 +58,15 @@ describe('validateSnapshot', () => {
     })
     expect(r.warnings.join()).toMatch(/缺少本体文件/)
   })
+
+  it('保留跨段批注的精确位置，拒绝损坏的选区字段', () => {
+    const annotation = { id: 'a1', docHash: 'h1', text: '摘录', color: 'yellow', createdAt: 1 }
+    const textAnchors = [{ blockIdx: 0, start: 2, end: 4, text: '摘录' }]
+    const restored = validateSnapshot({ ...base, annotations: [{ ...annotation, textAnchors }] })
+    expect(restored.data.annotations).toEqual([{ ...annotation, textAnchors }])
+    for (const invalid of [{}, [null], [{ blockIdx: -1, start: 4, end: 2, text: '摘录' }]]) {
+      expect(() => validateSnapshot({ ...base, annotations: [{ ...annotation, textAnchors: invalid }] }))
+        .toThrow(/textAnchors/)
+    }
+  })
 })

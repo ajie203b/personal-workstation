@@ -230,7 +230,7 @@ export function FanqiePage() {
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="-mt-1 w-fit" />
 
       <header className="flex items-start gap-3">
-        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-danger/10 text-danger shrink-0">
+        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
           <BookOpen size={21} strokeWidth={2} />
         </span>
         <div className="min-w-0">

@@ -10,7 +10,7 @@ import { BackButton } from '@/shared/ui/BackButton'
 import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
-import { todayStr } from '@/lib/date'
+import { fmtDateTime, todayStr } from '@/lib/date'
 import { isNative } from '@/lib/native'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
@@ -108,10 +108,10 @@ export function SettingsPage() {
 const ACCENTS: { value: Accent; color: string; label: string }[] = [
   { value: 'blue', color: '#2C55B8', label: '蓝色' },
   { value: 'purple', color: '#7D4FBE', label: '紫色' },
-  { value: 'pink', color: '#D6417B', label: '粉色' },
+  { value: 'pink', color: '#B53470', label: '粉色' },
   { value: 'red', color: '#D63C41', label: '红色' },
-  { value: 'orange', color: '#E07B1F', label: '橙色' },
-  { value: 'green', color: '#2F9E5F', label: '绿色' },
+  { value: 'orange', color: '#A8510F', label: '橙色' },
+  { value: 'green', color: '#247944', label: '绿色' },
 ]
 
 function AppearanceTab() {
@@ -143,7 +143,7 @@ function AppearanceTab() {
 
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1">强调色</h2>
-        <p className="text-[13px] text-on-surface-2 mb-3">用于按钮、链接与高亮元素。</p>
+        <p className="text-[13px] text-on-surface-2 mb-3">用于主按钮、链接、选中状态与番茄钟。完成保持绿色，删除与错误保持红色。</p>
         <div className="flex flex-wrap gap-2.5">
           {ACCENTS.map((a) => (
             <button
@@ -517,11 +517,11 @@ function WebdavCard() {
       )}
       {!note && lastError && (
         <p className="text-[12px] leading-relaxed text-danger">
-          上次同步失败（{new Date(lastError.at).toLocaleString('zh-CN')}）：{lastError.message}
+          上次同步失败（{fmtDateTime(lastError.at)}）：{lastError.message}
         </p>
       )}
       <p className="text-[11.5px] text-on-surface-2">
-        {last ? `上次同步：${new Date(last).toLocaleString('zh-CN')}` : '还没有同步过'}
+        {last ? `上次同步：${fmtDateTime(last)}` : '还没有同步过'}
         {' · '}网页版需要 WebDAV 服务端允许跨域；安卓 App 内由原生请求，不受此限制
       </p>
     </section>
@@ -575,11 +575,11 @@ function AutoBackupCard() {
           {backups.map((b) => (
             <div key={b.name} className="flex items-center gap-2 h-9 px-3 rounded-[10px] bg-surface-2">
               <span className="flex-1 text-[12.5px] tabular-nums">
-                {new Date(b.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {fmtDateTime(b.at)}
                 <span className="text-on-surface-2 ml-2">{formatBytes(b.size)}</span>
               </span>
               <HoldToConfirm
-                variant="neutral"
+                variant="danger"
                 holdMs={1200}
                 label="恢复"
                 className="h-8 px-3"

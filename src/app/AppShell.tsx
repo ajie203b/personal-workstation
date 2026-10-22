@@ -114,7 +114,7 @@ export function AppShell() {
           title="添加任务"
           className={cn(
             'md:hidden fixed right-4 z-30 grid place-items-center w-14 h-14 rounded-full cursor-pointer',
-            'bg-primary text-on-primary shadow-lg shadow-primary/25',
+            'bg-primary-action text-on-primary-action shadow-lg shadow-primary/25',
             'active:scale-95 transition-[transform,bottom] duration-200',
           )}
           style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${focusActive ? '8.25rem' : '4.25rem'})` }}

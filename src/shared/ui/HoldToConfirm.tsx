@@ -16,7 +16,7 @@ interface Props {
   className?: string
   /** 进度环直径（px），默认小巧的 18 */
   size?: number
-  /** 视觉档次：danger=不可逆危险操作（红），neutral=普通确认（如恢复快照，用主题色） */
+  /** danger=删除或覆盖数据（红），neutral=普通确认（主题色） */
   variant?: 'danger' | 'neutral'
 }
 
@@ -75,7 +75,7 @@ export function HoldToConfirm({
         <div className="flex justify-end gap-2">
           <Button onClick={() => setDialogOpen(false)}>取消</Button>
           <Button
-            variant="primary"
+            variant={danger ? 'destructive' : 'primary'}
             onClick={() => {
               setDialogOpen(false)
               haptic('medium')

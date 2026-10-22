@@ -9,6 +9,7 @@ import type { Annotation, Doc, Task } from '@/db/db'
 import { db } from '@/db/db'
 import { useDocTabs } from '@/stores/tabs'
 import { cn } from '@/lib/cn'
+import { fmtListDate } from '@/lib/date'
 import type { TocItem } from '../PdfReader'
 import { FLOW_KINDS, annotationAnchor, highlightLocator } from './locator'
 import { annotationColorClass, HL_COLORS } from './types'
@@ -535,7 +536,7 @@ export function RightContent({
                   <MiniBtn label="转任务" onClick={() => onToTask(a)}><Plus size={13} /></MiniBtn>
                   <MiniBtn label="删除" danger onClick={() => onDelete(a.id)}><Trash2 size={13} /></MiniBtn>
                   <span className="ml-auto text-[10.5px] text-on-surface-2 pr-1 tabular-nums">
-                    {new Date(a.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                    {fmtListDate(a.createdAt)}
                   </span>
                 </div>
               </div>

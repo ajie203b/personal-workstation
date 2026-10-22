@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Flame, AlertTriangle, CalendarClock, Archive, ArrowLeftRight } from 'lucide-react'
+import { CircleArrowRight, AlertTriangle, CalendarClock, Archive, ArrowLeftRight } from 'lucide-react'
 import type { Task } from '@/db/db'
 import { sortTasks, updateTask } from '@/db/tasks'
 import { Button } from '@/shared/ui/Button'
@@ -17,12 +17,12 @@ interface QuadMeta {
   key: Quadrant
   label: string
   desc: string
-  icon: typeof Flame
+  icon: typeof CircleArrowRight
   color: string
 }
 
 const QUADS: QuadMeta[] = [
-  { key: 'q1', label: '立即做', desc: '紧急 + 重要', icon: Flame, color: 'var(--p0)' },
+  { key: 'q1', label: '立即做', desc: '紧急 + 重要', icon: CircleArrowRight, color: 'var(--on-surface-2)' },
   { key: 'q2', label: '计划做', desc: '重要 · 不紧急', icon: CalendarClock, color: 'var(--p2)' },
   { key: 'q3', label: '委托/简化', desc: '紧急 · 不重要', icon: AlertTriangle, color: 'var(--p1)' },
   { key: 'q4', label: '减少做', desc: '不紧急 · 不重要', icon: Archive, color: 'var(--p3)' },

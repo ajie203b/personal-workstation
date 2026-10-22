@@ -47,6 +47,44 @@ export function parseDateStr(s: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1)
 }
 
+type DisplayDate = Date | number | string
+
+function asLocalDate(value: DisplayDate): Date {
+  if (value instanceof Date) return value
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? parseDateStr(value)
+    : new Date(value)
+}
+
+/** 列表日期：10月22日；跨年时补上年份，避免旧文档日期含混。 */
+export function fmtListDate(value: DisplayDate): string {
+  const date = asLocalDate(value)
+  return new Intl.DateTimeFormat('zh-CN', {
+    ...(date.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }),
+    month: 'long', day: 'numeric',
+  }).format(date)
+}
+
+/** 详情与快照时间统一到分钟，不向用户展示日志级别的秒数。 */
+export function fmtDateTime(value: DisplayDate): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(asLocalDate(value))
+}
+
+export function fmtDate(value: DisplayDate): string {
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(asLocalDate(value))
+}
+
+export function fmtMonth(value: DisplayDate): string {
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long' }).format(asLocalDate(value))
+}
+
+export function fmtTime(value: DisplayDate): string {
+  return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(asLocalDate(value))
+}
+
 /** 距今天数：0=今天，负数=过去 */
 export function daysFromToday(dateStr: string): number {
   const a = parseDateStr(dateStr).getTime()

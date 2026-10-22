@@ -178,6 +178,21 @@ export function validateSnapshot(raw: unknown): ValidatedSnapshot {
     optNum(p, r, 'updatedAt', path)
     optNum(p, r, 'page', path)
     optNum(p, r, 'blockIdx', path)
+    if (r.textAnchors != null) {
+      if (!isArr(r.textAnchors)) p.add(`${path}.textAnchors`, '应为数组')
+      else r.textAnchors.forEach((anchor, index) => {
+        const at = `${path}.textAnchors[${index}]`
+        if (!isObj(anchor)) { p.add(at, '应为对象'); return }
+        str(p, anchor, 'text', at)
+        for (const field of ['blockIdx', 'start', 'end']) {
+          const value = anchor[field]
+          if (!isNum(value) || !Number.isInteger(value) || value < 0) p.add(`${at}.${field}`, '应为非负整数')
+        }
+        if (isNum(anchor.start) && isNum(anchor.end) && (anchor.end <= anchor.start || (isStr(anchor.text) && anchor.end - anchor.start !== anchor.text.length))) {
+          p.add(at, '文本与选区偏移不一致')
+        }
+      })
+    }
   })
 
   checkRows(p, raw, 'bookmarks', (r, path) => {

@@ -75,6 +75,7 @@ export function Sidebar() {
           <NavLink
             key={item.path}
             to={item.path}
+            aria-label={item.label}
             onClick={() => haptic('selection')}
             title={item.label}
             className={({ isActive }) =>
@@ -91,18 +92,16 @@ export function Sidebar() {
               <>
                 <item.icon size={20} strokeWidth={isActive ? 2 : 1.8} className="shrink-0" aria-hidden />
                 <span
-                  className="hidden lg:block text-ui-label truncate transition-opacity duration-200"
-                  style={{ opacity: collapsed ? 0 : 1 }}
+                  className={cn('text-ui-label whitespace-nowrap', collapsed ? 'hidden' : 'hidden lg:block')}
                 >
                   {item.label}
                 </span>
-                {item.path === '/tasks' && counts.today > 0 && (
+                {!collapsed && item.path === '/tasks' && counts.today > 0 && (
                   <span
                     className={cn(
                       'hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] transition-opacity duration-200 tabular-nums',
                       isActive ? 'bg-primary text-on-primary' : 'bg-surface-3 text-on-surface-2',
                     )}
-                    style={{ opacity: collapsed ? 0 : 1 }}
                   >
                     {counts.today}
                   </span>

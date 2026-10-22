@@ -1,4 +1,5 @@
 import { FANQIE_FONT_KEY, decodeFanqieText, hasUnknownFanqieGlyphs } from './fanqieFont'
+import { fmtListDate } from './date'
 
 /** 番茄书籍/章节链接或 ID 的解析结果；auto = 只有数字，先按书 ID 试，失败再按章节 ID 试 */
 export interface FanqieRef {
@@ -315,5 +316,5 @@ export function formatDate(ms?: number): string {
   if (!ms) return ''
   const d = new Date(ms)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  return fmtListDate(d)
 }

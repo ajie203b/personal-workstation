@@ -5,7 +5,7 @@ import { TIERS, TIER_LABEL } from '@/db/db'
 import { sortTasks, updateTask } from '@/db/tasks'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
-import { toDateStr } from '@/lib/date'
+import { fmtDate, fmtMonth, toDateStr } from '@/lib/date'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 
 interface Props {
@@ -105,17 +105,17 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
     if (taskId) scheduleTo(taskId, dateKey)
   }
 
-  const monthLabel = `${viewYear} 年 ${viewMonth + 1} 月`
+  const monthLabel = fmtMonth(new Date(viewYear, viewMonth, 1))
 
   return (
     <div className="flex flex-col gap-4">
       {/* 月历导航 */}
       <div className="flex items-center gap-2">
-        <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-surface-3 cursor-pointer text-on-surface-2">
+        <button aria-label="上个月" onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-surface-3 cursor-pointer text-on-surface-2">
           <ChevronLeft size={18} />
         </button>
         <span className="text-[15px] font-semibold min-w-[120px] text-center">{monthLabel}</span>
-        <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-surface-3 cursor-pointer text-on-surface-2">
+        <button aria-label="下个月" onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-surface-3 cursor-pointer text-on-surface-2">
           <ChevronRight size={18} />
         </button>
         <button onClick={goToday} className="ml-auto text-[12px] px-2.5 py-1 rounded-full bg-surface-3 hover:bg-surface-3/70 text-on-surface-2 cursor-pointer">
@@ -135,7 +135,6 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
           const dayTasks = byDate.get(key) ?? []
           const isToday = key === todayKey
           const isSelected = key === selectedDate
-          const isWeekend = cell.date.getDay() === 0 || cell.date.getDay() === 6
           return (
             <button
               key={i}
@@ -151,7 +150,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
             >
               <span className={cn(
                 'text-[12px] font-medium inline-grid place-items-center w-5 h-5 rounded-full',
-                isToday ? 'bg-primary text-on-primary' : isWeekend && cell.inMonth ? 'text-danger/70' : '',
+                isToday ? 'bg-primary text-on-primary' : '',
               )}>
                 {cell.date.getDate()}
               </span>
@@ -199,7 +198,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
       {/* 议程流 */}
       <div>
         <h3 className="text-[13px] font-semibold text-on-surface-2 mb-2 px-1">
-          {selectedDate ? `${selectedDate} 的任务` : '即将到来'}
+          {selectedDate ? `${fmtDate(selectedDate)}的任务` : '即将到来'}
         </h3>
         {agenda.length === 0 ? (
           <div className="flex flex-col items-center py-8 text-on-surface-2">

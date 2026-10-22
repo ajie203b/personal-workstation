@@ -65,7 +65,7 @@ export interface Task {
   checkin?: { due?: string; count: number; at: number }
   /** 预计用时（分钟），来自自然语言「30分钟」；详情里展示，用于估时 */
   estimateMinutes?: number
-  /** 计划开始时间（v2.1）：只填截止时默认取创建时刻；用于详情展示与顺延 */
+  /** 用户明确设置或从描述解析的计划开始时间；未设置时不补创建时刻 */
   startAt?: number
   /** 关联的文档文件夹（长期任务 ↔ 资料夹，v2.1） */
   folderId?: string
@@ -164,7 +164,15 @@ export interface ReviewState {
   lastAt?: number
 }
 
-/** 批注：文字高亮（≤4 色）或区域截图（M2.5），结构化存储可供 AI/任务消费 */
+/** 文本偏移以对应 Markdown 块或流式章节的 DOM 文本为准，允许跨段、跨章节。 */
+export interface AnnotationTextAnchor {
+  blockIdx: number
+  start: number
+  end: number
+  text: string
+}
+
+/** 批注：文字高亮（≤4 色）或区域截图（M2.5），结构化存储可供任务消费 */
 export interface Annotation {
   id: string
   docHash: string
@@ -176,6 +184,8 @@ export interface Annotation {
   rects?: { x: number; y: number; w: number; h: number }[]
   page?: number // PDF 页码（1 起）
   blockIdx?: number // MD 块序号
+  /** 新批注保存精确选区；旧批注仍通过 blockIdx + text 定位，无需迁移。 */
+  textAnchors?: AnnotationTextAnchor[]
   text: string // 摘录（截图批注为备注文字）
   color: 'yellow' | 'green' | 'blue' | 'red'
   comment?: string

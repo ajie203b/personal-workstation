@@ -6,7 +6,7 @@ const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform
 const ROWS: [string, string][] = [
   [isMac ? '⌘K' : 'Ctrl K', '命令面板'],
   [isMac ? '⌘Z' : 'Ctrl Z', '撤销最近一次操作'],
-  ['n 或 /', '聚焦快速添加'],
+  ['N 或 /', '聚焦快速添加'],
   ['Enter', '保存任务'],
   ['↑ ↓ 或 J K', '在列表中移动选择'],
   ['空格 / X', '勾选完成 / 恢复'],

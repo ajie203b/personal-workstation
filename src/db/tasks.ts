@@ -34,9 +34,8 @@ export interface NewTaskInput {
 /**
  * 新建任务。
  *
- * v3.1 时间语义（用户需求）：**检测不到开始时间就从现在开始，检测不到截止时间就是无穷远**。
- * 所以 startAt 缺省取 Date.now()，due 缺省保持 undefined（= ∞，不参与逾期判断）。
- * 这样新建的任务立刻可做、不会被「未来任务」锁住，也不会因为没写日期被算成逾期。
+ * 开始、截止时间只记录用户明确填写或文本解析得到的值，留空保持未设置。
+ * 创建/更新时间单独记录，不冒充计划开始时间。
  */
 export async function addTask(input: NewTaskInput): Promise<Task> {
   const now = Date.now()
@@ -56,7 +55,7 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
     repeatCount: input.repeatCount,
     repeatTimes: input.repeatTimes,
     estimateMinutes: input.estimateMinutes,
-    startAt: input.startAt ?? now,
+    startAt: input.startAt,
     folderId: input.folderId,
     docRef: input.docRef,
     aiRef: input.aiRef,
