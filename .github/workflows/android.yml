@@ -38,4 +38,11 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          set +e
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee /tmp/gradle.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != 0 ]; then
+            # 把关键报错打成注解，不登录也能在 Actions 页面看到
+            grep -A6 -E "What went wrong|error:|e: " /tmp/gradle.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $status
