@@ -35,7 +35,11 @@ function script:git {
         default { throw "Unexpected git command: $command" }
     }
 }
-function script:npm { $global:LASTEXITCODE = 0; $global:ReleaseTest.events.Add("npm $($args -join ' ')") }
+function script:npm {
+    $global:LASTEXITCODE = 0
+    $global:ReleaseTest.events.Add("npm $($args -join ' ')")
+    'npm log marker'
+}
 function script:npx { $global:LASTEXITCODE = 0 }
 function script:Invoke-ReleaseTestGradle { $global:LASTEXITCODE = 0 }
 function script:Invoke-ReleaseTestSigner {
@@ -138,13 +142,25 @@ function Invoke-Scenario([string]$Name, [hashtable]$Options = @{}, [string[]]$Fl
         & (Join-Path $fixture 'scripts/release.ps1') @parameters 6>&1 |
             ForEach-Object { $messages.Add($_.ToString()) }
     } catch { $failure = $_.Exception.Message }
-    [pscustomobject]@{ Error = $failure; Events = $global:ReleaseTest.events; Reads = $global:ReleaseTest.reads; Completed = ($messages -join "`n") -match '完成。' }
+    $logFiles = @(Get-ChildItem (Join-Path $fixture 'apk/logs') -Filter '*.log' -ErrorAction SilentlyContinue)
+    [pscustomobject]@{ Error = $failure; Events = $global:ReleaseTest.events; Reads = $global:ReleaseTest.reads;
+        Completed = ($messages -join "`n") -match '(?m)^完成。\r?$'; Messages = $messages -join "`n";
+        Log = ($logFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n" }
 }
 function Assert($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 
 $failed = 0
 try {
     $cases = [ordered]@{
+        'default output is concise and full details are logged' = {
+            $result = Invoke-Scenario 'logging' @{} @('-SkipPull')
+            Assert (-not $result.Error -and $result.Completed) "Unexpected error: $($result.Error)"
+            Assert ($result.Messages -notmatch 'npm log marker' -and $result.Log -match 'npm log marker') 'Build output must go to the log by default'
+        }
+        'verbose output also displays build details' = {
+            $result = Invoke-Scenario 'verbose' @{} @('-SkipPull', '-Verbose')
+            Assert (-not $result.Error -and $result.Messages -match 'npm log marker' -and $result.Log -match 'npm log marker') 'Verbose output or log is missing'
+        }
         'publish verifies Pages before completion' = {
             $result = Invoke-Scenario 'publish'
             Assert (-not $result.Error) "Unexpected error: $($result.Error)"

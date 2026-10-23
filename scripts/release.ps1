@@ -6,6 +6,7 @@
 #   加 -SkipPull 不切 main、不拉代码（测某个分支时用）
 # 产物都放在仓库的 apk\ 目录（已在 .gitignore 里）。
 # -Exe / -Publish 需要 GitHub CLI：winget install GitHub.cli，然后 gh auth login
+[CmdletBinding()]
 param(
     [switch]$Exe,
     [switch]$Publish,
@@ -18,11 +19,36 @@ $DesktopWorkflow = 'desktop.yml'
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 if ($Publish) { $Exe = $true }
+$outDir = Join-Path $Root 'apk'
+$logDir = Join-Path $outDir 'logs'
+New-Item -ItemType Directory -Force $logDir | Out-Null
+$LogFile = Join-Path $logDir "release-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$([guid]::NewGuid().ToString('N').Substring(0, 8)).log"
+Write-Host "详细日志：$LogFile"
+trap {
+    $failureRecord = $_
+    Add-Content -LiteralPath $LogFile -Value "失败：$($failureRecord.Exception.Message)" -Encoding UTF8
+    Write-Host "失败：$($failureRecord.Exception.Message)`n详细日志：$LogFile" -ForegroundColor Red
+    throw $failureRecord
+}
 
-function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
-function Run($exe, [string[]]$argv) {
-    & $exe @argv
-    if ($LASTEXITCODE -ne 0) { throw "失败：$exe $($argv -join ' ')（退出码 $LASTEXITCODE）" }
+function Step($msg) {
+    Write-Host "`n==> $msg" -ForegroundColor Cyan
+    Add-Content -LiteralPath $LogFile -Value "`n[$(Get-Date -Format 'HH:mm:ss')] $msg" -Encoding UTF8
+}
+function Run($exe, [string[]]$argv, [switch]$Capture) {
+    Add-Content -LiteralPath $LogFile -Value "> $exe $($argv -join ' ')" -Encoding UTF8
+    $lines = [Collections.Generic.List[string]]::new()
+    & $exe @argv 2>&1 | ForEach-Object {
+        $line = $_.ToString()
+        $lines.Add($line)
+        Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
+        if (-not $Capture -and $VerbosePreference -eq 'Continue') { Write-Host $line }
+    }
+    if ($LASTEXITCODE -ne 0) {
+        $lines | Select-Object -Last 12 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        throw "失败：$exe $($argv -join ' ')（退出码 $LASTEXITCODE）"
+    }
+    if ($Capture) { $lines }
 }
 
 # ---------- 预检 ----------
@@ -34,13 +60,12 @@ if ($Exe) {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
         throw '没装 GitHub CLI：先运行 winget install GitHub.cli，重开终端后 gh auth login'
     }
-    gh auth status *> $null
-    if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI 没登录：先运行 gh auth login' }
+    Run gh @('auth', 'status')
 }
 
 if (-not $SkipPull) {
     Step '切到 main 并拉取'
-    $dirty = git status --porcelain
+    $dirty = Run git @('status', '--porcelain') -Capture
     if ($dirty) { throw "工作区有未提交改动，先处理：`n$dirty" }
     Run git @('checkout', 'main')
     Run git @('pull')
@@ -56,8 +81,8 @@ $tag = "v$verName"
 
 if ($Publish) {
     # 只检查本次标签，历史标签有同名差异也不会阻塞新版本，更不会覆盖它们。
-    if (Run git @('tag', '--list', $tag)) { throw "标签 $tag 已存在，先升版本号" }
-    if (Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag")) {
+    if (Run git @('tag', '--list', $tag) -Capture) { throw "标签 $tag 已存在，先升版本号" }
+    if (Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag") -Capture) {
         throw "远端标签 $tag 已存在，先核对已发布版本，不要重复发版"
     }
     $notes = [regex]::Match((Get-Content CHANGELOG.md -Raw -Encoding UTF8),
@@ -70,7 +95,7 @@ if ($Publish) {
     $gitBash = Join-Path $gitRoot 'bin/bash.exe'
     if (-not (Test-Path -LiteralPath $gitBash)) { throw '找不到 Git Bash，请安装 Git for Windows 后再发布' }
     if (-not (Test-Path -LiteralPath './scripts/deploy-gh-pages.sh')) { throw '缺少 Pages 部署脚本' }
-    $pagesUrl = ((Run gh @('api', 'repos/{owner}/{repo}/pages', '--jq', '.html_url')) | Out-String).Trim()
+    $pagesUrl = ((Run gh @('api', 'repos/{owner}/{repo}/pages', '--jq', '.html_url') -Capture) | Out-String).Trim()
     $pagesUri = $null
     if (-not [uri]::TryCreate($pagesUrl, [UriKind]::Absolute, [ref]$pagesUri) -or $pagesUri.Scheme -ne 'https') {
         throw "GitHub Pages 地址无效，请检查仓库 Pages 设置：$pagesUrl"
@@ -104,12 +129,12 @@ if (-not $sdk) { $sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $apksigner = Get-ChildItem "$sdk\build-tools\*\apksigner.bat" -ErrorAction SilentlyContinue |
     Sort-Object FullName -Descending | Select-Object -First 1
 if ($apksigner) {
-    $certOut = & $apksigner.FullName verify --print-certs $apk 2>&1 | Out-String
+    $certOut = Run $apksigner.FullName @('verify', '--print-certs', $apk) -Capture | Out-String
     $m = [regex]::Match($certOut, 'SHA-256 digest:\s*([0-9a-fA-F]+)')
     if (-not $m.Success) { throw "apksigner 没读到签名：`n$certOut" }
     $sha = (($m.Groups[1].Value.ToUpper() -split '(.{2})') | Where-Object { $_ }) -join ':'
 } else {
-    $certOut = & keytool -printcert -jarfile $apk 2>&1 | Out-String
+    $certOut = Run keytool @('-printcert', '-jarfile', $apk) -Capture | Out-String
     $m = [regex]::Match($certOut, 'SHA256:\s*([0-9A-F:]+)')
     if (-not $m.Success) { throw "keytool 没读到签名：`n$certOut" }
     $sha = $m.Groups[1].Value
@@ -120,8 +145,6 @@ if (-not $sha.StartsWith($ExpectedSha256Prefix)) {
 }
 Write-Host '签名一致，可以覆盖安装' -ForegroundColor Green
 
-$outDir = Join-Path $Root 'apk'
-New-Item -ItemType Directory -Force $outDir | Out-Null
 $apkOut = Join-Path $outDir "personal-workstation-$tag.apk"
 Copy-Item $apk $apkOut -Force
 Write-Host "APK：$apkOut（$([math]::Round((Get-Item $apkOut).Length / 1MB, 1)) MB）" -ForegroundColor Green
@@ -130,8 +153,8 @@ Write-Host "APK：$apkOut（$([math]::Round((Get-Item $apkOut).Length / 1MB, 1))
 function Wait-DesktopRun($event, $since) {
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 4
-        $runs = gh run list --workflow $DesktopWorkflow --event $event --limit 5 `
-            --json databaseId,createdAt | ConvertFrom-Json
+        $runs = Run gh @('run', 'list', '--workflow', $DesktopWorkflow, '--event', $event, '--limit', '5',
+            '--json', 'databaseId,createdAt') -Capture | ConvertFrom-Json
         $run = $runs | Where-Object { ([datetime]$_.createdAt).ToUniversalTime() -ge $since } |
             Select-Object -First 1
         if ($run) { return $run.databaseId }
@@ -170,7 +193,7 @@ if ($Exe) {
         Run gh @('release', 'create', $tag, $apkOut, '--title', $tag, '--notes-file', $notesFile)
         $runId = Wait-DesktopRun 'push' $since
     } else {
-        $branch = (git rev-parse --abbrev-ref HEAD).Trim()
+        $branch = (Run git @('rev-parse', '--abbrev-ref', 'HEAD') -Capture).Trim()
         Step "在云端打 exe（分支 $branch）"
         Run gh @('workflow', 'run', $DesktopWorkflow, '--ref', $branch)
         $runId = Wait-DesktopRun 'workflow_dispatch' $since
@@ -188,7 +211,7 @@ if ($Exe) {
     }
 
     if ($Publish) {
-        $release = (Run gh @('release', 'view', $tag, '--json', 'tagName,assets,url')) | ConvertFrom-Json
+        $release = Run gh @('release', 'view', $tag, '--json', 'tagName,assets,url') -Capture | ConvertFrom-Json
         $assets = @($release.assets | ForEach-Object { $_.name })
         Write-Host "`nRelease $tag 附件：" -ForegroundColor Green
         $assets | ForEach-Object { Write-Host "  $_" }
@@ -210,3 +233,4 @@ if ($Exe) {
 }
 
 Write-Host "`n完成。" -ForegroundColor Green
+Write-Host "详细日志：$LogFile"
