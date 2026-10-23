@@ -13,6 +13,8 @@ import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from
 import { fmtDateTime, todayStr } from '@/lib/date'
 import { saveBlob } from '@/lib/saveFile'
 import { isNative, isTauri } from '@/lib/native'
+import { supportsInAppUpdate } from '@/lib/appUpdateClient'
+import { AppUpdateCard } from '@/shared/AppUpdate'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
@@ -609,7 +611,8 @@ function AboutTab() {
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
-      {/* 更新检查 */}
+      {/* 更新检查：安卓 App / 桌面版是应用内下载安装；网页版保持原来的版本检查（PWA 自己会更新） */}
+      {supportsInAppUpdate() ? <AppUpdateCard /> : (
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1.5">软件更新</h2>
         <div className="flex items-center gap-3 flex-wrap">
@@ -636,6 +639,7 @@ function AboutTab() {
           )
         )}
       </section>
+      )}
 
       {isNative() ? (
         <>

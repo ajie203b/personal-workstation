@@ -39,6 +39,18 @@
         "languages": ["SimpChinese"],
         "installMode": "currentUser"
       }
+    },
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBKEY",
+      "endpoints": [
+        "https://github.com/ajie203b/personal-workstation/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

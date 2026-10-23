@@ -21,6 +21,7 @@ import { completeById } from '@/modules/tasks/taskActions'
 import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
 import { syncTaskWidget } from '@/lib/taskWidget'
+import { AppUpdateHost } from '@/shared/AppUpdate'
 
 // 重资源页面按路由分包：PDF/Office/EPUB 渲染库、TipTap 编辑器只在进入文档模块时加载
 const DocsPage = lazy(() => import('@/modules/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
@@ -138,6 +139,8 @@ export default function App() {
       <Spotlight />
       <ToastHost />
       <KeyboardShortcutsDialog />
+      {/* 应用内更新：仅安卓 App / 桌面版，网页版不渲染 */}
+      <AppUpdateHost />
     </>
   )
 }

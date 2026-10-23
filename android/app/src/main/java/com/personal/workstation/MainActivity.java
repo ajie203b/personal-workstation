@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TaskWidgetPlugin.class);
         registerPlugin(FileExportPlugin.class);
         registerPlugin(WebdavPlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
         super.onCreate(savedInstanceState);
         // 整页缩放会把 UI 一起放大，且不同机型表现不一致；文档内的缩放由前端自己实现。
         WebView webView = getBridge().getWebView();

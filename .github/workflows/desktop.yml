@@ -5,6 +5,9 @@ name: Desktop (Windows)
 # - 推 v* 标签：额外把安装包挂到同名 Release 上，和 APK 放一起
 # - main 的 Rust 依赖或本工作流变更：构建一次预热默认分支缓存，供后续标签复用
 # - PR 改到桌面壳时也打一次，产物同样在 Artifacts 里，合并前就能装来试
+# - 应用内更新：仓库配置了 TAURI_SIGNING_PRIVATE_KEY（且 tauri.conf.json 的 pubkey 已替换）时，
+#   额外生成安装包签名 .sig；标签构建再生成 latest.json，连同 .sig 挂到 Release。
+#   没配置密钥时照常只出 exe（应用内更新会提示去发布页手动下载），见 docs/构建与发版.md
 on:
   workflow_dispatch:
   push:
@@ -50,8 +53,71 @@ jobs:
       - name: Install
         run: npm install --no-audit --no-fund
 
+      # 只有密钥和公钥都配好才开 createUpdaterArtifacts：没私钥时开着会直接构建失败，
+      # 公钥还是占位符时签了也没用（客户端验签必然失败），两种情况都按原样只出 exe。
+      - name: Decide updater artifacts
+        id: updater
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $pubkey = "$($conf.plugins.updater.pubkey)"
+          $enabled = 'false'
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Host '未配置 TAURI_SIGNING_PRIVATE_KEY：只出 exe，不生成应用内更新文件'
+          } elseif (-not $pubkey -or $pubkey -like 'REPLACE_WITH_*') {
+            Write-Host '::warning::已配置签名私钥，但 tauri.conf.json 的 plugins.updater.pubkey 仍是占位符，跳过应用内更新文件'
+          } else {
+            $enabled = 'true'
+            Write-Host '应用内更新：生成安装包签名'
+          }
+          "enabled=$enabled" >> $env:GITHUB_OUTPUT
+
       - name: Build installer
-        run: npx tauri build
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ steps.updater.outputs.enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.updater.outputs.enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          if ('${{ steps.updater.outputs.enabled }}' -eq 'true') {
+            npx tauri build --config "$PWD/src-tauri/tauri.updater.conf.json"
+          } else {
+            npx tauri build
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # latest.json：tauri-plugin-updater 从 releases/latest/download/latest.json 读取
+      - name: Generate latest.json
+        if: startsWith(github.ref, 'refs/tags/v') && steps.updater.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
+          if ("v$version" -ne $tag) { throw "标签 $tag 与 package.json 版本 $version 不一致" }
+          $nsis = 'src-tauri/target/release/bundle/nsis'
+          $exe = @(Get-ChildItem $nsis -Filter '*-setup.exe' -File)
+          if ($exe.Count -ne 1) { throw "未找到唯一的安装包：$($exe.Name -join ', ')" }
+          $sigFile = "$($exe[0].FullName).sig"
+          if (-not (Test-Path -LiteralPath $sigFile)) { throw "缺少签名文件 $sigFile" }
+          $signature = (Get-Content -LiteralPath $sigFile -Raw).Trim()
+          # 更新说明取 CHANGELOG 对应段（与 release.ps1 同一正则）
+          $notes = [regex]::Match((Get-Content CHANGELOG.md -Raw -Encoding UTF8),
+            "(?ms)^## $([regex]::Escape($tag))\b[^\n]*\n(.*?)(?=^## |\z)").Groups[1].Value.Trim()
+          if (-not $notes) { $notes = "Kairos $tag" }
+          $manifest = [ordered]@{
+            version   = $version
+            notes     = $notes
+            pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                signature = $signature
+                url       = "https://github.com/${{ github.repository }}/releases/download/$tag/$($exe[0].Name)"
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$nsis/latest.json" -Encoding utf8NoBOM
+          Get-Content "$nsis/latest.json"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -62,4 +128,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/bundle/nsis/*.exe
+          # .sig / latest.json 只在配置了签名密钥时存在，没有就跳过（不报错）
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
+            src-tauri/target/release/bundle/nsis/latest.json
