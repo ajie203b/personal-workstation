@@ -5,7 +5,7 @@ import { Button } from '@/shared/ui/Button'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
-import { dataUrlToBytes, smoothStroke, velocityWidth, type StrokePoint } from './signature'
+import { dataUrlToBytes, drawDot, drawSegment, drawStrokes, strokeSegments, strokesBounds, type StrokePoint } from './signature'
 import { placementRect } from './layout'
 import { pdfPageInfos, stampPngs, type Stamp } from './pdfOps'
 import { openPdfDocument, renderPageThumb, type PDFDocumentProxy } from './pdfRender'
@@ -358,115 +358,141 @@ function PagePlacer({
   )
 }
 
+/** 导出 PNG 的放大倍数：按 CSS 像素记录笔迹，导出时 2× 重绘，贴到 PDF 上不发虚 */
+const EXPORT_SCALE = 2
+
 /**
  * 画板：Pointer Events 统一鼠标/触摸/手写笔。
- * 平滑用二次贝塞尔中点法（smoothStroke），线宽按速度收放（velocityWidth）。
+ * 平滑用二次贝塞尔中点法，线宽按速度收放（strokeSegments）。
+ *
+ * v3.3.3 重写坐标与导出：
+ * - 逻辑坐标 = 画板的 CSS 像素（以前硬编码 640×240，而画板实际是「全宽 × 180px」，
+ *   x/y 被不等比拉伸）；画布 backing store = CSS 尺寸 × dpr，ResizeObserver 跟随，尺寸变了按笔迹重绘。
+ * - 所有笔画都存在 strokesRef（以前每次落笔都把点数组清掉，只剩最后一笔）。
+ * - 保存时不再从屏幕画布 drawImage 截取（以前用逻辑坐标去裁 dpr 倍的画布，裁到错位的一角），
+ *   而是按全部笔迹的包围盒，把笔迹矢量重绘到透明画布上导出 —— 存下来的和画出来的一致。
  */
 function SignaturePad({ onSave }: { onSave: (dataUrl: string, width: number, height: number) => void }) {
   const toast = useUi((s) => s.toast)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const pointsRef = useRef<StrokePoint[]>([])
+  /** 全部笔画（CSS 像素坐标） */
+  const strokesRef = useRef<StrokePoint[][]>([])
+  /** 正在画的那一笔 */
+  const currentRef = useRef<StrokePoint[] | null>(null)
+  /** 画板 CSS 尺寸 */
+  const sizeRef = useRef({ w: 0, h: 0 })
 
   const ctxOf = () => canvasRef.current?.getContext('2d') ?? null
 
-  const strokeSeg = useCallback((from: { x: number; y: number }, ctrl: { x: number; y: number }, to: { x: number; y: number }, width: number) => {
-    const ctx = ctxOf()
-    if (!ctx) return
-    ctx.strokeStyle = '#1c1c1e'
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.lineWidth = width
-    ctx.beginPath()
-    ctx.moveTo(from.x, from.y)
-    ctx.quadraticCurveTo(ctrl.x, ctrl.y, to.x, to.y)
-    ctx.stroke()
-  }, [])
-
-  // 画布按 dpr 铺满：固定 640×240 逻辑尺寸，导出时裁掉空白边
-  useEffect(() => {
+  /** backing store 对齐 CSS 尺寸 × dpr，并按笔迹重绘 */
+  const syncSize = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
-    canvas.width = 640 * dpr
-    canvas.height = 240 * dpr
-    const ctx = canvas.getContext('2d')
-    if (ctx) {
-      ctx.scale(dpr, dpr)
-      ctx.clearRect(0, 0, 640, 240)
+    const rect = canvas.getBoundingClientRect()
+    const w = Math.max(1, Math.round(rect.width))
+    const h = Math.max(1, Math.round(rect.height))
+    const dpr = Math.min(3, window.devicePixelRatio || 1)
+    const bw = Math.round(w * dpr)
+    const bh = Math.round(h * dpr)
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw
+      canvas.height = bh
     }
+    sizeRef.current = { w, h }
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(bw / w, 0, 0, bh / h, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    drawStrokes(ctx, currentRef.current ? [...strokesRef.current, currentRef.current] : strokesRef.current)
   }, [])
 
-  const toLogical = (e: ReactPointerEvent): StrokePoint => {
+  useEffect(() => {
+    syncSize()
+    const canvas = canvasRef.current
+    if (!canvas || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => syncSize())
+    ro.observe(canvas)
+    return () => ro.disconnect()
+  }, [syncSize])
+
+  /** 指针 → 画板 CSS 像素坐标（同一套坐标画、存、导出） */
+  const toLocal = (e: ReactPointerEvent): StrokePoint => {
     const rect = canvasRef.current?.getBoundingClientRect()
-    const x = ((e.clientX - (rect?.left ?? 0)) / (rect?.width ?? 1)) * 640
-    const y = ((e.clientY - (rect?.top ?? 0)) / (rect?.height ?? 1)) * 240
+    const { w, h } = sizeRef.current
+    const rw = rect?.width || w || 1
+    const rh = rect?.height || h || 1
+    const x = ((e.clientX - (rect?.left ?? 0)) / rw) * (w || rw)
+    const y = ((e.clientY - (rect?.top ?? 0)) / rh) * (h || rh)
     return { x, y, t: performance.now() }
   }
 
   const onDown = (e: ReactPointerEvent) => {
+    e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    const p = toLogical(e)
-    pointsRef.current = [p]
+    // 尺寸可能在画板显示后才稳定（折叠面板 / 旋转屏幕），落笔前对一次
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (rect && (Math.round(rect.width) !== sizeRef.current.w || Math.round(rect.height) !== sizeRef.current.h)) syncSize()
+    const p = toLocal(e)
+    currentRef.current = [p]
     const ctx = ctxOf()
-    if (ctx) {
-      ctx.fillStyle = '#1c1c1e'
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2)
-      ctx.fill()
-    }
+    if (ctx) drawDot(ctx, p)
   }
 
   const onMove = (e: ReactPointerEvent) => {
-    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-    const pts = pointsRef.current
-    const p = toLogical(e)
-    pts.push(p)
-    if (pts.length < 3) return
-    // 新闭合的那一段 = 最近三点的中点平滑首段
-    const [seg] = smoothStroke(pts.slice(-3))
-    const width = velocityWidth(pts[pts.length - 2], p, 7, 1.8)
-    strokeSeg(seg.from, seg.ctrl, seg.to, width)
+    const pts = currentRef.current
+    if (!pts || !e.currentTarget.hasPointerCapture(e.pointerId)) return
+    // 合并事件（getCoalescedEvents）补齐快速甩笔时丢的采样点
+    const native = e.nativeEvent as PointerEvent
+    const events = typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : []
+    const samples = events.length ? events : [native]
+    const ctx = ctxOf()
+    for (const ev of samples) {
+      pts.push(toLocal(ev as unknown as ReactPointerEvent))
+      if (pts.length < 3 || !ctx) continue
+      // 新闭合的那一段 = 平滑线段里倒数第二段（最后一段是指向笔尖的收尾段）
+      const segs = strokeSegments(pts)
+      drawSegment(ctx, segs[segs.length - 2])
+    }
   }
 
   const onUp = (e: ReactPointerEvent) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    const pts = pointsRef.current
+    const pts = currentRef.current
+    currentRef.current = null
+    if (!pts) return
     if (pts.length >= 2) {
-      const segs = smoothStroke(pts)
-      const last = segs[segs.length - 1]
-      strokeSeg(last.from, last.ctrl, last.to, velocityWidth(pts[pts.length - 2], pts[pts.length - 1], 7, 1.8))
+      const segs = strokeSegments(pts)
+      const ctx = ctxOf()
+      if (ctx) drawSegment(ctx, segs[segs.length - 1])
     }
+    strokesRef.current.push(pts)
   }
 
   const clear = () => {
-    pointsRef.current = []
+    strokesRef.current = []
+    currentRef.current = null
     const ctx = ctxOf()
-    ctx?.clearRect(0, 0, 640, 240)
+    const { w, h } = sizeRef.current
+    ctx?.clearRect(0, 0, w, h)
   }
 
   const save = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const pts = pointsRef.current
-    if (!pts.length) {
+    const strokes = strokesRef.current
+    const { w: boardW, h: boardH } = sizeRef.current
+    const box = strokesBounds(strokes, boardW || 10000, boardH || 10000)
+    if (!box) {
       toast('先在画板上签名')
       return
     }
-    // 裁掉透明边：从墨迹包围盒出图，贴到页面上才不会四周空一大圈
-    const pad = 8
-    const minX = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)) - pad))
-    const minY = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y)) - pad))
-    const maxX = Math.min(640, Math.ceil(Math.max(...pts.map((p) => p.x)) + pad))
-    const maxY = Math.min(240, Math.ceil(Math.max(...pts.map((p) => p.y)) + pad))
-    const w = Math.max(1, maxX - minX)
-    const h = Math.max(1, maxY - minY)
+    // 按包围盒把全部笔迹矢量重绘到透明画布（2×），四周留白已含在 box 里
     const out = document.createElement('canvas')
-    out.width = w
-    out.height = h
+    out.width = Math.max(1, Math.round(box.width * EXPORT_SCALE))
+    out.height = Math.max(1, Math.round(box.height * EXPORT_SCALE))
     const ctx = out.getContext('2d')
     if (!ctx) return
-    ctx.drawImage(canvas, minX, minY, w, h, 0, 0, w, h)
-    onSave(out.toDataURL('image/png'), w, h)
+    ctx.setTransform(EXPORT_SCALE, 0, 0, EXPORT_SCALE, -box.x * EXPORT_SCALE, -box.y * EXPORT_SCALE)
+    drawStrokes(ctx, strokes)
+    onSave(out.toDataURL('image/png'), out.width, out.height)
     clear()
   }
 
