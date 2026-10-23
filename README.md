@@ -2,7 +2,7 @@
 
 Kairos（个人工作站）：任务清单 × 文档工作站 × 本地工具合集。**本地优先、数据不出本机（不上传任务或文档内容）、单人不设账号**。
 
-> v3.4.2 · 在线版：<https://ajie203b.github.io/personal-workstation/>
+> v3.4.3 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 三种形态：**安卓 App**（数据存本机，无需服务器）、**Windows 桌面版**（Tauri）与 **网页版 PWA**。
 
 ## 获取与安装

@@ -3,6 +3,8 @@ import { db, type Task } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { registerUndo } from '@/lib/undo'
 import { isFutureTask, todayStr } from '@/lib/date'
+import { burstFromTask } from '@/lib/celebrate'
+import { disintegrate } from '@/lib/disintegrate'
 
 /**
  * 小组件勾选（com.personal.workstation://complete?id=）的落地：
@@ -37,6 +39,8 @@ export async function toggleTaskWithUndo(task: Task): Promise<void> {
     await toggleDone(task)
     return
   }
+  // 从勾选圈原位撒花；等数据落库后卡片就要移除了，必须先把坐标取走
+  burstFromTask(task.id)
   const spawned = await toggleDone(task)
   let used = false
   const undoOnce = () => {
@@ -65,7 +69,10 @@ export async function checkInWithUndo(task: Task): Promise<void> {
     await toggleDone(task)
     return
   }
-  const before = checkinProgress(task).count
+  const progress = checkinProgress(task)
+  const before = progress.count
+  // 只有打满归档的那一次才撒花；中途 +1 用勾选圈自己的按压反馈
+  if (before + 1 >= progress.total) burstFromTask(task.id)
   const result = await checkInTask(task)
   if (!result.completed) {
     useUi.getState().toast(`已打卡 ${result.count}/${result.total}`)
@@ -88,8 +95,12 @@ export async function checkInWithUndo(task: Task): Promise<void> {
   registerUndo(`打卡「${shortTitle(task.title)}」`, undoOnce)
 }
 
-/** 删除 + 6 秒撤销：列表左滑和详情删除共用同一条路径，避免两处文案/墓碑处理分叉 */
-export async function deleteTaskWithUndo(task: Task): Promise<void> {
+/**
+ * 删除 + 6 秒撤销：列表左滑和详情删除共用同一条路径，避免两处文案/墓碑处理分叉。
+ * source 是触发删除的卡片：传了就先在原位打散成沙，数据照常立即删除。
+ */
+export async function deleteTaskWithUndo(task: Task, source?: HTMLElement | null, offsetX?: number): Promise<void> {
+  disintegrate(source, { offsetX })
   await deleteTask(task)
   let used = false
   const undoOnce = () => {

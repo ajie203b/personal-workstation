@@ -123,7 +123,11 @@
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
 }
-.no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot { animation: none !important; display: none !important; }
+.no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot,
+.no-motion .confetti-layer, .no-motion .magnet-glow, .no-motion .sand-layer, .no-motion .sand-clone {
+  animation: none !important;
+  display: none !important;
+}
 
 /* 强调色（macOS 系统设置同款）：覆盖 --primary 系令牌，全站零硬编码随之换色 */
 :root[data-accent='blue'] { --primary: #2C55B8; --primary-soft: #EAEFF9; }
@@ -306,7 +310,7 @@
     scroll-behavior: auto !important;
   }
   /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
-  .spark-dot, .done-halo, ::view-transition-new(root) { display: none !important; animation: none !important; }
+  .spark-dot, .done-halo, .confetti-layer, .magnet-glow, .sand-layer, .sand-clone, ::view-transition-new(root) { display: none !important; animation: none !important; }
   /* 新增氛围特效同样静默降级 */
   body::before { display: none !important; }
   .focus-breathe, .drop-settle { animation: none !important; }
@@ -350,6 +354,36 @@ select:focus-visible {
   transition: transform var(--dur-1) var(--ease-standard);
 }
 .press:active { transform: scale(0.98); }
+
+/* 提交按钮三连变：彩色底是一层绝对定位图层，收缩时只动自己，不挤动按钮内外布局 */
+.btn-fill {
+  transition:
+    width var(--dur-3) var(--ease-standard),
+    border-radius var(--dur-3) var(--ease-standard),
+    background-color var(--dur-2) var(--ease-standard),
+    box-shadow var(--dur-2) var(--ease-standard);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }
+
+/* 磁吸按钮：高光从指针进入的方向铺开（仅桌面精细指针挂载） */
+.magnet-glow {
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(90px circle at var(--mx, 50%) var(--my, 50%), var(--magnet-glow, transparent), transparent 72%);
+  transition: opacity var(--dur-2) var(--ease-standard);
+}
+.group:hover .magnet-glow { opacity: 1; }
+
+/* 撒花粒子层：全页一张 canvas，永远不接鼠标事件 */
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 
 /* 图标按钮提示：鼠标悬停与键盘聚焦都能看到名称，不再只靠 title */
 .tip { position: relative; }

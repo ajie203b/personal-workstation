@@ -37,8 +37,8 @@ const NAV_DIR: Record<string, 1 | -1> = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1
 export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Props) {
   const { focusId, setFocusId, openDetail } = useTasksUi()
   const openAddSheet = useUi((s) => s.openAddSheet)
-  // 左滑删除：软删除 + 撤销（与详情里的删除走同一条路径）
-  const removeTask = (t: Task) => deleteTaskWithUndo(t)
+  // 左滑删除：软删除 + 撤销（与详情里的删除走同一条路径）；把卡片交给碎沙动画
+  const removeTask = (t: Task, source?: HTMLElement | null, offsetX?: number) => deleteTaskWithUndo(t, source, offsetX)
   const containerRef = useRef<HTMLUListElement>(null)
   // 按键处理读最新数据，避免把 tasks 塞进依赖导致每帧重绑监听
   const latest = useRef({ tasks, focusId })
@@ -113,7 +113,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
   if (tasks.length === 0) {
     return (
       <EmptyState dense={denseEmpty} icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'}>
-        <Button size="sm" variant="primary" onClick={() => openAddSheet({ tier: 'today', todayContext: true })}>
+        <Button size="sm" variant="primary" magnetic onClick={() => openAddSheet({ tier: 'today', todayContext: true })}>
           <Plus size={15} /> 加第一个任务
         </Button>
       </EmptyState>
@@ -136,7 +136,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
     >
       {tasks.map((t) => (
         <DragSortItem key={t.id} id={t.id} as="li">
-          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={() => void removeTask(t)} disabled={t.status === 'done' || isFutureTask(t)}>
+          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={(source, offsetX) => void removeTask(t, source, offsetX)} disabled={t.status === 'done' || isFutureTask(t)}>
             <TaskItem task={t} focused={focusId === t.id} flip />
           </SwipeRow>
         </DragSortItem>
@@ -149,14 +149,20 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
 /**
  * 手机端横向手势：右滑完成、左滑删除（P1 + v2.2）。
  * - 右滑露出绿色对勾底色，过阈值松手即完成
- * - 左滑露出红色删除位，过阈值松手即删除，并给 4 秒撤销提示条
+ * - 左滑露出红色删除位，过阈值松手即删除：卡片原位碎成沙，并给 6 秒撤销提示条
  * 仅触摸设备启用；纵向滚动、点击、看板拖拽都不受影响 —— 只有横向意图明确时才接管。
  */
-function SwipeRow({ children, onComplete, onDelete, disabled }: { children: React.ReactNode; onComplete: () => void; onDelete: () => void; disabled?: boolean }) {
+function SwipeRow({ children, onComplete, onDelete, disabled }: {
+  children: React.ReactNode
+  onComplete: () => void
+  /** 把卡片交给碎沙动画；offsetX 用来抵消滑动位移，让沙从原位置散开 */
+  onDelete: (source?: HTMLElement | null, offsetX?: number) => void
+  disabled?: boolean
+}) {
   const { active: sortActive } = useDndContext()
   const [dx, setDx] = useState(0)
   const [dragging, setDragging] = useState(false)
-  const [leaving, setLeaving] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
   const start = useRef({ x: 0, y: 0, t: 0, active: false })
   const moved = useRef(false)
   const armed = useRef(0)
@@ -212,17 +218,16 @@ function SwipeRow({ children, onComplete, onDelete, disabled }: { children: Reac
     }
     if (rawX < -72 || (rawX < -20 && velocity > 0.5)) {
       haptic('warning')
-      // 先滑到底再淡出，别一松手就弹回来（会让人以为没删掉）
-      setDx(-window.innerWidth)
-      setLeaving(true)
-      window.setTimeout(onDelete, 200)
+      // 越过阈值就原地碎沙：卡片已被手势推开了 dx，交给动画时补回去
+      const shifted = rawX > 0 ? Math.min(rawX * 0.9, 104) : Math.max(rawX * 0.9, -104)
+      onDelete(contentRef.current, -shifted)
       return
     }
     setDx(0)
   }
 
   return (
-    <div className={cn('swipe-row rounded-[16px]', leaving && 'pointer-events-none')}>
+    <div className="swipe-row rounded-[16px]">
       {/* 底色：往右滑露出「完成」，往左滑露出「删除」 */}
       <span
         aria-hidden
@@ -239,11 +244,11 @@ function SwipeRow({ children, onComplete, onDelete, disabled }: { children: Reac
         <Trash2 size={15} /> 删除
       </span>
       <div
+        ref={contentRef}
         className="swipe-content rounded-[16px]"
         style={{
           transform: dx ? `translateX(${dx}px)` : undefined,
-          transition: dragging ? 'none' : 'transform var(--dur-2) cubic-bezier(.34,1.32,.5,1), opacity 180ms linear',
-          opacity: leaving ? 0 : 1,
+          transition: dragging ? 'none' : 'transform var(--dur-2) cubic-bezier(.34,1.32,.5,1)',
         }}
         onPointerDown={onDown}
         onPointerMove={onMove}

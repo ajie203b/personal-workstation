@@ -12,6 +12,7 @@ import { openDoc } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { GettingStarted } from './GettingStarted'
 import { prefersReducedMotion } from '@/lib/motion'
+import { useMagnetic } from '@/lib/useMagnetic'
 import { cn } from '@/lib/cn'
 import { Button } from '@/shared/ui/Button'
 
@@ -22,6 +23,8 @@ export function TodayPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
+  const addRef = useRef<HTMLButtonElement>(null)
+  useMagnetic(addRef)
   // 任务「开始专注」深链：/today?focus-task=<id> → 番茄钟自动绑定
   const focusTaskParam = params.get('focus-task') ?? undefined
   useEffect(() => {
@@ -74,14 +77,20 @@ export function TodayPage() {
           {/* 手机：一枚小进度环顶替原来那 4 张数字卡（完成 3/8 一眼可见，不占一屏） */}
           <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} className="md:hidden shrink-0 mb-0.5" />
           <button
+            ref={addRef}
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
             data-tour="add"
             onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
-            className="hidden md:grid place-items-center w-12 h-12 rounded-full border border-primary/20 bg-primary-soft text-primary shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-transform shrink-0 mb-1 cursor-pointer"
+            className={cn(
+              'group hidden md:grid relative place-items-center w-12 h-12 rounded-full border border-primary/20 bg-primary-soft text-primary shadow-sm shrink-0 mb-1 cursor-pointer',
+              'active:scale-[0.98] transition-transform',
+              '[--magnet-glow:color-mix(in_srgb,var(--primary)_22%,transparent)]',
+            )}
             style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))', color: 'var(--primary)' }}
           >
-            <Plus size={24} strokeWidth={2.4} />
+            <span aria-hidden className="magnet-glow absolute inset-0 rounded-full" />
+            <Plus size={24} strokeWidth={2.4} className="relative z-10" />
           </button>
         </div>
         {/* 手机空态时收起重复说明，把首屏让给专注控件 */}

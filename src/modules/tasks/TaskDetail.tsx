@@ -181,8 +181,10 @@ export function TaskDetail() {
   const doneSubs = (task.subtasks ?? []).filter((s) => s.done).length
 
   const remove = async () => {
+    // 先留住列表里的卡片节点，详情关闭后由它在原位碎成沙
+    const source = document.getElementById(`task-${task.id}`)
     openDetail(null)
-    await deleteTaskWithUndo(task)
+    await deleteTaskWithUndo(task, source)
   }
 
   const done = task.status === 'done'
@@ -548,12 +550,13 @@ export function TaskDetail() {
           <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
             <div className="flex items-center gap-1.5">
               {done ? (
-                <Button variant="primary" className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
+                <Button variant="primary" magnetic className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
                   恢复为未完成
                 </Button>
               ) : (
                 <Button
                   variant="primary"
+                  magnetic
                   className="flex-1 justify-center"
                   disabled={future}
                   title={future

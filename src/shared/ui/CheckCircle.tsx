@@ -35,9 +35,19 @@ function showCompletionFeedback(source: HTMLButtonElement) {
   halo.className = 'done-halo'
   feedback.appendChild(halo)
   document.body.appendChild(feedback)
-  feedback.animate?.([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: 320, fill: 'forwards' })
+  // 先压扁再弹起，随后缩小淡出：列表马上补位，停留太久会盖住下一行的勾选圈。
+  // 撒花由 taskActions 从这颗按钮的位置单独触发。
+  feedback.animate?.(
+    [
+      { transform: 'scale(1)', opacity: 1 },
+      { transform: 'scale(1.14, 0.82)', opacity: 1, offset: 0.18 },
+      { transform: 'scale(0.94, 1.06)', opacity: 1, offset: 0.42 },
+      { transform: 'scale(0.86)', opacity: 0 },
+    ],
+    { duration: 300, easing: 'cubic-bezier(.22, 1.06, .36, 1)', fill: 'forwards' },
+  )
   // 这里只延迟清理视觉节点，不延迟任何数据变更。
-  window.setTimeout(() => feedback.remove(), 340)
+  window.setTimeout(() => feedback.remove(), 320)
 }
 
 export function CheckCircle({ checked, onChange, className, label, disabled }: Props) {
@@ -46,6 +56,7 @@ export function CheckCircle({ checked, onChange, className, label, disabled }: P
     <button
       type="button"
       role="checkbox"
+      data-check-circle=""
       aria-checked={checked}
       aria-disabled={disabled || undefined}
       aria-label={label ?? '完成任务'}
