@@ -42,8 +42,11 @@ async function tick(): Promise<void> {
 
 async function loadPdf(bytes: Uint8Array): Promise<PDFDocument> {
   sinceYield = 0
-  // ignoreEncryption：加密文档尽量打开（pdf-lib 只能读不能解密正文加密的内容，但常规权限加密可过）
-  return PDFDocument.load(bytes, { ignoreEncryption: true })
+  try { return await PDFDocument.load(bytes) }
+  catch (error) {
+    if (error instanceof Error && /encrypted/i.test(error.message)) throw new Error('这份 PDF 已加密，请输入已知密码后再处理')
+    throw new Error('无法读取这份 PDF，请确认文件完整')
+  }
 }
 
 function pageInfos(doc: PDFDocument): PageInfo[] {
@@ -93,13 +96,15 @@ export async function splitByGroups(bytes: Uint8Array, groups: number[][]): Prom
 /** 删页 + 旋转一步到位（页码 1 起；rotate 为在原角度上追加的度数） */
 export async function applyPageOps(
   bytes: Uint8Array,
-  opts: { remove?: Iterable<number>; rotate?: Record<number, number> },
+  opts: { remove?: Iterable<number>; rotate?: Record<number, number>; order?: number[] },
 ): Promise<Uint8Array> {
   const src = await loadPdf(bytes)
   const remove = new Set(opts.remove ?? [])
   const total = src.getPageCount()
   const keep: number[] = []
-  for (let i = 1; i <= total; i++) if (!remove.has(i)) keep.push(i)
+  const order = opts.order ?? Array.from({ length: total }, (_, i) => i + 1)
+  if (order.length !== total || new Set(order).size !== total || order.some(p => !Number.isInteger(p) || p < 1 || p > total)) throw new Error('页序无效，请保留每页且不要重复')
+  for (const i of order) if (!remove.has(i)) keep.push(i)
   if (!keep.length) throw new Error('不能删掉全部页面')
   const out = await PDFDocument.create()
   const copied = await out.copyPages(src, keep.map((p) => p - 1))
@@ -168,8 +173,8 @@ export function watermarkStamps(
 /** 页码文案：`7` / `7 / 42` / `第 7 页` */
 export type PageNumberFormat = 'n' | 'n/total' | 'cn'
 
-export function pageNumberText(pageIndex: number, total: number, format: PageNumberFormat): string {
-  const n = pageIndex + 1
+export function pageNumberText(pageIndex: number, total: number, format: PageNumberFormat, startNumber = 1): string {
+  const n = pageIndex + startNumber
   if (format === 'n/total') return `${n} / ${total}`
   if (format === 'cn') return `第 ${n} 页`
   return String(n)

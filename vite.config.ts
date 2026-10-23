@@ -78,9 +78,9 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           navigateFallback: 'index.html',
-          globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,bcmap,pfb,ttf}'],
+          globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,bcmap,pfb,ttf}', '**/qpdf-*.wasm'],
           // ONNX 模型与 ort / MediaPipe 的 wasm 体积大且按需用，不进预缓存；wasm 走运行时 CacheFirst
-          globIgnores: ['**/*.onnx', '**/*.wasm', '**/mediapipe/**'],
+          globIgnores: ['**/*.onnx', '**/ort-*.wasm', '**/mediapipe/**'],
           runtimeCaching: [
             {
               urlPattern: /(\/mediapipe\/.+|\/assets\/ort-wasm[^/]*\.wasm)$/,

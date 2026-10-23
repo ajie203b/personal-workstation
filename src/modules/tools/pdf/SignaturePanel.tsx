@@ -5,23 +5,14 @@ import { Button } from '@/shared/ui/Button'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
-import { dataUrlToBytes, drawDot, drawSegment, drawStrokes, strokeSegments, strokesBounds, type StrokePoint } from './signature'
+import { drawDot, drawSegment, drawStrokes, strokeSegments, strokesBounds, type StrokePoint } from './signature'
 import { placementRect } from './layout'
-import { pdfPageInfos, stampPngs, type Stamp } from './pdfOps'
+import { pdfPageInfos, stampPngs } from './pdfOps'
+import { signaturePlacementStamps, type SignaturePlacement as Placement } from './signaturePlacement'
 import { openPdfDocument, renderPageThumb, type PDFDocumentProxy } from './pdfRender'
 import { addSignature, listSignatures, removeSignature, type SignatureRow } from './signatureStore'
 import { type ToolOutput } from './output'
 import { FilePicker, OutputBar, Panel, fileBytes, pdfBlob } from './parts'
-
-interface Placement {
-  id: string
-  pageIndex: number
-  /** 签名中心相对页宽/页高的位置（0~1，视觉坐标） */
-  nx: number
-  ny: number
-  /** 签名宽占页宽比例 */
-  nw: number
-}
 
 /** 手写签名：Pointer Events 画板（中点平滑 + 速度变线宽）→ 透明 PNG 存库 → 贴到页面 */
 export function SignaturePanel() {
@@ -39,10 +30,13 @@ export function SignaturePanel() {
   const [placements, setPlacements] = useState<Placement[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [name, setName] = useState('签名文档')
+  const loadId = useRef(0)
+  useEffect(() => () => { loadId.current++ }, [])
 
   useEffect(() => () => void doc?.destroy(), [doc])
 
   const pick = async (f: File) => {
+    const request = ++loadId.current
     setFile(f)
     setDoc(null)
     setPreview(undefined)
@@ -50,9 +44,11 @@ export function SignaturePanel() {
     setPageIndex(0)
     try {
       const opened = await openPdfDocument(await fileBytes(f))
+      if (request !== loadId.current) { void opened.destroy(); return }
       setDoc(opened)
       setTotal(opened.numPages)
     } catch {
+      if (request !== loadId.current) return
       toast('打不开这份 PDF（可能已损坏或格式特殊）')
       setFile(null)
     }
@@ -83,7 +79,7 @@ export function SignaturePanel() {
 
   const place = (nx: number, ny: number) => {
     if (!active) return toast('先在签名库里选一枚签名')
-    const p: Placement = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, pageIndex, nx, ny, nw: 0.28 }
+    const p: Placement = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, pageIndex, nx, ny, nw: 0.28, signature: active }
     setPlacements((list) => [...list, p])
     setSelectedId(p.id)
   }
@@ -91,19 +87,9 @@ export function SignaturePanel() {
   const make = async (): Promise<ToolOutput> => {
     if (!file) throw new Error('先选一份 PDF')
     if (!placements.length) throw new Error('还没有放置签名')
-    const sig = active
-    if (!sig) throw new Error('签名库里没有可用签名')
     const bytes = await fileBytes(file)
     const infos = await pdfPageInfos(bytes)
-    // v1 简化：所有放置共用当前选中的签名
-    const png = dataUrlToBytes(sig.dataUrl)
-    const stamps: Stamp[] = []
-    for (const p of placements) {
-      const info = infos[p.pageIndex]
-      if (!info) continue
-      const rect = placementRect(info.visW, info.visH, sig.width, sig.height, p)
-      stamps.push({ pageIndex: p.pageIndex, png, rect })
-    }
+    const stamps = signaturePlacementStamps(placements, infos)
     return {
       blob: pdfBlob(await stampPngs(bytes, stamps)),
       filename: `${name.trim() || '签名文档'}.pdf`,
@@ -169,7 +155,7 @@ export function SignaturePanel() {
                 {total ? `第 ${pageIndex + 1} / ${total} 页 · 已放置 ${placements.length} 处` : '读取中…'}
               </p>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setFile(null)} aria-label="移除">
+            <Button variant="ghost" size="icon" onClick={() => { loadId.current++; setFile(null); setDoc(null); setTotal(0); setPreview(undefined); setPlacements([]) }} aria-label="移除">
               <X size={16} />
             </Button>
           </div>
@@ -279,6 +265,7 @@ function PagePlacer({
   onMove: (id: string, nx: number, ny: number) => void
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
+  const [pageSize, setPageSize] = useState({ width: 1, height: 1 })
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
 
   const norm = (e: { clientX: number; clientY: number }) => {
@@ -311,6 +298,7 @@ function PagePlacer({
           alt="页面预览"
           className="w-full block"
           draggable={false}
+          onLoad={e => setPageSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
           onClick={(e) => {
             const p = norm(e)
             if (p) onPlace(p.nx, p.ny)
@@ -320,11 +308,12 @@ function PagePlacer({
         <div className="aspect-[3/4] animate-pulse bg-surface-3/60" />
       )}
 
-      {sig &&
-        placements.map((p) => (
+      {placements.map((p) => {
+        const rect = placementRect(pageSize.width, pageSize.height, p.signature.width, p.signature.height, p)
+        return (
           <img
             key={p.id}
-            src={sig.dataUrl}
+            src={p.signature.dataUrl}
             alt="签名"
             draggable={false}
             className={cn(
@@ -333,21 +322,20 @@ function PagePlacer({
               p.id === selectedId && 'outline outline-2 outline-primary/70 rounded',
             )}
             style={{
-              left: `${p.nx * 100}%`,
-              top: `${p.ny * 100}%`,
-              width: `${p.nw * 100}%`,
+              left: `${rect.x / pageSize.width * 100}%`,
+              top: `${rect.y / pageSize.height * 100}%`,
+              width: `${rect.w / pageSize.width * 100}%`,
               height: 'auto',
-              transform: 'translate(-50%, -50%)',
             }}
             onPointerDown={(e) => {
               e.stopPropagation()
               e.currentTarget.setPointerCapture(e.pointerId)
               onSelect(p.id)
               const pos = norm(e)
-              dragRef.current = { id: p.id, dx: pos ? pos.nx - p.nx : 0, dy: pos ? pos.ny - p.ny : 0 }
+              dragRef.current = { id: p.id, dx: pos ? pos.nx - (rect.x + rect.w / 2) / pageSize.width : 0, dy: pos ? pos.ny - (rect.y + rect.h / 2) / pageSize.height : 0 }
             }}
           />
-        ))}
+        )})}
 
       {!sig && (
         <p className="absolute inset-x-0 bottom-0 p-2 text-center text-[11px] text-on-surface-2 bg-surface/80">

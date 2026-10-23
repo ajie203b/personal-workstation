@@ -12,6 +12,7 @@ import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
 import { TimePicker } from '@/shared/ui/TimePicker'
+import { DatePicker } from '@/shared/ui/DatePicker'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
@@ -328,12 +329,10 @@ export function TaskDetail() {
                       </div>
                       {/* 日期与时间并排：竖着排会让手机详情白白多出两行 */}
                       <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="date"
-                          aria-label="开始日期"
+                        <DatePicker
+                          ariaLabel="开始日期"
                           value={startDate}
-                          onChange={(e) => setStart(e.target.value, startTime)}
-                          className={INPUT}
+                          onChange={(date) => setStart(date, startTime)}
                         />
                         <TimePicker
                           value={startTime}
@@ -350,12 +349,10 @@ export function TaskDetail() {
                         {!task.due && <span className="shrink-0 text-[10.5px] text-on-surface-2/80" title="没有截止日期 = 无穷远">∞ 无截止</span>}
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="date"
-                          aria-label="截止日期"
+                        <DatePicker
+                          ariaLabel="截止日期"
                           value={task.due ?? ''}
-                          onChange={(e) => patch({ due: e.target.value || undefined })}
-                          className={INPUT}
+                          onChange={(date) => patch({ due: date || undefined })}
                         />
                         <TimePicker
                           value={task.dueTime}

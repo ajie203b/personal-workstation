@@ -56,11 +56,19 @@ export function wrapText(
     if (consumed <= start || nodeStart >= end) continue
     targets.push({ node, start: Math.max(0, start - nodeStart), end: Math.min(node.data.length, end - nodeStart) })
   }
+  const formulas = new Set<Element>()
   for (const target of targets.reverse()) {
     if (!target.node.isConnected || !target.node.data.slice(target.start, target.end).trim()) continue
+    const parent = target.node.parentElement
+    const formula = parent?.closest('.katex') ?? parent?.closest('math')
+    if (formula && formulas.has(formula)) continue
     const range = document.createRange()
-    range.setStart(target.node, target.start)
-    range.setEnd(target.node, target.end)
+    // MathML structure and KaTeX's paired visual/accessibility trees are atomic.
+    if (formula) { formulas.add(formula); range.selectNode(formula) }
+    else {
+      range.setStart(target.node, target.start)
+      range.setEnd(target.node, target.end)
+    }
     const mark = document.createElement('mark')
     mark.className = `hl-${color}`
     mark.dataset.ann = annId

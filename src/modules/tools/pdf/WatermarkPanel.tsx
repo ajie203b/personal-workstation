@@ -8,6 +8,7 @@ import type { PageNumberPos } from './layout'
 import { renderTextPng } from './textPng'
 import { type ToolOutput } from './output'
 import { Field, FilePicker, OutputBar, Panel, fileBytes, pdfBlob } from './parts'
+import { parsePageExpr } from './pdfPages'
 
 type Kind = 'watermark' | 'pagenum'
 
@@ -22,21 +23,26 @@ export function WatermarkPanel() {
   const [format, setFormat] = useState<PageNumberFormat>('n/total')
   const [pos, setPos] = useState<PageNumberPos>('center')
   const [name, setName] = useState('加水印')
+  const [range, setRange] = useState('')
+  const [start, setStart] = useState('1')
 
   const make = async (): Promise<ToolOutput> => {
     if (!file) throw new Error('先选一份 PDF')
     const bytes = await fileBytes(file)
     const infos = await pdfPageInfos(bytes)
     if (!infos.length) throw new Error('文档没有页面')
+    const chosen = range.trim() ? parsePageExpr(range, infos.length) : infos.map((_, i) => i + 1)
+    if (!chosen.length) throw new Error('请选择至少一页')
 
     if (kind === 'watermark') {
       const t = text.trim()
       if (!t) throw new Error('水印文字不能为空')
       const png = await renderTextPng(t, { fontSize: 28, angle, bold: true, color: 'rgba(70,70,70,1)' })
+      const selected = new Set(chosen)
       const stamps = watermarkStamps(png.bytes, png.width, png.height, infos, {
         position,
         opacity,
-      })
+      }).filter(stamp => selected.has(stamp.pageIndex + 1))
       return {
         blob: pdfBlob(await stampPngs(bytes, stamps)),
         filename: `${name.trim() || '加水印'}.pdf`,
@@ -46,8 +52,11 @@ export function WatermarkPanel() {
 
     // 页码：每页文字不同，逐页渲小 PNG 贴到底部
     const stamps: Stamp[] = []
-    for (let i = 0; i < infos.length; i++) {
-      const label = pageNumberText(i, infos.length, format)
+    const first = Number(start)
+    if (!Number.isInteger(first) || first < 1 || first > 999999) throw new Error('起始页码应为 1 到 999999 的整数')
+    for (const [offset, pageNo] of chosen.entries()) {
+      const i = pageNo - 1
+      const label = pageNumberText(offset, first + chosen.length - 1, format, first)
       const png = await renderTextPng(label, { fontSize: 16, bold: false, color: 'rgba(90,90,90,1)' })
       stamps.push(pageNumberStamp(i, infos[i], png.bytes, png.width, png.height, { pos }))
     }
@@ -61,7 +70,7 @@ export function WatermarkPanel() {
   return (
     <Panel
       title="水印 / 页码"
-      desc="文字渲成透明 PNG 平铺或放角落，不嵌中文字体；页码同理贴在页脚。"
+      desc="可选择应用页码范围；水印支持角度与透明度，页码支持自定义起始编号。"
     >
       {file ? (
         <div className="flex items-center gap-2 rounded-[12px] border border-outline bg-surface-2 px-3 py-2">
@@ -89,6 +98,7 @@ export function WatermarkPanel() {
         ariaLabel="类型"
         className="self-start"
       />
+      <Field label="应用页码"><input aria-label="水印页码范围" value={range} onChange={e => setRange(e.target.value)} placeholder="留空为全部，如 2-5,8" className="w-48 max-w-full h-9 px-3 rounded-[10px] bg-surface-2 border border-outline text-[12px]" /></Field>
 
       {kind === 'watermark' ? (
         <>
@@ -151,6 +161,7 @@ export function WatermarkPanel() {
         </>
       ) : (
         <>
+          <Field label="起始编号"><input type="number" aria-label="起始编号" min={1} max={999999} value={start} onChange={e => setStart(e.target.value)} className="w-28 h-9 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px]" /></Field>
           <Field label="格式">
             <SelectMenu
               value={format}

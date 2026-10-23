@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, Clock3, Flag, Hash, Repeat, Target, Timer } from 'lucide-react'
+import { CalendarDays, ChevronDown, Clock3, Flag, Hash, Repeat, Target, Timer } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { repeatLabel } from '@/lib/repeat'
 import { addTask } from '@/db/tasks'
@@ -33,8 +33,9 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   // null = 尚未手动操作，跟随解析；'' = 用户明确清空，不再回填。
   const [startInput, setStartInput] = useState<string | null>(null)
   const [dueInput, setDueInput] = useState<string | null>(null)
-  const [habitTimes, setHabitTimes] = useState<string[]>([])
+  const [habitTimes, setHabitTimes] = useState<string[] | null>(null)
   const [habitCount, setHabitCount] = useState('')
+  const [timeExpansion, setTimeExpansion] = useState<{ key: string; open: boolean } | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -44,23 +45,29 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       setFreqOverride('daily')
       setStartInput(null)
       setDueInput(null)
-      setHabitTimes([])
+      setHabitTimes(null)
       setHabitCount('')
+      setTimeExpansion(null)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [open])
 
   const parsed = useMemo(() => parseQuickAdd(value), [value])
   const effectiveStart = startInput ?? (parsed.startAt == null ? '' : `${toDateStr(new Date(parsed.startAt))}T${fmtTime(parsed.startAt)}`)
-  const effectiveDue = dueInput ?? (parsed.due ? `${parsed.due}${parsed.dueTime ? `T${parsed.dueTime}` : ''}` : '')
   const detectedRepeat = parsed.repeat ?? null
   // 检测优先：文本里有每天/每周/工作日 → 重复流程；否则看用户手动选择
   const mode: Mode = modeOverride ?? (detectedRepeat ? 'repeat' : 'single')
   const effectiveRepeat: RepeatKind | undefined = mode === 'repeat' ? (detectedRepeat ?? freqOverride) : undefined
+  const detectedDueTime = mode === 'repeat' && habitTimes !== null ? habitTimes[0] : parsed.dueTime
+  const effectiveDue = dueInput ?? (parsed.due ? `${parsed.due}${detectedDueTime ? `T${detectedDueTime}` : ''}` : '')
   // 文本里带细化的周期（每周一三五 / 每月15号）时一并带上；用户手动改过频率就不带
   const keepsDetectedDays = mode === 'repeat' && effectiveRepeat === detectedRepeat
   const chips = value.trim() ? parseSummary(parsed) : []
   const hasContent = value.trim().length > 0
+  const detectedTimes = parsed.repeatTimes?.length ? parsed.repeatTimes : parsed.dueTime ? [parsed.dueTime] : []
+  const effectiveTimes = habitTimes ?? detectedTimes
+  const scheduleKey = [parsed.startAt, parsed.due, parsed.dueTime, parsed.repeat, parsed.repeatDays?.join(','), parsed.repeatTimes?.join(',')].filter(v => v != null).join('|')
+  const timeOpen = timeExpansion?.key === scheduleKey ? timeExpansion.open : Boolean(scheduleKey || effectiveStart || effectiveDue)
 
   const { state: saveState, run: runSave } = useAsyncButton({ successHoldMs: 520 })
 
@@ -73,8 +80,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
     let tier = inferTier({ ...p, due }, defaultTier)
     if (todayContext && !due && !p.repeat && defaultTier === 'today') tier = 'today'
     // 打卡时间点：手动加的优先，其次用标题里解析到的（可能多个）
-    const detectedTimes = p.repeatTimes?.length ? p.repeatTimes : p.dueTime ? [p.dueTime] : []
-    const times = mode === 'repeat' ? (habitTimes.length ? habitTimes : detectedTimes) : []
+    const times = mode === 'repeat' ? effectiveTimes : []
     const dueTime = dueInput !== null
       ? effectiveDue.slice(11, 16) || undefined
       : times[0] ?? (effectiveDue.slice(11, 16) || undefined)
@@ -83,7 +89,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
     const repeatCount = mode === 'repeat' && Number.isFinite(countRaw) && (countRaw ?? 0) > 1
       ? Math.min(99, Math.round(countRaw as number))
       : undefined
-    const startAt = effectiveStart ? new Date(effectiveStart).getTime() : undefined
+    const startAt = effectiveStart ? new Date(effectiveStart.length === 10 ? `${effectiveStart}T00:00` : effectiveStart).getTime() : undefined
     try {
       await runSave(() => addTask({
         title: p.title,
@@ -145,12 +151,15 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
 
         {/* 解析结果直接展示；用户手动修改后，以用户的输入为准 */}
         <div className="card px-4 py-3.5 flex flex-col gap-2.5">
-          <div className="flex items-center gap-2 text-[13px]">
+          <button type="button" aria-label="时间设置" aria-expanded={timeOpen} aria-controls="add-task-time-fields"
+            onClick={() => setTimeExpansion({ key: scheduleKey, open: !timeOpen })}
+            className="flex items-center gap-2 text-[13px] text-left cursor-pointer">
             <Clock3 size={14} className="text-on-surface-2" />
             <span>时间</span>
-            <span className="text-[11px] text-on-surface-2">自动识别描述中的时间，可修改；留空表示未设置</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <span className="flex-1 text-[11px] text-on-surface-2">{scheduleKey ? '已自动识别，可展开核对或修改' : effectiveStart || effectiveDue ? '已设置' : '未设置 · 需要时展开'}</span>
+            <ChevronDown size={14} className={cn('shrink-0 transition-transform', timeOpen && 'rotate-180')} />
+          </button>
+          {timeOpen && <div id="add-task-time-fields" className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <span className="block text-[12px] font-medium text-on-surface-2 mb-1">开始时间</span>
               <DateTimeField ariaLabel="开始时间" value={effectiveStart} onChange={setStartInput} />
@@ -159,7 +168,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
               <span className="block text-[12px] font-medium text-on-surface-2 mb-1">截止时间</span>
               <DateTimeField ariaLabel="截止时间" value={effectiveDue} onChange={setDueInput} />
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* 流程分支：自动检测 + 手动选择兜底 */}
@@ -202,7 +211,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
             <div className="grid grid-cols-[1fr_96px] items-start gap-2.5">
               <div>
                 <span className="block text-[12px] font-medium text-on-surface-2 mb-1">打卡时间点（可多个）</span>
-                <HabitTimesField value={habitTimes} onChange={setHabitTimes} />
+                <HabitTimesField value={effectiveTimes} onChange={setHabitTimes} />
               </div>
               <label className="block">
                 <span className="block text-[12px] font-medium text-on-surface-2 mb-1">次数</span>

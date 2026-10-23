@@ -68,6 +68,17 @@ describe('合并 / 拆分', () => {
 })
 
 describe('删页 / 旋转', () => {
+  it('重排与删除、旋转一起生效', async () => {
+    const out = await applyPageOps(await makeDoc(4), { order: [4, 2, 1, 3], remove: [2], rotate: { 4: 90 } })
+    const info = await readInfo(out)
+    expect(info.pages.map(p => p.size.width)).toEqual([203, 200, 202])
+    expect(info.pages[0].rotation).toBe(90)
+  })
+  it('无效的重排不静默丢页', async () => {
+    const input = await makeDoc(3)
+    await expect(applyPageOps(input, { order: [1, 1, 3] })).rejects.toThrow(/页序/)
+    await expect(applyPageOps(input, { order: [1, 2] })).rejects.toThrow(/页序/)
+  })
   it('applyPageOps 删页后页数与页序正确', async () => {
     const src = await makeDoc(4)
     const out = await applyPageOps(src, { remove: [2, 3] })

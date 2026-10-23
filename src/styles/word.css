@@ -1,0 +1,119 @@
+/* STIX Two 2.13, bundled under the SIL Open Font License (fonts/stix/OFL.txt). */
+@font-face {
+  font-family: "STIX Two Math";
+  src: url("/fonts/stix/STIXTwoMath-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "STIX Two Text";
+  src: url("/fonts/stix/STIXTwoText-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "STIX Two Text";
+  src: url("/fonts/stix/STIXTwoText-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "STIX Two Text";
+  src: url("/fonts/stix/STIXTwoText-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+.flow-body .word-content {
+  max-width: 100%;
+  overflow-x: auto;
+  color: var(--md-ink);
+  font-family: "STIX Two Text", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+  letter-spacing: 0;
+  text-wrap: pretty;
+}
+.flow-body .word-content .docx { color: inherit; }
+.flow-body .word-content .docx p {
+  margin-block: 0.8em;
+  line-height: var(--word-leading, 1.85);
+}
+.flow-body .word-content .docx article > p:first-child { margin-top: 0; }
+.flow-body .word-content .docx span { white-space: pre-wrap; }
+.flow-body .word-content .docx p.word-title {
+  margin-block: 0 0.9em;
+  line-height: 1.4;
+  font-family: var(--font-sans);
+  text-wrap: balance;
+}
+.flow-body .word-content .docx p:is(.word-heading-1, .word-heading-2, .word-heading-3, .word-heading-4, .word-heading-5, .word-heading-6) {
+  margin-block: 1.6em 0.55em;
+  line-height: 1.45;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  text-wrap: balance;
+}
+.flow-body .word-content .docx p.word-caption {
+  margin-block: 0.55em 1.2em;
+  font-size: 0.9em;
+  line-height: 1.65;
+  text-align: center;
+}
+.flow-body .word-content .docx p[style*="background-color"] {
+  padding: 0.35em 0.6em;
+  border-radius: 3px;
+}
+
+/* Native MathML uses the same local math font on Windows, Android and offline. */
+.flow-body .word-content math {
+  font-family: "STIX Two Math", "Cambria Math", math, serif;
+  font-size: 1.12em;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: normal;
+  white-space: nowrap;
+  math-style: compact;
+}
+.flow-body .word-content math * { font-family: inherit; }
+/* Keep inline fraction numerators readable at phone reading sizes. */
+.flow-body .word-content math mfrac { math-style: normal; }
+.flow-body .word-content .docx p.word-equation-block {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  margin-block: 1.15em;
+  text-align: center;
+  text-indent: 0;
+}
+.flow-body .word-content .word-equation-content {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding-block: 0.45em;
+  overscroll-behavior-inline: contain;
+}
+.flow-body .word-content .word-equation-block math {
+  margin: 0 auto;
+  font-size: 1.18em;
+  math-style: normal;
+}
+.flow-body .word-content .word-equation-number {
+  flex: none;
+  font-size: 0.9em;
+  white-space: nowrap;
+  text-indent: 0;
+}
+.flow-body .word-content .docx table {
+  margin-block: 1.3em;
+  font-size: 0.95em;
+}
+.flow-body .word-content .docx :is(td, th) {
+  padding: 0.55em 0.75em;
+  line-height: 1.65;
+}
+.flow-body .word-content .docx :is(td, th) p { margin-block: 0.2em; }

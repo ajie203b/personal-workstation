@@ -6,6 +6,7 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
+import { readDocumentText } from '@/lib/readDocumentText'
 import {
   ArrowLeft, Bold, Code, Heading2, Heading3, Highlighter, ImagePlus, Italic, List, ListOrdered, ListPlus, Quote, Redo2, Save, Undo2,
 } from 'lucide-react'
@@ -73,7 +74,7 @@ export function MdEditorPage() {
         return
       }
       const blob = await db.blobs.get(doc.hash)
-      const md = (await blob?.blob.text()) ?? ''
+      const md = blob ? await readDocumentText(blob.blob) : ''
       setExisting(doc)
       setTitle(doc.title)
       setContentSeed(md)

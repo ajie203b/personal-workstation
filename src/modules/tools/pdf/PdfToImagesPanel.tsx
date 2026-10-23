@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FileText, X } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
@@ -7,6 +7,8 @@ import { PDFDocument } from 'pdf-lib'
 import { rasterizePdf } from './pdfRender'
 import { zipFiles, type ToolOutput } from './output'
 import { Field, FilePicker, OutputBar, Panel, fileBytes } from './parts'
+import { parsePageExpr } from './pdfPages'
+import { useUi } from '@/stores/ui'
 
 type Format = 'png' | 'jpeg'
 
@@ -18,14 +20,20 @@ export function PdfToImagesPanel() {
   const [format, setFormat] = useState<Format>('png')
   const [name, setName] = useState('导出')
   const [progress, setProgress] = useState('')
+  const [expr, setExpr] = useState('')
+  const [quality, setQuality] = useState('90')
+  const controller = useRef<AbortController>()
+  useEffect(() => () => controller.current?.abort(), [])
+  const cancel = () => { controller.current?.abort(); setProgress('') }
 
   const pick = async (f: File) => {
     setFile(f)
     setTotal(0)
     try {
-      const doc = await PDFDocument.load(await fileBytes(f), { ignoreEncryption: true })
+      const doc = await PDFDocument.load(await fileBytes(f))
       setTotal(doc.getPageCount())
     } catch {
+      useUi.getState().toast('无法读取这份 PDF，请重新选择文件')
       setFile(null)
       setTotal(0)
     }
@@ -34,18 +42,29 @@ export function PdfToImagesPanel() {
   const make = async (): Promise<ToolOutput> => {
     if (!file) throw new Error('先选一份 PDF')
     const base = name.trim() || '导出'
-    setProgress('')
-    const files = await rasterizePdf(await fileBytes(file), {
+    const abort = new AbortController()
+    controller.current = abort
+    setProgress('准备中')
+    try {
+      const pages = expr.trim() ? parsePageExpr(expr, total) : undefined
+      const files = await rasterizePdf(await fileBytes(file), {
       dpi: Number(dpi),
       format,
       baseName: base,
+      pages,
+      quality: Number(quality) / 100,
+      signal: abort.signal,
       onProgress: (done, all) => setProgress(`${done}/${all}`),
     })
-    setProgress('')
-    if (files.length === 1) {
-      return { blob: files[0].blob, filename: files[0].name, isPdf: false }
-    }
-    return { blob: await zipFiles(files), filename: `${base}.zip`, isPdf: false }
+      abort.signal.throwIfAborted()
+      if (files.length === 1) return { blob: files[0].blob, filename: files[0].name, isPdf: false }
+      const blob = await zipFiles(files)
+      abort.signal.throwIfAborted()
+      return { blob, filename: `${base}.zip`, isPdf: false }
+    } catch (e) {
+      if (abort.signal.aborted) throw new Error('已取消导出')
+      throw e
+    } finally { if (controller.current === abort) { controller.current = undefined; setProgress('') } }
   }
 
   return (
@@ -62,7 +81,7 @@ export function PdfToImagesPanel() {
               {progress ? ` · 已渲 ${progress}` : ''}
             </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setFile(null)} aria-label="移除">
+          <Button variant="ghost" size="icon" disabled={!!progress} onClick={() => { cancel(); setFile(null) }} aria-label="移除">
             <X size={16} />
           </Button>
         </div>
@@ -70,6 +89,7 @@ export function PdfToImagesPanel() {
         <FilePicker accept="application/pdf" label="选择 PDF" onPick={(files) => void pick(files[0])} />
       )}
 
+      <fieldset disabled={!!progress} className="contents">
       <Field label="清晰度">
         <SelectMenu
           value={dpi}
@@ -84,6 +104,7 @@ export function PdfToImagesPanel() {
           triggerClassName="w-36"
         />
       </Field>
+      <Field label="导出页码"><input aria-label="导出页码" value={expr} disabled={!!progress} onChange={e => setExpr(e.target.value)} placeholder="留空为全部，如 1-3,5" className="w-48 max-w-full h-9 px-3 rounded-[10px] bg-surface-2 border border-outline text-[12px]" /></Field>
       <Field label="格式">
         <Segmented
           options={[
@@ -96,8 +117,9 @@ export function PdfToImagesPanel() {
           size="sm"
         />
       </Field>
+      {format === 'jpeg' && <Field label="JPEG 质量"><SelectMenu ariaLabel="JPEG 质量" value={quality} onChange={setQuality} options={[{ value: '70', label: '70% · 较小' }, { value: '90', label: '90% · 清晰' }, { value: '100', label: '100% · 最高' }]} /></Field>}
       <p className="text-[11px] text-on-surface-2 leading-relaxed">
-        300 DPI 大图会比较占内存，页数多时建议先用 150 DPI 试一页效果。
+        300 DPI 较占内存，建议先选一页试效果。超大页面会按设备画布上限适配，避免导出失败。
       </p>
 
       <Field label="文件名">
@@ -109,7 +131,9 @@ export function PdfToImagesPanel() {
         />
       </Field>
 
-      <OutputBar make={make} action="导出" disabled={!file || !total} />
+      </fieldset>
+      {progress && <Button size="sm" onClick={cancel}>取消导出</Button>}
+      <OutputBar make={make} action="导出" disabled={!file || !total} allowLibrary={false} />
     </Panel>
   )
 }

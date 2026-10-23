@@ -6,6 +6,10 @@ import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
 import { useFanqie } from '@/stores/fanqie'
 import { cn } from '@/lib/cn'
 import { usePressTilt } from '@/lib/usePressTilt'
+import { arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
+import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
+import { orderTools } from './toolOrder'
+import { useUi } from '@/stores/ui'
 
 /**
  * 工具页（v2.2 起配置化）：模型智能排名永远置顶，下面是小工具入口。
@@ -36,6 +40,16 @@ export function ToolsPage() {
   const localBooks = useLiveQuery(() => db.fanqieBooks.count(), []) ?? 0
   const job = useFanqie((s) => s.job)
   const tilt = usePressTilt<HTMLAnchorElement>()
+  const savedOrder = useLiveQuery(() => db.settings.get('toolOrder'), [])
+  const tools = orderTools(TOOL_CARDS, savedOrder?.value)
+  const moveTool = (active: string, over: string) => {
+    const ids = tools.map(t => t.to)
+    const from = ids.indexOf(active)
+    const to = ids.indexOf(over)
+    if (from < 0 || to < 0) return
+    void db.settings.put({ key: 'toolOrder', value: arrayMove(ids, from, to) })
+      .catch(() => useUi.getState().toast('排序保存失败，请重试'))
+  }
 
   const fanqieBadge = job?.phase === 'running'
     ? `下载中 ${job.done}/${job.total}`
@@ -57,14 +71,19 @@ export function ToolsPage() {
       <IntelligenceCard />
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-[13px] font-semibold text-on-surface-2 px-1">小工具</h2>
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-[13px] font-semibold text-on-surface-2">小工具</h2>
+          <span className="text-[11px] text-on-surface-2">长按拖动排序</span>
+        </div>
+        <DragSort ids={tools.map(t => t.to)} strategy={rectSortingStrategy} onMove={moveTool}>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {TOOL_CARDS.map((t) => (
+          {tools.map((t) => (
+            <DragSortItem key={t.to} id={t.to} className="w-full max-w-[190px]">
             <Link
-              key={t.to}
               ref={t.to === '/tools/fanqie' ? tilt.ref : undefined}
               {...(t.to === '/tools/fanqie' ? tilt.tiltProps : {})}
               to={t.to}
+              draggable={false}
               aria-label={t.title}
               className={cn(
                 'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
@@ -93,8 +112,10 @@ export function ToolsPage() {
                 <span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">{t.sub}</span>
               </span>
             </Link>
+            </DragSortItem>
           ))}
         </div>
+        </DragSort>
       </section>
     </div>
   )

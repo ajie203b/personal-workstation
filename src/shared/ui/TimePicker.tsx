@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Clock3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { todayStr } from '@/lib/date'
+import { DatePicker } from './DatePicker'
 
 const PRESETS = ['09:00', '12:00', '14:00', '18:00', '20:00']
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
@@ -251,12 +252,12 @@ export function DateTimeField({ value, onChange, ariaLabel, className }: DateTim
       onChange('')
       return
     }
-    onChange(`${d}T${time || '09:00'}`)
+    onChange(`${d}${time ? `T${time}` : ''}`)
   }
 
   const setTime = (t?: string) => {
     if (!t) {
-      if (date) onChange(`${date}T00:00`)
+      if (date) onChange(date)
       else onChange('')
       return
     }
@@ -265,14 +266,12 @@ export function DateTimeField({ value, onChange, ariaLabel, className }: DateTim
 
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <input
-        type="date"
-        aria-label={ariaLabel ? `${ariaLabel}日期` : '日期'}
+      <DatePicker
+        ariaLabel={ariaLabel ? `${ariaLabel}日期` : '日期'}
         value={date}
-        onChange={(e) => setDate(e.target.value)}
-        className={FIELD}
+        onChange={setDate}
       />
-      <TimePicker value={time} onChange={setTime} placeholder="选择时间" />
+      <TimePicker value={time} onChange={setTime} placeholder="选择时间" allowClear />
     </div>
   )
 }

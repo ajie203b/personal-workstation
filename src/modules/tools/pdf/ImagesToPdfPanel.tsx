@@ -9,6 +9,8 @@ import { imagesToPdf } from './pdfOps'
 import type { ImagePageSize } from './layout'
 import { yieldToUi, type ToolOutput } from './output'
 import { Field, FilePicker, OutputBar, Panel, pdfBlob } from './parts'
+import { arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 
 interface Item {
   id: string
@@ -62,9 +64,10 @@ export function ImagesToPdfPanel() {
       />
 
       {items.length > 0 && (
+        <DragSort ids={items.map(i => i.id)} strategy={verticalListSortingStrategy} onMove={(active, over) => setItems(list => arrayMove(list, list.findIndex(i => i.id === active), list.findIndex(i => i.id === over)))}>
         <ul className="flex flex-col gap-1.5">
           {items.map((it, index) => (
-            <li key={it.id} className="flex items-center gap-2 rounded-[10px] border border-outline bg-surface-2 px-2 py-1.5">
+            <DragSortItem as="li" id={it.id} key={it.id} className="flex items-center gap-2 rounded-[10px] border border-outline bg-surface-2 px-2 py-1.5">
               <span className="grid place-items-center w-7 h-7 rounded-[8px] bg-primary-soft text-primary shrink-0">
                 <ImageIcon size={14} />
               </span>
@@ -82,9 +85,10 @@ export function ImagesToPdfPanel() {
               >
                 <X size={15} />
               </Button>
-            </li>
+            </DragSortItem>
           ))}
         </ul>
+        </DragSort>
       )}
 
       <Field label="页面尺寸">

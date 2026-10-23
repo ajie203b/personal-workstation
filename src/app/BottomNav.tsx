@@ -140,7 +140,7 @@ function NavBadge({ value }: { value: number }) {
       role="status"
       aria-label={`今日待办 ${shown} 件`}
       className={cn(
-        'nav-badge absolute -top-0.5 right-3 grid place-items-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-[11px] font-medium tabular-nums leading-none overflow-hidden',
+        'nav-badge absolute -top-0.5 right-2.5 grid place-items-center min-w-[15px] h-[15px] px-0.5 rounded-full bg-primary text-on-primary text-[10px] font-medium tabular-nums leading-none overflow-hidden',
         leaving && 'nav-badge-out',
       )}
     >
