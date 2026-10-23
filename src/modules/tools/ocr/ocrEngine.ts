@@ -10,9 +10,11 @@ import { getOnnxRunner, type TensorData } from '@/lib/onnx'
 import {
   DEFAULT_DB_OPTIONS,
   boxesFromProbMap,
-  computeDetSize,
+  cropRgba,
   ctcGreedyDecode,
+  dedupeQuads,
   parseCharset,
+  planDetTiles,
   recStripSize,
   resizeRgba,
   scaleQuad,
@@ -139,24 +141,32 @@ export async function runOcr(image: { data: Uint8ClampedArray; width: number; he
   onProgress?.({ phase: 'infer', ratio: 0.05 })
   if (signal?.aborted) throw new DOMException('已取消', 'AbortError')
 
-  // 1. 预处理：最长边缩到约 960（32 的倍数），BGR + ImageNet 归一化
-  const detSize = computeDetSize(image.width, image.height)
-  const resized = resizeRgba(image.data, image.width, image.height, detSize.width, detSize.height)
-  const detInput = toDetTensor(resized, detSize.width, detSize.height)
-  const detOut = await runner.run('ppocr-det', {
-    x: { type: 'float32', data: detInput, dims: [1, 3, detSize.height, detSize.width] },
-  })
-  if (signal?.aborted) throw new DOMException('已取消', 'AbortError')
-  onProgress?.({ phase: 'infer', ratio: 0.25 })
-
-  // 2. 检测：DB 后处理出四边形（在缩放后的坐标系里）
-  const detMap = firstOutput(detOut)
-  const prob = detMap.data as Float32Array
-  const probH = detMap.dims[detMap.dims.length - 2] ?? detSize.height
-  const probW = detMap.dims[detMap.dims.length - 1] ?? detSize.width
-  const detQuads = boxesFromProbMap(prob, probW, probH, { ...DEFAULT_DB_OPTIONS, ...options.db })
-  // 映射回源图坐标
-  const quads = detQuads.map((q) => scaleQuad(q, image.width / probW, image.height / probH))
+  // 1+2. 检测：按 planDetTiles 规划（短边 ≤ 960，超长图沿长边切块），
+  // 每块 BGR + ImageNet 归一化 → det → DB 后处理 → 映射回源图坐标
+  const tiles = planDetTiles(image.width, image.height)
+  const allQuads: Quad[] = []
+  for (let t = 0; t < tiles.length; t++) {
+    const tile = tiles[t]
+    const tileRgba =
+      tiles.length === 1 ? image.data : cropRgba(image.data, image.width, tile.x, tile.y, tile.width, tile.height)
+    const resized = resizeRgba(tileRgba, tile.width, tile.height, tile.detWidth, tile.detHeight)
+    const detInput = toDetTensor(resized, tile.detWidth, tile.detHeight)
+    const detOut = await runner.run('ppocr-det', {
+      x: { type: 'float32', data: detInput, dims: [1, 3, tile.detHeight, tile.detWidth] },
+    })
+    if (signal?.aborted) throw new DOMException('已取消', 'AbortError')
+    const detMap = firstOutput(detOut)
+    const prob = detMap.data as Float32Array
+    const probH = detMap.dims[detMap.dims.length - 2] ?? tile.detHeight
+    const probW = detMap.dims[detMap.dims.length - 1] ?? tile.detWidth
+    const detQuads = boxesFromProbMap(prob, probW, probH, { ...DEFAULT_DB_OPTIONS, ...options.db })
+    for (const q of detQuads) {
+      const scaled = scaleQuad(q, tile.width / probW, tile.height / probH)
+      allQuads.push(scaled.map((p) => ({ x: p.x + tile.x, y: p.y + tile.y })) as Quad)
+    }
+    onProgress?.({ phase: 'infer', ratio: 0.05 + (0.2 * (t + 1)) / tiles.length })
+  }
+  const quads = tiles.length > 1 ? dedupeQuads(allQuads) : allQuads
 
   // 3. 阅读顺序：按 y 分行、行内按 x
   const ordered = sortByReadingOrder(quads)

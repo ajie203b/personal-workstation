@@ -30,8 +30,9 @@ interface RgbaImage {
 
 /**
  * 图片文件 → RGBA 像素 + 预览 URL。
- * 长边压到 1600 以内：手机原图动辄 4000px，全尺寸送检测既慢又吃内存，
- * 而文字行在 1600px 下已经足够清晰。
+ * 只按「短边 ≤ 1600 且总像素 ≤ 2000 万」缩：旧版按长边 1600 压，
+ * 1080×2400 的截图会先被压到 720 宽，长截图更是压到字都糊了。
+ * 检测阶段另有切块（ocrPipeline.planDetTiles），这里保留足够分辨率给识别用。
  */
 async function fileToRgba(file: Blob): Promise<{ pixels: RgbaImage; objectUrl: string; naturalWidth: number; naturalHeight: number }> {
   const objectUrl = URL.createObjectURL(file)
@@ -45,7 +46,7 @@ async function fileToRgba(file: Blob): Promise<{ pixels: RgbaImage; objectUrl: s
     const nw = img.naturalWidth
     const nh = img.naturalHeight
     if (!nw || !nh) throw new Error('图片尺寸为空')
-    const ratio = Math.min(1, 1600 / Math.max(nw, nh))
+    const ratio = Math.min(1, 1600 / Math.min(nw, nh), Math.sqrt(20_000_000 / (nw * nh)))
     const w = Math.max(1, Math.round(nw * ratio))
     const h = Math.max(1, Math.round(nh * ratio))
     const canvas = document.createElement('canvas')

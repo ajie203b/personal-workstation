@@ -19,6 +19,7 @@ import {
   resizeRgba,
 } from './idphotoAlpha'
 import { facePointsFromNormalized, type FacePoints } from './idphotoCrop'
+import { planFaceSearchWindows, windowToImageNormalized, type SearchWindow } from './idphotoFaceSearch'
 
 /**
  * MODNet（Trimap-Free Portrait Matting, AAAI 2022）ONNX 模型清单。
@@ -115,6 +116,7 @@ type VisionFileset = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
 async function createVisionTask<T>(
   modelUrls: string[],
   make: (fileset: VisionFileset, modelAssetPath: string, delegate: 'GPU' | 'CPU') => Promise<T>,
+  delegates: ReadonlyArray<'GPU' | 'CPU'> = ['GPU', 'CPU'],
 ): Promise<T> {
   let last: unknown = null
   for (const wasm of VISION_WASM_URLS()) {
@@ -126,7 +128,7 @@ async function createVisionTask<T>(
       continue
     }
     for (const model of modelUrls) {
-      for (const delegate of ['GPU', 'CPU'] as const) {
+      for (const delegate of delegates) {
         try {
           return await make(fileset, model, delegate)
         } catch (e) {
@@ -142,28 +144,90 @@ async function createVisionTask<T>(
 
 let faceDetector: FaceDetector | null = null
 
-/**
- * 人脸关键点检测；没检测到人脸返回 null（页面降级成手动框）。
- * GPU 委托失败自动退 CPU；模型/组件下载失败抛中文错误。
- */
-export async function detectFacePoints(image: RgbaImage): Promise<FacePoints | null> {
-  if (!faceDetector) {
-    try {
-      faceDetector = await createVisionTask(FACE_DETECTOR_URLS(), (fileset, modelAssetPath, delegate) =>
+/** 送检测的窗口画布边长：模型输入只有 128，再大也只是白白缩放 */
+const FACE_WINDOW_PX = 256
+/** 整图送检时的最长边 */
+const FACE_FULL_MAX = 640
+
+async function ensureFaceDetector(): Promise<FaceDetector> {
+  if (faceDetector) return faceDetector
+  try {
+    faceDetector = await createVisionTask(
+      FACE_DETECTOR_URLS(),
+      (fileset, modelAssetPath, delegate) =>
         FaceDetector.createFromOptions(fileset, {
           baseOptions: { modelAssetPath, delegate },
           runningMode: 'IMAGE',
-          minDetectionConfidence: 0.4,
+          minDetectionConfidence: 0.35,
+          minSuppressionThreshold: 0.3,
         }),
-      )
-    } catch (e) {
-      throw new Error(`人脸模型加载失败（${e instanceof Error ? e.message : String(e)}）`)
+      // v3.3.3：CPU 优先。128×128 的小模型 CPU 只要几毫秒；安卓 WebView 上 GPU 委托
+      // 能建出来但对 canvas 输入常常静默返回空结果 →「没检测到人脸」。
+      ['CPU', 'GPU'],
+    )
+  } catch (e) {
+    throw new Error(`人脸模型加载失败（${e instanceof Error ? e.message : String(e)}）`)
+  }
+  return faceDetector
+}
+
+interface Candidate {
+  score: number
+  /** 整图归一化关键点 */
+  keypoints: Array<{ x: number; y: number }>
+}
+
+/** 在一个窗口上跑检测，返回最高分的候选（关键点已换算到整图归一化坐标） */
+function detectInWindow(det: FaceDetector, src: HTMLCanvasElement, win: SearchWindow, imgW: number, imgH: number, full: boolean): Candidate | null {
+  const c = document.createElement('canvas')
+  if (full) {
+    const k = Math.min(1, FACE_FULL_MAX / Math.max(imgW, imgH))
+    c.width = Math.max(1, Math.round(imgW * k))
+    c.height = Math.max(1, Math.round(imgH * k))
+  } else {
+    c.width = FACE_WINDOW_PX
+    c.height = FACE_WINDOW_PX
+  }
+  const ctx = c.getContext('2d')
+  if (!ctx) return null
+  if (full) ctx.drawImage(src, 0, 0, c.width, c.height)
+  else ctx.drawImage(src, win.x, win.y, win.size, win.size, 0, 0, c.width, c.height)
+  const res = det.detect(c)
+  let best: Candidate | null = null
+  for (const d of res.detections ?? []) {
+    const kps = d.keypoints
+    if (!kps || kps.length < 2) continue
+    const score = d.categories?.[0]?.score ?? 0
+    if (best && score <= best.score) continue
+    best = {
+      score,
+      keypoints: full ? kps.map((p) => ({ x: p.x, y: p.y })) : kps.map((p) => windowToImageNormalized(p, win, imgW, imgH)),
     }
   }
-  const result = faceDetector.detect(toCanvas(image))
-  const kps = result.detections?.[0]?.keypoints
-  if (!kps || kps.length < 2) return null
-  return facePointsFromNormalized(kps, image.width, image.height)
+  return best
+}
+
+/**
+ * 人脸关键点检测；没检测到人脸返回 null（页面降级成手动框）。
+ *
+ * v3.3.3：整图（缩到 640）先试，没有再按中上部优先的多尺度窗口逐个试
+ * （BlazeFace short-range 只认占画面较大的人脸），取最高分。
+ * 模型/组件下载失败抛中文错误。
+ */
+export async function detectFacePoints(image: RgbaImage): Promise<FacePoints | null> {
+  const det = await ensureFaceDetector()
+  const src = toCanvas(image)
+  const whole: SearchWindow = { x: 0, y: 0, size: Math.max(image.width, image.height) }
+  let best = detectInWindow(det, src, whole, image.width, image.height, true)
+  if (!best || best.score < 0.6) {
+    for (const win of planFaceSearchWindows(image.width, image.height)) {
+      const cand = detectInWindow(det, src, win, image.width, image.height, false)
+      if (cand && (!best || cand.score > best.score)) best = cand
+      if (best && best.score >= 0.85) break
+    }
+  }
+  if (!best) return null
+  return facePointsFromNormalized(best.keypoints, image.width, image.height)
 }
 
 // ---------- 抠图 ----------

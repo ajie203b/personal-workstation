@@ -37,12 +37,19 @@ export function composePhotoCanvas(input: ComposeInput, spec: PhotoSpec): HTMLCa
   const cutCtx = cut.getContext('2d')
   if (!cutCtx) throw new Error('画布创建失败')
   const img = cutCtx.createImageData(cropW, cropH)
+  // 裁剪框可以超出原图（滑杆放大/平移时，v3.3.3）：图外像素 alpha=0，合成时露底色
   for (let y = 0; y < cropH; y++) {
-    const sy = Math.min(input.height - 1, Math.max(0, y0 + y))
+    const ry = y0 + y
+    const sy = Math.min(input.height - 1, Math.max(0, ry))
     for (let x = 0; x < cropW; x++) {
-      const sx = Math.min(input.width - 1, Math.max(0, x0 + x))
-      const src = (sy * input.width + sx) * 4
+      const rx = x0 + x
       const dst = (y * cropW + x) * 4
+      if (rx < 0 || ry < 0 || rx >= input.width || ry >= input.height) {
+        img.data[dst + 3] = 0
+        continue
+      }
+      const sx = Math.min(input.width - 1, Math.max(0, rx))
+      const src = (sy * input.width + sx) * 4
       img.data[dst] = input.cleaned[src]
       img.data[dst + 1] = input.cleaned[src + 1]
       img.data[dst + 2] = input.cleaned[src + 2]
