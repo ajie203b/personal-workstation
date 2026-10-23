@@ -5,6 +5,11 @@ import {
   ctcGreedyDecode,
   parseCharset,
   recStripSize,
+  warpQuadRgba,
+  planDetTiles,
+  dedupeQuads,
+  DET_TILE_MAX,
+  REC_IMG_MAX_WIDTH,
   sortByReadingOrder,
   type Point,
   type Quad,
@@ -226,17 +231,19 @@ describe('ctcGreedyDecode（CTC 贪心解码，mock 字典）', () => {
 })
 
 describe('recStripSize（识别输入尺寸）', () => {
-  it('高度固定 48，宽度按框宽高比且不超过 320', () => {
+  it('高度固定 48，宽度按框宽高比，不再硬卡 320', () => {
     const wide = recStripSize(axisQuad(0, 0, 320, 32))
     expect(wide.height).toBe(48)
-    expect(wide.width).toBeLessThanOrEqual(320)
+    expect(wide.width).toBe(480)
 
     const square = recStripSize(axisQuad(0, 0, 60, 60))
     expect(square.height).toBe(48)
     expect(square.width).toBe(48)
 
     const long = recStripSize(axisQuad(0, 0, 2000, 40))
-    expect(long.width).toBe(320)
+    expect(long.width).toBe(REC_IMG_MAX_WIDTH)
+    // 手机截图一整行（宽高比 ~25）不被压缩
+    expect(recStripSize(axisQuad(0, 0, 1000, 40)).width).toBe(1200)
   })
 
   it('极窄框也有最小宽度', () => {
@@ -253,5 +260,91 @@ describe('parseCharset（字典解析）', () => {
 
   it('CRLF 与末尾空行都能正确处理', () => {
     expect(parseCharset('甲\r\n乙\r\n')).toEqual(['甲', '乙', ' '])
+  })
+})
+
+describe('warpQuadRgba（透视裁剪方向）', () => {
+  /** 生成 w×h 的 RGBA，R 通道 = x，G 通道 = y，便于验证采样位置 */
+  function gradient(w: number, h: number): Uint8ClampedArray {
+    const d = new Uint8ClampedArray(w * h * 4)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4
+        d[o] = x
+        d[o + 1] = y
+        d[o + 2] = 0
+        d[o + 3] = 255
+      }
+    }
+    return d
+  }
+
+  it('轴对齐框按原尺寸裁剪 = 原样拷贝那块像素（v3.3.2 回归：整片 128 灰）', () => {
+    const src = gradient(200, 100)
+    const out = warpQuadRgba(src, 200, 100, axisQuad(50, 20, 40, 10), 40, 10)
+    for (const [x, y] of [[0, 0], [39, 0], [0, 9], [20, 5], [39, 9]]) {
+      const o = (y * 40 + x) * 4
+      expect(out[o]).toBeCloseTo(50 + x, 0)
+      expect(out[o + 1]).toBeCloseTo(20 + y, 0)
+    }
+  })
+
+  it('缩放裁剪：目标宽度是源框一半时，按 2 倍步长采样', () => {
+    const src = gradient(200, 100)
+    const out = warpQuadRgba(src, 200, 100, axisQuad(0, 0, 100, 20), 50, 10)
+    // 输出 x=10 → 源 x≈20.5
+    expect(out[(5 * 50 + 10) * 4]).toBeGreaterThanOrEqual(20)
+    expect(out[(5 * 50 + 10) * 4]).toBeLessThanOrEqual(21)
+  })
+})
+
+describe('planDetTiles（检测切块）', () => {
+  it('普通图：短边缩到 960，整张一块，尺寸是 32 的倍数', () => {
+    const t = planDetTiles(1080, 1920)
+    expect(t).toHaveLength(1)
+    expect(t[0].detWidth).toBe(960)
+    expect(t[0].detHeight % 32).toBe(0)
+    expect(t[0].detHeight).toBeCloseTo((1920 * 960) / 1080, -2)
+  })
+
+  it('小图不放大', () => {
+    const t = planDetTiles(400, 300)
+    expect(t).toHaveLength(1)
+    expect(t[0].detWidth).toBe(416)
+    expect(t[0].detHeight).toBe(288)
+  })
+
+  it('长截图沿长边切块、相邻重叠且覆盖到底', () => {
+    const t = planDetTiles(1080, 10000)
+    expect(t.length).toBeGreaterThan(1)
+    expect(t[0].y).toBe(0)
+    const last = t[t.length - 1]
+    expect(last.y + last.height).toBe(10000)
+    for (let i = 1; i < t.length; i++) {
+      // 有重叠
+      expect(t[i].y).toBeLessThan(t[i - 1].y + t[i - 1].height)
+    }
+    for (const tile of t) {
+      expect(tile.detWidth).toBe(960)
+      expect(tile.detHeight).toBeLessThanOrEqual(DET_TILE_MAX)
+    }
+  })
+
+  it('横向长图沿 x 切', () => {
+    const t = planDetTiles(9000, 800)
+    expect(t.length).toBeGreaterThan(1)
+    expect(t.every((x) => x.y === 0 && x.height === 800)).toBe(true)
+  })
+})
+
+describe('dedupeQuads（切块重叠去重）', () => {
+  it('被大框包含的半截框去掉，不相交的都留下', () => {
+    const full = axisQuad(10, 100, 500, 40)
+    const half = axisQuad(10, 100, 500, 18)
+    const other = axisQuad(10, 300, 500, 40)
+    const r = dedupeQuads([half, full, other])
+    expect(r).toHaveLength(2)
+    expect(r).toContainEqual(full)
+    expect(r).toContainEqual(other)
   })
 })

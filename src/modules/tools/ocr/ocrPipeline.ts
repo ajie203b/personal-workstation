@@ -26,8 +26,12 @@ export type Quad = [Point, Point, Point, Point]
 export const DET_MAX_SIDE = 960
 /** 识别输入高度（PP-OCR rec 固定 48） */
 export const REC_IMG_HEIGHT = 48
-/** 识别输入宽度上限（对应 image_shape 的 320，超长行会被压到这个宽度） */
-export const REC_IMG_MAX_WIDTH = 320
+/**
+ * 识别输入宽度上限。PP-OCRv4 rec 是动态宽度（官方推理按 max_wh_ratio 放宽，
+ * 不硬卡 320）；卡 320 会把一整行长文字压扁到字符挤成一团。
+ * 取 48×40=1920：手机截图一整行中文（宽高比 ~25）也不会被压缩。
+ */
+export const REC_IMG_MAX_WIDTH = 1920
 /** 低于此置信度在界面上标黄 */
 export const LOW_CONFIDENCE = 0.75
 
@@ -76,6 +80,124 @@ export function computeDetSize(
   const scale = Math.min(1, maxSide / Math.max(width, height, 1))
   const snap = (v: number) => Math.max(32, Math.round((v * scale) / 32) * 32)
   return { width: snap(width), height: snap(height) }
+}
+
+/** 检测时短边的上限（缩放后）：手机截图 1080 宽 → 960，字高保留约 90% */
+export const DET_SHORT_SIDE = 960
+/** 单块检测允许的最长边（缩放后）；超过就沿长边切块 */
+export const DET_TILE_MAX = 2048
+/** 切块时每块长边（缩放后）与相邻块重叠（缩放后，需大于一行字的高度） */
+export const DET_TILE_LEN = 1536
+export const DET_TILE_OVERLAP = 192
+
+/** 一块检测区域：源图里的矩形 + 送进 det 网络的尺寸（32 的倍数） */
+export interface DetTile {
+  /** 源图坐标系 */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** 送 det 的尺寸 */
+  detWidth: number
+  detHeight: number
+}
+
+/**
+ * 检测切块规划（v3.3.3）。
+ *
+ * 旧逻辑把「最长边」压到 960：1080×2400 的截图会被压成 432×960，
+ * 正文字高只剩 7~8px，DB 网络基本看不见字；长截图（1080×8000）更是压成一条线。
+ * 现在改成：
+ * - 先按「短边 ≤ 960」等比缩（小图不放大）；
+ * - 缩完长边 ≤ 2048 就整张一块；
+ * - 再长就沿长边切成 1536 一块、相邻重叠 192 的条带，逐块检测再合并（dedupeQuads）。
+ */
+export function planDetTiles(
+  width: number,
+  height: number,
+  opts: { shortSide?: number; tileMax?: number; tileLen?: number; overlap?: number } = {},
+): DetTile[] {
+  const shortSide = opts.shortSide ?? DET_SHORT_SIDE
+  const tileMax = opts.tileMax ?? DET_TILE_MAX
+  const tileLen = opts.tileLen ?? DET_TILE_LEN
+  const overlap = opts.overlap ?? DET_TILE_OVERLAP
+  const w = Math.max(1, width)
+  const h = Math.max(1, height)
+  const scale = Math.min(1, shortSide / Math.min(w, h))
+  const snap = (v: number) => Math.max(32, Math.round(v / 32) * 32)
+  const tall = h >= w
+  const longSrc = tall ? h : w
+  const shortSrc = tall ? w : h
+  const longScaled = longSrc * scale
+  const mk = (start: number, len: number): DetTile => {
+    const detShort = snap(shortSrc * scale)
+    const detLong = snap(len * scale)
+    return tall
+      ? { x: 0, y: start, width: w, height: len, detWidth: detShort, detHeight: detLong }
+      : { x: start, y: 0, width: len, height: h, detWidth: detLong, detHeight: detShort }
+  }
+  if (longScaled <= tileMax) return [mk(0, longSrc)]
+  const lenSrc = tileLen / scale
+  const stepSrc = (tileLen - overlap) / scale
+  const tiles: DetTile[] = []
+  for (let start = 0; ; start += stepSrc) {
+    const s0 = Math.round(start)
+    if (s0 + lenSrc >= longSrc) {
+      // 最后一块贴齐末端，保证长度一致
+      tiles.push(mk(Math.max(0, Math.round(longSrc - lenSrc)), Math.min(longSrc, Math.round(lenSrc))))
+      break
+    }
+    tiles.push(mk(s0, Math.round(lenSrc)))
+  }
+  return tiles
+}
+
+/** 四边形的轴对齐包围盒 */
+function quadBounds(q: Quad): { x0: number; y0: number; x1: number; y1: number } {
+  const xs = q.map((p) => p.x)
+  const ys = q.map((p) => p.y)
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }
+}
+
+/**
+ * 切块重叠区的去重：两个框的交集占较小框面积 ≥ containRatio 时，只留大的
+ * （被块边界截断的半行，会被下一块里完整的那一行盖住）。
+ */
+export function dedupeQuads(quads: Quad[], containRatio = 0.6): Quad[] {
+  const items = quads
+    .map((q) => {
+      const b = quadBounds(q)
+      return { q, b, area: Math.max(0, b.x1 - b.x0) * Math.max(0, b.y1 - b.y0) }
+    })
+    .sort((a, b) => b.area - a.area)
+  const kept: typeof items = []
+  for (const it of items) {
+    const dup = kept.some((k) => {
+      const ix = Math.min(k.b.x1, it.b.x1) - Math.max(k.b.x0, it.b.x0)
+      const iy = Math.min(k.b.y1, it.b.y1) - Math.max(k.b.y0, it.b.y0)
+      if (ix <= 0 || iy <= 0) return false
+      return (ix * iy) / Math.max(1e-6, Math.min(it.area, k.area)) >= containRatio
+    })
+    if (!dup) kept.push(it)
+  }
+  return kept.map((k) => k.q)
+}
+
+/** 从 RGBA 里裁出一个矩形（整数坐标） */
+export function cropRgba(
+  src: Uint8ClampedArray,
+  sw: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(w * h * 4)
+  for (let row = 0; row < h; row++) {
+    const s = ((y + row) * sw + x) * 4
+    out.set(src.subarray(s, s + w * 4), row * w * 4)
+  }
+  return out
 }
 
 /** 双线性缩放 RGBA 像素（纯 TypedArray 实现，Worker 里不需要 canvas） */
@@ -441,14 +563,18 @@ export function warpQuadRgba(
   dh: number,
 ): Uint8ClampedArray {
   const out = new Uint8ClampedArray(dw * dh * 4)
+  // 注意方向：solveHomography(dst, src) 求的是「目标坐标 → 源坐标」的映射，
+  // 这里要的是「输出条带像素 (u,v) → 源图像素」，所以 dst 是输出矩形、src 是检测框。
+  // v3.3.0~3.3.2 把两者传反了：采样点全落在图外，条带整片 128 灰，识别永远是空串
+  // →「没有识别到文字」。
   const h = solveHomography(
-    [quad[0], quad[1], quad[2], quad[3]],
     [
       { x: 0, y: 0 },
       { x: dw, y: 0 },
       { x: dw, y: dh },
       { x: 0, y: dh },
     ],
+    [quad[0], quad[1], quad[2], quad[3]],
   )
   if (!h) {
     // 退化四边形（四点共线等）：直接返回中性灰，避免整条管线失败
@@ -487,7 +613,7 @@ export function warpQuadRgba(
   return out
 }
 
-/** 识别输入尺寸：高度固定 48，宽度按框宽高比取整，夹在 [16, 320] */
+/** 识别输入尺寸：高度固定 48，宽度按框宽高比取整，夹在 [16, REC_IMG_MAX_WIDTH] */
 export function recStripSize(quad: Quad): { width: number; height: number } {
   const [tl, tr, br, bl] = quad
   const w = (Math.hypot(tr.x - tl.x, tr.y - tl.y) + Math.hypot(br.x - bl.x, br.y - bl.y)) / 2
