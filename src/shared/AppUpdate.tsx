@@ -9,7 +9,7 @@ import { openExternal } from '@/lib/links'
 import { formatBytes } from '@/lib/format'
 import { RELEASE_PAGE, plainNotes } from '@/lib/appUpdate'
 import {
-  canInstallPackages, checkAppUpdate, disposeUpdate, getAutoCheckEnabled, getCurrentAppVersion, getUpdatePlatform,
+  canInstallPackages, checkAppUpdate, getAutoCheckEnabled, getCurrentAppVersion, getUpdatePlatform,
   installAppUpdate, setAutoCheckEnabled, shouldAutoCheckNow, supportsInAppUpdate,
   type CheckResult, type InstallProgress,
 } from '@/lib/appUpdateClient'
@@ -105,10 +105,8 @@ function AppUpdateDialog() {
       toast('正在下载更新，请稍候')
       return
     }
+    // 关掉弹窗不释放 Update 句柄：设置页「查看更新」还会再打开同一个更新
     setOpen(v)
-    if (!v && phase.kind !== 'installer-started' && phase.kind !== 'need-permission') {
-      disposeUpdate(update)
-    }
   }
 
   if (!update) return null

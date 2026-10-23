@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AvailableUpdate } from '@/lib/appUpdateClient'
+import { disposeUpdate, type AvailableUpdate } from '@/lib/appUpdateClient'
 
 /**
  * 应用内更新弹窗的全局状态：启动静默检查和设置页「检查更新」共用同一个弹窗。
@@ -12,9 +12,14 @@ interface AppUpdateState {
   setOpen: (open: boolean) => void
 }
 
-export const useAppUpdate = create<AppUpdateState>((set) => ({
+export const useAppUpdate = create<AppUpdateState>((set, get) => ({
   update: null,
   open: false,
-  show: (update) => set({ update, open: true }),
+  show: (update) => {
+    // 重新检查拿到新句柄时，释放旧的（桌面版 Rust 侧资源）
+    const prev = get().update
+    if (prev && prev !== update) disposeUpdate(prev)
+    set({ update, open: true })
+  },
   setOpen: (open) => set({ open }),
 }))
