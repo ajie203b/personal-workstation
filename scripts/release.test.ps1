@@ -49,6 +49,11 @@ function script:npm {
     if ($global:ReleaseTest.options.AuditWarning) { '6 high severity vulnerabilities' }
 }
 function script:npx { $global:LASTEXITCODE = 0 }
+function script:node {
+    if ($args[0] -ne 'scripts/verify-updater.mjs') { throw 'Unexpected node command' }
+    $global:ReleaseTest.events.Add('verify updater signature')
+    $global:LASTEXITCODE = $(if ($global:ReleaseTest.options.InvalidUpdater) { 1 } else { 0 })
+}
 function script:Invoke-ReleaseTestGradle { $global:LASTEXITCODE = 0 }
 function script:Invoke-ReleaseTestSigner {
     $global:LASTEXITCODE = 0
@@ -73,6 +78,10 @@ function script:Get-Command {
 }
 function Get-TestAssets {
     $assets = @('personal-workstation-v9.9.9.apk', 'Kairos_9.9.9_x64-setup.exe')
+    if ($global:ReleaseTest.options.UpdaterEnabled) {
+        if (-not $global:ReleaseTest.options.MissingUpdaterManifest) { $assets += 'latest.json' }
+        if (-not $global:ReleaseTest.options.MissingUpdaterSignature) { $assets += 'Kairos_9.9.9_x64-setup.exe.sig' }
+    }
     if ($global:ReleaseTest.options.MissingExe -or $global:ReleaseTest.remote.RunFailed) { $assets = @($assets | Where-Object { $_ -notlike '*.exe' }) }
     if ($global:ReleaseTest.options.MissingApk -and -not $global:ReleaseTest.remote.ApkRepaired) { $assets = @($assets | Where-Object { $_ -notlike '*.apk' }) }
     if ($global:ReleaseTest.options.WrongExeVersion) { $assets = @($assets | ForEach-Object { $_.Replace('Kairos_9.9.9', 'Kairos_9.9.8') }) }
@@ -93,7 +102,10 @@ function script:gh {
             $apkHash = (Get-FileHash (Join-Path $global:ReleaseTest.root 'apk/personal-workstation-v9.9.9.apk')).Hash.ToLowerInvariant()
             if ($global:ReleaseTest.options.WrongApkDigest) { $apkHash = '0' * 64 }
             @{ tag_name = 'v9.9.9'; html_url = 'https://example.test/release/v9.9.9'; assets = @(Get-TestAssets | ForEach-Object {
-                @{ name = $_; digest = "sha256:$apkHash" }
+                $digest = $apkHash
+                $localExe = Join-Path $global:ReleaseTest.root 'apk/Kairos_9.9.9_x64-setup.exe'
+                if ($_ -like '*.exe' -and (Test-Path $localExe)) { $digest = (Get-FileHash $localExe).Hash.ToLowerInvariant() }
+                @{ name = $_; digest = "sha256:$digest" }
             }) } | ConvertTo-Json -Depth 4 -Compress
             return
         }
@@ -102,6 +114,13 @@ function script:gh {
             $global:ReleaseTest.remote.ReleaseExists = $true; return
         }
         'release upload *' { $global:ReleaseTest.remote.ApkRepaired = $true; return }
+        'release download *' {
+            $destination = $argv[[array]::IndexOf($argv, '--dir') + 1]
+            New-Item -ItemType Directory -Force $destination | Out-Null
+            Set-Content (Join-Path $destination 'latest.json') '{}'
+            Set-Content (Join-Path $destination 'Kairos_9.9.9_x64-setup.exe.sig') 'signature fixture'
+            return
+        }
         'workflow run *' { return }
         'run list *' {
             ConvertTo-Json -InputObject @(@{ databaseId = 123; createdAt = [datetime]::UtcNow.ToString('o'); headSha = ('a' * 40); headBranch = 'v9.9.9' }) -Compress
@@ -155,6 +174,10 @@ function Invoke-Scenario([string]$Name, [hashtable]$Options = @{}, [string[]]$Fl
         'sdk/build-tools/35.0.0', 'git/cmd', 'git/bin', 'tmp', 'dist')) {
         New-Item -ItemType Directory -Force (Join-Path $fixture $directory) | Out-Null
     }
+    if ($Options.UpdaterEnabled) {
+        New-Item -ItemType Directory -Force (Join-Path $fixture 'src-tauri') | Out-Null
+        Set-Content (Join-Path $fixture 'src-tauri/tauri.conf.json') '{"plugins":{"updater":{"pubkey":"fixture-key"}}}'
+    }
     Set-Content (Join-Path $fixture 'scripts/release.ps1') $source
     Set-Content (Join-Path $fixture 'scripts/deploy-gh-pages.sh') '# mocked at process boundary'
     Set-Content (Join-Path $fixture 'package.json') '{"version":"9.9.9"}'
@@ -192,6 +215,23 @@ function Assert($Condition, [string]$Message) { if (-not $Condition) { throw $Me
 $failed = 0
 try {
     $cases = [ordered]@{
+        'signed release verifies updater files before Pages deployment' = {
+            $result = Invoke-Scenario 'signed-release' @{ UpdaterEnabled = $true }
+            Assert (-not $result.Error -and $result.Completed) "Signed release failed: $($result.Error)"
+            Assert ($result.Events.IndexOf('verify updater signature') -ge 0 -and $result.Events.IndexOf('verify updater signature') -lt $result.Events.IndexOf('deploy pages')) 'Updater verification did not gate deployment'
+        }
+        'missing update manifest stops Pages deployment' = {
+            $result = Invoke-Scenario 'missing-manifest' @{ UpdaterEnabled = $true; MissingUpdaterManifest = $true }
+            Assert ($result.Error -and -not $result.Events.Contains('deploy pages')) 'Missing manifest did not stop deployment'
+        }
+        'missing updater signature stops Pages deployment' = {
+            $result = Invoke-Scenario 'missing-signature' @{ UpdaterEnabled = $true; MissingUpdaterSignature = $true }
+            Assert ($result.Error -and -not $result.Events.Contains('deploy pages')) 'Missing signature did not stop deployment'
+        }
+        'invalid updater signature stops Pages deployment' = {
+            $result = Invoke-Scenario 'invalid-signature' @{ UpdaterEnabled = $true; InvalidUpdater = $true }
+            Assert ($result.Error -and -not $result.Events.Contains('deploy pages')) 'Invalid signature did not stop deployment'
+        }
         'resume after Pages failure does not rebuild or create another release' = {
             $first = Invoke-Scenario 'resume-pages' @{ DeployFails = $true }
             Assert ($first.Error) 'Expected deployment failure'

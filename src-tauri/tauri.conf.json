@@ -44,7 +44,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBKEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI0RjhBN0IyQUZGMTM1MDEKUldRQk5mR3ZzcWY0dExKay95MzIyc0QrMjdjV3FSZld0RTZXVWlqMGF2ckdKVnkzVG1uL2ZXVzkK",
       "endpoints": [
         "https://github.com/ajie203b/personal-workstation/releases/latest/download/latest.json"
       ],

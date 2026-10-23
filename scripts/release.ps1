@@ -106,6 +106,12 @@ if ($pkgVer -ne $verName) { throw "版本不一致：package.json=$pkgVer，buil
 $tag = "v$verName"
 $apkOut = Join-Path $outDir "personal-workstation-$tag.apk"
 $statePath = Join-Path $outDir "release-$tag.json"
+$updaterConfigured = $false
+$updaterConfigPath = Join-Path $Root 'src-tauri/tauri.conf.json'
+if (Test-Path -LiteralPath $updaterConfigPath) {
+    $updaterPublicKey = (Get-Content -LiteralPath $updaterConfigPath -Raw | ConvertFrom-Json).plugins.updater.pubkey
+    $updaterConfigured = [bool]($updaterPublicKey -and $updaterPublicKey -notlike 'REPLACE_WITH_*')
+}
 
 if ($Publish) {
     if (Run git @('status', '--porcelain') -Capture) { throw '发布前请先提交工作区改动' }
@@ -327,6 +333,20 @@ if ($Exe) {
             throw "Release $tag 缺少本次 APK 或 EXE 附件，请检查桌面打包任务，本次发布未完成"
         }
         Write-Host $release.html_url
+
+        if ($updaterConfigured) {
+            Step '核验桌面自动更新签名和清单'
+            foreach ($required in @("$expectedExe.sig", 'latest.json')) {
+                if ($assets -notcontains $required) { throw "Release 缺少 $required，不能发布不完整的自动更新" }
+            }
+            $exeAsset = $release.assets | Where-Object { $_.name -eq $expectedExe } | Select-Object -First 1
+            if ($exeAsset.digest -ne "sha256:$($state.exeHash)") { throw 'Release EXE 与本机下载的构建附件不一致' }
+            $updaterDirectory = Join-Path $outDir "updater-$tag"
+            New-Item -ItemType Directory -Force $updaterDirectory | Out-Null
+            Run gh @('release', 'download', $tag, '--pattern', 'latest.json', '--pattern', "$expectedExe.sig", '--dir', $updaterDirectory, '--clobber')
+            Run node @('scripts/verify-updater.mjs', '--config', $updaterConfigPath, '--artifact', $exeOut,
+                '--signature', (Join-Path $updaterDirectory "$expectedExe.sig"), '--manifest', (Join-Path $updaterDirectory 'latest.json'), '--version', $verName)
+        }
 
         if (-not $Resume -or -not $state.pagesPushed) {
             Step '发布网页版和更新检测版本'

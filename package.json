@@ -1,7 +1,7 @@
 {
   "name": "personal-workstation",
   "private": true,
-  "version": "3.4.1",
+  "version": "3.4.2",
   "type": "module",
   "description": "个人工作站：任务清单 × 文档工作站（本地优先 PWA + 安卓 App，数据不出本机）",
   "scripts": {
@@ -9,7 +9,7 @@
     "dev:lan": "vite --host --mode lan",
     "build": "tsc -b && vite build",
     "test": "vitest run",
-    "test:scripts": "node scripts/intel-parse.test.mjs",
+    "test:scripts": "node --test scripts/intel-parse.test.mjs scripts/verify-updater.test.mjs",
     "test:watch": "vitest",
     "preview": "vite preview --host",
     "preview:lan": "vite preview --host --mode lan",
