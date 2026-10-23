@@ -8,18 +8,27 @@ import { disposeUpdate, type AvailableUpdate } from '@/lib/appUpdateClient'
 interface AppUpdateState {
   update: AvailableUpdate | null
   open: boolean
+  busy: boolean
   show: (update: AvailableUpdate) => void
   setOpen: (open: boolean) => void
+  setBusy: (busy: boolean) => void
 }
 
 export const useAppUpdate = create<AppUpdateState>((set, get) => ({
   update: null,
   open: false,
+  busy: false,
   show: (update) => {
-    // 重新检查拿到新句柄时，释放旧的（桌面版 Rust 侧资源）
     const prev = get().update
+    if (prev === update || (prev?.tauriUpdate && prev.tauriUpdate === update.tauriUpdate)) {
+      set({ open: true })
+      return
+    }
+    // 晚到的检查结果不能释放正在下载安装的句柄。
+    if (get().busy) { disposeUpdate(update); return }
     if (prev && prev !== update) disposeUpdate(prev)
     set({ update, open: true })
   },
-  setOpen: (open) => set({ open }),
+  setOpen: (open) => { if (open || !get().busy) set({ open }) },
+  setBusy: (busy) => set({ busy }),
 }))

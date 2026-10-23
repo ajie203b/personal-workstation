@@ -46,7 +46,7 @@ jobs:
         run: |
           chmod +x gradlew
           set +e
-          ./gradlew assembleDebug --no-daemon 2>&1 | tee /tmp/gradle.log
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon 2>&1 | tee /tmp/gradle.log
           status=${PIPESTATUS[0]}
           if [ "$status" != 0 ]; then
             # 把关键报错打成注解，不登录也能在 Actions 页面看到

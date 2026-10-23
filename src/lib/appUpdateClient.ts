@@ -99,7 +99,15 @@ export type InstallOutcome =
   /** 桌面：安装程序已启动，应用即将重启 */
   | 'restarting'
 
-export async function checkAppUpdate(): Promise<CheckResult> {
+let checking: Promise<CheckResult> | null = null
+
+/** 启动检查与手动检查共用同一结果，避免同时创建两份原生句柄。 */
+export function checkAppUpdate(): Promise<CheckResult> {
+  if (!checking) checking = performCheck().finally(() => { checking = null })
+  return checking
+}
+
+async function performCheck(): Promise<CheckResult> {
   const platform = getUpdatePlatform()
   const currentVersion = getCurrentAppVersion()
   try {
@@ -191,9 +199,10 @@ interface AppUpdatePlugin {
     url: string
     mirrors: string[]
     fileName: string
+    expectedVersion: string
     timeoutMs?: number
   }): Promise<{ path: string; size: number; source: string; versionName?: string }>
-  installApk(options: { path: string }): Promise<{ status: 'started' | 'needPermission' }>
+  installApk(options: { path: string; expectedVersion: string }): Promise<{ status: 'started' | 'needPermission' }>
   canInstallPackages(): Promise<{ granted: boolean }>
   openInstallPermissionSettings(): Promise<void>
   addListener(event: 'downloadProgress', cb: (e: DownloadProgressEvent) => void): Promise<PluginListenerHandle>
@@ -276,6 +285,7 @@ async function installAndroid(update: AvailableUpdate, onProgress: (p: InstallPr
         url: update.apkUrl,
         mirrors: DOWNLOAD_MIRRORS,
         fileName: `kairos-${update.version}.apk`,
+        expectedVersion: update.version,
         timeoutMs: 20_000,
       })
       path = res.path
@@ -285,8 +295,14 @@ async function installAndroid(update: AvailableUpdate, onProgress: (p: InstallPr
     }
   }
   onProgress({ downloaded: 1, total: 1, percent: 100, phase: 'installing' })
-  const r = await AppUpdate.installApk({ path })
-  return r.status === 'needPermission' ? 'need-permission' : 'installer-started'
+  try {
+    // 每次安装都让原生重验，包括从系统授权页返回后的缓存复用。
+    const r = await AppUpdate.installApk({ path, expectedVersion: update.version })
+    return r.status === 'needPermission' ? 'need-permission' : 'installer-started'
+  } catch (e) {
+    downloadedApk = null
+    throw e
+  }
 }
 
 /** 安卓：是否已允许本应用「安装未知应用」 */

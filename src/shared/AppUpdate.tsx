@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Download, RotateCw } from 'lucide-react'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
@@ -10,12 +10,22 @@ import { formatBytes } from '@/lib/format'
 import { RELEASE_PAGE, plainNotes } from '@/lib/appUpdate'
 import {
   canInstallPackages, checkAppUpdate, getAutoCheckEnabled, getCurrentAppVersion, getUpdatePlatform,
-  installAppUpdate, setAutoCheckEnabled, shouldAutoCheckNow, supportsInAppUpdate,
+  disposeUpdate, installAppUpdate, setAutoCheckEnabled, shouldAutoCheckNow, supportsInAppUpdate,
+  type AvailableUpdate,
   type CheckResult, type InstallProgress,
 } from '@/lib/appUpdateClient'
 
 /** 启动后等界面稳定再查，别和首屏数据加载 / 自动同步抢网络 */
 const STARTUP_DELAY_MS = 6_000
+
+function discardUnusedUpdate(update: AvailableUpdate) {
+  // 同一检查的手动等待者先有机会接管结果，再回收未被采用的原生句柄。
+  queueMicrotask(() => {
+    const current = useAppUpdate.getState().update
+    if (current === update || (update.tauriUpdate && current?.tauriUpdate === update.tauriUpdate)) return
+    disposeUpdate(update)
+  })
+}
 
 /**
  * 全局挂载：安卓 App / 桌面版启动后静默检查一次，有新版弹窗；网页版什么都不渲染。
@@ -28,9 +38,13 @@ export function AppUpdateHost() {
     if (!supported || !shouldAutoCheckNow()) return
     let cancelled = false
     const timer = window.setTimeout(() => {
+      if (!shouldAutoCheckNow() || useAppUpdate.getState().busy) return
       void checkAppUpdate().then((r) => {
         // 静默检查：没新版 / 查失败都不打扰
-        if (cancelled) return
+        if (cancelled || !getAutoCheckEnabled()) {
+          if (r.status === 'available') discardUnusedUpdate(r.update)
+          return
+        }
         if (r.status === 'available') show(r.update)
       })
     }, STARTUP_DELAY_MS)
@@ -53,41 +67,40 @@ type Phase =
   | { kind: 'error'; message: string }
 
 function AppUpdateDialog() {
-  const { update, open, setOpen } = useAppUpdate()
+  const { update, open, setOpen, setBusy } = useAppUpdate()
   const toast = useUi((s) => s.toast)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const busy = phase.kind === 'working' || phase.kind === 'restarting'
   const platform = update?.platform
 
   // 换了一个更新（重新检查）就把界面状态清掉
-  const lastVersion = useRef<string | null>(null)
   useEffect(() => {
-    if (update && update.version !== lastVersion.current) {
-      lastVersion.current = update.version
-      setPhase({ kind: 'idle' })
-    }
+    setPhase({ kind: 'idle' })
   }, [update])
 
-  const start = async () => {
-    if (!update) return
+  const start = useCallback(async () => {
+    if (!update || useAppUpdate.getState().busy) return
+    setBusy(true)
     setPhase({ kind: 'working', progress: null })
     try {
       const outcome = await installAppUpdate(update, (p) => setPhase({ kind: 'working', progress: p }))
       setPhase({ kind: outcome })
     } catch (e) {
       setPhase({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setBusy(false)
     }
-  }
+  }, [update, setBusy])
 
   // 安卓：从「安装未知应用」设置页回来后，已授权就自动继续安装
   useEffect(() => {
-    if (phase.kind !== 'need-permission' || getUpdatePlatform() !== 'android') return
+    if (!open || phase.kind !== 'need-permission' || getUpdatePlatform() !== 'android') return
     let handle: { remove: () => Promise<void> } | undefined
     let disposed = false
     void import('@capacitor/app').then(async ({ App }) => {
       const h = await App.addListener('resume', () => {
         void canInstallPackages().then((ok) => {
-          if (ok) void start()
+          if (ok && !disposed) void start()
         })
       })
       if (disposed) void h.remove()
@@ -97,8 +110,7 @@ function AppUpdateDialog() {
       disposed = true
       void handle?.remove()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase.kind])
+  }, [open, phase.kind, start])
 
   const onOpenChange = (v: boolean) => {
     if (busy) {
@@ -213,6 +225,8 @@ function ProgressBar({ progress }: { progress: InstallProgress | null }) {
 export function AppUpdateCard() {
   const platform = getUpdatePlatform()
   const show = useAppUpdate((s) => s.show)
+  const currentUpdate = useAppUpdate((s) => s.update)
+  const setOpen = useAppUpdate((s) => s.setOpen)
   const { state, run } = useAsyncButton({ successHoldMs: 900 })
   const [result, setResult] = useState<CheckResult | null>(null)
   const [auto, setAuto] = useState(getAutoCheckEnabled)
@@ -251,10 +265,10 @@ export function AppUpdateCard() {
       {result?.status === 'latest' && (
         <p className="mt-3 text-[13px] text-on-surface-2">已是最新版（v{result.currentVersion}）</p>
       )}
-      {result?.status === 'available' && (
+      {result?.status === 'available' && currentUpdate && (
         <div className="mt-3 p-3 rounded-[10px] bg-primary-soft flex items-center justify-between gap-2">
-          <p className="text-[13px] font-medium text-primary">发现新版本 v{result.update.version}</p>
-          <Button size="sm" variant="primary" onClick={() => show(result.update)}>查看更新</Button>
+          <p className="text-[13px] font-medium text-primary">发现新版本 v{currentUpdate.version}</p>
+          <Button size="sm" variant="primary" onClick={() => setOpen(true)}>查看更新</Button>
         </div>
       )}
       {result?.status === 'error' && (

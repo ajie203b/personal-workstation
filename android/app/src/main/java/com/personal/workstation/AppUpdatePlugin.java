@@ -5,11 +5,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 
 import androidx.core.content.FileProvider;
+import androidx.core.content.pm.PackageInfoCompat;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -25,6 +27,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -93,6 +97,11 @@ public class AppUpdatePlugin extends Plugin {
 
     @PluginMethod
     public void downloadApk(PluginCall call) {
+        final String expectedVersion = call.getString("expectedVersion");
+        if (!validVersion(expectedVersion)) {
+            call.reject("缺少或非法的目标版本");
+            return;
+        }
         final String url = call.getString("url");
         if (url == null || !url.startsWith("https://")) {
             call.reject("缺少或非法的下载地址");
@@ -127,7 +136,7 @@ public class AppUpdatePlugin extends Plugin {
                 for (String src : sources) {
                     try {
                         downloadOnce(src, target, timeoutMs);
-                        PackageInfo info = verifyApk(target);
+                        PackageInfo info = verifyApk(target, expectedVersion);
                         JSObject out = new JSObject();
                         out.put("path", target.getAbsolutePath());
                         out.put("size", target.length());
@@ -150,6 +159,11 @@ public class AppUpdatePlugin extends Plugin {
 
     @PluginMethod
     public void installApk(PluginCall call) {
+        final String expectedVersion = call.getString("expectedVersion");
+        if (!validVersion(expectedVersion)) {
+            call.reject("缺少或非法的目标版本");
+            return;
+        }
         String path = call.getString("path");
         if (path == null) {
             call.reject("缺少安装包路径");
@@ -164,8 +178,10 @@ public class AppUpdatePlugin extends Plugin {
                 call.reject("安装包不存在，请重新下载");
                 return;
             }
+            // 授权返回或复用缓存时也重新核对，拒绝已损坏或被替换的文件。
+            verifyApk(file, expectedVersion);
         } catch (IOException e) {
-            call.reject("安装包路径无效：" + e.getMessage());
+            call.reject("安装包校验失败，请重新下载：" + e.getMessage());
             return;
         }
 
@@ -307,15 +323,37 @@ public class AppUpdatePlugin extends Plugin {
         }
     }
 
-    /** 必须是能解析的 APK，且包名与当前应用一致（签名是否一致由系统安装器把关） */
-    private PackageInfo verifyApk(File apk) throws IOException {
+    /** 同包名、目标版本、更高版本码和当前签名全部匹配才接受镜像结果。 */
+    @SuppressWarnings("deprecation")
+    private PackageInfo verifyApk(File apk, String expectedVersion) throws IOException {
         PackageManager pm = getContext().getPackageManager();
-        PackageInfo info = pm.getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+            ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
+        PackageInfo info = pm.getPackageArchiveInfo(apk.getAbsolutePath(), flags);
         if (info == null) throw new IOException("下载的文件不是有效的安装包");
-        if (!getContext().getPackageName().equals(info.packageName)) {
-            throw new IOException("安装包不属于本应用（" + info.packageName + "）");
+        try {
+            String name = getContext().getPackageName();
+            PackageInfo installed = pm.getPackageInfo(name, flags);
+            UpdateApkPolicy.validate(info.packageName, name, info.versionName, expectedVersion,
+                PackageInfoCompat.getLongVersionCode(info), PackageInfoCompat.getLongVersionCode(installed),
+                signerIds(info), signerIds(installed));
+        } catch (PackageManager.NameNotFoundException e) {
+            throw new IOException("无法读取当前应用签名", e);
         }
         return info;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<String> signerIds(PackageInfo info) {
+        Signature[] signatures = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+            ? (info.signingInfo == null ? null : info.signingInfo.getApkContentsSigners()) : info.signatures;
+        Set<String> ids = new HashSet<>();
+        if (signatures != null) for (Signature signature : signatures) ids.add(signature.toCharsString());
+        return ids;
+    }
+
+    private static boolean validVersion(String version) {
+        return version != null && version.matches("[0-9]+(\\.[0-9]+){2}");
     }
 
     private void emitProgress(long downloaded, long total, String src) {
