@@ -13,8 +13,8 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/today', label: '今日', icon: IconToday },
   { path: '/tasks', label: '任务清单', icon: IconTasks, tour: 'nav-tasks' },
   { path: '/docs', label: '文档工作站', icon: IconDocs, tour: 'nav-docs' },
-  { path: '/stats', label: '统计', icon: IconStats },
   { path: '/tools', label: '工具', icon: IconTools },
+  { path: '/stats', label: '统计', icon: IconStats },
 ]
 
 /** 页面标题映射（含非导航页） */

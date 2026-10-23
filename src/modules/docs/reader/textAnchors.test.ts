@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { collectTextAnchors } from './textAnchors'
+import { collectTextAnchors, wrapText } from './textAnchors'
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -12,6 +12,20 @@ function mount(html: string): HTMLElement[] {
 }
 
 describe('collectTextAnchors', () => {
+  it('highlights Word equations without inserting HTML marks inside MathML tokens', () => {
+    const [paragraph] = mount('<p>公式 <math><mfrac><mi>a</mi><mi>b</mi></mfrac></math> 结束</p>')
+    expect(wrapText(paragraph, 'ab', 'equation', 'yellow')).toBe(true)
+    expect(paragraph.querySelector('math mark')).toBeNull()
+    expect(paragraph.querySelector('mark[data-ann="equation"] > math mfrac')).not.toBeNull()
+    expect(paragraph.querySelector('math')?.textContent).toBe('ab')
+  })
+
+  it('keeps KaTeX HTML and accessibility math together when highlighting a formula', () => {
+    const [paragraph] = mount('<p><span class="katex"><span class="katex-mathml"><math><mi>x</mi></math></span><span class="katex-html">x</span></span></p>')
+    expect(wrapText(paragraph, 'xx', 'equation', 'green')).toBe(true)
+    expect(paragraph.querySelectorAll('mark')).toHaveLength(1)
+    expect(paragraph.querySelector('mark > .katex')).not.toBeNull()
+  })
   it('records the selected portion of each paragraph without inventing paragraph separators', () => {
     const [first, second] = mount('<p>第一段文字</p><p>第二段文字</p>')
     const range = document.createRange()

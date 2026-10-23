@@ -7,6 +7,12 @@ import { isSafeUrl, sanitizeHtml } from './sanitizeHtml'
  * （EPUB 的 img onerror、DOCX 里的 style/script、链接伪协议）。
  */
 describe('sanitizeHtml', () => {
+  it('keeps safe presentation MathML while removing active and foreign content', () => {
+    const out = sanitizeHtml('<math display="block" onclick="alert(1)"><mfrac><mi>x</mi><mn>2</mn></mfrac><msup><mi>y</mi><mn>3</mn></msup><annotation-xml encoding="text/html"><script>alert(1)</script><img src="x" onerror="alert(1)"></annotation-xml><maction actiontype="statusline" href="javascript:alert(1)"><mi>z</mi></maction></math>')
+    expect(out).toContain('<math display="block">')
+    expect(out).toContain('<mfrac><mi>x</mi><mn>2</mn></mfrac>')
+    expect(out).not.toMatch(/annotation-xml|maction|script|onclick|onerror|javascript:/)
+  })
   it('剥掉事件属性（onerror 这类一行就能执行）', () => {
     const out = sanitizeHtml('<p><img src="x" onerror="globalThis.__pwned = 1"></p>')
     expect(out).not.toContain('onerror')

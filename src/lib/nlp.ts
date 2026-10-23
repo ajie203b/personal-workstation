@@ -36,7 +36,7 @@ interface Token {
 
 /** 时段词：决定同一个「9点」是上午还是晚上 */
 const PERIOD_ALT = '凌晨|半夜|清晨|早晨|早上|上午|中午|下午|傍晚|晚上|今晚|明晚|今早|明早|夜里|夜间'
-const HOUR_ALT = '二十[一二三四五六七八九]?|2[0-3]|[01]?\\d|十[一二三四五六七八九]?|一|两|二|三|四|五|六|七|八|九'
+const NUMBER_WORD = '[0-9零〇一二两三四五六七八九十]+'
 
 /** 只说了时段没说几点时的默认时刻：照中国人的日常习惯取整点 */
 const PERIOD_HOUR: Record<string, number> = {
@@ -48,7 +48,7 @@ const PERIOD_HOUR: Record<string, number> = {
 /** 中文优先的自然语言解析：「明天14:00 交报告 P1 #工作」 */
 export function parseQuickAdd(raw: string): ParsedTask {
   const p: ParsedTask = { title: '', tags: [], guesses: [] }
-  let s = ` ${raw.trim()} `
+  let s = ` ${raw.trim().replace(/[０-９]/g, c => String(c.charCodeAt(0) - 0xff10))} `
   const now = new Date()
   const nowMin = now.getHours() * 60 + now.getMinutes()
   /** 只写时间不写日期时，解析结果落到今天还是明天 */
@@ -66,7 +66,7 @@ export function parseQuickAdd(raw: string): ParsedTask {
   // 行首 / 空白后的 P1 后面可以直接接中文；接英文时不认（p2p 不是优先级）
   s = s.replace(/(^|\s)([pPｐＰ][0-3０-３])(?=\s|$|[\u4e00-\u9fff])/g, '$1 $2 ')
   s = s.replace(/\s[pｐPＰ]([0-3０-３])(?=\s)/g, (_, d: string) => {
-    p.priority = Number(d) as Priority
+    p.priority = Number(d.replace(/[０-９]/g, c => String(c.charCodeAt(0) - 0xff10))) as Priority
     return ' '
   })
 
@@ -77,37 +77,52 @@ export function parseQuickAdd(raw: string): ParsedTask {
 
   // ① 关键词 → 优先级（只有没显式写 P0–P3 时才猜；不改标题，免得「紧急联系人」被吃掉）
   if (p.priority == null) {
-    if (/(紧急|加急|十万火急|立刻|马上|尽快|必须今天|今天就交)/.test(s)) {
+    const importance = s.replace(/(?:不|非|无需|不用)(?:紧急|重要|加急)/g, '')
+    if (/(紧急|加急|十万火急|立刻|马上|尽快|必须今天|今天就交)/.test(importance)) {
       p.priority = 0
       p.guesses.push('P0 紧急')
-    } else if (/(重要|关键|务必|必做)/.test(s)) {
+    } else if (/(重要|关键|务必|必做|高优先级)/.test(importance)) {
       p.priority = 1
       p.guesses.push('P1 重要')
-    } else if (/(不急|有空|闲了|看情况|随便)/.test(s)) {
+    } else if (/(不急|不紧急|低优先级|有空|闲了|看情况|随便)/.test(s)) {
       p.priority = 3
       p.guesses.push('P3 不急')
     }
   }
 
-  // ② 「周一到周五」→ 工作日；其它区间 → 每周这几天
-  s = s.replace(/\s(?:周|星期|礼拜)([一二三四五六日天])\s*(?:到|至|-|~)\s*(?:周|星期|礼拜)?([一二三四五六日天])(?=\s)/g, (_m, a: string, b: string) => {
-    const from = cnWeekday(a)
-    const to = cnWeekday(b)
-    const days: number[] = []
-    let cur = from
-    for (let i = 0; i < 7; i++) {
-      days.push(cur)
-      if (cur === to) break
-      cur = (cur + 1) % 7
-    }
-    if (days.length < 2) return _m
-    if (days.length === 5 && days.includes(1) && days.includes(5)) {
-      p.repeat = 'weekdays'
-    } else {
-      p.repeat = 'weekly'
-      p.repeatDays = [...days].sort((x, y) => x - y)
-    }
-    if (!p.due) p.due = nearestWeekdayDate(days)
+  // 星期先抽取，支持中文、数字、连写、分隔和重复前缀，避免与后面的钟点互相吞字。
+  const wd = '[一二三四五六日天0-7]'
+  const week = '(?:周|星期|礼拜)'
+  s = s.replace(new RegExp(`(?:每(?:个)?)?${week}\\s*(${wd})\\s*(?:到|至|[-~～—])\\s*${week}?\\s*(${wd})`, 'g'), (_m, a: string, b: string) => {
+    const days = [cnWeekday(a)]
+    while (days.at(-1) !== cnWeekday(b) && days.length < 7) days.push((days.at(-1)! + 1) % 7)
+    p.repeat = days.length === 5 && days.every(d => d >= 1 && d <= 5) ? 'weekdays' : 'weekly'
+    if (p.repeat === 'weekly') p.repeatDays = [...days].sort((a, b) => a - b)
+    p.due = nearestWeekdayDate(days)
+    return ' '
+  })
+  const dayToken = `${wd}(?![点时:：])`
+  s = s.replace(new RegExp(`每(?:个)?${week}\\s*(${dayToken}(?:(?:\\s*[、,，和及/\\s]\\s*)?${week}?\\s*${dayToken})*)`, 'g'), (_m, daysText: string) => {
+    const days = [...new Set((daysText.match(new RegExp(wd, 'g')) ?? []).map(cnWeekday))].sort((a, b) => a - b)
+    p.repeat = 'weekly'
+    p.repeatDays = days
+    p.due = nearestWeekdayDate(days)
+    return ' '
+  })
+  s = s.replace(new RegExp(`(下下|下|这|本)?(?:个)?${week}\\s*(${wd})(之前|以前|前)?`, 'g'), (_m, prefix: string, day: string, deadline: string) =>
+    ` ${prefix === '本' ? '这' : prefix || ''}周${['日', '一', '二', '三', '四', '五', '六'][cnWeekday(day)]}${deadline || ''} `)
+  s = s.replace(/(大后天|后天|明天|明日|今天|今日)/g, ' $1 ')
+
+  // 钟点先保护起来：三点二十分中的「二十分」不能被当成预计用时。
+  const foundClocks: { hour: number; minute: number; period?: string; literal: boolean }[] = []
+  const clockRe = new RegExp(`(?<![第0-9零〇一二两三四五六七八九十])(${PERIOD_ALT}|早|晚)?\\s*(${NUMBER_WORD})(?:[点时](半|[一三1-3]刻|${NUMBER_WORD}分?)?|[:：](${NUMBER_WORD}))(?![0-9零〇一二两三四五六七八九十])`, 'g')
+  s = s.replace(clockRe, (match, period: string | undefined, hourWord: string, minuteWord: string | undefined, colonMinute: string | undefined) => {
+    const hour = cnToNumber(hourWord)
+    const minute = colonMinute ? cnToNumber(colonMinute) : minuteWord === '半' ? 30
+      : minuteWord?.endsWith('刻') ? (cnToNumber(minuteWord.slice(0, -1)) ?? 0) * 15
+        : minuteWord ? cnToNumber(minuteWord.replace(/分$/, '')) : 0
+    if (hour == null || hour > 23 || minute == null || minute > 59) return match
+    foundClocks.push({ hour, minute, period, literal: !!colonMinute })
     return ' '
   })
 
@@ -126,12 +141,12 @@ export function parseQuickAdd(raw: string): ParsedTask {
   }
 
   // ④ 打卡次数：「喝水 8 次」「每天 3 遍」（「第3次」「这次」「每次」不算）
-  const countM = s.match(/(^|[^第这那每哪几多好])(\d+|[二两三四五六七八九十]+)\s*(次|遍|回|轮)/)
+  const countM = s.match(new RegExp(`(?<![第这那每哪几多好0-9零〇一二两三四五六七八九十])(${NUMBER_WORD})\\s*(?:次|遍|回|轮)`))
   if (countM) {
-    const n = cnToNumber(countM[2])
-    if (n != null && n >= 2 && n <= 99) {
+    const n = cnToNumber(countM[1])
+    if (n != null && n >= 1 && n <= 99) {
       p.repeatCount = n
-      s = s.replace(countM[0], countM[1])
+      s = s.replace(countM[0], '')
     }
   }
 
@@ -227,31 +242,16 @@ export function parseQuickAdd(raw: string): ParsedTask {
   //
   // v3.1：打卡任务允许写多个时间点（「早8点 晚9点」），这里循环收集：
   // 第一个当 dueTime，其余进 repeatTimes，提醒与列表展示都按它来。
-  const timeRe = new RegExp(`\\s?(${PERIOD_ALT})?\\s?(${HOUR_ALT})点(半|[0-5]?\\d分?)?(?=\\s|[，。！？、,.!?;；]|$)`)
   const clocks: string[] = []
   // 一句里写了多个时间点（「8点、21点」）就按字面取，不把已过的那个推到现在之后：
   // 「明天 8点、21点 巡检」里的 8 点指的是明天，推成今晚 20:00 就错了
-  const multiClock = (s.match(/[0-9一二两三四五六七八九十]+点|[0-9]{1,2}[:：][0-5][0-9]/g) ?? []).length > 1
-  for (let guard = 0; guard < 4; guard++) {
-    const tm = s.match(timeRe)
-    if (!tm) break
-    // 「第3点」是序号不是时间（归一化那边也放过它，这里再兜一次）
-    if (s.slice(0, tm.index).trimEnd().endsWith('第')) break
-    const h0 = parseHourWord(tm[2])
-    const rawMin = tm[3]
-    const mm = rawMin == null ? 0 : rawMin === '半' ? 30 : Number(rawMin.replace('分', ''))
-    const clock = resolveClock(h0, mm, tm[1], nowMin, Boolean(p.repeat) || multiClock)
+  const hasDate = !!p.due || /今天|今日|明天|明日|后天|天[后後]|周[一二三四五六日天]|月.+[日号]|\d{1,4}[-/.]\d{1,2}/.test(s)
+  for (const tm of foundClocks) {
+    const mm = tm.minute
+    const clock = resolveClock(tm.hour, mm, tm.period, nowMin, Boolean(p.repeat) || foundClocks.length > 1 || hasDate || tm.literal)
     clocks.push(`${pad2(clock.hour)}:${pad2(mm)}`)
     if (clocks.length === 1) dayOffset = clock.dayOffset
     timeFromClock = true
-    s = s.replace(timeRe, ' ')
-  }
-  const hmRe = /\s([01]?\d|2[0-3])[:：]([0-5]\d)(?=\s)/
-  for (let guard = 0; guard < 4; guard++) {
-    const hm = s.match(hmRe)
-    if (!hm) break
-    clocks.push(`${pad2(Number(hm[1]))}:${hm[2]}`)
-    s = s.replace(hmRe, ' ')
   }
   if (clocks.length) p.dueTime = clocks[0]
   if (p.repeat && clocks.length > 1) p.repeatTimes = [...new Set(clocks)].sort()
@@ -388,6 +388,7 @@ function resolveClock(h0: number, mm: number, period: string | undefined, nowMin
       case '晚上':
       case '今晚':
       case '明晚':
+      case '晚':
         if (period === '明晚') dayHint = 'tomorrow'
         if (h0 === 12) { hour = 0; crossDay = true } else hour = h0 < 12 ? h0 + 12 : h0
         break
@@ -435,14 +436,6 @@ function resolveClock(h0: number, mm: number, period: string | undefined, nowMin
   return { hour, dayOffset }
 }
 
-function parseHourWord(raw: string): number {
-  if (/^\d+$/.test(raw)) return Number(raw)
-  if (raw.startsWith('二十')) return raw === '二十' ? 20 : 20 + (CN_NUM[raw.slice(2)] ?? 0)
-  if (raw === '十') return 10
-  if (raw.startsWith('十')) return 10 + (CN_NUM[raw[1]] ?? 0)
-  return CN_NUM[raw] ?? 0
-}
-
 /**
  * 「30分钟」「半小时」「一个半小时」「2小时」→ 分钟数。
  * 数字可省略（「半小时」），也可带「半」（「一个半小时」= 90）。
@@ -463,6 +456,7 @@ function parseDurationMinutes(raw: string): number | null {
 /* ---------------- 日期 ---------------- */
 
 function cnWeekday(ch: string): number {
+  if (/^[0-7]$/.test(ch)) return Number(ch) % 7
   const map: Record<string, number> = { 日: 0, 天: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 }
   return map[ch] ?? 1
 }
@@ -477,12 +471,13 @@ function pad2(n: number): string {
 
 /** 「十五」→15；「3」→3 */
 function cnToNumber(s: string): number | null {
+  s = s.replace(/[〇零]/g, '0').replace(/[一二两三四五六七八九]/g, c => String(CN_NUM[c]))
   if (/^\d+$/.test(s)) return Number(s)
   if (s === '十') return 10
-  if (s.startsWith('十')) return 10 + (CN_NUM[s[1]] ?? 0)
+  if (s.startsWith('十')) return 10 + Number(s.slice(1) || 0)
   if (s.includes('十')) {
     const [a, b] = s.split('十')
-    return (CN_NUM[a] ?? 0) * 10 + (b ? (CN_NUM[b] ?? 0) : 0)
+    return Number(a || 1) * 10 + Number(b || 0)
   }
   return CN_NUM[s] ?? null
 }

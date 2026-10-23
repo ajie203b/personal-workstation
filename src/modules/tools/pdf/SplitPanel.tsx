@@ -32,13 +32,19 @@ export function SplitPanel() {
     setFile(f)
     setTotal(0)
     try {
-      const doc = await PDFDocument.load(await fileBytes(f), { ignoreEncryption: true })
+      const doc = await PDFDocument.load(await fileBytes(f))
       setTotal(doc.getPageCount())
     } catch {
       toast('打不开这份 PDF（可能已损坏或格式特殊）')
       setFile(null)
     }
   }
+
+  let singlePdf = mode === 'extract'
+  try {
+    if (total && mode === 'groups') singlePdf = parsePageGroups(expr, total).length === 1
+    if (total && mode === 'per-page') singlePdf = total <= Number(everyN)
+  } catch { /* 页码填写中由导出时给出完整反馈。 */ }
 
   const make = async (): Promise<ToolOutput> => {
     if (!file) throw new Error('先选一份 PDF')
@@ -146,7 +152,7 @@ export function SplitPanel() {
         />
       </Field>
 
-      <OutputBar make={make} action="拆分" disabled={!file || !total} />
+      <OutputBar make={make} action="拆分" disabled={!file || !total} allowLibrary={singlePdf} />
     </Panel>
   )
 }

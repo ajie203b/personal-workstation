@@ -14,6 +14,7 @@ import { isFutureTask } from '@/lib/date'
 import { useDocTabs } from '@/stores/tabs'
 import { READER_PANEL_LIMITS, useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
+import { readDocumentText } from '@/lib/readDocumentText'
 import { Button } from '@/shared/ui/Button'
 import { Dialog, Sheet } from '@/shared/ui/Sheet'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuSeparator } from '@/shared/ui/Menu'
@@ -129,7 +130,7 @@ export function DocReaderPage() {
           setToc(flow.segments.map((s, i) => ({ level: 0, title: s.title ?? `第 ${i + 1} 段`, page: i + 1 })))
           setContent({ kind: 'flow', data: flow })
         } else {
-          const text = await blob.text()
+          const text = await readDocumentText(blob)
           if (!alive) return
           setMdHeadings(parseMdBlocks(text).headings)
           setContent({ kind: 'md', md: text })
@@ -323,7 +324,7 @@ export function DocReaderPage() {
 
         {/* 排版设置（弹层） */}
         <div className="relative">
-          <IconBtn label="排版设置" active={showSettings} onClick={() => setShowSettings((v) => !v)}><Settings2 size={18} /></IconBtn>
+          <IconBtn label="排版设置" active={showSettings} aria-expanded={showSettings} aria-controls="reader-settings" aria-haspopup="dialog" onClick={() => setShowSettings((v) => !v)}><Settings2 size={18} /></IconBtn>
           {showSettings && (
             <ReaderSettingsPanel
               doc={doc}

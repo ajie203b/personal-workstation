@@ -8,7 +8,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { CalendarCheck, CalendarDays, Hourglass, Inbox, GripVertical, type LucideIcon } from 'lucide-react'
 import { TIERS, TIER_LABEL, type Task, type Tier } from '@/db/db'
 import { sortTasks } from '@/db/tasks'
-import { moveTier } from '@/db/tasks'
+import { moveTier, reorderTasks } from '@/db/tasks'
+import { useUi } from '@/stores/ui'
 import { TaskItem } from './TaskItem'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
@@ -66,6 +67,9 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
     if (from && from.tier !== toTier) {
       haptic('light')
       void moveTier(id, toTier)
+    } else if (from && String(target) !== toTier) {
+      void reorderTasks(byTier[toTier].map(t => t.id), id, String(target))
+        .catch(() => useUi.getState().toast('排序保存失败，请重试'))
     }
   }
 

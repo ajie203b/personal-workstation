@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
+import type { RootContent } from 'mdast'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { saveScrollAndProgress } from '@/db/docs'
 import type { Annotation, AnnotationTextAnchor, DocSettings } from '@/db/db'
 import { handleDocLink, transformDocUrl } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
 import { remarkHighlight } from './mdHighlight'
+import { normalizeMarkdown } from './markdownContent'
+import { markdownSchema, rehypeReaderStyles } from './markdownPlugins'
 import { collectTextAnchors, wrapText } from './reader/textAnchors'
 
 export interface MdSelectionInfo {
@@ -34,32 +44,29 @@ interface Props {
   onFontSizeChange?: (px: number) => void
 }
 
-/** 解析 Markdown：按空行切块，返回标题目录（块号即顶级块序号） */
+const blockParser = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
+
+function headingText(node: RootContent): string {
+  if ('value' in node) return String(node.value)
+  if ('children' in node) return node.children.map((child) => headingText(child as RootContent)).join('')
+  return ''
+}
+
+/** Use the same parsed blocks as the reader, including recovered tables and fenced code. */
 export function parseMdBlocks(md: string): { headings: { level: number; text: string; blockIdx: number }[]; total: number } {
   const headings: { level: number; text: string; blockIdx: number }[] = []
-  let inCode = false
-  let blockIdx = -1
-  let empty = true
-  for (const raw of md.split('\n')) {
-    if (raw.trimStart().startsWith('```')) inCode = !inCode
-    if (raw.trim() === '' && !inCode) {
-      empty = true
-      continue
-    }
-    if (empty) {
-      blockIdx++
-      empty = false
-      const m = raw.match(/^(#{1,4})\s+(.*)$/)
-      if (m) headings.push({ level: m[1].length, text: m[2].replace(/[#*`]/g, '').trim(), blockIdx })
-    }
-  }
-  return { headings, total: blockIdx + 1 }
+  const blocks = blockParser.parse(normalizeMarkdown(md)).children.filter((node) => node.type !== 'definition' && node.type !== 'footnoteDefinition')
+  blocks.forEach((node, blockIdx) => {
+    if (node.type === 'heading') headings.push({ level: node.depth, text: headingText(node).trim(), blockIdx })
+  })
+  return { headings, total: blocks.length }
 }
 
 /** MD 阅读器：块锚点渲染 + 沉浸排版 + 划词高亮 */
 export function MdReader({
   hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange,
 }: Props) {
+  const source = useMemo(() => normalizeMarkdown(md), [md])
   const bodyRef = useRef<HTMLDivElement>(null)
   const lastScrollTop = useRef(0)
   const lastJumpTs = useRef(0)
@@ -286,9 +293,13 @@ export function MdReader({
       >
         <div ref={bodyRef} className="md-body" onMouseUp={onMouseUp}>
           <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkHighlight]}
+            remarkPlugins={[remarkGfm, remarkHighlight, remarkMath]}
+            rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeReaderStyles, [rehypeKatex, { trust: false, strict: false, maxSize: 20, maxExpand: 1000 }]]}
             urlTransform={transformDocUrl}
             components={{
+              table: ({ node: _node, children, ...rest }) => (
+                <div className="md-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...rest}>{children}</table></div>
+              ),
               // 链接统一接管：否则 #锚点/相对路径会改掉 hash 路由，直接跳回今日页
               a: ({ href, children, ...rest }) => {
                 // remarkHighlight 把 ==color|文字== 变成 hl:color 链接，这里画回高亮
@@ -306,7 +317,7 @@ export function MdReader({
               ),
             }}
           >
-            {md}
+            {source}
           </ReactMarkdown>
         </div>
       </div>

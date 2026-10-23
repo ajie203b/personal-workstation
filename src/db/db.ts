@@ -73,10 +73,7 @@ export interface Task {
   aiRef?: string
   subtasks?: SubTask[] // v1.3 子任务清单
   pinned?: boolean // v1.3 置顶（列表视图内沉顶）
-  /**
-   * @deprecated v3.1 起不再使用：打卡任务的自定义项改成「次数」(repeatCount)。
-   * 旧数据里可能还有值，排序仍兼容读一次，但 UI 不再暴露。
-   */
+  /** 用户拖动后的显示顺序，与打卡次数 repeatCount 独立。 */
   sortOrder?: number
   createdAt: number
   updatedAt: number

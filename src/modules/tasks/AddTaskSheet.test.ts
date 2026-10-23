@@ -58,16 +58,23 @@ function taskText() {
 }
 
 function dateField(label: string) {
-  return document.querySelector<HTMLInputElement>(`input[aria-label="${label}日期"]`)!
+  return document.querySelector<HTMLButtonElement>(`button[aria-label="${label}日期"]`)!
 }
 
 function timeButton(label: string) {
-  return dateField(label).parentElement!.querySelector<HTMLButtonElement>('button')!
+  return dateField(label).parentElement!.parentElement!.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]:not([aria-label])')!
+}
+
+function chooseDate(label: string, day: string) {
+  act(() => dateField(label).click())
+  const date = new Date(`${day}T00:00`)
+  const aria = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(date)
+  act(() => document.querySelector<HTMLButtonElement>(`[data-date-panel] button[aria-label="${aria}"]`)!.click())
 }
 
 async function saveTask() {
   const save = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
-    .find((button) => button.textContent?.trim() === '添加任务')!
+    .find((button) => ['添加任务', '添加打卡任务'].includes(button.textContent?.trim() ?? ''))!
   await act(async () => {
     save.click()
     await vi.waitFor(async () => expect(await db.tasks.count()).toBe(1))
@@ -95,7 +102,7 @@ describe('添加任务的自然语言时间与手动表单', () => {
 
   it('手动覆盖截止日期后，继续修改正文不会重置用户选择', async () => {
     edit(taskText(), '明天14:00 交报告')
-    edit(dateField('截止时间'), '2026-10-30')
+    chooseDate('截止时间', '2026-10-30')
     act(() => timeButton('截止时间').click())
     const preset = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent?.trim() === '18:00')!
@@ -119,7 +126,7 @@ describe('添加任务的自然语言时间与手动表单', () => {
 
   it('重复任务也以用户手动选择的截止时间为准', async () => {
     edit(taskText(), '每天8点喝水')
-    edit(dateField('截止时间'), '2026-10-30')
+    chooseDate('截止时间', '2026-10-30')
     act(() => timeButton('截止时间').click())
     const preset = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent?.trim() === '18:00')!
@@ -136,10 +143,36 @@ describe('添加任务的自然语言时间与手动表单', () => {
 
   it('用户手动选的开始日期按本地时间保存', async () => {
     edit(taskText(), '整理桌面')
-    edit(dateField('开始时间'), '2026-10-24')
+    act(() => document.querySelector<HTMLButtonElement>('button[aria-label="时间设置"]')!.click())
+    chooseDate('开始时间', '2026-10-24')
 
     const task = await saveTask()
 
-    expect(task.startAt).toBe(new Date(2026, 9, 24, 9, 0).getTime())
+    expect(task.startAt).toBe(new Date(2026, 9, 24, 0, 0).getTime())
+  })
+
+  it('无时间描述默认收起；识别后自动展开；可手动收起', () => {
+    const toggle = document.querySelector<HTMLButtonElement>('button[aria-label="时间设置"]')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    edit(taskText(), '整理桌面')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    edit(taskText(), '星期5下午三点二十分整理桌面')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(timeButton('截止时间').textContent).toContain('15:20')
+    act(() => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    edit(taskText(), '星期6下午四点整理桌面')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    edit(taskText(), '整理桌面')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('自动识别的打卡时间点可以清空，不会在保存时重新回填', async () => {
+    edit(taskText(), '每天8点喝水')
+    const remove = document.querySelector<HTMLButtonElement>('button[aria-label="移除 08:00"]')!
+    act(() => remove.click())
+    const task = await saveTask()
+    expect(task.dueTime).toBeUndefined()
+    expect(task.repeatTimes).toBeUndefined()
   })
 })

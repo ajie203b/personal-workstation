@@ -68,7 +68,7 @@ export function AppShell() {
   const selfScrolling = SELF_SCROLLING.test(pathname)
   const immersive = IMMERSIVE.some((re) => re.test(pathname))
   // 设置页 / 工具页是配置与工具页，不摆「加任务」的悬浮按钮
-  const showFab = !immersive && section !== '/settings' && section !== '/tools'
+  const showFab = !immersive && (section === '/today' || section === '/tasks')
 
   // 悬浮按钮的默认归属：今日页进「今日」，任务页跟随当前页签，其余落「随时」
   const onAdd = () => {

@@ -7,6 +7,7 @@
 import JSZip from 'jszip'
 import { importDoc } from '@/db/docs'
 import { saveBlob } from '@/lib/saveFile'
+import { safeOutputName } from './outputName'
 
 /** 单个产物 */
 export interface ToolOutput {
@@ -26,13 +27,13 @@ export function isBigFile(size: number): boolean {
 /** 多个文件 → zip（jszip） */
 export async function zipFiles(files: { name: string; blob: Blob }[]): Promise<Blob> {
   const zip = new JSZip()
-  for (const f of files) zip.file(f.name, await f.blob.arrayBuffer())
+  for (const f of files) zip.file(safeOutputName(f.name), await f.blob.arrayBuffer())
   return zip.generateAsync({ type: 'blob' })
 }
 
 /** 存到「下载/个人工作站」 */
 export async function exportToDownloads(out: ToolOutput, toast: (msg: string) => void): Promise<void> {
-  const where = await saveBlob(out.blob, out.filename)
+  const where = await saveBlob(out.blob, safeOutputName(out.filename))
   toast(`已保存 → ${where}`)
 }
 
@@ -42,7 +43,7 @@ export async function exportToLibrary(out: ToolOutput, toast: (msg: string) => v
     toast('只有 PDF 结果能进文档库')
     return
   }
-  const file = new File([out.blob], out.filename, { type: 'application/pdf' })
+  const file = new File([out.blob], safeOutputName(out.filename), { type: 'application/pdf' })
   const { duplicated } = await importDoc(file)
   toast(duplicated ? '文档库里已有这份内容' : '已进文档库')
 }

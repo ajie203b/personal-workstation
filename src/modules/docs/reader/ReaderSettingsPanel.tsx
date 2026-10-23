@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import * as Dialog from '@radix-ui/react-dialog'
+import { X } from 'lucide-react'
 import type { Doc, DocSettings } from '@/db/db'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Stepper } from './ReaderPanels'
@@ -58,12 +60,24 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
   }, [draggingWidth, commitWidth])
 
   return (
-    <>
-      <div className="fixed inset-0 z-20" onClick={onClose} />
-      <div
-        className="pop z-50 w-[260px] p-4 flex flex-col gap-3.5 fixed"
+    <Dialog.Root open onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog.Portal>
+      <Dialog.Overlay className="fixed inset-0 z-40" />
+      <Dialog.Content
+        id="reader-settings"
+        aria-label="排版设置"
+        aria-describedby={undefined}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          document.querySelector<HTMLElement>('[aria-controls="reader-settings"]')?.focus()
+        }}
+        className="pop z-50 w-[min(300px,calc(100vw-24px))] p-4 flex flex-col gap-3.5 fixed max-h-[calc(100dvh-90px)] overflow-y-auto"
         style={{ right: 12, top: 'calc(env(safe-area-inset-top, 0px) + 60px)' }}
       >
+        <div className="flex items-center justify-between">
+          <Dialog.Title className="text-[14px] font-semibold">排版设置</Dialog.Title>
+          <Dialog.Close aria-label="关闭排版设置" className="grid place-items-center w-8 h-8 rounded-lg text-on-surface-2 hover:bg-surface-3 cursor-pointer"><X size={16} /></Dialog.Close>
+        </div>
         <div>
           <p className="text-[12px] font-medium text-on-surface-2 mb-1.5">阅读主题</p>
           <Segmented
@@ -129,7 +143,8 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
             重置布局
           </button>
         </div>
-      </div>
-    </>
+      </Dialog.Content>
+    </Dialog.Portal>
+    </Dialog.Root>
   )
 }

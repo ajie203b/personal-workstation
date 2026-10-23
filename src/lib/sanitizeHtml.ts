@@ -20,6 +20,11 @@ const ALLOWED_TAGS = new Set([
   'blockquote', 'pre', 'ul', 'ol', 'li', 'dl', 'dt', 'dd',
   'figure', 'figcaption', 'img', 'a',
   'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+  'section', 'article', 'header', 'footer',
+  // Presentation MathML only: no links, actions or HTML annotation containers.
+  'math', 'mrow', 'mi', 'mn', 'mo', 'ms', 'mtext', 'mspace', 'mfrac', 'msqrt', 'mroot',
+  'msub', 'msup', 'msubsup', 'munder', 'mover', 'munderover', 'mtable', 'mtr', 'mtd',
+  'mstyle', 'mpadded', 'mphantom', 'menclose', 'mmultiscripts', 'mprescripts', 'none', 'merror',
 ])
 
 /** 连同内容整体删除：脚本、样式、框架、表单、多媒体、SVG（内联 SVG 可以带脚本与 foreignObject） */
@@ -27,11 +32,12 @@ const DROP_WITH_CONTENT = new Set([
   'script', 'style', 'link', 'meta', 'base', 'title', 'head', 'iframe', 'frame', 'frameset',
   'object', 'embed', 'applet', 'param', 'form', 'input', 'button', 'select', 'option', 'textarea',
   'audio', 'video', 'source', 'track', 'canvas', 'noscript', 'template',
-  'svg', 'math',
+  'svg', 'annotation-xml', 'annotation', 'maction',
 ])
 
 /** 所有标签都允许的属性（不含任何事件属性，on* 单独拦） */
 const GLOBAL_ATTRS = new Set(['class', 'id', 'title', 'dir', 'lang', 'style', 'role'])
+const MATH_ATTRS = new Set(['mathvariant', 'mathcolor', 'mathbackground', 'displaystyle', 'scriptlevel'])
 
 const TAG_ATTRS: Record<string, Set<string>> = {
   a: new Set(['href', 'name', 'rel', 'target']),
@@ -45,6 +51,15 @@ const TAG_ATTRS: Record<string, Set<string>> = {
   time: new Set(['datetime']),
   blockquote: new Set(['cite']),
   q: new Set(['cite']),
+  math: new Set(['xmlns', 'display', 'mathvariant', 'mathsize', 'mathcolor', 'mathbackground']),
+  mo: new Set(['stretchy', 'fence', 'separator', 'lspace', 'rspace', 'largeop', 'movablelimits', 'accent', 'form']),
+  mfrac: new Set(['linethickness', 'numalign', 'denomalign', 'bevelled']),
+  mtable: new Set(['columnalign', 'rowalign', 'columnspacing', 'rowspacing', 'columnlines', 'rowlines', 'frame']),
+  mtd: new Set(['columnspan', 'rowspan', 'columnalign', 'rowalign']),
+  mspace: new Set(['width', 'height', 'depth']),
+  mover: new Set(['accent']),
+  munder: new Set(['accentunder']),
+  munderover: new Set(['accent', 'accentunder']),
   ins: new Set(['cite', 'datetime']),
   del: new Set(['cite', 'datetime']),
 }
@@ -60,8 +75,10 @@ const ALLOWED_STYLE_PROPS = new Set([
   'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
   'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
   'border', 'border-width', 'border-style', 'border-color', 'border-radius',
+  'border-top', 'border-right', 'border-bottom', 'border-left', 'border-collapse', 'border-spacing',
+  'table-layout', 'text-decoration-color', 'text-decoration-style', 'text-decoration-line',
   'vertical-align', 'list-style-type', 'list-style-position', 'color', 'background-color',
-  'width', 'height', 'max-width', 'min-width', 'opacity', 'display',
+  'width', 'height', 'max-width', 'min-width', 'max-height', 'min-height', 'opacity', 'display',
 ])
 
 /** 允许的协议；相对地址（#、/、./、../、裸路径）单独判断 */
@@ -83,7 +100,7 @@ export function isSafeUrl(raw: string, allowDataImage = true): boolean {
   return SAFE_PROTOCOLS.some((p) => url.startsWith(p))
 }
 
-function sanitizeStyle(value: string): string {
+export function sanitizeStyle(value: string): string {
   const kept: string[] = []
   for (const decl of value.split(';')) {
     const i = decl.indexOf(':')
@@ -109,7 +126,7 @@ function cleanAttrs(el: Element): void {
       el.removeAttribute(attr.name)
       continue
     }
-    if (!GLOBAL_ATTRS.has(name) && !allowed?.has(name)) {
+    if (!GLOBAL_ATTRS.has(name) && !allowed?.has(name) && !(el.namespaceURI === 'http://www.w3.org/1998/Math/MathML' && MATH_ATTRS.has(name))) {
       el.removeAttribute(attr.name)
       continue
     }

@@ -1,5 +1,6 @@
 import type { DocKind } from '@/db/db'
 import { sanitizeHtml } from '@/lib/sanitizeHtml'
+import { readDocumentText } from '@/lib/readDocumentText'
 
 /**
  * 流式文档解析（v1.3）：EPUB / DOCX / PPTX / TXT → 统一段落模型，
@@ -23,14 +24,10 @@ export interface FlowDoc {
   segments: FlowSegment[]
   /** 全文纯文本（= segments.text 拼接） */
   text: string
+  /** Parsed and scoped Word CSS, never raw styles from the input document. */
+  styles?: string
   /** 释放解析过程创建的 blob URL（文档关闭时调用，防内存泄漏） */
   dispose?: () => void
-}
-
-function htmlBody(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  doc.querySelectorAll('script,style,link,meta,head').forEach((el) => el.remove())
-  return sanitizeHtml(doc.body?.innerHTML ?? '')
 }
 
 function htmlToText(html: string): string {
@@ -159,13 +156,9 @@ async function parseEpub(blob: Blob): Promise<FlowDoc> {
   }
 }
 
-/* ---- DOCX：mammoth 转 HTML ---- */
+/* ---- DOCX：保留格式与原生公式的 Word 渲染器 ---- */
 async function parseDocx(blob: Blob): Promise<FlowDoc> {
-  const mammoth = await import('mammoth')
-  const { value: html } = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() })
-  const text = htmlToText(html)
-  if (!text) throw new Error('DOCX 解析为空')
-  return { unit: 'doc', segments: [{ title: '正文', html: htmlBody(html), text }], text }
+  return (await import('./wordDoc')).parseWordDoc(blob)
 }
 
 /* ---- PPTX：JSZip 读 slide XML ---- */
@@ -190,7 +183,7 @@ async function parsePptx(blob: Blob): Promise<FlowDoc> {
 
 /* ---- TXT：空行分段 ---- */
 async function parseTxt(blob: Blob): Promise<FlowDoc> {
-  const raw = await blob.text()
+  const raw = await readDocumentText(blob)
   const paras = raw.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)
   const html = paras.map((p) => `<p>${esc(p).replace(/\n/g, '<br/>')}</p>`).join('')
   return { unit: 'doc', segments: [{ title: '正文', html, text: raw }], text: raw }

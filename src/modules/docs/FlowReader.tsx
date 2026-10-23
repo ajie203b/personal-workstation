@@ -292,6 +292,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
         className="reader-prose mx-auto py-8 md:py-12"
         style={{ ['--reader-width' as string]: `${settings.widthPct}%` }}
       >
+        {flow.styles && <style>{flow.styles}</style>}
         {flow.segments.map((seg, i) => (
           <section
             key={i}
@@ -313,6 +314,8 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
               style={{
                 fontSize: liveFont,
                 lineHeight: settings.leading,
+                ['--word-font-scale' as string]: liveFont / 16,
+                ['--word-leading' as string]: settings.leading,
               }}
               dangerouslySetInnerHTML={{ __html: seg.html }}
             />

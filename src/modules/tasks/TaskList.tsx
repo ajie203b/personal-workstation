@@ -11,6 +11,10 @@ import { useFlipList } from '@/lib/useFlipList'
 import { haptic } from '@/lib/haptics'
 import { isFutureTask } from '@/lib/date'
 import { cn } from '@/lib/cn'
+import { verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
+import { reorderTasks } from '@/db/tasks'
+import { useDndContext } from '@dnd-kit/core'
 
 interface Props {
   tasks: Task[]
@@ -117,6 +121,8 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
   }
 
   return (
+    <DragSort ids={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}
+      onMove={(active, over) => { void reorderTasks(tasks.map(t => t.id), active, over).catch(() => useUi.getState().toast('排序保存失败，请重试')) }}>
     <ul
       ref={containerRef}
       scope-data={scope}
@@ -129,13 +135,14 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
       className={cn('flex flex-col gap-2 rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary/30')}
     >
       {tasks.map((t) => (
-        <li key={t.id}>
+        <DragSortItem key={t.id} id={t.id} as="li">
           <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={() => void removeTask(t)} disabled={t.status === 'done' || isFutureTask(t)}>
             <TaskItem task={t} focused={focusId === t.id} flip />
           </SwipeRow>
-        </li>
+        </DragSortItem>
       ))}
     </ul>
+    </DragSort>
   )
 }
 
@@ -146,6 +153,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
  * 仅触摸设备启用；纵向滚动、点击、看板拖拽都不受影响 —— 只有横向意图明确时才接管。
  */
 function SwipeRow({ children, onComplete, onDelete, disabled }: { children: React.ReactNode; onComplete: () => void; onDelete: () => void; disabled?: boolean }) {
+  const { active: sortActive } = useDndContext()
   const [dx, setDx] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [leaving, setLeaving] = useState(false)
@@ -165,6 +173,7 @@ function SwipeRow({ children, onComplete, onDelete, disabled }: { children: Reac
     armed.current = 0
   }
   const onMove = (e: React.PointerEvent) => {
+    if (sortActive) { start.current.active = false; setDx(0); setDragging(false); return }
     if (!start.current.active) return
     const rawX = e.clientX - start.current.x
     const rawY = e.clientY - start.current.y
@@ -185,6 +194,7 @@ function SwipeRow({ children, onComplete, onDelete, disabled }: { children: Reac
     }
   }
   const onUp = (e: React.PointerEvent) => {
+    if (sortActive) { start.current.active = false; setDx(0); setDragging(false); return }
     if (!start.current.active) return
     start.current.active = false
     setDragging(false)

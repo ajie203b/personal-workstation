@@ -231,19 +231,25 @@ export function DocsPage() {
         </div>
       </div>
 
-      {/* 手机：搜索框独占一行，写文档 / 导入 / 新建文件夹收进一个「＋」菜单 */}
+      {/* 手机：常用入口直接展示，搜索框随剩余宽度收缩。 */}
       <div className="md:hidden flex items-center gap-2">
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="搜索标题或全文…"
+          placeholder="搜索文档…"
           aria-label="搜索文档"
           className="flex-1 min-w-0 h-9 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
         />
+        <Button size="icon" className="shrink-0 w-9 h-9" aria-label="写文档" title="写文档" onClick={() => navigate('/docs/new')}>
+          <PenLine size={18} />
+        </Button>
+        <Button variant="primary" size="icon" className="shrink-0 w-9 h-9" aria-label="导入文档" title="导入文档" state={importState} onClick={() => fileRef.current?.click()}>
+          <Import size={18} />
+        </Button>
         <div className="relative shrink-0">
           <button
             type="button"
-            aria-label="更多操作（写文档 / 导入 / 新建文件夹）"
+            aria-label="更多文档操作"
             onClick={() => setMenuOpen((v) => !v)}
             className="w-9 h-9 grid place-items-center rounded-[10px] bg-surface-2 border border-outline text-on-surface cursor-pointer active:scale-95 transition-transform"
           >
@@ -253,8 +259,6 @@ export function DocsPage() {
             <>
               <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
               <div className="pop absolute right-0 top-11 z-40 w-40 p-1.5 flex flex-col">
-                <MenuItem icon={PenLine} onClick={() => { setMenuOpen(false); navigate('/docs/new') }}>写文档</MenuItem>
-                <MenuItem icon={Import} onClick={() => { setMenuOpen(false); fileRef.current?.click() }}>导入文件</MenuItem>
                 <MenuItem icon={Sparkles} onClick={() => { setMenuOpen(false); navigate('/review') }}>高亮复习</MenuItem>
                 <MenuItem icon={FolderPlus} onClick={() => { setMenuOpen(false); setFolderName(''); setFolderDialog({ mode: 'create' }) }}>新建文件夹</MenuItem>
               </div>

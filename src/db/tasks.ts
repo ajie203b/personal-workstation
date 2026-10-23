@@ -247,16 +247,40 @@ export async function restoreTask(task: Task): Promise<void> {
 export function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
-    // 打卡任务的自定义次序：只在两边都填了次序时生效，不影响普通任务的优先级排序
-    if (a.sortOrder != null && b.sortOrder != null && a.sortOrder !== b.sortOrder) {
-      return a.sortOrder - b.sortOrder
-    }
+    const ao = a.sortOrder ?? Infinity
+    const bo = b.sortOrder ?? Infinity
+    if (ao !== bo) return ao - bo
     if (a.priority !== b.priority) return a.priority - b.priority
     const ad = a.due ?? '9999-12-31'
     const bd = b.due ?? '9999-12-31'
     if (ad !== bd) return ad < bd ? -1 : 1
     if ((a.dueTime ?? '') !== (b.dueTime ?? '')) return (a.dueTime ?? '') < (b.dueTime ?? '') ? -1 : 1
     return b.createdAt - a.createdAt
+  })
+}
+
+/** 重排当前可见任务，隐藏任务保留槽位；跨置顶区域时跟随落点的置顶状态。 */
+export async function reorderTasks(visibleIds: string[], activeId: string, overId: string): Promise<void> {
+  if (activeId === overId) return
+  await db.transaction('rw', db.tasks, async () => {
+    const all = sortTasks((await db.tasks.toArray()).filter(t => t.status !== 'done'))
+    const byId = new Map(all.map(t => [t.id, t]))
+    const visible = [...new Set(visibleIds)].filter(id => byId.has(id))
+    const from = visible.indexOf(activeId)
+    const to = visible.indexOf(overId)
+    if (from < 0 || to < 0) return
+    const targetPinned = byId.get(overId)?.pinned
+    if (!!byId.get(activeId)?.pinned !== !!targetPinned) {
+      await db.tasks.update(activeId, { pinned: targetPinned || undefined })
+    }
+    visible.splice(to, 0, visible.splice(from, 1)[0])
+    const ids = new Set(visible)
+    let index = 0
+    const updatedAt = Date.now()
+    for (const [rank, task] of all.entries()) {
+      const id = ids.has(task.id) ? visible[index++] : task.id
+      await db.tasks.update(id, { sortOrder: rank, updatedAt })
+    }
   })
 }
 

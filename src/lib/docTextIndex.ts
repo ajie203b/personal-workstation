@@ -1,5 +1,6 @@
 import type { Doc, DocKind } from '@/db/db'
 import { db } from '@/db/db'
+import { readDocumentText } from './readDocumentText'
 
 /**
  * 文档全文索引（v1.3）：导入时抽取纯文本存 docText 表，
@@ -26,7 +27,7 @@ export async function extractDocText(kind: DocKind, blob: Blob): Promise<{ text:
   if (kind === 'epub') return extractEpub(blob)
   if (kind === 'docx') return extractDocx(blob)
   if (kind === 'pptx') return extractPptx(blob)
-  const raw = await blob.text()
+  const raw = await readDocumentText(blob)
   // 正文里的 data URL 图片不是可搜索内容：去掉再建索引，否则 base64 会把索引撑爆
   return { text: raw.replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').slice(0, MAX_INDEX_CHARS) }
 }

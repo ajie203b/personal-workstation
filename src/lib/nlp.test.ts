@@ -11,6 +11,45 @@ afterEach(() => {
 })
 
 const parse = (s: string) => parseQuickAdd(s)
+
+describe('星期与时间的中文数字混搭', () => {
+  it.each(['下星期3下午三点二十分交报告', '下礼拜三下午3点20分交报告', '下周３下午三点20分交报告'])('%s', (text) => {
+    expect(parse(text)).toMatchObject({ title: '交报告', due: '2026-10-28', dueTime: '15:20' })
+  })
+  it('标题后面的星期和显式日期不能被当前时刻改成下午', () => {
+    expect(parseAt(19, 30, '开会星期五早上八点零五分')).toMatchObject({ title: '开会', due: '2026-10-23', dueTime: '08:05' })
+    expect(parseAt(19, 30, '明天八点开会')).toMatchObject({ dueTime: '08:00' })
+  })
+  it('每周指定多天支持分隔、前缀和数字混搭', () => {
+    expect(parse('每星期一、3和周五晚上九点一刻跑步三次')).toMatchObject({ title: '跑步', repeat: 'weekly', repeatDays: [1, 3, 5], repeatCount: 3, dueTime: '21:15' })
+  })
+  it('数字星期区间和两位数中文次数', () => {
+    expect(parse('每周1到星期5早8点喝水二十次')).toMatchObject({ title: '喝水', repeat: 'weekdays', repeatCount: 20, dueTime: '08:00' })
+  })
+  it('次数数字混搭以及汉字序号不误判', () => {
+    expect(parse('每天练习2十次')).toMatchObject({ title: '练习', repeatCount: 20 })
+    expect(parse('第十三次提交表单').repeatCount).toBeUndefined()
+  })
+  it('相对日期的钟点也按字面理解', () => {
+    expect(parseAt(19, 30, '三天后八点复查')).toMatchObject({ due: '2026-10-23', dueTime: '08:00' })
+  })
+  it('冒号时间保留原文顺序，兼容中文分钟与时段', () => {
+    expect(parse('每天早上8:05、晚上九点三十分喝水')).toMatchObject({ title: '喝水', dueTime: '08:05', repeatTimes: ['08:05', '21:30'] })
+  })
+  it('不把钟点分钟当成估计用时', () => {
+    const p = parse('星期3下午三点二十分复习三十分钟')
+    expect(p).toMatchObject({ title: '复习', due: '2026-10-21', dueTime: '15:20', estimateMinutes: 30 })
+  })
+  it('不紧急和不重要不会误判为高优先级', () => {
+    expect(parse('不紧急，有空整理书架').priority).toBe(3)
+    expect(parse('不重要的资料归档').priority).not.toBe(1)
+  })
+  it('无效时间、序号与正文不被截断识别', () => {
+    expect(parse('第3点笔记').dueTime).toBeUndefined()
+    expect(parse('25点开会').dueTime).toBeUndefined()
+    expect(parse('星期8提交').due).toBeUndefined()
+  })
+})
 /** 换一个「现在」再解析，用来验证时间推断跟当前时刻的关系 */
 const parseAt = (h: number, m: number, s: string) => {
   vi.setSystemTime(new Date(2026, 9, 20, h, m))

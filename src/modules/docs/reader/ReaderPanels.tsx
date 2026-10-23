@@ -60,19 +60,23 @@ export function TabBar({ docId, onJump }: { docId?: string; onJump: (id: string)
 }
 
 export function IconBtn({
-  children, label, onClick, className = '', active = false,
+  children, label, onClick, className = '', active = false, ...rest
 }: {
   children: React.ReactNode
   label: string
   onClick?: () => void
   className?: string
   active?: boolean
+  'aria-expanded'?: boolean
+  'aria-controls'?: string
+  'aria-haspopup'?: 'dialog'
 }) {
   return (
     <button
       aria-label={label}
       title={label}
       onClick={onClick}
+      {...rest}
       className={`grid place-items-center shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-[10px] md:rounded-[12px] transition-colors cursor-pointer ${active ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface'} ${className}`}
     >
       {children}

@@ -7,6 +7,8 @@ import { applyPageOps } from './pdfOps'
 import { openPdfDocument, renderPageThumb, type PDFDocumentProxy } from './pdfRender'
 import { type ToolOutput } from './output'
 import { FilePicker, OutputBar, Panel, fileBytes, pdfBlob } from './parts'
+import { arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
+import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 
 interface PageItem {
   /** 1 起 */
@@ -25,26 +27,32 @@ export function PagesPanel() {
   const [pages, setPages] = useState<PageItem[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [name, setName] = useState('整理')
+  const loadId = useRef(0)
+  useEffect(() => () => { loadId.current++ }, [])
 
   // 换文件 / 卸载时释放 pdf.js 文档
   useEffect(() => () => void doc?.destroy(), [doc])
 
   const pick = async (f: File) => {
+    const request = ++loadId.current
     setFile(f)
     setDoc(null)
     setPages([])
     setSelected(new Set())
     try {
       const opened = await openPdfDocument(await fileBytes(f))
+      if (request !== loadId.current) { void opened.destroy(); return }
       setDoc(opened)
       setPages(Array.from({ length: opened.numPages }, (_, i) => ({ no: i + 1, removed: false, rot: 0 })))
     } catch {
+      if (request !== loadId.current) return
       toast('打不开这份 PDF（可能已损坏或格式特殊）')
       setFile(null)
     }
   }
 
   const clear = () => {
+    loadId.current++
     setFile(null)
     setDoc(null)
     setPages([])
@@ -62,6 +70,7 @@ export function PagesPanel() {
 
   const removeSelected = () => {
     if (!selected.size) return toast('先点选要删的页')
+    if (pages.filter(p => !p.removed && !selected.has(p.no)).length === 0) return toast('至少保留一页，不能删掉全部页面')
     setPages((list) => list.map((p) => (selected.has(p.no) ? { ...p, removed: true } : p)))
     setSelected(new Set())
   }
@@ -72,24 +81,24 @@ export function PagesPanel() {
   }
 
   const reset = () => {
-    setPages((list) => list.map((p) => ({ ...p, removed: false, rot: 0 })))
+    setPages((list) => list.map((p) => ({ ...p, removed: false, rot: 0 })).sort((a, b) => a.no - b.no))
     setSelected(new Set())
   }
 
-  const make = useCallback(async (): Promise<ToolOutput> => {
+  const make = useCallback(async (selectedOnly = false): Promise<ToolOutput> => {
     if (!file) throw new Error('先选一份 PDF')
     const bytes = await fileBytes(file)
-    const remove = pages.filter((p) => p.removed).map((p) => p.no)
+    const remove = pages.filter((p) => p.removed || (selectedOnly && !selected.has(p.no))).map((p) => p.no)
     const rotate: Record<number, number> = {}
     for (const p of pages) if (p.rot) rotate[p.no] = p.rot
-    const out = await applyPageOps(bytes, { remove, rotate })
-    return { blob: pdfBlob(out), filename: `${name.trim() || '整理'}.pdf`, isPdf: true }
-  }, [file, pages, name])
+    const out = await applyPageOps(bytes, { remove, rotate, order: pages.map(p => p.no) })
+    return { blob: pdfBlob(out), filename: `${name.trim() || '整理'}${selectedOnly ? '-选中页' : ''}.pdf`, isPdf: true }
+  }, [file, pages, name, selected])
 
   const alive = pages.filter((p) => !p.removed)
 
   return (
-    <Panel title="删除 / 旋转页" desc="点缩略图多选，删掉不要的页、把横躺的页转正；缩略图滚到哪渲到哪。">
+    <Panel title="页面整理" desc="长按缩略图拖动页序，点选后批量旋转或删除；可单独导出选中页。">
       {file ? (
         <div className="flex items-center gap-2 rounded-[12px] border border-outline bg-surface-2 px-3 py-2">
           <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-primary-soft text-primary shrink-0">
@@ -118,6 +127,9 @@ export function PagesPanel() {
             <Button size="sm" onClick={() => setSelected(new Set())}>
               清空选择
             </Button>
+            <Button size="sm" onClick={() => setSelected(new Set(alive.filter(p => !selected.has(p.no)).map(p => p.no)))}>反选</Button>
+            <Button size="sm" onClick={() => setSelected(new Set(alive.filter(p => p.no % 2 === 1).map(p => p.no)))}>奇数页</Button>
+            <Button size="sm" onClick={() => setSelected(new Set(alive.filter(p => p.no % 2 === 0).map(p => p.no)))}>偶数页</Button>
             <Button size="sm" onClick={rotateSelected} disabled={!selected.size}>
               <RotateCw size={14} /> 旋转选中 90°
             </Button>
@@ -127,19 +139,23 @@ export function PagesPanel() {
             <Button size="sm" variant="ghost" onClick={reset}>
               重置
             </Button>
+            {alive.length < pages.length && <Button size="sm" onClick={() => setPages(list => list.map(p => ({ ...p, removed: false })))}>恢复删页</Button>}
           </div>
 
+          <DragSort ids={alive.map(p => String(p.no))} strategy={rectSortingStrategy} onMove={(active, over) => setPages(list => arrayMove(list, list.findIndex(p => String(p.no) === active), list.findIndex(p => String(p.no) === over)))}>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
             {alive.map((p) => (
+              <DragSortItem id={String(p.no)} key={p.no}>
               <ThumbCell
-                key={p.no}
                 doc={doc}
                 page={p}
                 selected={selected.has(p.no)}
                 onToggle={() => toggle(p.no)}
               />
+              </DragSortItem>
             ))}
           </div>
+          </DragSort>
         </>
       )}
 
@@ -154,6 +170,7 @@ export function PagesPanel() {
       </div>
 
       <OutputBar make={make} action="导出" disabled={!file || !pages.length || !alive.length} />
+      {selected.size > 0 && <OutputBar make={() => make(true)} allowLibrary={false} downloadLabel={`导出选中 ${selected.size} 页`} />}
     </Panel>
   )
 }
@@ -204,8 +221,10 @@ function ThumbCell({
       ref={ref}
       type="button"
       onClick={onToggle}
+      aria-label={`第 ${page.no} 页`}
+      aria-pressed={selected}
       className={cn(
-        'relative aspect-[3/4] rounded-[10px] overflow-hidden border bg-surface-2 transition-colors',
+        'relative w-full aspect-[3/4] rounded-[10px] overflow-hidden border bg-surface-2 transition-colors',
         selected ? 'border-primary ring-2 ring-primary/40' : 'border-outline',
       )}
     >
