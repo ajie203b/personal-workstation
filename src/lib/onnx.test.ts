@@ -53,12 +53,12 @@ describe('OnnxRunner.prepare', () => {
   })
 
   afterEach(() => {
-    getOnnxRunner().dispose()
+    getOnnxRunner('worker').dispose()
     vi.unstubAllGlobals()
   })
 
   it('初始化失败立即 reject，恢复后同一 key 可以重试', async () => {
-    const runner = getOnnxRunner()
+    const runner = getOnnxRunner('worker')
     await expect(runner.prepare('ppocr-det', new ArrayBuffer(1))).rejects.toThrow('模拟初始化失败')
 
     FakeWorker.mode = 'ready'

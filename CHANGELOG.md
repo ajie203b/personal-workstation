@@ -1,5 +1,11 @@
 # 更新记录
 
+## v3.3.5 · 2026年10月23日
+
+- 修复 Windows 桌面版本地 OCR 报「模型加载失败」：Tauri 的 asset 协议不允许 Worker 内再创建 Worker 加载应用脚本，嵌套的 onnx.worker 请求被 WebView2 中止（安卓与网页版不受影响）。OCR 现在直接在外层 Worker 内联运行 ONNX，不再套第二层 Worker。
+- Worker 输出改为 ES 模块格式，支持内联推理时动态加载 onnxruntime-web；网页端的初始化错误回传与重试逻辑保持不变。
+- 安卓版本码为 63，沿用原签名，可覆盖安装。本次只升版本号并提交源码，未打包、未发布。
+
 ## v3.3.4 · 2026年10月23日
 
 - 修复本地 OCR 在开发环境报「模型加载失败」：Vite 预构建 onnxruntime-web 后，运行时按 `import.meta.url` 去 `.vite/deps` 找 wasm，开发服务器把请求回成 index.html，WebAssembly 因 MIME / 文件内容不对无法初始化。现在开发环境直接使用包内运行时，生产构建不变。

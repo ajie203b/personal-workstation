@@ -24,6 +24,11 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       exclude: ['onnxruntime-web'],
     },
+    // OCR Worker 内联加载 onnxruntime-web 时会动态 import，Worker 必须是 ES 模块格式；
+    // 这几个 Worker 本来就用 type: 'module' 创建。
+    worker: {
+      format: 'es',
+    },
     plugins: [
       react(),
       tailwindcss(),

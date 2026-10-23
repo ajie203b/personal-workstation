@@ -1,11 +1,16 @@
 /**
- * ONNX 主线程封装（v3.3）：给证件照 / OCR 用。
+ * ONNX 封装（v3.3）：给证件照 / OCR 用。
+ *
+ * 主线程调用时把推理放进 onnx.worker；如果调用方本身已经在 Worker 里（OCR），
+ * 就直接在当前 Worker 内联推理。Tauri 的 asset 协议不允许 Worker 里再创建
+ * Worker 加载应用资源，嵌套 worker 的脚本请求会被 WebView2 中止。
  *
  * 用法：
  *   const runner = getOnnxRunner()
- *   await runner.prepare('modnet', modelBuffer)   // 首次建立 Worker 会话
+ *   await runner.prepare('modnet', modelBuffer)
  *   const out = await runner.run('modnet', { input: { type:'float32', data, dims } })
  */
+import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-web'
 
 export interface TensorData {
   type: 'float32' | 'int32' | 'int64' | 'uint8'
@@ -107,8 +112,84 @@ class OnnxRunner {
   }
 }
 
-let singleton: OnnxRunner | null = null
+type OrtModule = typeof import('onnxruntime-web')
 
-export function getOnnxRunner(): OnnxRunner {
-  return (singleton ??= new OnnxRunner())
+/** 当前已在 Worker 里时直接建会话，不再套一层 Worker */
+class InlineOnnxRunner {
+  private ort: OrtModule | null = null
+  private sessions = new Map<string, InferenceSession>()
+  private ready = new Map<string, Promise<void>>()
+
+  private async runtime(): Promise<OrtModule> {
+    if (!this.ort) {
+      const ort = await import('onnxruntime-web')
+      ort.env.wasm.numThreads = 1
+      this.ort = ort
+    }
+    return this.ort
+  }
+
+  async prepare(key: string, modelBuffer: ArrayBuffer): Promise<void> {
+    const existing = this.ready.get(key)
+    if (existing) return existing
+    const p = (async () => {
+      const ort = await this.runtime()
+      if ((navigator as Navigator & { gpu?: unknown }).gpu) {
+        try {
+          this.sessions.set(key, await ort.InferenceSession.create(modelBuffer, { executionProviders: ['webgpu'] }))
+          return
+        } catch {
+          // 降级 wasm
+        }
+      }
+      this.sessions.set(key, await ort.InferenceSession.create(modelBuffer, { executionProviders: ['wasm'] }))
+    })()
+    this.ready.set(key, p)
+    try {
+      await p
+    } catch (e) {
+      if (this.ready.get(key) === p) this.ready.delete(key)
+      throw e
+    }
+  }
+
+  async run(key: string, inputs: Record<string, TensorData>): Promise<Record<string, TensorData>> {
+    const session = this.sessions.get(key)
+    if (!session) throw new Error(`模型 ${key} 未初始化`)
+    const ort = await this.runtime()
+    const feeds: Record<string, OrtTensor> = {}
+    for (const [name, t] of Object.entries(inputs)) {
+      feeds[name] = new ort.Tensor(t.type, t.data, t.dims) as OrtTensor
+    }
+    const results = await session.run(feeds)
+    const outputs: Record<string, TensorData> = {}
+    for (const [name, t] of Object.entries(results)) {
+      outputs[name] = {
+        type: t.type as TensorData['type'],
+        data: t.data as TensorData['data'],
+        dims: t.dims.slice(),
+      }
+    }
+    return outputs
+  }
+
+  dispose(): void {
+    this.sessions.clear()
+    this.ready.clear()
+    this.ort = null
+  }
+}
+
+function inWorkerContext(): boolean {
+  return typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope
+}
+
+let workerSingleton: OnnxRunner | null = null
+let inlineSingleton: InlineOnnxRunner | null = null
+
+export function getOnnxRunner(mode: 'auto' | 'worker' = 'auto'): OnnxRunner | InlineOnnxRunner {
+  if (mode === 'worker' || !inWorkerContext()) {
+    return (workerSingleton ??= new OnnxRunner())
+  }
+  return (inlineSingleton ??= new InlineOnnxRunner())
 }
