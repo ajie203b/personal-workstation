@@ -18,6 +18,12 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },
+    // onnxruntime-web 用 import.meta.url 定位同目录的 .wasm。预构建到 .vite/deps 后，
+    // dev server 不提供那个目录下的 wasm，请求会落到 index.html（MIME 不是 application/wasm）。
+    // 排除预构建，让 dev 直接从 node_modules 提供运行时文件；生产构建不受影响。
+    optimizeDeps: {
+      exclude: ['onnxruntime-web'],
+    },
     plugins: [
       react(),
       tailwindcss(),

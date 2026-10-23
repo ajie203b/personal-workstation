@@ -16,8 +16,9 @@ function configure(): void {
   if (configured) return
   configured = true
   ort.env.wasm.numThreads = 1
-  // 不设 wasmPaths：onnxruntime-web 的 bundle 自带 jsep 的 .mjs，.wasm 由 Vite 打进 assets/。
+  // 不设 wasmPaths：onnxruntime-web 的 bundle 自带 jsep 的 .mjs，生产构建的 .wasm 由 Vite 打进 assets/。
   // 以前设成相对的 './ort/'，ort 会按 Worker 脚本位置解析成 assets/ort/（不存在）→ 推理初始化 404。
+  // dev 由 vite.config.ts 的 optimizeDeps.exclude 让运行时留在 node_modules，避免预构建目录提供不了 wasm。
 }
 
 interface TensorMsg {
@@ -62,7 +63,8 @@ self.onmessage = async (e: MessageEvent) => {
     }
     self.postMessage({ type: 'result', id: msg.id, ok: true, outputs }, transfer)
   } catch (err) {
-    const id = (e.data as { id?: number }).id
-    self.postMessage({ type: 'result', id, ok: false, error: err instanceof Error ? err.message : String(err) })
+    // init 阶段没有 id，必须带回 key，主线程才知道是哪个会话失败了
+    const { id, key } = e.data as { id?: number; key?: string }
+    self.postMessage({ type: 'result', id, key, ok: false, error: err instanceof Error ? err.message : String(err) })
   }
 }

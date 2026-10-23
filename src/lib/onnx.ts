@@ -38,6 +38,14 @@ class OnnxRunner {
       if (msg.ok && msg.outputs) p.resolve(msg.outputs)
       else p.reject(new Error(msg.error || '推理失败'))
     }
+    // Worker 整体崩溃时，已经发出去的推理请求不能永远悬着
+    worker.onerror = (e) => {
+      const err = new Error(e.message || '推理进程异常退出')
+      for (const p of this.pending.values()) p.reject(err)
+      this.pending.clear()
+      this.ready.clear()
+      if (this.worker === worker) this.worker = null
+    }
     this.worker = worker
     return worker
   }
@@ -48,25 +56,37 @@ class OnnxRunner {
     if (existing) return existing
     const worker = this.ensureWorker()
     const p = new Promise<void>((resolve, reject) => {
-      const onReady = (e: MessageEvent) => {
-        const msg = e.data as { type?: string; key?: string; error?: string }
-        if (msg.type === 'ready' && msg.key === key) {
-          worker.removeEventListener('message', onReady)
+      const cleanup = () => {
+        worker.removeEventListener('message', onMessage)
+        worker.removeEventListener('error', onError)
+      }
+      const onMessage = (e: MessageEvent) => {
+        const msg = e.data as { type?: string; key?: string; ok?: boolean; error?: string }
+        if (msg.key !== key) return
+        if (msg.type === 'ready') {
+          cleanup()
           resolve()
+          return
+        }
+        // init 失败没有 id，靠 key 归位；不接住的话界面会卡在「下载模型 100%」
+        if (msg.type === 'result' && msg.ok === false) {
+          cleanup()
+          reject(new Error(msg.error || '模型加载失败'))
         }
       }
-      worker.addEventListener('message', onReady)
-      worker.addEventListener(
-        'error',
-        (e) => {
-          worker.removeEventListener('message', onReady)
-          reject(new Error(e.message || '模型加载失败'))
-        },
-        { once: true },
-      )
+      const onError = (e: ErrorEvent) => {
+        cleanup()
+        reject(new Error(e.message || '模型加载失败'))
+      }
+      worker.addEventListener('message', onMessage)
+      worker.addEventListener('error', onError)
       worker.postMessage({ type: 'init', key, modelBuffer }, [modelBuffer])
     })
     this.ready.set(key, p)
+    // 失败的 Promise 不能留在缓存里，否则同一页面重试还会拿到旧错误
+    void p.catch(() => {
+      if (this.ready.get(key) === p) this.ready.delete(key)
+    })
     return p
   }
 
