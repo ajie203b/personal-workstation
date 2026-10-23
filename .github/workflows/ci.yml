@@ -13,6 +13,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-script:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release script regression tests (offline)
+        shell: pwsh
+        run: ./scripts/release.test.ps1
+
   verify:
     runs-on: ubuntu-latest
     steps:

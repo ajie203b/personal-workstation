@@ -2,7 +2,7 @@
 # 用法（在仓库根目录，用 PowerShell 7）：
 #   pwsh -ExecutionPolicy Bypass -File .\scripts\release.ps1             只打 APK
 #   pwsh -ExecutionPolicy Bypass -File .\scripts\release.ps1 -Exe        APK + Windows exe（云端打，下载到本地）
-#   pwsh -ExecutionPolicy Bypass -File .\scripts\release.ps1 -Publish    APK + exe + 推标签 + 发 GitHub Release
+#   pwsh -ExecutionPolicy Bypass -File .\scripts\release.ps1 -Publish    APK + exe + Release + Pages + 线上版本核验
 #   加 -SkipPull 不切 main、不拉代码（测某个分支时用）
 # 产物都放在仓库的 apk\ 目录（已在 .gitignore 里）。
 # -Exe / -Publish 需要 GitHub CLI：winget install GitHub.cli，然后 gh auth login
@@ -55,11 +55,26 @@ if ($pkgVer -ne $verName) { throw "版本不一致：package.json=$pkgVer，buil
 $tag = "v$verName"
 
 if ($Publish) {
-    Run git @('fetch', '--tags', '--quiet')
-    if (git tag --list $tag) { throw "标签 $tag 已存在，先升版本号" }
+    # 只检查本次标签，历史标签有同名差异也不会阻塞新版本，更不会覆盖它们。
+    if (Run git @('tag', '--list', $tag)) { throw "标签 $tag 已存在，先升版本号" }
+    if (Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag")) {
+        throw "远端标签 $tag 已存在，先核对已发布版本，不要重复发版"
+    }
     $notes = [regex]::Match((Get-Content CHANGELOG.md -Raw -Encoding UTF8),
         "(?ms)^## $([regex]::Escape($tag))\b[^\n]*\n(.*?)(?=^## |\z)").Groups[1].Value.Trim()
     if (-not $notes) { throw "CHANGELOG.md 里没有 $tag 的条目，先写更新记录" }
+
+    # Windows 的 bash 可能指向 WSL，明确使用 Git for Windows 自带的 Bash。
+    $gitPath = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+    $gitRoot = Split-Path (Split-Path $gitPath -Parent) -Parent
+    $gitBash = Join-Path $gitRoot 'bin/bash.exe'
+    if (-not (Test-Path -LiteralPath $gitBash)) { throw '找不到 Git Bash，请安装 Git for Windows 后再发布' }
+    if (-not (Test-Path -LiteralPath './scripts/deploy-gh-pages.sh')) { throw '缺少 Pages 部署脚本' }
+    $pagesUrl = ((Run gh @('api', 'repos/{owner}/{repo}/pages', '--jq', '.html_url')) | Out-String).Trim()
+    $pagesUri = $null
+    if (-not [uri]::TryCreate($pagesUrl, [UriKind]::Absolute, [ref]$pagesUri) -or $pagesUri.Scheme -ne 'https') {
+        throw "GitHub Pages 地址无效，请检查仓库 Pages 设置：$pagesUrl"
+    }
 }
 
 # ---------- APK ----------
@@ -124,6 +139,25 @@ function Wait-DesktopRun($event, $since) {
     throw '两分钟内没等到桌面版打包任务启动，去 GitHub Actions 页面看看'
 }
 
+function Wait-OnlineVersion([string]$siteUrl, [string]$expectedVersion) {
+    $deadline = [datetime]::UtcNow.AddMinutes(3)
+    $lastSeen = '尚未读取'
+    for ($attempt = 0; $attempt -lt 36 -and [datetime]::UtcNow -lt $deadline; $attempt++) {
+        $url = "$($siteUrl.TrimEnd('/'))/version.json?t=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+        try {
+            $timeout = [math]::Max(1, [math]::Min(10, [int]($deadline - [datetime]::UtcNow).TotalSeconds))
+            $online = Invoke-RestMethod -Uri $url -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec $timeout
+            $lastSeen = [string]$online.version
+            if ($lastSeen -eq $expectedVersion) {
+                Write-Host "线上版本已确认：$lastSeen（$siteUrl）" -ForegroundColor Green
+                return
+            }
+        } catch { $lastSeen = "读取失败：$($_.Exception.Message)" }
+        if ($attempt -lt 35 -and [datetime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 4 }
+    }
+    throw "Release 已创建，但 Pages 更新未确认：期望 $expectedVersion，最后读到 $lastSeen。请检查 Pages 部署后重发网页版，本次发布未完成。"
+}
+
 if ($Exe) {
     $since = (Get-Date).ToUniversalTime().AddSeconds(-30)
 
@@ -146,8 +180,7 @@ if ($Exe) {
     Run gh @('run', 'watch', "$runId", '--exit-status', '--interval', '20')
 
     Step '下载 exe'
-    $tmp = Join-Path $env:TEMP "kairos-exe-$runId"
-    if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+    $tmp = Join-Path $env:TEMP "kairos-exe-$runId-$([guid]::NewGuid().ToString('N'))"
     Run gh @('run', 'download', "$runId", '-n', 'Kairos-windows', '-D', $tmp)
     Get-ChildItem $tmp -Filter *.exe -Recurse | ForEach-Object {
         Copy-Item $_.FullName $outDir -Force
@@ -155,11 +188,24 @@ if ($Exe) {
     }
 
     if ($Publish) {
-        $assets = gh release view $tag --json assets --jq '.assets[].name'
+        $release = (Run gh @('release', 'view', $tag, '--json', 'tagName,assets,url')) | ConvertFrom-Json
+        $assets = @($release.assets | ForEach-Object { $_.name })
         Write-Host "`nRelease $tag 附件：" -ForegroundColor Green
         $assets | ForEach-Object { Write-Host "  $_" }
-        if (-not ($assets -match '\.exe$')) { Write-Warning 'Release 上还没看到 exe，稍后刷新确认' }
-        gh release view $tag --json url --jq '.url'
+        $expectedExe = "Kairos_${verName}_x64-setup.exe"
+        if ($release.tagName -ne $tag -or $assets -notcontains (Split-Path $apkOut -Leaf) -or $assets -notcontains $expectedExe) {
+            throw "Release $tag 缺少本次 APK 或 EXE 附件，请检查桌面打包任务，本次发布未完成"
+        }
+        Write-Host $release.url
+
+        Step '发布网页版和更新检测版本'
+        $previousSiteUrl = $env:DEPLOY_SITE_URL
+        try {
+            $env:DEPLOY_SITE_URL = $pagesUrl
+            Run $gitBash @('./scripts/deploy-gh-pages.sh', '--fast')
+        } finally { $env:DEPLOY_SITE_URL = $previousSiteUrl }
+        Step '等待 GitHub Pages 生效（最多约三分钟）'
+        Wait-OnlineVersion $pagesUrl $verName
     }
 }
 
