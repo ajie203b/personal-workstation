@@ -181,3 +181,86 @@ export function facePointsFromNormalized(
   }
   return points
 }
+
+/** 手动微调参数（滑杆） */
+export interface ManualAdjust {
+  /** 框中心水平偏移，占框宽比例 */
+  offsetX: number
+  /** 框中心垂直偏移，占框高比例 */
+  offsetY: number
+  /** 取景框缩放，>1 框变大（人变小） */
+  zoom: number
+}
+
+/**
+ * 在自动取景框上叠加手动微调（v3.3.3）。
+ *
+ * 旧版的问题：没检测到人脸时走 fallbackCropBox，它根本不看滑杆；检测到人脸时
+ * 偏移/缩放又被 fitAndClamp 夹回图内——框已经贴边（或已是最大内接框）时，
+ * 滑杆数值在变、框纹丝不动。
+ *
+ * 现在：以自动框中心为基准缩放 + 平移，**允许框超出原图**（超出部分合成时填底色），
+ * 只保证框中心仍在图内、框不比图的 3 倍还大，滑杆永远有可见反馈。
+ */
+export function applyManualAdjust(base: CropBox, adjust: Partial<ManualAdjust>, imgW: number, imgH: number): CropBox {
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
+  const zoom = clamp(num(adjust.zoom, 1), 0.5, 2)
+  const offsetX = clamp(num(adjust.offsetX, 0), -0.5, 0.5)
+  const offsetY = clamp(num(adjust.offsetY, 0), -0.5, 0.5)
+  const aspect = base.width / Math.max(1e-6, base.height)
+  let height = base.height * zoom
+  const maxH = Math.max(1, imgH * 3, (imgW * 3) / Math.max(1e-6, aspect))
+  height = Math.min(height, maxH)
+  const width = height * aspect
+  let cx = base.x + base.width / 2 + offsetX * width
+  let cy = base.y + base.height / 2 + offsetY * height
+  cx = clamp(cx, 0, imgW)
+  cy = clamp(cy, 0, imgH)
+  return {
+    x: Math.round((cx - width / 2) * 100) / 100,
+    y: Math.round((cy - height / 2) * 100) / 100,
+    width,
+    height,
+  }
+}
+
+/**
+ * 两眼连线相对水平的角度（弧度，图像坐标系 y 向下；正值 = 右边那只眼更低，
+ * 需要逆时针转 -angle 才能扶正）。左右眼顺序无关。
+ */
+export function eyeLineAngle(points: FacePoints): number {
+  const a = points.leftEye.x <= points.rightEye.x ? points.leftEye : points.rightEye
+  const b = a === points.leftEye ? points.rightEye : points.leftEye
+  return Math.atan2(b.y - a.y, b.x - a.x)
+}
+
+/** 绕 (cx,cy) 旋转一个点 angle 弧度（图像坐标系，正值视觉上顺时针） */
+export function rotatePoint(p: Landmark, angle: number, cx: number, cy: number): Landmark {
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  const dx = p.x - cx
+  const dy = p.y - cy
+  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
+}
+
+/** 把整组关键点绕 (cx,cy) 旋转 angle */
+export function rotateFacePoints(points: FacePoints, angle: number, cx: number, cy: number): FacePoints {
+  const r = (p: Landmark) => rotatePoint(p, angle, cx, cy)
+  return {
+    leftEye: r(points.leftEye),
+    rightEye: r(points.rightEye),
+    ...(points.chin ? { chin: r(points.chin) } : {}),
+    ...(points.top ? { top: r(points.top) } : {}),
+  }
+}
+
+/** 眼睛扶正的角度阈值：小于 1° 不转（避免无谓重采样），大于 30° 不信（多半是误检） */
+export const LEVEL_MIN_RAD = (1 * Math.PI) / 180
+export const LEVEL_MAX_RAD = (30 * Math.PI) / 180
+
+/** 需要扶正时返回应施加的旋转角（= -眼线角），否则 0 */
+export function levelingRotation(points: FacePoints): number {
+  const a = eyeLineAngle(points)
+  if (!Number.isFinite(a) || Math.abs(a) < LEVEL_MIN_RAD || Math.abs(a) > LEVEL_MAX_RAD) return 0
+  return -a
+}

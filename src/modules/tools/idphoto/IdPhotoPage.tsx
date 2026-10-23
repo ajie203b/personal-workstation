@@ -27,12 +27,16 @@ import {
   type PhotoSpec,
 } from './idphotoSpec'
 import {
+  applyManualAdjust,
   computeCropBox,
   cropGuides,
   fallbackCropBox,
+  levelingRotation,
+  rotateFacePoints,
   type CropBox,
   type FacePoints,
 } from './idphotoCrop'
+import { loadOrientedImage, rotateRgba } from './idphotoImage'
 import { detectFacePoints, runMatting, type MattingResult, type RgbaImage } from './idphotoEngine'
 import { applyJpegDpi, canvasJpegEncoder, compressJpegToKb } from './idphotoCompress'
 import {
@@ -101,16 +105,14 @@ export function IdPhotoPage() {
   const crop: CropBox | null = useMemo(() => {
     if (!image) return null
     const aspect = spec.width / spec.height
-    if (points) {
-      return computeCropBox(points, image.width, image.height, aspect, {
-        headRatio: spec.headRatio,
-        headroom: spec.headroom,
-        offsetX: adjust.offsetX,
-        offsetY: adjust.offsetY,
-        zoom: adjust.zoom,
-      })
-    }
-    return fallbackCropBox(image.width, image.height, aspect)
+    // 先算自动框（人脸 / 居中兜底），再叠加滑杆微调——两条路径都响应滑杆（v3.3.3）
+    const base = points
+      ? computeCropBox(points, image.width, image.height, aspect, {
+          headRatio: spec.headRatio,
+          headroom: spec.headroom,
+        })
+      : fallbackCropBox(image.width, image.height, aspect)
+    return applyManualAdjust(base, adjust, image.width, image.height)
   }, [image, points, spec, adjust])
 
   // ---------- 选图 ----------
@@ -119,21 +121,14 @@ export function IdPhotoPage() {
     if (!file || busy) return
     setBusy('读取照片')
     try {
-      // EXIF 方向靠 createImageBitmap 转正，再缩到最长边 1600
-      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-      const scale = Math.min(1, WORK_MAX_EDGE / Math.max(bitmap.width, bitmap.height))
-      const w = Math.max(1, Math.round(bitmap.width * scale))
-      const h = Math.max(1, Math.round(bitmap.height * scale))
-      const canvas = document.createElement('canvas')
-      canvas.width = w
-      canvas.height = h
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('画布创建失败')
-      ctx.drawImage(bitmap, 0, 0, w, h)
-      bitmap.close?.()
-      const data = ctx.getImageData(0, 0, w, h).data
+      // EXIF 方向：自己解析 Orientation 再画正（不依赖 WebView 的 imageOrientation 实现），缩到最长边 1600
+      const loaded = await loadOrientedImage(file, WORK_MAX_EDGE)
+      let data = loaded.data
+      const w = loaded.width
+      const h = loaded.height
 
       setImage({ data, width: w, height: h })
+      setPoints(null)
       setMatte(null)
       setMattingNote('')
       setResult(null)
@@ -144,11 +139,23 @@ export function IdPhotoPage() {
 
       // 人脸定位失败不拦路：退回手动框
       try {
-        const pts = await detectFacePoints({ data, width: w, height: h })
+        let pts = await detectFacePoints({ data, width: w, height: h })
+        let leveled = false
         if (pts) {
+          // 按两眼连线自动扶正：绕两眼中点转到水平，关键点同步旋转
+          const rot = levelingRotation(pts)
+          if (rot !== 0) {
+            const cx = (pts.leftEye.x + pts.rightEye.x) / 2
+            const cy = (pts.leftEye.y + pts.rightEye.y) / 2
+            const rotated = rotateRgba({ data, width: w, height: h }, rot, cx, cy)
+            data = rotated.data
+            pts = rotateFacePoints(pts, rot, cx, cy)
+            setImage({ data, width: w, height: h })
+            leveled = true
+          }
           setPoints(pts)
           setFaceState('found')
-          setFaceMsg('已按人脸自动取景，可用滑杆微调')
+          setFaceMsg(leveled ? '已按人脸自动取景并扶正头部，可用滑杆微调' : '已按人脸自动取景，可用滑杆微调')
         } else {
           setPoints(null)
           setFaceState('none')
@@ -414,7 +421,7 @@ export function IdPhotoPage() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[13.5px] font-medium">① 选照片 / 拍照</p>
-            <p className="text-[11px] text-on-surface-2">正面免冠，光线均匀；会自动按 EXIF 方向转正</p>
+            <p className="text-[11px] text-on-surface-2">正面免冠，光线均匀；会自动按 EXIF 方向转正，并按双眼把头扶正</p>
           </div>
           <Button onClick={() => fileRef.current?.click()} className="h-9 px-3 shrink-0" disabled={Boolean(busy)}>
             <FileImage size={15} /> 相册
