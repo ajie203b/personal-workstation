@@ -1,0 +1,2 @@
+async function i(a){const e=new Uint8Array(await a.arrayBuffer());let t;if(e[0]===255&&e[1]===254)t="utf-16le";else if(e[0]===254&&e[1]===255)t="utf-16be";else{const f=Math.min(e.length,4096);let r=0,c=0;for(let n=0;n<f;n++)e[n]===0&&(n%2?c++:r++);c>f/5&&r<f/20?t="utf-16le":r>f/5&&c<f/20&&(t="utf-16be")}let l;if(t)l=new TextDecoder(t).decode(e);else try{l=new TextDecoder("utf-8",{fatal:!0}).decode(e)}catch{l=new TextDecoder("gb18030").decode(e)}return l.replace(/^\ufeff/,"").replace(/\r\n?/g,`
+`)}export{i as r};

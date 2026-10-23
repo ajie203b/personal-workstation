@@ -1,0 +1,16 @@
+PDF engine notice
+
+This application uses @neslinesli93/qpdf-wasm 0.3.0 (package license: ISC).
+Source: https://github.com/neslinesli93/qpdf-wasm
+No application source code from BentoPDF is incorporated.
+
+The WASM binary contains qpdf 12.2.0, distributed under Apache-2.0.
+The qpdf license is in qpdf-Apache-2.0.txt, with attribution in qpdf-NOTICE.md.
+Source: https://github.com/qpdf/qpdf/tree/v12.2.0
+
+Its build also links zlib and libjpeg-turbo. The libjpeg-turbo license notice
+is preserved in libjpeg-turbo-LICENSE.md and README.ijg. The zlib notice is
+in zlib-NOTICE.txt. Upstream build references:
+https://github.com/neslinesli93/qpdf-wasm/blob/0.3.0/Dockerfile
+https://github.com/madler/zlib
+https://github.com/ImageMagick/jpeg-turbo
