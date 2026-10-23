@@ -3,11 +3,19 @@ name: Desktop (Windows)
 # Windows 桌面版（Tauri）安装包：本机不用装 Rust，全在这里打。
 # - 手动运行（Actions → Desktop (Windows) → Run workflow）：产物在本次运行的 Artifacts 里
 # - 推 v* 标签：额外把安装包挂到同名 Release 上，和 APK 放一起
+# - main 的 Rust 依赖或本工作流变更：构建一次预热默认分支缓存，供后续标签复用
 # - PR 改到桌面壳时也打一次，产物同样在 Artifacts 里，合并前就能装来试
 on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: [main]
+    # 标签推送不应用 paths 过滤；普通前端提交不额外构建桌面版。
+    paths:
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - '**/rust-toolchain*'
+      - '.github/workflows/desktop.yml'
   pull_request:
     paths:
       - 'src-tauri/**'
@@ -29,12 +37,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          # 标签缓存相互不可见；只维护 main 缓存，避免每次发版保存一份无法复用的副本。
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install
         run: npm install --no-audit --no-fund
