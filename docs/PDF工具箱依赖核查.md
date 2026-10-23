@@ -5,3 +5,5 @@
 实现依据：qpdf 12.2 的 Encryption、Optimizing File Size、Exit Status 与 Unicode Passwords 章节。WASM 在独立 Worker 内执行，文件仅写内存文件系统。参数作为字符串数组传给 qpdf，不经过 shell；输出和错误日志被拦截，用户只接收经过分类的错误。Worker 在取消、超时、成功或失败时销毁。
 
 `npm audit` 的新增引擎未报告漏洞。现有 6 个 high 计数涉及开发依赖链：`vite`/`launch-editor` 和 `vite-plugin-static-copy` → `chokidar`/`fast-glob` → `micromatch`/`braces`。它们不进入发布后的浏览器/安卓运行时；本次验证服务仅监听 127.0.0.1，静态资源模式来自固定项目配置，不接收 PDF 的输入内容。保留现有依赖版本，避免顺带跨主版本更改构建插件。下次构建工具维护时处理，复核日期 2026-11-23。审计原始结果保存在本机忽略目录 `testdata-sample.mobile/pdf-audit.json`。
+
+v3.4.1 发布复核：合入更新器的锁文件后，旧的传递依赖告警已消失，仅剩 Vite；按[官方公告](https://github.com/advisories/GHSA-587h-7wmj-h5pm)将最低补丁版本升至 6.4.4。2026-10-23 再次 `npm audit` 为 0 个漏洞，前述延期项已清除。记录见本机 `testdata-sample.mobile/update-audit.json`。

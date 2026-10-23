@@ -2,14 +2,14 @@
 
 Kairos（个人工作站）：任务清单 × 文档工作站 × 本地工具合集。**本地优先、数据不出本机（不上传任务或文档内容）、单人不设账号**。
 
-> v3.4.0 · 在线版：<https://ajie203b.github.io/personal-workstation/>
+> v3.4.1 · 在线版：<https://ajie203b.github.io/personal-workstation/>
 > 三种形态：**安卓 App**（数据存本机，无需服务器）、**Windows 桌面版**（Tauri）与 **网页版 PWA**。
 
 ## 获取与安装
 
 - **在线版（推荐，无需安装）**：<https://ajie203b.github.io/personal-workstation/> 打开即用。数据存在各自浏览器的 IndexedDB，GitHub 不存储任何用户数据。
-- **安卓 App**：从 [Releases](https://github.com/ajie203b/personal-workstation/releases/latest) 下载 `personal-workstation-v<最新版本>.apk` → 传到手机 → 点击安装（允许「未知来源」）→ 桌面出现「Kairos」图标，全屏独立运行。已装过旧版的可直接覆盖安装，数据不丢；App 内「设置 → 关于 → 检查更新」会自动提示新版本。
-- **Windows 桌面版**：从 [Releases](https://github.com/ajie203b/personal-workstation/releases/latest) 下载 `Kairos_<最新版本>_x64-setup.exe` → 双击安装（当前用户，无需管理员）。WebDAV 同步走原生请求，不受浏览器跨域限制；数据保存在本机。已装旧版可直接覆盖升级。
+- **安卓 App**：从 [Releases](https://github.com/ajie203b/personal-workstation/releases/latest) 下载 `personal-workstation-v<最新版本>.apk` → 传到手机 → 点击安装（允许「未知来源」）→ 桌面出现「Kairos」图标，全屏独立运行。已装过旧版的可直接覆盖安装，数据不丢；App 启动时会自动检查新版本（每天最多一次，可在「设置 → 关于」关闭），也可以手动「检查更新」，一键下载并拉起系统安装器。
+- **Windows 桌面版**：从 [Releases](https://github.com/ajie203b/personal-workstation/releases/latest) 下载 `Kairos_<最新版本>_x64-setup.exe` → 双击安装（当前用户，无需管理员）。WebDAV 同步走原生请求，不受浏览器跨域限制；数据保存在本机。已装旧版可直接覆盖升级；配置好更新签名后，桌面版启动时会自动检查并一键更新（一次性配置见 [docs/构建与发版.md](docs/构建与发版.md#应用内自动更新一次性配置)）。
 - **桌面 / 平板 PWA**：浏览器打开在线版 →「安装应用」。同一套代码也是标准 PWA，可部署到任意 HTTPS 静态托管。
 
 > ⚠️ 旧地址 <https://ajie203b.github.io/personal-workstation-site/> 已随站点仓库停用。IndexedDB 按域名隔离，**旧版 PWA 里的数据不会自动搬过来**：请先在旧版「设置 → 数据 → 导出备份」，再到新版导入。

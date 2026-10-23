@@ -65,6 +65,7 @@
             android:name="miuiWidgetVersion"
             android:value="1" />
 
+        <!-- 分享 / 应用内更新共用：更新包下载到 cache/updates/，由 file_paths.xml 的 cache-path 覆盖 -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -86,4 +87,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 导出到公共「下载」目录：Android 10+ 走 MediaStore 免权限，只有 6–9 要这个 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- 应用内更新：下载新版 APK 后拉起系统安装器（AppUpdatePlugin）；
+         用户仍需在系统设置里允许本应用「安装未知应用」 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

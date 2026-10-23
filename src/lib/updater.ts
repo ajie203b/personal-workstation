@@ -1,5 +1,8 @@
 import { openExternal } from './links'
 import { isTauri } from './native'
+import { LATEST_RELEASE_API, PAGES_VERSION_URL, RELEASE_PAGE, compareVersions, normalizeVersion } from './appUpdate'
+
+export { RELEASE_PAGE }
 
 export interface UpdateInfo {
   hasUpdate: boolean
@@ -11,14 +14,14 @@ export interface UpdateInfo {
 }
 
 /**
+ * 网页版的「检查更新」（安卓 App / 桌面版改用 appUpdateClient 的应用内更新）。
+ *
  * 版本号的权威来源是 Pages 上的 version.json（由 deploy-gh-pages.sh 按 package.json 写入 gh-pages）。
  * 它是静态文件、带 Access-Control-Allow-Origin: *，网页版和安卓壳内（https://localhost）都能直接读，
  * 且不吃 GitHub API 的按 IP 限流——所以放主位。Releases API 只用来在「确实有新版」时取 APK 直链，
  * 取不到就退回 Release 页面，用户照样能下载。
  */
-const PAGES_VERSION_URL = 'https://ajie203b.github.io/personal-workstation/version.json'
-const LATEST_RELEASE_API = 'https://api.github.com/repos/ajie203b/personal-workstation/releases/latest'
-export const RELEASE_PAGE = 'https://github.com/ajie203b/personal-workstation/releases/latest'
+// 地址常量与版本比较共用 appUpdate.ts（安卓 / 桌面的应用内更新也用它们）
 
 /** 获取当前版本号（Vite define 注入） */
 export function getCurrentVersion(): string {
@@ -32,12 +35,6 @@ const NOT_CHECKED = (current: string): UpdateInfo => ({
   currentVersion: current,
   apkUrl: RELEASE_PAGE,
 })
-
-/** 只接受 x.y.z 形态的版本号，避免把 HTML 错误页里的字符串当版本比较 */
-function normalizeVersion(raw: string): string {
-  const v = raw.replace(/^v/, '').trim()
-  return /^\d+(\.\d+)*$/.test(v) ? v : ''
-}
 
 export async function checkForUpdate(): Promise<UpdateInfo> {
   const current = getCurrentVersion()
@@ -92,19 +89,6 @@ function buildInfo(latest: string, current: string, apkUrl: string): UpdateInfo 
     currentVersion: current,
     apkUrl,
   }
-}
-
-/** 语义化版本比较：a > b 返回 1，a < b 返回 -1，相等返回 0 */
-function compareVersions(a: string, b: string): number {
-  const pa = a.replace(/^v/, '').split('.').map(Number)
-  const pb = b.replace(/^v/, '').split('.').map(Number)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] ?? 0
-    const nb = pb[i] ?? 0
-    if (na > nb) return 1
-    if (na < nb) return -1
-  }
-  return 0
 }
 
 /** 打开下载链接（系统浏览器；安卓壳里 window.open 会静默失败，走 openExternal） */
