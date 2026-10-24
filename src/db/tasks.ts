@@ -8,6 +8,8 @@ import { markDeleted } from '@/lib/tombstones'
 import { validateSnapshot } from './snapshotSchema'
 
 export interface NewTaskInput {
+  /** 小组件离线队列用固定 id 去重；普通新建不传，自动生成 */
+  id?: string
   title: string
   tier: Tier
   priority?: Priority
@@ -40,7 +42,7 @@ export interface NewTaskInput {
 export async function addTask(input: NewTaskInput): Promise<Task> {
   const now = Date.now()
   const task: Task = {
-    id: uid(),
+    id: input.id ?? uid(),
     title: input.title,
     tier: input.tier,
     priority: input.priority ?? 2,

@@ -20,7 +20,7 @@ import { initAppActions } from '@/lib/appActions'
 import { completeById } from '@/modules/tasks/taskActions'
 import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
-import { syncTaskWidget } from '@/lib/taskWidget'
+import { initTaskWidgetActions, syncTaskWidget } from '@/lib/taskWidget'
 import { AppUpdateHost } from '@/shared/AppUpdate'
 
 // 重资源页面按路由分包：PDF/Office/EPUB 渲染库、TipTap 编辑器只在进入文档模块时加载
@@ -83,6 +83,12 @@ export default function App() {
     void maybeAutoSync()
     return () => dispose?.()
   }, [navigate])
+  // 小组件内的原生添加/完成先落在本地队列，启动和回前台时并进 IndexedDB
+  useEffect(() => {
+    let dispose: (() => void) | undefined
+    void initTaskWidgetActions().then((d) => { dispose = d })
+    return () => dispose?.()
+  }, [])
   // 提醒开关打开时，启动即全量重排通知（覆盖导入备份/离线变更的场景）
   const all = useAllTasks()
   // 任务变化后 400ms 同步一次桌面/负一屏小组件（native 才有实际动作）

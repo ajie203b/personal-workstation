@@ -40,30 +40,40 @@
 
         </activity>
 
-        <!-- 今日待办小组件：桌面 / 小米负一屏 -->
+        <!-- 今日待办小组件：桌面 / 小米负一屏（走系统「安卓小组件」入口）
+             不声明 miuiWidget：未进 MIUI 适配名单的第三方卡片会在小米主池里显示
+             「努力适配中」，去掉后只出现在底部的安卓小组件分类，功能完整可用。 -->
         <receiver
             android:name=".TaskWidgetProvider"
             android:exported="true"
             android:label="@string/task_widget_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <!-- 小米 Widget 展现刷新（负一屏曝光时触发） -->
+                <!-- 小米 Widget 展现刷新（部分负一屏实现仍会发） -->
                 <action android:name="miui.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
-            <!-- 小米 Widget 标识：没这个 meta 的只会出现在「安卓小部件」分类，
-                 负一屏「+」的小部件主列表里看不到（小米小部件技术规范 4） -->
-            <meta-data
-                android:name="miuiWidget"
-                android:value="true" />
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/task_widget_info" />
         </receiver>
 
-        <!-- 小米 Widget 版本号（小米小部件技术规范 10） -->
-        <meta-data
-            android:name="miuiWidgetVersion"
-            android:value="1" />
+        <!-- 小组件「+」：原生添加框，不开主界面 -->
+        <activity
+            android:name=".WidgetAddTaskActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity="com.personal.workstation.widget"
+            android:theme="@style/WidgetAddTheme"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
+        <!-- 小组件勾选：透明撒花层，不开主界面、不挡触摸 -->
+        <activity
+            android:name=".WidgetCompleteActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity="com.personal.workstation.widget"
+            android:theme="@style/WidgetConfettiTheme" />
 
         <!-- 分享 / 应用内更新共用：更新包下载到 cache/updates/，由 file_paths.xml 的 cache-path 覆盖 -->
         <provider
@@ -80,6 +90,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 小组件完成任务时的成功振动 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 任务到期提醒（v1.3）：本地通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
