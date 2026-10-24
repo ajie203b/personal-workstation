@@ -110,3 +110,11 @@ export const IconToolIdPhoto = makeStroke(
 export const IconToolOcr = makeStroke(
   <path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3M6 16l3-8 3 8M7.1 13h3.8M15 8h3m-3 4h3m-3 4h2" />,
 )
+
+/** NJUST 报告排版：带标题行的文档 */
+export const IconToolReport = makeStroke(
+  <>
+    <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+    <path d="M14 3v6h6M8 13h5M8 17h8M8 9h2" />
+  </>,
+)

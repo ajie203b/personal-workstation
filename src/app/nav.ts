@@ -27,6 +27,7 @@ export const PAGE_TITLE: Record<string, string> = {
   '/docs/new': '写文档',
   '/tools': '工具',
   '/tools/fanqie': '番茄小说',
+  '/tools/njust-report': 'NJUST 报告排版',
   '/settings': '设置',
   '/ai': 'AI 助手',
   '/share': '分享接收',

@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { IconToolArticle, IconToolDownload, IconToolIdPhoto, IconToolNovel, IconToolOcr, IconToolPdf, IconToolQr, type AppIcon } from '@/shared/icons'
+import { IconToolArticle, IconToolDownload, IconToolIdPhoto, IconToolNovel, IconToolOcr, IconToolPdf, IconToolQr, IconToolReport, type AppIcon } from '@/shared/icons'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
@@ -34,6 +34,7 @@ const TOOL_CARDS: ToolCard[] = [
   { to: '/tools/article', icon: IconToolArticle, title: '文章离线', sub: '网页转文档 / EPUB' },
   { to: '/tools/idphoto', icon: IconToolIdPhoto, title: '证件照', sub: '换底色、排版打印' },
   { to: '/tools/ocr', icon: IconToolOcr, title: '本地 OCR', sub: '拍照取字，不上传' },
+  { to: '/tools/njust-report', icon: IconToolReport, title: 'NJUST 报告排版', sub: 'txt / md / docx → Word' },
 ]
 
 export function ToolsPage() {

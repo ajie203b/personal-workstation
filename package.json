@@ -1,7 +1,7 @@
 {
   "name": "personal-workstation",
   "private": true,
-  "version": "3.4.5",
+  "version": "3.4.6",
   "type": "module",
   "description": "个人工作站：任务清单 × 文档工作站（本地优先 PWA + 安卓 App，数据不出本机）",
   "scripts": {
@@ -44,7 +44,9 @@
     "date-fns": "^4.1.0",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^4.2.0",
+    "docx": "^9.14.0",
     "docx-preview": "^0.4.1",
+    "html-to-image": "^1.11.13",
     "jsqr": "^1.4.0",
     "jszip": "^3.10.2",
     "katex": "^0.19.0",
