@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T10:06:04.185Z",
+  "generatedAt": "2026-10-24T09:33:53.489Z",
   "source": "https://artificialanalysis.ai/",
   "models": [
     {
@@ -17,6 +17,10 @@
     {
       "name": "Muse Wonder Full (Max)",
       "score": 55.8
+    },
+    {
+      "name": "Kimi K3.1 Pro",
+      "score": 55.1
     },
     {
       "name": "Claude Opus 5.5 (High)",
@@ -116,10 +120,6 @@
     },
     {
       "name": "Claude Fable 5.1 (Low)",
-      "score": 46.8
-    },
-    {
-      "name": "Claude Sonnet 5.5 (High)",
       "score": 46.8
     }
   ]
