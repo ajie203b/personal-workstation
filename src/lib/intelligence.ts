@@ -1,4 +1,5 @@
 import { db } from '@/db/db'
+import { INTEL_JSON_URLS } from './intelSources'
 
 /**
  * 模型智能排名（v2.1）：
@@ -29,10 +30,7 @@ const RETRY_MS = 6 * 60 * 60 * 1000
 const MAX_MODELS = 30
 
 /** 远端数据源：优先 raw（每日 Action 直接提交到这里），Pages 作为备选 */
-const SOURCES = [
-  'https://raw.githubusercontent.com/ajie203b/personal-workstation/main/public/intelligence.json',
-  'https://ajie203b.github.io/personal-workstation/intelligence.json',
-]
+const SOURCES = INTEL_JSON_URLS
 
 function num(v: unknown): number | null {
   const n = typeof v === 'string' ? Number(v) : v

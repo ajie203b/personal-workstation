@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ExternalLink, Maximize2, Sparkles, X } from 'lucide-react'
 import { openExternal } from '@/lib/links'
 import { isNative } from '@/lib/native'
+import { INTEL_CHART_URLS } from '@/lib/intelSources'
 
 /** 保留 Artificial Analysis 官方图表原图，支持横向查看及打开完整图片。 */
 export function IntelligenceCard() {
@@ -9,7 +10,28 @@ export function IntelligenceCard() {
   const [imageFailed, setImageFailed] = useState(false)
   const [zoomed, setZoomed] = useState(false)
   const dragRef = useRef<{ x: number; left: number } | null>(null)
-  const chartUrl = `${import.meta.env.BASE_URL}intelligence/chart.png`
+  // 内置图保证离线/弱网立即有画面；每日 Action 提交的新图加载成功后再替换
+  const localChart = `${import.meta.env.BASE_URL}intelligence/chart.png`
+  const [chartSrc, setChartSrc] = useState(localChart)
+
+  useEffect(() => {
+    let cancelled = false
+    const day = new Date().toISOString().slice(0, 10)
+    const tryAt = (index: number) => {
+      if (cancelled || index >= INTEL_CHART_URLS.length) return
+      const url = `${INTEL_CHART_URLS[index]}?v=${day}`
+      const probe = new Image()
+      probe.onload = () => {
+        if (cancelled) return
+        setImageFailed(false)
+        setChartSrc(url)
+      }
+      probe.onerror = () => tryAt(index + 1)
+      probe.src = url
+    }
+    tryAt(0)
+    return () => { cancelled = true }
+  }, [])
 
   // 安卓壳里「查看原图」不能开新窗（window.open / target=_blank 都没人接，静默失败），
   // 同窗跳到 https://localhost/... 又会把 SPA 顶掉——就地放大最稳
@@ -20,7 +42,7 @@ export function IntelligenceCard() {
       return
     }
     e.preventDefault()
-    openExternal(chartUrl)
+    openExternal(chartSrc)
   }
 
   useEffect(() => {
@@ -80,12 +102,16 @@ export function IntelligenceCard() {
           onLostPointerCapture={() => { dragRef.current = null; setDragging(false) }}
         >
           <img
-            src={chartUrl}
+            src={chartSrc}
             alt="Artificial Analysis 模型智能指数排名官方原图"
-            width={1767}
-            height={415}
+            width={2732}
+            height={640}
             draggable={false}
-            onError={() => setImageFailed(true)}
+            onError={() => {
+              // 远程图失效就退回内置图；内置图也失败才显示提示
+              if (chartSrc !== localChart) setChartSrc(localChart)
+              else setImageFailed(true)
+            }}
             className="h-[300px] w-auto max-w-none rounded-[10px] select-none pointer-events-none"
           />
         </div>
@@ -93,7 +119,7 @@ export function IntelligenceCard() {
       <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-on-surface-2 mt-3">
         <span>{dragging ? '拖动中…' : '左右滑动或拖动查看完整榜单'} · 图源 Artificial Analysis</span>
         <a
-          href={chartUrl}
+          href={chartSrc}
           rel="noopener noreferrer"
           onClick={openOriginal}
           className="inline-flex items-center gap-1 text-primary hover:underline"
@@ -117,7 +143,7 @@ export function IntelligenceCard() {
             <X size={18} aria-hidden />
           </button>
           <img
-            src={chartUrl}
+            src={chartSrc}
             alt="Artificial Analysis 模型智能指数排名官方原图"
             className="max-w-full max-h-full rounded-[10px] shadow-2xl"
             draggable={false}
