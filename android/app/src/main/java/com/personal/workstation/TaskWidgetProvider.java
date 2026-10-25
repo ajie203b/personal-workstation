@@ -222,6 +222,10 @@ public class TaskWidgetProvider extends AppWidgetProvider {
 
     /** 没有任务 / 没有快照时只显示一行提示，别让空白的小组件看起来坏了 */
     private static void showHint(RemoteViews views, String hint) {
+        // 第一行载着「+」按钮：提示态只藏勾选圈和标题，加号必须保持可点（否则空小组件没法添加第一条任务）
+        views.setViewVisibility(R.id.widget_row_1, View.VISIBLE);
+        views.setViewVisibility(R.id.widget_check_1, View.GONE);
+        views.setViewVisibility(R.id.widget_task_1, View.GONE);
         views.setViewVisibility(R.id.widget_tasks, View.GONE);
         views.setViewVisibility(R.id.widget_empty, View.VISIBLE);
         views.setTextViewText(R.id.widget_empty, hint);

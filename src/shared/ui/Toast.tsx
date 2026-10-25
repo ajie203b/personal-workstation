@@ -25,6 +25,9 @@ function ToastCard({ toast: t, onDismiss }: { toast: ToastItem; onDismiss: () =>
 
   const down = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
+    // 按在「撤销/关闭」按钮上时不接管指针：捕获中的鼠标 click 会被重定向到卡片本身，
+    // 桌面端点撤销就没反应了（触屏的 click 仍落在原目标，所以安卓一直正常）
+    if ((e.target as HTMLElement).closest('button')) return
     drag.current = { y: e.clientY, at: performance.now() }
     setDragging(true)
     e.currentTarget.setPointerCapture(e.pointerId)
