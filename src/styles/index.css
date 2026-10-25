@@ -1145,6 +1145,14 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
   letter-spacing: 0.05em;
   margin: 1.4em 0 0.4em;
 }
+/* 长文性能核心：视口外的章节与段落跳过排版/绘制（content-visibility），
+   字号、行距、双指缩放变化时浏览器只重排可见部分，而不是整本书。
+   占位尺寸用 auto <估值>：首次渲染前按估值占住滚动高度，渲染过一次就记住真实高度，
+   滚动条不会塌陷；不支持该属性的浏览器只是少了这项优化，显示不受影响。 */
+.flow-doc { content-visibility: auto; contain-intrinsic-size: auto 1600px; }
+.flow-body > * { content-visibility: auto; contain-intrinsic-size: auto 2em; }
+.flow-body > img, .flow-body > svg, .flow-body > video { contain-intrinsic-size: auto 40vh; }
+.flow-body > table, .flow-body > pre { contain-intrinsic-size: auto 8em; }
 .flow-body {
   color: var(--md-ink);
   font-size: var(--flow-font-size, 17px);

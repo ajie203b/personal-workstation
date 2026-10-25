@@ -57,6 +57,8 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   const baseFontRef = useRef(settings.fontSize)
   const fontAnchor = useRef<{ el: HTMLElement; top: number } | null>(null)
   const pinchTarget = useRef<HTMLElement | null>(null)
+  /** 手势帧合并：touchmove 每秒上百次，直接每次写变量会逐帧强制重排；rAF 里一帧只写一次 */
+  const pinchRaf = useRef(0)
   useEffect(() => {
     liveFontRef.current = settings.fontSize
     // 松手落库后全局变量已经等于新字号，撤掉可见章节上的临时覆盖
@@ -69,6 +71,10 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
 
   usePinch(scrollRef, {
     onStart: () => {
+      if (pinchRaf.current) {
+        cancelAnimationFrame(pinchRaf.current)
+        pinchRaf.current = 0
+      }
       if (pinchTarget.current) {
         pinchTarget.current.style.removeProperty('--flow-font-size')
         pinchTarget.current.style.removeProperty('--word-font-scale')
@@ -78,6 +84,9 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       const c = scrollRef.current
       const segs = segRefs.current.filter(Boolean) as HTMLElement[]
       if (!c) return
+      // 手势中字号连跳会让内容高度不停变化，浏览器的滚动锚定会跟我们
+      // 松手后的位置校正各调一次 scrollTop，互相打架；手势期间先关掉
+      c.style.overflowAnchor = 'none'
       const cr = c.getBoundingClientRect()
       const hit = segs.find((el) => el.getBoundingClientRect().bottom > cr.top + 8) ?? segs[0]
       fontAnchor.current = hit ? { el: hit, top: hit.getBoundingClientRect().top - cr.top } : null
@@ -86,14 +95,23 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     onScale: (ratio) => {
       const px = Math.round(Math.min(32, Math.max(14, baseFontRef.current * ratio)))
       liveFontRef.current = px
+      if (pinchRaf.current) return
       // 手势中只给当前可见章节改字号：其它章节保持旧值，不在每一帧整篇重排。
       // 松手后 settings 更新，全局变量一次性落到所有章节。
-      const target = fontAnchor.current?.el ?? proseRef.current
-      if (!target) return
-      target.style.setProperty('--flow-font-size', `${px}px`)
-      target.style.setProperty('--word-font-scale', String(px / 16))
+      pinchRaf.current = requestAnimationFrame(() => {
+        pinchRaf.current = 0
+        const target = fontAnchor.current?.el ?? proseRef.current
+        if (!target) return
+        target.style.setProperty('--flow-font-size', `${liveFontRef.current}px`)
+        target.style.setProperty('--word-font-scale', String(liveFontRef.current / 16))
+      })
     },
     onEnd: () => {
+      if (pinchRaf.current) {
+        cancelAnimationFrame(pinchRaf.current)
+        pinchRaf.current = 0
+      }
+      if (scrollRef.current) scrollRef.current.style.overflowAnchor = ''
       if (liveFontRef.current !== settings.fontSize) {
         onFontSizeChange?.(liveFontRef.current)
       } else if (pinchTarget.current) {
@@ -113,6 +131,9 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   }, [settings.fontSize, scrollRef])
 
   useEffect(() => { onLoaded(flow.segments.length) }, [flow.segments.length, onLoaded])
+
+  // 组件卸载时撤掉挂起的手势帧，避免在已卸载的节点上写样式
+  useEffect(() => () => { if (pinchRaf.current) cancelAnimationFrame(pinchRaf.current) }, [])
 
   useEffect(() => {
     if (!preview) return
@@ -256,10 +277,15 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     if (!container || !initialTarget) return
     const el = segRefs.current[initialTarget.segIdx]
     if (!el) return
+    // 远处章节在 content-visibility 下只有占位高度，先强制渲染再读 offset，定位才准；
+    // 渲染树稳定后恢复 auto，别让这一章永远保持全渲染
+    el.style.contentVisibility = 'visible'
     container.scrollTop = el.offsetTop + el.offsetHeight * initialTarget.ratio
+    const t = window.setTimeout(() => el.style.removeProperty('content-visibility'), 2000)
     restoredRef.current = true
     didInit.current = true
     onRestored()
+    return () => window.clearTimeout(t)
   }, [initialTarget, onRestored, scrollRef])
 
   // 跳转锚点 f{n} / 批注闪烁
@@ -272,10 +298,14 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     const idx = Number(m[1])
     const el = segRefs.current[idx]
     if (el) {
+      // 目标章节可能还没被渲染过（占位高度），先拉出来再滚，落点才准；
+      // 滚完稍后恢复 auto，这一章短时间保持全渲染不影响性能
+      el.style.contentVisibility = 'visible'
       container.scrollTo({ top: Math.max(0, el.offsetTop - 8), behavior: 'smooth' })
       setFlashSeg(idx)
-      const t = setTimeout(() => setFlashSeg(null), 1600)
-      return () => clearTimeout(t)
+      const t1 = setTimeout(() => setFlashSeg(null), 1600)
+      const t2 = setTimeout(() => el.style.removeProperty('content-visibility'), 2000)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
     }
   }, [jump, scrollRef])
 
