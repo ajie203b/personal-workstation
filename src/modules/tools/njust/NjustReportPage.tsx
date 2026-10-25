@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, FileText, Image as ImageIcon, Loader2, Upl
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { useUi } from '@/stores/ui'
-import { saveBlob } from '@/lib/saveFile'
+import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { cn } from '@/lib/cn'
 import { parseMarkdownSource, parseSourceFile } from './parseSource'
 import { buildReport, loadNjustLogos, resolveImages } from './buildDocx'
@@ -236,7 +236,7 @@ export function NjustReportPage() {
         setWarnings([...new Set(result.warnings)])
         const name = safeName(meta.title || source.title || fileName.replace(/\.[^.]+$/, '') || 'NJUST报告')
         const where = await saveBlob(result.blob, `${name}_排版.docx`)
-        toast(where ? `已生成：${where}` : '已生成 Word 文档')
+        toast(where ? `已生成：${where}` : '已生成 Word 文档', openSavedAction())
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         setError(message)

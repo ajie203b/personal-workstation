@@ -6,6 +6,7 @@ interface FileExportPlugin {
     fileName: string
     mimeType: string
   }): Promise<{ path: string; uri: string }>
+  openSavedLocation(): Promise<void>
 }
 
 const FileExport = registerPlugin<FileExportPlugin>('FileExport')
@@ -48,4 +49,16 @@ export async function saveBlob(blob: Blob, filename: string): Promise<string> {
   a.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 2000)
   return '浏览器下载目录'
+}
+
+/**
+ * 生成文件后的 toast 按钮：跳到「下载/个人工作站」。
+ * 只有安卓壳能打开系统文件管理器；浏览器 / 桌面没有可定位的下载目录，返回 undefined。
+ */
+export function openSavedAction(): { label: string; run: () => void } | undefined {
+  if (!Capacitor.isNativePlatform()) return undefined
+  return {
+    label: '打开位置',
+    run: () => { void FileExport.openSavedLocation().catch(() => undefined) },
+  }
 }

@@ -18,7 +18,7 @@ import { useUi } from '@/stores/ui'
 import { fetchTextSmart } from '@/lib/netFetch'
 import { sanitizeHtml } from '@/lib/sanitizeHtml'
 import { openExternal } from '@/lib/links'
-import { saveBlob } from '@/lib/saveFile'
+import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { importDoc, saveMarkdownDoc } from '@/db/docs'
 import { db, type Doc } from '@/db/db'
 import { PASTE_FALLBACK_HINT, extractArticle, extractPastedContent, type ParsedArticle } from './articleParse'
@@ -121,7 +121,7 @@ export function ArticleToolPage() {
         contentHtml: article.contentHtml,
       })
       const where = await saveBlob(blob, `${safeName(article.title)}.epub`)
-      toast(`EPUB 已导出 → ${where}`)
+      toast(`EPUB 已导出 → ${where}`, openSavedAction())
     } catch (e) {
       toast(e instanceof Error ? e.message : '导出失败')
     } finally {

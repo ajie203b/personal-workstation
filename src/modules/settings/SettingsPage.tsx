@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, BellOff, ChevronRight, Database, Download, History, Info, LayoutGrid, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
+import { Bell, BellOff, ChevronRight, Database, Download, ExternalLink, Info, LayoutGrid, Lightbulb, Palette, RefreshCw, Smartphone, Upload } from 'lucide-react'
 import { useUi, type Accent, type ThemeMode } from '@/stores/ui'
-import { clearAllData, exportAll, importAll } from '@/db/tasks'
+import { db } from '@/db/db'
+import { exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
-import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Dialog } from '@/shared/ui/Sheet'
 import { BackButton } from '@/shared/ui/BackButton'
@@ -11,28 +11,25 @@ import { Segmented } from '@/shared/ui/Segmented'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
 import { fmtDateTime, todayStr } from '@/lib/date'
-import { saveBlob } from '@/lib/saveFile'
+import { openSavedAction, saveBlob } from '@/lib/saveFile'
+import { openExternal } from '@/lib/links'
 import { isNative, isTauri } from '@/lib/native'
 import { supportsInAppUpdate } from '@/lib/appUpdateClient'
 import { AppUpdateCard } from '@/shared/AppUpdate'
 import { cn } from '@/lib/cn'
-import { formatBytes } from '@/lib/format'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
-import {
-  getAutoBackupEnabled, listBackups, restoreBackup, setAutoBackupEnabled, writeSnapshot,
-  type BackupInfo,
-} from '@/lib/autoBackup'
 import {
   JIANGUOYUN_URL, getLastSyncAt, getLastSyncError, getWebdavConfig, setWebdavConfig, syncNow,
   type SyncFailure, type WebdavConfig,
 } from '@/lib/sync'
 
-type Tab = 'appearance' | 'data' | 'sync' | 'about'
+type Tab = 'appearance' | 'data' | 'sync' | 'feedback' | 'about'
 
 const SECTIONS: { id: Tab; label: string; hint: string; icon: typeof Palette }[] = [
   { id: 'appearance', label: '外观', hint: '主题、强调色、动效', icon: Palette },
-  { id: 'data', label: '数据', hint: '备份、自动快照、清空', icon: Database },
+  { id: 'data', label: '数据', hint: '备份、恢复、数据安全', icon: Database },
   { id: 'sync', label: '同步', hint: '用坚果云跨设备共用数据', icon: RefreshCw },
+  { id: 'feedback', label: '建议', hint: '你希望添加的功能', icon: Lightbulb },
   { id: 'about', label: '关于', hint: '版本、更新、安装', icon: Info },
 ]
 
@@ -45,8 +42,9 @@ export function SettingsPage() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const content = tab === 'appearance' ? <AppearanceTab />
-    : tab === 'data' ? <DataTab />
+    : tab === 'data' ? <DataTab onGoSync={() => setTab('sync')} />
     : tab === 'sync' ? <SyncTab />
+    : tab === 'feedback' ? <FeedbackTab />
     : <AboutTab />
 
   return (
@@ -124,6 +122,10 @@ function AppearanceTab() {
   const setAccent = useUi((s) => s.setAccent)
   const motion = useUi((s) => s.motion)
   const setMotion = useUi((s) => s.setMotion)
+  const haptics = useUi((s) => s.haptics)
+  const setHaptics = useUi((s) => s.setHaptics)
+  const sidebarCollapsed = useUi((s) => s.sidebarCollapsed)
+  const setSidebarCollapsed = useUi((s) => s.setSidebarCollapsed)
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
@@ -171,12 +173,123 @@ function AppearanceTab() {
         </div>
         <JellySwitch checked={motion} onChange={() => setMotion(!motion)} label="动效" />
       </section>
+
+      <section className="card p-4 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-[14px] font-semibold">触觉反馈</h2>
+          <p className="text-[13px] text-on-surface-2 mt-0.5">勾选、拖拽、长按确认时轻振一下；没有振动马达的设备不受影响。</p>
+        </div>
+        <JellySwitch checked={haptics} onChange={() => setHaptics(!haptics)} label="触觉反馈" />
+      </section>
+
+      <section className="card p-4 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-[14px] font-semibold">桌面侧栏默认收起</h2>
+          <p className="text-[13px] text-on-surface-2 mt-0.5">开启后桌面端只显示图标栏，把横向空间让给内容；随时可在侧栏左上角展开。</p>
+        </div>
+        <JellySwitch checked={sidebarCollapsed} onChange={() => setSidebarCollapsed(!sidebarCollapsed)} label="侧栏默认收起" />
+      </section>
     </div>
   )
 }
 
-function DataTab() {
+/**
+ * 功能建议：不自动提交，只把标题和正文预填进 GitHub 新建 Issue 页面。
+ * 需要用户先有 GitHub 账号并在网页上点提交，避免应用持有任何 token。
+ */
+function FeedbackTab() {
+  const toast = useUi((s) => s.toast)
+  const [title, setTitle] = useState('')
+  const [details, setDetails] = useState('')
+
+  const trimmedDetails = details.trim()
+  const derivedTitle = (title.trim() || trimmedDetails.split('\n')[0]?.trim() || '').slice(0, 80)
+  const canSend = derivedTitle.length > 0
+
+  const send = () => {
+    if (!canSend) {
+      toast('先写一句想要的功能')
+      return
+    }
+    const platform = isNative() ? 'Android App' : isTauri() ? 'Windows 桌面版' : '网页版'
+    const body = [
+      trimmedDetails || '（请补充使用场景 / 期望效果）',
+      '',
+      '---',
+      `提交环境：Kairos v${getCurrentVersion()} · ${platform}`,
+    ].join('\n')
+    const url = 'https://github.com/ajie203b/personal-workstation/issues/new'
+      + `?title=${encodeURIComponent(`功能建议：${derivedTitle}`)}`
+      + `&body=${encodeURIComponent(body)}`
+    openExternal(url)
+    toast('已打开 GitHub，确认内容后提交即可')
+  }
+
+  const inputCls = 'w-full rounded-[10px] bg-surface-2 border border-outline px-3 py-2 text-[13.5px] leading-relaxed outline-none focus:border-primary/60 transition-colors'
+
+  return (
+    <div className="flex flex-col gap-4 max-w-xl">
+      <section className="card p-4 flex flex-col gap-3">
+        <div>
+          <h2 className="text-[14px] font-semibold mb-0.5 inline-flex items-center gap-1.5">
+            <Lightbulb size={15} className="text-on-surface-2" /> 你希望添加的功能
+          </h2>
+          <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
+            写下想要的功能、使用场景或需求。点击后在 GitHub 打开新建 Issue 页面，
+            标题和正文已经填好；确认无误再点「Submit new issue」提交。
+          </p>
+        </div>
+        <label className="block">
+          <span className="block text-[12px] font-medium text-on-surface-2 mb-1">一句话概括（可选）</span>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={80}
+            placeholder="例如：任务支持按项目分组"
+            className={inputCls}
+          />
+        </label>
+        <label className="block">
+          <span className="block text-[12px] font-medium text-on-surface-2 mb-1">详细说明</span>
+          <textarea
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            maxLength={1200}
+            rows={6}
+            placeholder={'想解决什么问题？\n希望它怎么工作？\n有什么替代方案？'}
+            className={cn(inputCls, 'resize-y min-h-[132px]')}
+          />
+        </label>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-on-surface-2 tabular-nums">{details.length}/1200</span>
+          <Button variant="primary" size="sm" className="ml-auto" disabled={!canSend} onClick={send}>
+            <ExternalLink size={15} /> 去 GitHub 提交
+          </Button>
+        </div>
+        <p className="text-[11px] text-on-surface-2/80 leading-relaxed">
+          不会自动提交，也不会上传你的任务或文档内容；正文里只附带应用版本和平台信息。
+        </p>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="text-[14px] font-semibold mb-1">先看看大家的建议</h2>
+        <p className="text-[12.5px] text-on-surface-2 leading-relaxed mb-3">
+          已有需求和问题都在 GitHub Issues 里，提交前可以先搜一下，避免重复。
+        </p>
+        <Button variant="outline" size="sm" onClick={() => openExternal('https://github.com/ajie203b/personal-workstation/issues')}>
+          <ExternalLink size={15} /> 浏览 GitHub Issues
+        </Button>
+      </section>
+    </div>
+  )
+}
+
+const LAST_BACKUP_KEY = 'lastManualBackupAt'
+const BACKUP_REMIND_MS = 7 * 24 * 60 * 60 * 1000
+
+function DataTab({ onGoSync }: { onGoSync: () => void }) {
   const [usage, setUsage] = useState<string>('')
+  const [lastBackup, setLastBackup] = useState<number | null>(null)
   const toast = useUi((s) => s.toast)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -184,8 +297,12 @@ function DataTab() {
     void navigator.storage?.estimate?.().then((est) => {
       if (est?.usage != null) setUsage(`${(est.usage / 1024 / 1024).toFixed(1)} MB`)
     })
+    void db.settings.get(LAST_BACKUP_KEY).then((row) => {
+      if (typeof row?.value === 'number') setLastBackup(row.value)
+    })
   }, [])
 
+  const backupStale = lastBackup == null || Date.now() - lastBackup > BACKUP_REMIND_MS
   const { state: exportState, run: runExport } = useAsyncButton()
 
   const doExport = async () => {
@@ -195,7 +312,10 @@ function DataTab() {
         const blob = new Blob([json], { type: 'application/json' })
         // 本地日期，别用 toISOString（UTC 会让凌晨导出的文件名变成昨天）
         const where = await saveBlob(blob, `个人工作站备份-${todayStr()}.json`)
-        toast(`备份已导出 → ${where}`)
+        const at = Date.now()
+        setLastBackup(at)
+        void db.settings.put({ key: LAST_BACKUP_KEY, value: at }).catch(() => undefined)
+        toast(`备份已导出 → ${where}`, openSavedAction())
       })
     } catch {
       toast('导出失败，请重试')
@@ -224,7 +344,7 @@ function DataTab() {
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1">备份与恢复</h2>
         <p className="text-[13px] text-on-surface-2 mb-3.5 leading-relaxed">
-          所有数据保存在本机浏览器（IndexedDB）。换设备或清除浏览器数据前，先导出 JSON 备份。
+          所有数据保存在本机（IndexedDB）。换设备、清除浏览器数据或卸载应用前，先导出一份 JSON 备份。
           {usage && ` 当前占用约 ${usage}。`}
         </p>
         <div className="flex flex-wrap gap-2">
@@ -246,21 +366,29 @@ function DataTab() {
             }}
           />
         </div>
+        <div
+          className={cn(
+            'mt-3 rounded-[10px] px-3 py-2 text-[12px] leading-relaxed',
+            backupStale ? 'bg-p1/10 text-p1' : 'bg-ok/10 text-ok',
+          )}
+        >
+          {lastBackup
+            ? `上次导出：${fmtDateTime(lastBackup)}`
+            : '还没有导出过备份'}
+          {backupStale ? ' · 建议现在导出一次，之后每周一次即可' : ' · 备份状态良好'}
+        </div>
       </section>
 
-      <AutoBackupCard />
-
-      <section className="card p-4" style={{ borderColor: 'color-mix(in srgb, var(--danger) 30%, var(--outline))' }}>
-        <h2 className="text-[14px] font-semibold mb-1 text-danger">危险区</h2>
-        <p className="text-[13px] text-on-surface-2 mb-3">删除本机全部任务与设置，不可撤销。按住 1.5 秒才会执行（键盘用户会走二次确认）。</p>
-        <HoldToConfirm
-          holdMs={1500}
-          label="清空所有数据"
-          className="h-10 px-5"
-          dialogTitle="清空所有数据？"
-          dialogDescription="本机 IndexedDB 中的任务与设置将被永久删除。建议先导出备份。"
-          onConfirm={() => void clearAllData().then(() => toast('数据已清空'))}
-        />
+      <section className="card p-4">
+        <h2 className="text-[14px] font-semibold mb-1">数据安全</h2>
+        <ul className="text-[12.5px] text-on-surface-2 leading-relaxed flex flex-col gap-1.5">
+          <li>· 任务、文档、批注都只保存在本机，不会上传到任何服务器。</li>
+          <li>· 每周导出一次 JSON 备份，文件会落在「下载/个人工作站」，重装或换机后可导入恢复。</li>
+          <li>· 想在手机和电脑之间自动共用一份数据，可以开启坚果云同步，云端会保留副本。</li>
+        </ul>
+        <Button variant="outline" size="sm" className="mt-3" onClick={onGoSync}>
+          <RefreshCw size={15} /> 去开启同步
+        </Button>
       </section>
     </div>
   )
@@ -279,10 +407,34 @@ function SyncTab() {
 function NotifyCard() {
   const [on, setOn] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
+  const [pending, setPending] = useState<number | null>(null)
+  const [exact, setExact] = useState<boolean | null>(null)
+  const [perm, setPerm] = useState<string | null>(null)
   const toast = useUi((s) => s.toast)
 
+  const refreshStatus = async () => {
+    try {
+      const { LocalNotifications } = await import('@capacitor/local-notifications')
+      const [p, e, perms] = await Promise.all([
+        LocalNotifications.getPending(),
+        LocalNotifications.checkExactNotificationSetting().catch(() => ({ exact_alarm: 'denied' as const })),
+        LocalNotifications.checkPermissions(),
+      ])
+      setPending(Array.isArray(p.notifications) ? p.notifications.length : 0)
+      setExact(e.exact_alarm === 'granted')
+      setPerm(perms.display)
+    } catch {
+      setPending(null)
+      setExact(false)
+      setPerm(null)
+    }
+  }
+
   useEffect(() => {
-    void getNotifyEnabled().then(setOn)
+    void getNotifyEnabled().then((v) => {
+      setOn(v)
+      if (v) void refreshStatus()
+    })
   }, [])
 
   /**
@@ -298,15 +450,18 @@ function NotifyCard() {
       toast('未获得通知权限，请在系统设置中允许')
       return
     }
+    // setNotifyEnabled 内部会把已有任务一起重排，旧任务不用等下次启动
     await setNotifyEnabled(true)
     setOn(true)
     toast('已开启到期提醒')
+    void refreshStatus()
   }
 
   const toggle = async () => {
     if (on) {
       await setNotifyEnabled(false)
       setOn(false)
+      setPending(0)
       toast('已关闭到期提醒')
       return
     }
@@ -320,12 +475,25 @@ function NotifyCard() {
           id: 1999999999,
           title: '测试通知',
           body: '如果你看到这条通知，说明到期提醒已就绪 ✓',
-          schedule: { at: new Date(Date.now() + 1500) },
+          // 精确闹钟未授权时不能让测试卡在系统设置页；非精确也能很快弹
+          schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
+          isExactNotification: false,
         }],
       })
       toast('已发送，约 2 秒后弹出')
+      window.setTimeout(() => void refreshStatus(), 2500)
     } catch {
       toast('发送失败：请检查通知权限')
+    }
+  }
+
+  const openExactSetting = async () => {
+    try {
+      const { LocalNotifications } = await import('@capacitor/local-notifications')
+      await LocalNotifications.changeExactNotificationSetting()
+      await refreshStatus()
+    } catch {
+      toast('无法打开系统设置')
     }
   }
 
@@ -337,16 +505,36 @@ function NotifyCard() {
             {on ? <Bell size={14} /> : <BellOff size={14} />} 到期提醒
           </h2>
           <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
-            任务到期时发送系统通知（按截止时间，默认 09:00）。
+            任务设置截止日期后，到期时发系统通知（没填时间默认 09:00）；未完成的任务才会提醒。
           </p>
         </div>
         <JellySwitch checked={on} onChange={() => void toggle()} label="到期提醒" />
       </div>
       {on && (
-        <div className="mt-3">
-          <Button size="sm" variant="outline" onClick={() => void sendTest()}>
-            <Bell size={14} /> 发送测试通知
-          </Button>
+        <div className="mt-3 flex flex-col gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => void sendTest()}>
+              <Bell size={14} /> 发送测试通知
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void refreshStatus()}>
+              刷新状态
+            </Button>
+          </div>
+          <p className="text-[11.5px] text-on-surface-2 leading-relaxed">
+            {perm != null && perm !== 'granted'
+              ? '系统通知权限未开启，请到系统设置里允许'
+              : pending == null
+                ? '正在读取提醒状态…'
+                : pending > 0
+                  ? `已登记 ${pending} 条本地提醒`
+                  : '当前没有可排期的提醒（任务需要设置截止日期）'}
+            {exact === false && ' · 系统未允许精确闹钟，提醒可能晚几分钟'}
+          </p>
+          {exact === false && (
+            <Button size="sm" variant="outline" className="self-start" onClick={() => void openExactSetting()}>
+              开启精确提醒
+            </Button>
+          )}
         </div>
       )}
 
@@ -516,79 +704,6 @@ function WebdavCard() {
   )
 }
 
-/** 自动备份：OPFS 滚动快照（保留最近 3 份）+ 恢复 */
-function AutoBackupCard() {
-  const [on, setOn] = useState(true)
-  const [backups, setBackups] = useState<BackupInfo[]>([])
-  const toast = useUi((s) => s.toast)
-
-  const refresh = () => {
-    void listBackups().then(setBackups)
-  }
-
-  useEffect(() => {
-    void getAutoBackupEnabled().then(setOn)
-    refresh()
-  }, [])
-
-  const toggle = async () => {
-    await setAutoBackupEnabled(!on)
-    setOn(!on)
-    if (!on) {
-      await writeSnapshot()
-      refresh()
-      toast('已开启自动备份，并生成一份快照')
-    } else {
-      toast('已关闭自动备份')
-    }
-  }
-
-  return (
-    <section className="card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[14px] font-semibold mb-0.5">自动备份</h2>
-          <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
-            每 24 小时打开应用时静默快照到本机私有存储，保留最近 3 份。不上传任何服务器。
-          </p>
-        </div>
-        <JellySwitch checked={on} onChange={() => void toggle()} label="自动备份" />
-      </div>
-
-      {backups.length > 0 && (
-        <div className="mt-3 flex flex-col gap-1.5">
-          <p className="text-[12px] text-on-surface-2 inline-flex items-center gap-1.5">
-            <History size={12} /> 本机快照（点击恢复，覆盖当前数据）
-          </p>
-          {backups.map((b) => (
-            <div key={b.name} className="flex items-center gap-2 h-9 px-3 rounded-[10px] bg-surface-2">
-              <span className="flex-1 text-[12.5px] tabular-nums">
-                {fmtDateTime(b.at)}
-                <span className="text-on-surface-2 ml-2">{formatBytes(b.size)}</span>
-              </span>
-              <HoldToConfirm
-                variant="danger"
-                holdMs={1200}
-                label="恢复"
-                className="h-8 px-3"
-                dialogTitle="恢复这份快照？"
-                dialogDescription="将用这份快照替换当前数据：快照之后新增的记录会消失，快照之后删除的会回来。建议先手动导出一份备份。"
-                onConfirm={() => void restoreBackup(b.name).then((r) => {
-                  // 有缺本体/孤儿批注时不要只说「已恢复」——静默成功最容易让人以为数据都回来了
-                  toast(r.warnings.length ? `已恢复快照，但${r.warnings[0]}` : '已恢复快照')
-                  refresh()
-                }).catch((e: unknown) => {
-                  toast(`恢复失败：${e instanceof Error ? e.message : '快照无法读取'}`)
-                })}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  )
-}
-
 function AboutTab() {
   const [installable, setInstallable] = useState(canInstall())
   useEffect(() => onInstallAvailabilityChange(() => setInstallable(canInstall())), [])
@@ -648,7 +763,7 @@ function AboutTab() {
               <LayoutGrid size={15} className="text-on-surface-2" /> 桌面 / 负一屏小组件
             </h2>
             <p className="text-[13px] text-on-surface-2 leading-relaxed">
-              「今日待办」小组件会显示今天没做完的任务和打卡进度（如 2/8）。右上「+」直接弹出添加框，勾选圈直接完成并撒花，都不用打开 App；点标题才定位到那条任务，数据会在下次打开 App 或回到前台时自动同步。
+              「今日待办」小组件只留今天的任务和大加号，打卡任务仍会显示 2/3 进度。右上「+」直接弹出添加框，勾选圈直接完成并撒花，都不用打开 App；点标题才定位到那条任务，数据会在下次打开 App 或回到前台时自动同步。
             </p>
             <ol className="mt-2.5 flex flex-col gap-1.5 text-[12.5px] text-on-surface-2 leading-relaxed list-decimal pl-4">
               <li>桌面：长按空白处 →「添加工具 / 小组件」→ 找到「Kairos · 今日待办」拖出来。</li>

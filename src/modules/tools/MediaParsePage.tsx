@@ -8,6 +8,7 @@ import { EmptyState } from '@/shared/ui/EmptyState'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { downloadAsset, parseShareText, type ParsedMedia } from '@/lib/mediaParse'
+import { openSavedAction } from '@/lib/saveFile'
 
 const PLATFORM_LABEL: Record<string, string> = { douyin: '抖音', bilibili: 'B站' }
 
@@ -53,7 +54,7 @@ export function MediaParsePage() {
       setDownloading(asset.filename)
       try {
         const where = await downloadAsset(asset)
-        toast(`已保存 ${asset.label} → ${where}`)
+        toast(`已保存 ${asset.label} → ${where}`, openSavedAction())
       } catch (e) {
         toast(`下载${asset.label}失败：${e instanceof Error ? e.message : '网络错误'}`)
       }

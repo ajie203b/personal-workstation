@@ -39,7 +39,23 @@ export async function getNotifyEnabled(): Promise<boolean> {
 
 export async function setNotifyEnabled(on: boolean): Promise<void> {
   await db.settings.put({ key: SETTINGS_KEY, value: on })
-  if (!on) await cancelAllTaskNotifications()
+  if (!on) {
+    await cancelAllTaskNotifications()
+    return
+  }
+  // 开启时把已经存在的任务一并排进去；否则用户开着开关也不会收到旧任务的提醒
+  await syncAllTaskNotifications(await db.tasks.toArray())
+}
+
+/** 系统是否允许精确闹钟；没授权时退回非精确闹钟，至少能收到（可能晚几分钟） */
+async function exactAlarmsAllowed(): Promise<boolean> {
+  if (!isNative()) return false
+  try {
+    const res = await LocalNotifications.checkExactNotificationSetting()
+    return res.exact_alarm === 'granted'
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -101,13 +117,18 @@ export async function syncTaskNotification(task: Task): Promise<void> {
   if (!slots.length) return
   const perm = await LocalNotifications.checkPermissions()
   if (perm.display !== 'granted') return
-  await LocalNotifications.schedule({
-    notifications: slots.map((s) => taskNotification(task, s.at, s.slot, slots.length)),
-  })
+  const exact = await exactAlarmsAllowed()
+  try {
+    await LocalNotifications.schedule({
+      notifications: slots.map((s) => taskNotification(task, s.at, s.slot, slots.length, exact)),
+    })
+  } catch {
+    /* 权限/系统限制下静默失败，不能让一次提醒拖垮任务写入 */
+  }
 }
 
 /** 单条 / 全量重排共用同一份通知载荷，避免改一处漏一处 */
-function taskNotification(task: Task, at: Date, slot = 0, slots = 1) {
+function taskNotification(task: Task, at: Date, slot = 0, slots = 1, exact = false) {
   const time = task.repeatTimes?.[slot] ?? task.dueTime
   const progress = task.repeatCount && task.repeatCount > 1 ? `（第 ${slot + 1}/${slots} 次）` : ''
   return {
@@ -115,6 +136,8 @@ function taskNotification(task: Task, at: Date, slot = 0, slots = 1) {
     title: time ? '任务提醒' : '今天有任务到期',
     body: task.title + (time ? ` · ${time}` : '') + progress,
     schedule: { at, allowWhileIdle: true },
+    // 精确闹钟要用户额外授权「闹钟和提醒」；没有授权时主动退成非精确，避免调度被系统拦下
+    isExactNotification: exact,
     ongoing: false,
     extra: { taskId: task.id, tier: task.tier },
   }
@@ -126,6 +149,7 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
   await cancelAllTaskNotifications()
   const perm = await LocalNotifications.checkPermissions()
   if (perm.display !== 'granted') return
+  const exact = await exactAlarmsAllowed()
   const now = Date.now()
   for (const t of tasks) {
     if (t.status === 'done') continue
@@ -135,7 +159,7 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
     if (!slots.length) continue
     try {
       await LocalNotifications.schedule({
-        notifications: slots.map((s) => taskNotification(t, s.at, s.slot, slots.length)),
+        notifications: slots.map((s) => taskNotification(t, s.at, s.slot, slots.length, exact)),
       })
     } catch { /* 单条失败不阻塞 */ }
   }
@@ -182,6 +206,7 @@ export async function scheduleFocusEnd(at: number, body: string): Promise<void> 
   if (!isNative() || at <= Date.now()) return
   if (!(await canNotify())) return
   try {
+    const exact = await exactAlarmsAllowed()
     await LocalNotifications.cancel({ notifications: [{ id: FOCUS_NOTIF_ID }] })
     await LocalNotifications.schedule({
       notifications: [
@@ -190,6 +215,7 @@ export async function scheduleFocusEnd(at: number, body: string): Promise<void> 
           title: '专注结束',
           body,
           schedule: { at: new Date(at), allowWhileIdle: true },
+          isExactNotification: exact,
           ongoing: false,
           extra: { focus: true },
         },

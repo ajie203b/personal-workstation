@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as RadixDialog from '@radix-ui/react-dialog'
-import { X, Trash2, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock, ChevronDown, Clock3, Repeat } from 'lucide-react'
+import { X, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock, ChevronDown, Clock3, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type SubTask, type Task, type Tier } from '@/db/db'
 import { db } from '@/db/db'
-import { checkinProgress, postponeTask, updateTask } from '@/db/tasks'
+import { postponeTask, updateTask } from '@/db/tasks'
 import { createFolder, linkTaskFolder } from '@/db/folders'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { checkInWithUndo, deleteTaskWithUndo, toggleTaskWithUndo } from './taskActions'
 import { HabitTimesField } from './HabitTimesField'
 import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
@@ -19,7 +18,7 @@ import { Segmented } from '@/shared/ui/Segmented'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
-import { fmtDateTime, fmtDue, fmtStartAt, futureReason, isFutureTask, todayStr } from '@/lib/date'
+import { fmtDateTime, fmtDue, fmtStartAt, todayStr } from '@/lib/date'
 import { uid } from '@/lib/id'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
@@ -35,9 +34,10 @@ function localDateTimeValue(ts?: number): string {
 const INPUT =
   'w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/70 transition-colors'
 
-/** 任务详情：居中弹窗（点任务卡任意位置打开；完成只走勾选框） */
+/** 任务编辑：居中弹窗（点任务卡任意位置打开；确认修改后返回列表，完成/删除留在列表） */
 export function TaskDetail() {
   const { detailId, openDetail } = useTasksUi()
+  const toast = useUi((s) => s.toast)
   const task = useAllTasks().find((t) => t.id === detailId) ?? null
   const [tagDraft, setTagDraft] = useState('')
   const [subDraft, setSubDraft] = useState('')
@@ -137,31 +137,6 @@ export function TaskDetail() {
   // 手机上收起时这一行告诉用户「现在是什么时间状态」，不用展开也能读懂
   const timeSummary = `${task.startAt != null ? fmtStartAt(task.startAt) : '未设开始时间'} · ${task.due ? fmtDue(task.due, task.dueTime).text : '无截止时间'}`
 
-  /**
-   * 完成/恢复：先把未落盘的草稿写库并带进 toggleDone，
-   * 否则重复任务生成的下一次会沿用旧标题。完成即归档，顺带关闭详情。
-   */
-  const completeOrRestore = async () => {
-    const wasDone = task.status === 'done'
-    const merged: Task = {
-      ...task,
-      title: titleDraft.trim() || task.title,
-      notes: notesDraft.trim() ? notesDraft : undefined,
-    }
-    if (!wasDone && isFutureTask(merged)) {
-      useUi.getState().toast('这是未来任务，到日期后再完成')
-      return
-    }
-    if (!wasDone && (merged.title !== task.title || merged.notes !== task.notes)) {
-      pendingRef.current = null
-      await updateTask(task.id, { title: merged.title, notes: merged.notes })
-    } else {
-      await flushSave()
-    }
-    await toggleTaskWithUndo(merged)
-    if (!wasDone) openDetail(null)
-  }
-
   const addTag = () => {
     const t = tagDraft.trim().replace(/^#/, '')
     if (t && !task.tags.includes(t)) patch({ tags: [...task.tags, t] })
@@ -180,30 +155,15 @@ export function TaskDetail() {
   const removeSub = (sid: string) => setSubtasks((task.subtasks ?? []).filter((s) => s.id !== sid))
   const doneSubs = (task.subtasks ?? []).filter((s) => s.done).length
 
-  const remove = async () => {
-    // 先留住列表里的卡片节点，详情关闭后由它在原位碎成沙
-    const source = document.getElementById(`task-${task.id}`)
-    openDetail(null)
-    await deleteTaskWithUndo(task, source)
-  }
-
   const done = task.status === 'done'
-  const future = isFutureTask(task)
-  const futureWhy = futureReason(task)
-  // 打卡任务：次数没打满前，主按钮是「打卡 +1」而不是归档
-  const habit = !!task.repeat
-  const { count: habitCountDone, total: habitTotal } = checkinProgress(task)
 
-  const checkIn = async () => {
+  /** 详情是「编辑」入口：确认保存草稿后关回打开前的列表，不在这里完成/删除 */
+  const confirmEdit = async () => {
+    if (tagDraft.trim()) addTag()
+    if (subDraft.trim()) addSub()
     await flushSave()
-    const merged: Task = {
-      ...task,
-      title: titleDraft.trim() || task.title,
-      notes: notesDraft.trim() ? notesDraft : undefined,
-    }
-    const willFinish = habitCountDone + 1 >= habitTotal
-    await checkInWithUndo(merged)
-    if (willFinish) openDetail(null)
+    toast('修改已保存')
+    morphClose(() => document.getElementById(`task-${task.id}`), () => openDetail(null))
   }
 
   return (
@@ -236,7 +196,7 @@ export function TaskDetail() {
         >
           {/* 标题栏 */}
           <div className="flex items-center justify-between px-5 h-14 shrink-0 border-b border-outline">
-            <RadixDialog.Title className="text-[16px] font-semibold">任务详情</RadixDialog.Title>
+            <RadixDialog.Title className="text-[16px] font-semibold">编辑任务</RadixDialog.Title>
             <RadixDialog.Close
               aria-label="关闭"
               className="grid place-items-center w-9 h-9 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
@@ -546,31 +506,12 @@ export function TaskDetail() {
             </div>
           </div>
 
-          {/* 固定操作栏：不用滚到底也能完成 / 置顶 / 删除；删除后 6 秒内可撤销 */}
+          {/* 固定操作栏：详情只负责编辑，确认后回到打开前的列表；完成走列表勾选，删除走左滑/日志 */}
           <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
             <div className="flex items-center gap-1.5">
-              {done ? (
-                <Button variant="primary" magnetic className="flex-1 justify-center" onClick={() => void completeOrRestore()}>
-                  恢复为未完成
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  magnetic
-                  className="flex-1 justify-center"
-                  disabled={future}
-                  title={future
-                    ? (futureWhy === 'start' ? '未来任务，开始时间到了再完成' : '未来任务，到截止日后再完成')
-                    : undefined}
-                  onClick={() => void (habit ? checkIn() : completeOrRestore())}
-                >
-                  {future
-                    ? '未来任务'
-                    : habit
-                      ? (habitTotal > 1 ? `打卡 +1（${habitCountDone}/${habitTotal}）` : '✓ 打卡')
-                      : '✓ 完成并归档'}
-                </Button>
-              )}
+              <Button variant="primary" magnetic className="flex-1 justify-center" onClick={() => void confirmEdit()}>
+                确认修改
+              </Button>
               {!done && (
                 <Button
                   aria-label={task.status === 'doing' ? '停止进行中' : '标记进行中'}
@@ -604,24 +545,7 @@ export function TaskDetail() {
                   <Timer size={16} />
                 </Button>
               )}
-              <Button
-                variant="danger"
-                size="icon"
-                aria-label="删除任务"
-                title="删除任务（可撤销）"
-                onClick={() => void remove()}
-                className="shrink-0"
-              >
-                <Trash2 size={16} />
-              </Button>
             </div>
-            {future && !done && (
-              <p className="text-[11px] text-p1 mt-1.5">
-                {futureWhy === 'start'
-                  ? '未来任务：开始时间还没到，暂不能勾完成。'
-                  : '未来任务：截止日期还没到，暂不能勾完成。'}
-              </p>
-            )}
           </div>
         </RadixDialog.Content>
       </RadixDialog.Portal>

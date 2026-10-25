@@ -25,6 +25,14 @@ export function useAllTasks(): Task[] {
   return useLiveQuery(() => db.tasks.orderBy('updatedAt').reverse().toArray(), [], EMPTY)
 }
 
+/**
+ * 首帧是 undefined：用于区分「IndexedDB 还没读出来」和「真的空库」。
+ * 通知重排必须等它首次有值，否则会拿着空数组把已有提醒全撤销。
+ */
+export function useAllTasksLive(): Task[] | undefined {
+  return useLiveQuery(() => db.tasks.orderBy('updatedAt').reverse().toArray(), [])
+}
+
 export function deriveDone(all: Task[]): Task[] {
   return all
     .filter((t) => t.status === 'done')

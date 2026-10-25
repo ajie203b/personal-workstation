@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router'
 import { AppShell } from './app/AppShell'
 import { KeyboardShortcutsDialog } from '@/shared/KeyboardShortcuts'
@@ -9,9 +9,9 @@ import { TaskDetail } from '@/modules/tasks/TaskDetail'
 import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TodayPage } from '@/modules/today/TodayPage'
 import { TasksPage } from '@/modules/tasks/TasksPage'
-import { useAllTasks } from '@/db/hooks'
+import { useAllTasks, useAllTasksLive } from '@/db/hooks'
 import { getNotifyEnabled, syncAllTaskNotifications } from '@/lib/notify'
-import { maybeAutoBackup, scrubSnapshotSecrets } from '@/lib/autoBackup'
+import { scrubSnapshotSecrets } from '@/lib/autoBackup'
 import { ShareInbound } from '@/shared/ShareInbound'
 import { Spotlight } from '@/shared/Spotlight'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
@@ -90,22 +90,25 @@ export default function App() {
     void initTaskWidgetActions().then((d) => { dispose = d })
     return () => dispose?.()
   }, [])
-  // 提醒开关打开时，启动即全量重排通知（覆盖导入备份/离线变更的场景）
   const all = useAllTasks()
+  const allLive = useAllTasksLive()
+  const notificationSynced = useRef(false)
   // 任务变化后 400ms 同步一次桌面/负一屏小组件（native 才有实际动作）
   useEffect(() => {
     const id = window.setTimeout(() => syncTaskWidget(all), 400)
     return () => window.clearTimeout(id)
   }, [all])
   useEffect(() => {
+    // 等 IndexedDB 首次返回真实任务列表再重排：首帧空数组会把已排提醒全部撤销
+    if (notificationSynced.current || !allLive) return
+    notificationSynced.current = true
     void getNotifyEnabled().then((on) => {
-      if (on) void syncAllTaskNotifications(all)
+      if (on) void syncAllTaskNotifications(allLive)
     })
-    void maybeAutoBackup()
+  }, [allLive])
+  useEffect(() => {
     // 老快照里可能还带着 AI 服务商的明文 Key，启动时顺手清一次（只摘那个字段）
     void scrubSnapshotSecrets()
-    // 只需在会话启动时执行一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (

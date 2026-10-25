@@ -6,7 +6,7 @@
  */
 import JSZip from 'jszip'
 import { importDoc } from '@/db/docs'
-import { saveBlob } from '@/lib/saveFile'
+import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { safeOutputName } from './outputName'
 
 /** 单个产物 */
@@ -32,9 +32,12 @@ export async function zipFiles(files: { name: string; blob: Blob }[]): Promise<B
 }
 
 /** 存到「下载/个人工作站」 */
-export async function exportToDownloads(out: ToolOutput, toast: (msg: string) => void): Promise<void> {
+export async function exportToDownloads(
+  out: ToolOutput,
+  toast: (msg: string, action?: { label: string; run: () => void }) => void,
+): Promise<void> {
   const where = await saveBlob(out.blob, safeOutputName(out.filename))
-  toast(`已保存 → ${where}`)
+  toast(`已保存 → ${where}`, openSavedAction())
 }
 
 /** 进文档库（PDF 产物；同内容重复导入会被去重，提示里说清楚） */

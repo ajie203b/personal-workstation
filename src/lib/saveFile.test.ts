@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   native: false,
   path: '',
+  opened: false,
   saved: null as { dataBase64: string; fileName: string; mimeType: string } | null,
 }))
 
@@ -14,14 +15,18 @@ vi.mock('@capacitor/core', () => ({
       state.saved = opts
       return { path: state.path, uri: 'content://test' }
     },
+    openSavedLocation: async () => {
+      state.opened = true
+    },
   }),
 }))
 
-import { blobToBase64, saveBlob } from './saveFile'
+import { blobToBase64, openSavedAction, saveBlob } from './saveFile'
 
 beforeEach(() => {
   state.native = false
   state.path = ''
+  state.opened = false
   state.saved = null
   URL.createObjectURL = vi.fn(() => 'blob:test')
   URL.revokeObjectURL = vi.fn()
@@ -68,5 +73,19 @@ describe('saveBlob · 安卓壳', () => {
       fileName: '书名.epub',
       mimeType: 'application/epub+zip',
     })
+  })
+})
+
+describe('openSavedAction', () => {
+  it('网页端没有可打开的下载目录，不显示按钮', () => {
+    expect(openSavedAction()).toBeUndefined()
+  })
+
+  it('安卓壳点按钮会调用原生打开目录', () => {
+    state.native = true
+    const action = openSavedAction()
+    expect(action?.label).toBe('打开位置')
+    action?.run()
+    expect(state.opened).toBe(true)
   })
 })

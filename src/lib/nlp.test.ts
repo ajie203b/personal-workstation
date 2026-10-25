@@ -398,3 +398,103 @@ describe('周区间', () => {
     expect(parse('周六到周日 兼职')).toMatchObject({ repeat: 'weekly', repeatDays: [0, 6] })
   })
 })
+
+/* ---------------- v3.4.7：频次写法、相对日期扩展、周末/月底 ---------------- */
+
+describe('频次写法（每周N次 / 一天N次）', () => {
+  it('每周3次 跑步 → 每周 ×3，不是「每周三」', () => {
+    const p = parse('每周3次 跑步')
+    expect(p).toMatchObject({ title: '跑步', repeat: 'weekly', repeatCount: 3 })
+    expect(p.repeatDays).toBeUndefined()
+  })
+  it('一周三次 健身', () => {
+    expect(parse('一周三次 健身')).toMatchObject({ repeat: 'weekly', repeatCount: 3, title: '健身' })
+  })
+  it('连写「每周三次喝水」', () => {
+    expect(parse('每周三次喝水')).toMatchObject({ title: '喝水', repeat: 'weekly', repeatCount: 3 })
+  })
+  it('一天三次 喝药 → 每天 ×3', () => {
+    expect(parse('一天三次 喝药')).toMatchObject({ title: '喝药', repeat: 'daily', repeatCount: 3 })
+  })
+  it('每周三 打三次卡：星期与次数各归各位', () => {
+    expect(parse('每周三 打三次卡')).toMatchObject({ title: '打卡', repeat: 'weekly', repeatDays: [3], repeatCount: 3 })
+  })
+  it('上周三次会议（过去引用）不产生重复规则', () => {
+    expect(parse('上周三次会议').repeat).toBeUndefined()
+  })
+})
+
+describe('相对日期扩展', () => {
+  it('两周后 复查 → 11-03', () => {
+    expect(parse('两周后 复查')).toMatchObject({ title: '复查', due: '2026-11-03' })
+  })
+  it('一个月后 复盘 → 11-20（同一天）', () => {
+    expect(parse('一个月后 复盘')).toMatchObject({ due: '2026-11-20' })
+  })
+  it('半年后 体检 → 2027-04-20', () => {
+    expect(parse('半年后 体检')).toMatchObject({ due: '2027-04-20' })
+  })
+  it('一年后 续费 → 2027-10-20', () => {
+    expect(parse('一年后 续费')).toMatchObject({ due: '2027-10-20' })
+  })
+  it('两周后 8点 开会 → 那天 08:00，不被当前时刻推成晚上', () => {
+    expect(parse('两周后 8点 开会')).toMatchObject({ due: '2026-11-03', dueTime: '08:00' })
+  })
+})
+
+describe('月底 / 月初 / 周末', () => {
+  it('月底 交房租 → 10-31', () => {
+    expect(parse('月底 交房租')).toMatchObject({ title: '交房租', due: '2026-10-31' })
+  })
+  it('月底前交房租 → 吃掉「前」', () => {
+    expect(parse('月底前交房租')).toMatchObject({ title: '交房租', due: '2026-10-31' })
+  })
+  it('10月底 交报告 → 10-31', () => {
+    expect(parse('10月底 交报告')).toMatchObject({ title: '交报告', due: '2026-10-31' })
+  })
+  it('下个月底 总结 → 11-30（11 月没有 31 号收敛到月末）', () => {
+    expect(parse('下个月底 总结')).toMatchObject({ title: '总结', due: '2026-11-30' })
+  })
+  it('月初 交房租：本月已过 → 11-01', () => {
+    expect(parse('月初 交房租')).toMatchObject({ due: '2026-11-01' })
+  })
+  it('下个月 复查 → 11-20（同一天）', () => {
+    expect(parse('下个月 复查')).toMatchObject({ title: '复查', due: '2026-11-20' })
+  })
+  it('周末 爬山 → 本周六 10-24', () => {
+    expect(parse('周末 爬山')).toMatchObject({ title: '爬山', due: '2026-10-24' })
+  })
+  it('下周末 提交 → 10-31', () => {
+    expect(parse('下周末 提交')).toMatchObject({ due: '2026-10-31' })
+  })
+  it('每周末 打扫 → weekly [0,6]', () => {
+    expect(parse('每周末 打扫')).toMatchObject({ title: '打扫', repeat: 'weekly', repeatDays: [0, 6], due: '2026-10-24' })
+  })
+  it('每月底 对账 → monthly 31（推进时自动收敛到当月最后一天）', () => {
+    expect(parse('每月底 对账')).toMatchObject({ repeat: 'monthly', repeatMonthDay: 31, due: '2026-10-31' })
+  })
+})
+
+describe('无「每」前缀的连写多天', () => {
+  it('周一三五 跑步 → weekly [1,3,5]', () => {
+    expect(parse('周一三五 跑步')).toMatchObject({ title: '跑步', repeat: 'weekly', repeatDays: [1, 3, 5], due: '2026-10-21' })
+  })
+  it('周六日 兼职 → weekly [0,6]', () => {
+    expect(parse('周六日 兼职')).toMatchObject({ repeat: 'weekly', repeatDays: [0, 6] })
+  })
+  it('周三日语课 不误判：还是单个周三', () => {
+    const p = parse('周三日语课')
+    expect(p.repeat).toBeUndefined()
+    expect(p.due).toBe('2026-10-21')
+    expect(p.title).toBe('日语课')
+  })
+})
+
+describe('X点整与习惯动词', () => {
+  it('晚上9点整 跨年 → 21:00，标题不带「整」', () => {
+    expect(parse('晚上9点整 跨年')).toMatchObject({ title: '跨年', dueTime: '21:00' })
+  })
+  it('冥想20次 → 猜成每天打卡', () => {
+    expect(parse('冥想20次')).toMatchObject({ repeat: 'daily', repeatCount: 20, guesses: ['每天'] })
+  })
+})

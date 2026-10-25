@@ -34,7 +34,7 @@ import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 import { uid } from '@/lib/id'
 import { openExternal } from '@/lib/links'
-import { saveBlob } from '@/lib/saveFile'
+import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { addTask } from '@/db/tasks'
 import { db, type QrHistoryRow } from '@/db/db'
 import {
@@ -209,7 +209,7 @@ export function QrPage() {
     try {
       const blob = await renderQrBlob(content, style, size, ext)
       const where = await saveBlob(blob, qrFileName(ext))
-      toast(`已导出 ${label} → ${where}`)
+      toast(`已导出 ${label} → ${where}`, openSavedAction())
     } catch (e) {
       toast(`导出失败：${e instanceof Error ? e.message : '渲染出错'}`)
     } finally {
@@ -230,7 +230,7 @@ export function QrPage() {
       } catch {
         // WebView / 非安全上下文不支持写图片，回退成存文件（别让「复制」静默失败）
         const where = await saveBlob(blob, qrFileName('png'))
-        toast(`当前环境不支持复制图片，已改为保存 → ${where}`)
+        toast(`当前环境不支持复制图片，已改为保存 → ${where}`, openSavedAction())
       }
     } catch (e) {
       toast(`生成失败：${e instanceof Error ? e.message : '渲染出错'}`)

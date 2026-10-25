@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { CheckCircle2, Flame, Highlighter, Timer } from 'lucide-react'
 import { db } from '@/db/db'
@@ -63,11 +63,11 @@ export function StatsPage() {
   const doneDays = useMemo(() => new Set(Object.keys(dayCounts).filter((k) => dayCounts[k].tasks > 0)), [dayCounts])
   const streak = useMemo(() => calcStreak(doneDays), [doneDays])
 
-  // 热力图：最近 26 周
+  // 热力图：最近 13 周（含本周），宽度固定在一屏内，始终落在最近的数据上
   const weeks = useMemo(() => {
     const end = mondayOf(new Date())
     const cols: { key: string; count: number; date: Date }[][] = []
-    for (let w = 25; w >= 0; w--) {
+    for (let w = 12; w >= 0; w--) {
       const start = new Date(end)
       start.setDate(start.getDate() - w * 7)
       const col: { key: string; count: number; date: Date }[] = []
@@ -83,6 +83,18 @@ export function StatsPage() {
   }, [dayCounts, metric])
 
   const maxCount = useMemo(() => Math.max(1, ...weeks.flat().map((c) => c.count)), [weeks])
+  const todayKey = toDateStr(new Date())
+  // 按行铺进 CSS Grid：每行「周几 + 13 个格子」，格子用 aspect-square 自适应屏宽
+  const heatRows = useMemo(() => Array.from({ length: 7 }, (_, d) => weeks.map((col) => col[d])), [weeks])
+  const heatMonths = useMemo(() => {
+    let prev = -1
+    return weeks.map((col) => {
+      const month = col[0].date.getMonth()
+      if (month === prev) return ''
+      prev = month
+      return `${month + 1}月`
+    })
+  }, [weeks])
 
   // 本周 vs 上周 / 本月 vs 上月（周一起算）
   const compare = useMemo(() => {
@@ -167,19 +179,20 @@ export function StatsPage() {
         </div>
       </div>
 
-      {/* 概览四卡：手机上一条横滑，第一屏让给图表 */}
-      <div className="-mx-4 px-4 md:mx-0 md:px-0 flex gap-3 overflow-x-auto pb-1 snap-x md:grid md:grid-cols-4 md:overflow-visible">
-        <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<CheckCircle2 size={16} />} label="累计完成" value={doneTasks.length} unit="件" /></div>
-        <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<Flame size={16} />} label="连续打卡" value={streak} unit="天" accent="var(--p0)" /></div>
-        <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<Timer size={16} />} label="专注总时长" value={Math.round((totalFocus / 60) * 10) / 10} unit="小时" accent="var(--primary)" decimals={1} /></div>
-        <div className="snap-start shrink-0 w-[150px] md:w-auto"><StatCard icon={<Highlighter size={16} />} label="批注总数" value={annotations.length} unit="条" /></div>
+      {/* 概览四卡：手机上一屏四列，不横滑 */}
+      <div className="grid grid-cols-4 gap-2 md:gap-3">
+        <StatCard icon={<CheckCircle2 size={16} />} label="累计完成" shortLabel="完成" value={doneTasks.length} unit="件" />
+        <StatCard icon={<Flame size={16} />} label="连续打卡" shortLabel="打卡" value={streak} unit="天" accent="var(--p0)" />
+        <StatCard icon={<Timer size={16} />} label="专注总时长" shortLabel="专注" value={Math.round((totalFocus / 60) * 10) / 10} unit="小时" accent="var(--primary)" decimals={1} />
+        <StatCard icon={<Highlighter size={16} />} label="批注总数" shortLabel="批注" value={annotations.length} unit="条" />
       </div>
 
-      {/* 热力图 */}
+      {/* 热力图：近 13 周固定铺满一屏，今天用双描边点出来 */}
       <div className="card p-4">
         <div className="flex items-center gap-3 mb-3">
-          <h2 className="text-[14px] font-semibold">近半年热力图</h2>
-          <div className="ml-auto flex gap-1">
+          <h2 className="text-[14px] font-semibold whitespace-nowrap">近 13 周</h2>
+          <p className="hidden sm:block text-[10.5px] text-on-surface-2 truncate">颜色越深，当天{METRIC_LABEL[metric] === '专注' ? '专注分钟' : METRIC_LABEL[metric] + '数'}越多</p>
+          <div className="ml-auto flex gap-1 shrink-0">
             {(['tasks', 'focus', 'notes'] as Metric[]).map((m) => (
               <button
                 key={m}
@@ -194,37 +207,66 @@ export function StatsPage() {
             ))}
           </div>
         </div>
-        <div className="overflow-x-auto pb-1">
-          <div className="flex gap-[3px] w-max">
-            <div className="flex flex-col gap-[3px] pt-0 mr-1 text-[9px] text-on-surface-2 select-none">
-              {['一', '二', '三', '四', '五', '六', '日'].map((w, i) => (
-                <span key={i} className="h-[13px] leading-[13px]">{w}</span>
-              ))}
-            </div>
-            {weeks.map((col, wi) => (
-              <div
-                key={wi}
-                className="flex flex-col gap-[3px]"
-                style={{ animation: `fade-in var(--dur-2) var(--ease-standard) both`, animationDelay: `${Math.min(wi * 14, 340)}ms` }}
-              >
-                {col.map((cell) => (
-                  <span
-                    key={cell.key}
-                    title={`${fmtListDate(cell.key)} · ${cell.count} ${METRIC_LABEL[metric]}`}
-                    className="w-[13px] h-[13px] rounded-[3px] shrink-0 transition-[background] duration-200"
-                    style={{
-                      background:
-                        cell.count === 0
-                          ? 'var(--surface-3)'
-                          : `color-mix(in srgb, var(--primary) ${Math.round(20 + (cell.count / maxCount) * 80)}%, transparent)`,
-                    }}
-                  />
-                ))}
-              </div>
+        <div className="mx-auto w-full max-w-[360px]">
+          <div className="grid gap-[3px]" style={{ gridTemplateColumns: 'auto repeat(13, minmax(0, 1fr))' }}>
+            <span aria-hidden />
+            {heatMonths.map((label, i) => (
+              <span key={i} className="h-3 text-[9px] leading-3 text-on-surface-2/70 text-center truncate select-none">{label}</span>
+            ))}
+            {heatRows.map((row, ri) => (
+              <Fragment key={ri}>
+                <span className="flex items-center justify-end pr-0.5 text-[9px] leading-none text-on-surface-2/70 select-none">
+                  {['一', '二', '三', '四', '五', '六', '日'][ri]}
+                </span>
+                {row.map((cell) => {
+                  const isToday = cell.key === todayKey
+                  const isFuture = cell.date.getTime() > Date.now()
+                  return (
+                    <span
+                      key={cell.key}
+                      title={`${isToday ? '今天 · ' : ''}${fmtListDate(cell.key)} · ${cell.count} ${METRIC_LABEL[metric]}`}
+                      aria-label={`${isToday ? '今天，' : ''}${fmtListDate(cell.key)}，${cell.count} ${METRIC_LABEL[metric]}`}
+                      className="aspect-square min-w-0 rounded-[3px] transition-[background,box-shadow] duration-200"
+                      style={{
+                        background: isToday && cell.count === 0
+                          ? 'var(--primary-soft)'
+                          : cell.count === 0
+                            ? 'var(--surface-3)'
+                            : `color-mix(in srgb, var(--primary) ${Math.round(20 + (cell.count / maxCount) * 80)}%, transparent)`,
+                        opacity: isFuture ? 0.35 : 1,
+                        boxShadow: isToday ? '0 0 0 2px var(--surface), 0 0 0 3.5px var(--primary)' : undefined,
+                        position: isToday ? 'relative' : undefined,
+                        zIndex: isToday ? 1 : undefined,
+                      }}
+                    />
+                  )
+                })}
+              </Fragment>
             ))}
           </div>
         </div>
-        <p className="text-[11px] text-on-surface-2 mt-2">颜色越深，当天{METRIC_LABEL[metric] === '专注' ? '专注分钟' : METRIC_LABEL[metric] + '数'}越多</p>
+        <div className="mx-auto mt-2.5 flex max-w-[360px] flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-on-surface-2">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="inline-block w-2.5 h-2.5 rounded-[2px]"
+              style={{ background: 'var(--primary-soft)', boxShadow: '0 0 0 1px var(--surface), 0 0 0 2px var(--primary)' }}
+            />
+            今天
+          </span>
+          <span className="inline-flex items-center gap-1 ml-auto">
+            少
+            {[0, 0.25, 0.5, 0.75, 1].map((p) => (
+              <span
+                key={p}
+                aria-hidden
+                className="inline-block w-2.5 h-2.5 rounded-[2px]"
+                style={{ background: p === 0 ? 'var(--surface-3)' : `color-mix(in srgb, var(--primary) ${20 + p * 80}%, transparent)` }}
+              />
+            ))}
+            多
+          </span>
+        </div>
       </div>
 
       {/* 对比卡：周 / 月由顶部开关决定。切范围时柱子就地变形（改高度做过渡），不重挂重画 */}
@@ -344,17 +386,20 @@ function useCountUp(target: number, decimals = 0): string {
   return val.toFixed(decimals)
 }
 
-function StatCard({ icon, label, value, unit, accent, decimals = 0 }: { icon: React.ReactNode; label: string; value: number; unit: string; accent?: string; decimals?: number }) {
+function StatCard({ icon, label, shortLabel, value, unit, accent, decimals = 0 }: {
+  icon: React.ReactNode; label: string; shortLabel: string; value: number; unit: string; accent?: string; decimals?: number
+}) {
   const shown = useCountUp(value, decimals)
   return (
-    <div className="card p-4 flex flex-col gap-1.5 h-full">
-      <span className="inline-flex items-center gap-1.5 text-[12px] text-on-surface-2">
-        <span style={accent ? { color: accent } : undefined}>{icon}</span>
-        {label}
+    <div className="card p-2 md:p-4 flex flex-col gap-1 md:gap-1.5 h-full min-w-0">
+      <span className="inline-flex items-center gap-1 md:gap-1.5 min-w-0 text-[10px] md:text-[12px] leading-tight text-on-surface-2">
+        <span className="shrink-0 [&_svg]:size-3 md:[&_svg]:size-4" style={accent ? { color: accent } : undefined}>{icon}</span>
+        <span className="md:hidden truncate">{shortLabel}</span>
+        <span className="hidden md:inline truncate">{label}</span>
       </span>
-      <span className="text-[24px] font-bold tabular-nums leading-none">
+      <span className="text-[17px] sm:text-[20px] md:text-[24px] font-bold tabular-nums leading-none whitespace-nowrap">
         {shown}
-        <span className="text-[12px] font-normal text-on-surface-2 ml-1">{unit}</span>
+        <span className="text-[9px] md:text-[12px] font-normal text-on-surface-2 ml-1">{unit}</span>
       </span>
     </div>
   )

@@ -180,6 +180,10 @@ export function PdfReader({
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([]) // 每页 高/宽
   const [containerW, setContainerW] = useState(0)
+  // 与排版弹层一致：<768 视为手机，按屏宽适配并隐藏宽度设置；桌面窗口收起侧栏后仍保留滑块
+  const [phoneLayout, setPhoneLayout] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  )
   const [center, setCenter] = useState(1) // 当前视口中心页
   const [flashId, setFlashId] = useState<string | null>(null)
   // 截图框选状态
@@ -221,8 +225,9 @@ export function PdfReader({
     return () => { alive = false }
   }, [hash, reloadKey])
 
-  // 正文宽度滑块同样作用于 PDF：100% 铺满画布，50% 收到一半；zoom 再在此之上倍乘
-  const widthRatio = Math.min(1, Math.max(0.5, (settings.widthPct ?? 72) / 100))
+  // 正文宽度滑块同样作用于 PDF：100% 铺满画布，50% 收到一半；zoom 再在此之上倍乘。
+  // 手机上不提供宽度设置，直接按屏宽适配；桌面保留按文档记忆的宽度。
+  const widthRatio = phoneLayout ? 1 : Math.min(1, Math.max(0.5, (settings.widthPct ?? 72) / 100))
   const fitW = Math.max(180, (containerW - 24) * widthRatio)
   const dispW = Math.max(180, Math.min(Math.round(fitW * zoom), 2600))
   // 页宽很大时按比例降低画布 DPR，避免 2600px 宽、dpr2 的 canvas 把手机内存和渲染拖垮
@@ -292,13 +297,35 @@ export function PdfReader({
       box.style.transformOrigin = 'top center'
       box.style.willChange = ''
     }
-    const anchor = zoomAnchor.current
     const el = scrollRef.current
-    if (!anchor || !el) return
-    zoomAnchor.current = null
-    const max = el.scrollHeight - el.clientHeight
-    el.scrollTop = Math.max(0, anchor.ratio * max)
+    if (!el) return
+    const anchor = zoomAnchor.current
+    if (anchor) {
+      zoomAnchor.current = null
+      const max = el.scrollHeight - el.clientHeight
+      el.scrollTop = Math.max(0, anchor.ratio * max)
+    }
+    // 放大后页宽超过屏幕时，横向落在页面正中，别一上来只看到左半页
+    el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2)
   }, [dispW])
+
+  // 首屏 containerW 可能先于页数/比例就绪：等页面真正撑开后再横向居中一次。
+  // 只跟 numPages / ratios / dispW 跑，用户自己横向拖动后不会被打断。
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !numPages) return
+    let raf1 = 0
+    let raf2 = 0
+    const center = () => { el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2) }
+    raf1 = requestAnimationFrame(() => {
+      center()
+      raf2 = requestAnimationFrame(center)
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [numPages, ratios, dispW, scrollRef])
 
   // 页宽变化后旧 canvas 先淡出成模糊占位，等新画布画完再淡入，避免硬闪
   useLayoutEffect(() => {
@@ -315,6 +342,15 @@ export function PdfReader({
     ro.observe(el)
     return () => ro.disconnect()
   }, [scrollRef])
+
+  // 横竖屏 / 桌面窗口缩放时同步手机/桌面排版
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const sync = () => setPhoneLayout(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
 
   const onLoad = useCallback(
     async (pdf: import('pdfjs-dist').PDFDocumentProxy) => {
@@ -645,7 +681,9 @@ export function PdfReader({
             onLoadError={(e) => setLoadError(e?.message || '文件可能已损坏，或格式不受支持')}
             loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13px]">正在载入 PDF…</div>}
             error={null}
-            className="flex flex-col items-center py-5 gap-5"
+            // min-w-full + w-max：页比屏幕窄时居中；放大到超出屏幕时整页铺开，
+            // 左侧不会因为 flex 居中而跑到不可滚动的负坐标里
+            className="flex flex-col items-center py-5 gap-5 min-w-full w-max"
             options={PDF_OPTIONS}
           >
         {numPages > 0 &&

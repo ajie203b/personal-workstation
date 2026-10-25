@@ -40,9 +40,27 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
   // 左滑删除：软删除 + 撤销（与详情里的删除走同一条路径）；把卡片交给碎沙动画
   const removeTask = (t: Task, source?: HTMLElement | null, offsetX?: number) => deleteTaskWithUndo(t, source, offsetX)
   const containerRef = useRef<HTMLUListElement>(null)
+  // 拖拽落位先改本地顺序，再后台落库：避免松手后先弹回旧位置、等 liveQuery 回来才跳过去
+  const [optimisticIds, setOptimisticIds] = useState<string[] | null>(null)
+  const skipFlip = useRef(false)
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  const orderedTasks = optimisticIds
+    ? [
+        ...optimisticIds.map((id) => byId.get(id)).filter((t): t is Task => !!t),
+        ...tasks.filter((t) => !optimisticIds.includes(t.id)),
+      ]
+    : tasks
   // 按键处理读最新数据，避免把 tasks 塞进依赖导致每帧重绑监听
-  const latest = useRef({ tasks, focusId })
-  latest.current = { tasks, focusId }
+  const latest = useRef({ tasks: orderedTasks, focusId })
+  latest.current = { tasks: orderedTasks, focusId }
+
+  useEffect(() => {
+    if (!optimisticIds) return
+    const current = tasks.map((t) => t.id)
+    const sameMembers = current.length === optimisticIds.length && current.every((id) => optimisticIds.includes(id))
+    if (!sameMembers) { setOptimisticIds(null); return }
+    if (current.every((id, i) => id === optimisticIds[i])) setOptimisticIds(null)
+  }, [tasks, optimisticIds])
 
   useEffect(() => {
     if (!focusId) return
@@ -55,8 +73,8 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
     if (focusId && tasks.length > 0 && !tasks.some((t) => t.id === focusId)) setFocusId(null)
   }, [tasks, focusId, setFocusId])
 
-  // 完成/删除后兄弟卡片滑到新位置，而不是瞬跳
-  useFlipList(containerRef, tasks)
+  // 完成/删除后兄弟卡片滑到新位置，而不是瞬跳；拖拽排序交给 dnd-kit，不叠 FLIP
+  useFlipList(containerRef, orderedTasks, skipFlip)
 
   useEffect(() => {
     /** 移动选中项；未选中时方向键都落到第一条 */
@@ -110,7 +128,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
     }
   }, [setFocusId, openDetail])
 
-  if (tasks.length === 0) {
+  if (orderedTasks.length === 0) {
     return (
       <EmptyState dense={denseEmpty} icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'}>
         <Button size="sm" variant="primary" magnetic onClick={() => openAddSheet({ tier: 'today', todayContext: true })}>
@@ -121,8 +139,21 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
   }
 
   return (
-    <DragSort ids={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}
-      onMove={(active, over) => { void reorderTasks(tasks.map(t => t.id), active, over).catch(() => useUi.getState().toast('排序保存失败，请重试')) }}>
+    <DragSort ids={orderedTasks.map(t => t.id)} strategy={verticalListSortingStrategy}
+      onMove={(active, over) => {
+        const ids = orderedTasks.map((t) => t.id)
+        const from = ids.indexOf(active)
+        const to = ids.indexOf(over)
+        if (from < 0 || to < 0) return
+        const next = [...ids]
+        next.splice(to, 0, next.splice(from, 1)[0])
+        skipFlip.current = true
+        setOptimisticIds(next)
+        void reorderTasks(ids, active, over).catch(() => {
+          setOptimisticIds(null)
+          useUi.getState().toast('排序保存失败，请重试')
+        })
+      }}>
     <ul
       ref={containerRef}
       scope-data={scope}
@@ -134,7 +165,7 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
       // 补位统一交给 FLIP
       className={cn('flex flex-col gap-2 rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary/30')}
     >
-      {tasks.map((t) => (
+      {orderedTasks.map((t) => (
         <DragSortItem key={t.id} id={t.id} as="li">
           <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={(source, offsetX) => void removeTask(t, source, offsetX)} disabled={t.status === 'done' || isFutureTask(t)}>
             <TaskItem task={t} focused={focusId === t.id} flip />

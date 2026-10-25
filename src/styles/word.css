@@ -117,3 +117,32 @@
   line-height: 1.65;
 }
 .flow-body .word-content .docx :is(td, th) p { margin-block: 0.2em; }
+
+/* 手机：Word 正文按屏宽排版，不再出现横向滚动。
+   固定宽度的表格 / 图片 / 文本框统一收到 100%，表格列宽均分，长串就地折行。 */
+@media (max-width: 767px) {
+  .flow-body .word-content {
+    max-width: 100%;
+    overflow-x: clip;
+    overflow-wrap: anywhere;
+  }
+  .flow-body .word-content .docx :is(article, section, div, p, table, figure, blockquote, img, svg, math, pre) {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .flow-body .word-content .docx :is(td, th, span) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .flow-body .word-content .docx table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed;
+  }
+  /* Word 会把列宽写成 pt；固定列宽会撑着表格继续变宽，手机上一律改回均分 */
+  .flow-body .word-content .docx colgroup col,
+  .flow-body .word-content .docx td,
+  .flow-body .word-content .docx th {
+    width: auto !important;
+  }
+}

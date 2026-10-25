@@ -41,7 +41,7 @@ const MATH_ATTRS = new Set(['mathvariant', 'mathcolor', 'mathbackground', 'displ
 
 const TAG_ATTRS: Record<string, Set<string>> = {
   a: new Set(['href', 'name', 'rel', 'target']),
-  img: new Set(['src', 'alt', 'width', 'height', 'loading', 'decoding']),
+  img: new Set(['src', 'alt', 'width', 'height', 'loading', 'decoding', 'data-epub-src']),
   td: new Set(['colspan', 'rowspan', 'align', 'valign', 'headers']),
   th: new Set(['colspan', 'rowspan', 'align', 'valign', 'scope', 'headers']),
   col: new Set(['span', 'width']),
@@ -167,6 +167,15 @@ function sanitizeSubtree(root: Element): void {
 }
 
 /**
+ * 就地清洗一个已解析的 DOM 容器，省掉「序列化后再解析」的那一遍。
+ * EPUB 每章本来就要解析一次 DOM，直接复用这棵树能少两次 parse。
+ */
+export function sanitizeHtmlBody(body: Element): string {
+  sanitizeSubtree(body)
+  return body.innerHTML
+}
+
+/**
  * 清洗一段 HTML 片段，返回可直接交给 dangerouslySetInnerHTML 的字符串。
  * 需要在有 DOM 的环境里调用（浏览器 / jsdom）。
  */
@@ -174,6 +183,5 @@ export function sanitizeHtml(html: string): string {
   if (!html) return ''
   // DOMParser 解析出的文档是惰性的：不会执行脚本、不会发起图片请求，适合用来做清洗
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  sanitizeSubtree(doc.body)
-  return doc.body.innerHTML
+  return sanitizeHtmlBody(doc.body)
 }

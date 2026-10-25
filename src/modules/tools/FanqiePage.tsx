@@ -32,6 +32,7 @@ import {
   type FanqieSearchItem,
 } from '@/lib/fanqieFqweb'
 import { buildFanqieEpub, buildFanqieTxt, importFanqieToDocs, sanitizeFilename, saveBlob } from '@/lib/fanqieExport'
+import { openSavedAction } from '@/lib/saveFile'
 import { openExternal } from '@/lib/links'
 import { isNative } from '@/lib/native'
 import { cn } from '@/lib/cn'
@@ -203,7 +204,7 @@ export function FanqiePage() {
       }
       const blob = format === 'txt' ? buildFanqieTxt(b, rows) : await buildFanqieEpub(b, rows)
       const where = await saveBlob(blob, `${sanitizeFilename(b.title)}.${format}`)
-      toast(`已导出 ${format.toUpperCase()}（${rows.length} 章）→ ${where}`)
+      toast(`已导出 ${format.toUpperCase()}（${rows.length} 章）→ ${where}`, openSavedAction())
     } catch (e) {
       toast(e instanceof Error ? e.message : '导出失败')
     } finally {

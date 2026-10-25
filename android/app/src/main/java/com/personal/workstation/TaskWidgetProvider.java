@@ -17,16 +17,13 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
- * 今日待办小组件（4x2 标准版 / 2x2 紧凑版）。
+ * 今日待办小组件（4x2 标准版 / 2x2 紧凑版）：只展示任务与右上角「+」，越极简越好。
  *
  * 小米负一屏主池只收录 MIUI 适配过的卡片；未收录的第三方卡片会显示「努力适配中」。
  * 本组件不再声明 miuiWidget，统一走系统「安卓小组件」入口，避免那个占位提示。
@@ -46,7 +43,6 @@ public class TaskWidgetProvider extends AppWidgetProvider {
 
     private static final int COLOR_TEXT = Color.parseColor("#201F1D");
     private static final int COLOR_MUTED = Color.parseColor("#8B887F");
-    private static final int COLOR_ACCENT = Color.parseColor("#2C55B8");
     private static final int COLOR_DANGER = Color.parseColor("#E5484D");
     private static final int COLOR_WARN = Color.parseColor("#B7791F");
 
@@ -142,72 +138,44 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         boolean hasPendingAdds = TaskWidgetStore.readArray(context, TaskWidgetStore.KEY_PENDING_ADDS).length() > 0;
 
         if ((raw == null || raw.isEmpty()) && !hasPendingAdds) {
-            views.setTextViewText(R.id.widget_meta, "打开应用同步");
-            views.setTextViewText(R.id.widget_empty, "打开应用后自动同步今日待办");
-            views.setTextColor(R.id.widget_empty, COLOR_MUTED);
-            views.setViewVisibility(R.id.widget_tasks, View.GONE);
-            views.setViewVisibility(R.id.widget_empty, View.VISIBLE);
+            showHint(views, "打开应用后自动同步待办");
             return views;
         }
 
-        JSONObject root = null;
+        JSONArray payloadTasks = null;
         if (raw != null && !raw.isEmpty()) {
             try {
-                root = new JSONObject(raw);
+                payloadTasks = new JSONObject(raw).optJSONArray("tasks");
             } catch (JSONException ignored) {
-                root = null;
+                payloadTasks = null;
             }
         }
-        if (root == null) {
+        if (payloadTasks == null) {
             if (!hasPendingAdds) {
-                views.setTextViewText(R.id.widget_meta, "打开应用同步");
-                views.setTextViewText(R.id.widget_empty, "待办数据格式异常，打开应用后会重新同步");
-                views.setTextColor(R.id.widget_empty, COLOR_MUTED);
-                views.setViewVisibility(R.id.widget_tasks, View.GONE);
-                views.setViewVisibility(R.id.widget_empty, View.VISIBLE);
+                showHint(views, "待办数据格式异常，打开应用后会重新同步");
                 return views;
             }
-            root = new JSONObject();
-            try {
-                root.put("total", 0);
-                root.put("done", 0);
-                root.put("date", "");
-                root.put("tasks", new JSONArray());
-            } catch (JSONException ignored) { /* 固定字段不会失败 */ }
+            payloadTasks = new JSONArray();
         }
 
         try {
-            JSONObject display = mergePending(context, root);
-            String date = display.optString("date", "");
-            int total = display.optInt("total", 0);
-            int done = display.optInt("done", 0);
-            JSONArray tasks = display.optJSONArray("tasks");
-            int taskCount = tasks == null ? 0 : tasks.length();
-
-            views.setTextViewText(R.id.widget_date, date);
-            String meta = total + " 件待办";
-            if (done > 0) meta += " · 已完成 " + done;
-            views.setTextViewText(R.id.widget_meta, meta);
-            views.setTextColor(R.id.widget_meta, COLOR_ACCENT);
-
+            JSONArray tasks = mergePending(context, payloadTasks);
+            int taskCount = tasks.length();
             int visible = 0;
             for (int i = 0; i < rowIds.length; i++) {
                 if (i < taskCount && i < maxRows) {
                     JSONObject task = tasks.optJSONObject(i);
                     if (task != null) {
                         String title = task.optString("title", "");
-                        String time = task.optString("time", "");
                         boolean overdue = task.optBoolean("overdue", false);
                         boolean pending = task.optBoolean("pending", false);
                         int priority = task.optInt("priority", 3);
                         int count = task.optInt("count", 0);
                         int countTotal = task.optInt("total", 0);
 
-                        // 打卡任务显示 2/3，普通任务显示时间；两者都有时时间在前
-                        String suffix = countTotal > 1 ? count + "/" + countTotal : "";
-                        String head = time.isEmpty() ? "" : time + "  ";
-                        String line = head + title + (suffix.isEmpty() ? "" : "  " + suffix);
-                        views.setTextViewText(textIds[i], line);
+                        // 打卡任务补一个 2/3，普通任务只显示标题
+                        String suffix = countTotal > 1 ? "  " + count + "/" + countTotal : "";
+                        views.setTextViewText(textIds[i], title + suffix);
                         views.setTextColor(
                             textIds[i],
                             overdue || priority == 0 ? COLOR_DANGER : priority == 1 ? COLOR_WARN : COLOR_TEXT
@@ -240,21 +208,24 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                 }
             }
 
-            boolean empty = visible == 0;
-            views.setViewVisibility(R.id.widget_tasks, empty ? View.GONE : View.VISIBLE);
-            views.setViewVisibility(R.id.widget_empty, empty ? View.VISIBLE : View.GONE);
-            if (empty) {
-                views.setTextViewText(R.id.widget_empty, "今天没有待办，享受此刻。");
-                views.setTextColor(R.id.widget_empty, COLOR_MUTED);
+            if (visible == 0) {
+                showHint(views, "暂无待办");
+            } else {
+                views.setViewVisibility(R.id.widget_tasks, View.VISIBLE);
+                views.setViewVisibility(R.id.widget_empty, View.GONE);
             }
         } catch (JSONException e) {
-            views.setTextViewText(R.id.widget_meta, "打开应用同步");
-            views.setTextViewText(R.id.widget_empty, "待办数据格式异常，打开应用后会重新同步");
-            views.setTextColor(R.id.widget_empty, COLOR_MUTED);
-            views.setViewVisibility(R.id.widget_tasks, View.GONE);
-            views.setViewVisibility(R.id.widget_empty, View.VISIBLE);
+            showHint(views, "待办数据格式异常，打开应用后会重新同步");
         }
         return views;
+    }
+
+    /** 没有任务 / 没有快照时只显示一行提示，别让空白的小组件看起来坏了 */
+    private static void showHint(RemoteViews views, String hint) {
+        views.setViewVisibility(R.id.widget_tasks, View.GONE);
+        views.setViewVisibility(R.id.widget_empty, View.VISIBLE);
+        views.setTextViewText(R.id.widget_empty, hint);
+        views.setTextColor(R.id.widget_empty, COLOR_MUTED);
     }
 
     /**
@@ -263,22 +234,12 @@ public class TaskWidgetProvider extends AppWidgetProvider {
      * - 待勾选任务：普通任务直接消失；打卡任务先 +1，打满才消失
      * 这里只改 RemoteViews 的显示，不写 IndexedDB；等 App 启动后由 take/ack 并入。
      */
-    private static JSONObject mergePending(Context context, JSONObject root) throws JSONException {
-        JSONArray payloadTasks = root.optJSONArray("tasks");
+    private static JSONArray mergePending(Context context, JSONArray payloadTasks) throws JSONException {
         JSONArray pendingAdds = TaskWidgetStore.readArray(context, TaskWidgetStore.KEY_PENDING_ADDS);
         JSONArray pendingChecks = TaskWidgetStore.readArray(context, TaskWidgetStore.KEY_PENDING_CHECKS);
 
-        Set<String> payloadIds = new HashSet<>();
-        if (payloadTasks != null) {
-            for (int i = 0; i < payloadTasks.length(); i++) {
-                JSONObject task = payloadTasks.optJSONObject(i);
-                if (task != null) payloadIds.add(task.optString("id", ""));
-            }
-        }
-
         List<JSONObject> merged = new ArrayList<>();
         Set<String> seen = new HashSet<>();
-        int addedCount = 0;
         for (int i = 0; i < pendingAdds.length(); i++) {
             JSONObject add = pendingAdds.optJSONObject(i);
             if (add == null) continue;
@@ -287,27 +248,21 @@ public class TaskWidgetProvider extends AppWidgetProvider {
             JSONObject task = new JSONObject();
             task.put("id", id);
             task.put("title", add.optString("title", ""));
-            task.put("time", "");
             task.put("priority", 2);
             task.put("overdue", false);
             task.put("count", 0);
             task.put("total", 0);
             task.put("pending", true);
             merged.add(task);
-            if (!payloadIds.contains(id)) addedCount++;
         }
-        if (payloadTasks != null) {
-            for (int i = 0; i < payloadTasks.length(); i++) {
-                JSONObject task = payloadTasks.optJSONObject(i);
-                if (task == null) continue;
-                String id = task.optString("id", "");
-                if (id.isEmpty() || !seen.add(id)) continue;
-                merged.add(new JSONObject(task.toString()));
-            }
+        for (int i = 0; i < payloadTasks.length(); i++) {
+            JSONObject task = payloadTasks.optJSONObject(i);
+            if (task == null) continue;
+            String id = task.optString("id", "");
+            if (id.isEmpty() || !seen.add(id)) continue;
+            merged.add(new JSONObject(task.toString()));
         }
 
-        int done = root.optInt("done", 0);
-        int completed = 0;
         for (int i = 0; i < pendingChecks.length(); i++) {
             JSONObject check = pendingChecks.optJSONObject(i);
             if (check == null) continue;
@@ -327,23 +282,11 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                 task.put("count", count + 1);
             } else {
                 merged.remove(index);
-                done++;
-                completed++;
             }
         }
 
         JSONArray tasks = new JSONArray();
         for (JSONObject task : merged) tasks.put(task);
-
-        JSONObject out = new JSONObject();
-        String date = root.optString("date", "");
-        if (date.isEmpty()) {
-            date = new SimpleDateFormat("M月d日 E", Locale.CHINA).format(new Date());
-        }
-        out.put("date", date);
-        out.put("total", Math.max(0, root.optInt("total", 0) + addedCount - completed));
-        out.put("done", done);
-        out.put("tasks", tasks);
-        return out;
+        return tasks;
     }
 }

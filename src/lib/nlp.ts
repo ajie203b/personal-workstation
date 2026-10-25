@@ -90,6 +90,26 @@ export function parseQuickAdd(raw: string): ParsedTask {
     }
   }
 
+  // 频次写法先于周几抽取：「每周3次」「一周三次」是「每周 N 次」，
+  // 不先吃掉的话「每周三」会被下面的周几抽取当成本周三。
+  s = s.replace(/(?<![第这每上0-9零〇一二两三四五六七八九十])(?:每(?:个)?|一|1)(?:个)?\s*(?:周|星期|礼拜)(?:之)?内?\s*([0-9一二两三四五六七八九十]+)\s*(?:次|遍|回|轮)/g, (_m, n: string) => {
+    const c = cnToNumber(n)
+    if (c != null && c >= 1 && c <= 99 && !p.repeat) {
+      p.repeat = 'weekly'
+      p.repeatCount = c
+    }
+    return ' '
+  })
+  // 「一天三次」只比「每天三次」少个字，但「一天」不是重复词，不消费会混进标题
+  s = s.replace(/(?<![第这每上0-9零〇一二两三四五六七八九十])一天(?:之内)?\s*([0-9一二两三四五六七八九十]+)\s*(?:次|遍|回|轮)/, (_m, n: string) => {
+    const c = cnToNumber(n)
+    if (c != null && c >= 1 && c <= 99 && !p.repeat) {
+      p.repeat = 'daily'
+      p.repeatCount = c
+    }
+    return ' '
+  })
+
   // 星期先抽取，支持中文、数字、连写、分隔和重复前缀，避免与后面的钟点互相吞字。
   const wd = '[一二三四五六日天0-7]'
   const week = '(?:周|星期|礼拜)'
@@ -109,13 +129,23 @@ export function parseQuickAdd(raw: string): ParsedTask {
     p.due = nearestWeekdayDate(days)
     return ' '
   })
+  // 无「每」前缀的连写多天（「周一三五 跑步」「周六日 兼职」）：整体后面必须是空白/结尾，
+  // 「周三日语课」这类后接正文的不会误伤（凑不满两个星期字或不在边界）。
+  s = s.replace(new RegExp(`(?<![下本这])${week}([一二三四五六日天]{2,6})(?=\\s|$)`, 'g'), (_m, daysText: string) => {
+    const days = [...new Set(daysText.split('').map(cnWeekday))].sort((a, b) => a - b)
+    if (days.length < 2) return _m
+    p.repeat = 'weekly'
+    p.repeatDays = days
+    if (!p.due) p.due = nearestWeekdayDate(days)
+    return ' '
+  })
   s = s.replace(new RegExp(`(下下|下|这|本)?(?:个)?${week}\\s*(${wd})(之前|以前|前)?`, 'g'), (_m, prefix: string, day: string, deadline: string) =>
     ` ${prefix === '本' ? '这' : prefix || ''}周${['日', '一', '二', '三', '四', '五', '六'][cnWeekday(day)]}${deadline || ''} `)
   s = s.replace(/(大后天|后天|明天|明日|今天|今日)/g, ' $1 ')
 
   // 钟点先保护起来：三点二十分中的「二十分」不能被当成预计用时。
   const foundClocks: { hour: number; minute: number; period?: string; literal: boolean }[] = []
-  const clockRe = new RegExp(`(?<![第0-9零〇一二两三四五六七八九十])(${PERIOD_ALT}|早|晚)?\\s*(${NUMBER_WORD})(?:[点时](半|[一三1-3]刻|${NUMBER_WORD}分?)?|[:：](${NUMBER_WORD}))(?![0-9零〇一二两三四五六七八九十])`, 'g')
+  const clockRe = new RegExp(`(?<![第0-9零〇一二两三四五六七八九十])(${PERIOD_ALT}|早|晚)?\\s*(${NUMBER_WORD})(?:[点时](半|[一三1-3]刻|${NUMBER_WORD}分?)?|[:：](${NUMBER_WORD}))(?:整)?(?![0-9零〇一二两三四五六七八九十])`, 'g')
   s = s.replace(clockRe, (match, period: string | undefined, hourWord: string, minuteWord: string | undefined, colonMinute: string | undefined) => {
     const hour = cnToNumber(hourWord)
     const minute = colonMinute ? cnToNumber(colonMinute) : minuteWord === '半' ? 30
@@ -172,15 +202,22 @@ export function parseQuickAdd(raw: string): ParsedTask {
   const DATE_GLUE = [
     '今天|今日|明天|明日|后天|大后天',
     '[0-9一二两三四五六七八九十]+天[后後]',
+    '[0-9一二两三四五六七八九十]+个?(?:周|星期|礼拜)[后後]',
+    '[0-9一二两三四五六七八九十]+个?月[后後]',
+    '半个月[后後]|半年[后後]|一年[后後]',
     '下下周[一二三四五六日天](?!前)',
     '下周[一二三四五六日天](?!前)',
     '这(?:周|星期|礼拜)[一二三四五六日天]+(?![\\s一二三四五六日天前])',
     '每(?:周|星期|礼拜)[一二三四五六日天]+(?![\\s一二三四五六日天前])',
     '(?:周|星期|礼拜)[一二三四五六日天](?!前)',
+    '每(?:个)?周末|下周末|周末',
     '每(?:个)?月[0-9一二三四五六七八九十]{1,3}[日号]',
     '下(?:个)?月[0-9一二三四五六七八九十]{1,3}[日号]',
+    '[0-9一二两三四五六七八九十]{1,2}月[底末初](?:之前|以前|前)?',
+    '(?:每(?:个)?|下个?|本个?)?月[底末](?:之前|以前|前)?|(?:每(?:个)?|下个?|本个?)?月初',
+    '下个?月(?![0-9一二三四五六七八九十日号底末初])',
     '每天|每日',
-    '每周(?![一二三四五六日天])',
+    '每周(?![一二三四五六日天末])',
     '工作日',
   ].join('|')
   s = s.replace(new RegExp(`(^|\\s)(${DATE_GLUE})(?=[^\\s])`, 'g'), (_m, sp: string, tok: string) => `${sp}${tok} `)
@@ -228,10 +265,23 @@ export function parseQuickAdd(raw: string): ParsedTask {
     }
     return ' '
   })
+  // 「每周末」：周六周日都算；月底没有固定号，用 31 号（推进时会收敛到当月最后一天）
+  s = s.replace(/\s每(?:个)?周末(?=\s)/g, () => {
+    p.repeat = 'weekly'
+    p.repeatDays = [0, 6]
+    if (!p.due) p.due = nearestWeekdayDate([0, 6])
+    return ' '
+  })
+  s = s.replace(/\s每(?:个)?月([底末初])(?=\s)/g, (_m, which: string) => {
+    p.repeat = 'monthly'
+    p.repeatMonthDay = which === '初' ? 1 : 31
+    if (!p.due) p.due = nextMonthDay(p.repeatMonthDay)
+    return ' '
+  })
 
   // 只写了次数没写周期（「喝水8次」）：按每日打卡理解——写次数的人多半是想天天做。
   // 动词表挡住「提交3次表单」这类一次性动作，猜错也能在预览里看见「每天」这枚 chip。
-  if (p.repeatCount && !p.repeat && /(打卡|喝|练|背|跑|读|写|站|做|拉|弹|唱|俯卧撑|深蹲|单词)/.test(s)) {
+  if (p.repeatCount && !p.repeat && /(打卡|喝|练|背|跑|读|写|站|做|拉|弹|唱|俯卧撑|深蹲|单词|冥想|锻炼|运动|健身|复习|预习|记账|刷牙|散步|跳绳|拉伸|慢跑|吃药|服药|浇花|喂|拖地|护肤|称重|卷腹|开合跳|平板支撑)/.test(s)) {
     p.repeat = 'daily'
     p.guesses.push('每天')
   }
@@ -245,7 +295,7 @@ export function parseQuickAdd(raw: string): ParsedTask {
   const clocks: string[] = []
   // 一句里写了多个时间点（「8点、21点」）就按字面取，不把已过的那个推到现在之后：
   // 「明天 8点、21点 巡检」里的 8 点指的是明天，推成今晚 20:00 就错了
-  const hasDate = !!p.due || /今天|今日|明天|明日|后天|天[后後]|周[一二三四五六日天]|月.+[日号]|\d{1,4}[-/.]\d{1,2}/.test(s)
+  const hasDate = !!p.due || /今天|今日|明天|明日|后天|天[后後]|周[一二三四五六日天]|月.+[日号]|\d{1,4}[-/.]\d{1,2}|月[底末初]|周末|(?:周|星期|礼拜|个月|半年|一年)后/.test(s)
   for (const tm of foundClocks) {
     const mm = tm.minute
     const clock = resolveClock(tm.hour, mm, tm.period, nowMin, Boolean(p.repeat) || foundClocks.length > 1 || hasDate || tm.literal)
@@ -286,6 +336,30 @@ export function parseQuickAdd(raw: string): ParsedTask {
       },
     },
     {
+      // 「两周后 / 一个星期后」：按 7 天一周推
+      re: /\s([0-9一二两三四五六七八九十]+)个?(?:周|星期|礼拜)后(?=\s)/,
+      handle: (m, q) => {
+        const n = cnToNumber(m[1])
+        if (n != null && n > 0) q.due = addDaysStr(n * 7)
+      },
+    },
+    {
+      re: /\s半个月后(?=\s)/,
+      handle: (_m, q) => { q.due = addDaysStr(15) },
+    },
+    {
+      // 「一个月后 / 三个月后」：下（N 个）月同一天，日号超出当月收敛到月末
+      re: /\s([0-9一二两三四五六七八九十]+)个?月后(?=\s)/,
+      handle: (m, q) => {
+        const n = cnToNumber(m[1])
+        if (n != null && n > 0) q.due = monthDayIn(new Date(), n, new Date().getDate())
+      },
+    },
+    {
+      re: /\s(半年|一年)后(?=\s)/,
+      handle: (m, q) => { q.due = monthDayIn(new Date(), m[1] === '半年' ? 6 : 12, new Date().getDate()) },
+    },
+    {
       re: new RegExp(`\\s下下周([一二三四五六日天])${DEADLINE}(?=\\s)`),
       handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[1]), 2) },
     },
@@ -299,6 +373,15 @@ export function parseQuickAdd(raw: string): ParsedTask {
       handle: (m, q) => { q.due = thisWeekday(cnWeekday(m[1])) },
     },
     {
+      // 「下周末」= 下周六；「周末」= 还没到的最近一个周六
+      re: /\s下周末(?=\s)/,
+      handle: (_m, q) => { q.due = nextWeekday(6, 1) },
+    },
+    {
+      re: /\s周末(?=\s)/,
+      handle: (_m, q) => { q.due = nextWeekday(6, 0) },
+    },
+    {
       re: new RegExp(`\\s(?:周|星期|礼拜)([一二三四五六日天])${DEADLINE}(?=\\s)`),
       handle: (m, q) => { q.due = nextWeekday(cnWeekday(m[1]), 0) },
     },
@@ -309,6 +392,54 @@ export function parseQuickAdd(raw: string): ParsedTask {
         const day = cnToNumber(m[1])
         if (day == null || day < 1 || day > 31) return
         q.due = monthDayIn(new Date(), 1, day)
+      },
+    },
+    {
+      re: /\s下(?:个)?月[底末](?:之前|以前|前)?(?=\s)/,
+      handle: (_m, q) => { q.due = monthDayIn(new Date(), 1, 31) },
+    },
+    {
+      re: /\s下(?:个)?月[初](?=\s)/,
+      handle: (_m, q) => { q.due = monthDayIn(new Date(), 1, 1) },
+    },
+    {
+      // 「下个月」：下个月同一天，日号超出当月收敛到月末
+      re: /\s下(?:个)?月(?=\s)/,
+      handle: (_m, q) => { q.due = monthDayIn(new Date(), 1, new Date().getDate()) },
+    },
+    {
+      // 「10月底 / 五月末（前）」：那个月的最后一天，已过则顺延到明年同月
+      re: /\s([0-9一二两三四五六七八九十]{1,2})月[底末](?:之前|以前|前)?(?=\s)/,
+      handle: (m, q) => {
+        const mo = cnToNumber(m[1])
+        if (mo == null || mo < 1 || mo > 12) return
+        const y = new Date().getFullYear()
+        const cand = monthDayIn(new Date(y, mo - 1, 1), 0, 31)
+        q.due = cand < todayStr() ? monthDayIn(new Date(y + 1, mo - 1, 1), 0, 31) : cand
+      },
+    },
+    {
+      // 「10月初」：那个月的 1 号，已过则顺延到明年
+      re: /\s([0-9一二两三四五六七八九十]{1,2})月[初](?=\s)/,
+      handle: (m, q) => {
+        const mo = cnToNumber(m[1])
+        if (mo == null || mo < 1 || mo > 12) return
+        const y = new Date().getFullYear()
+        const cand = `${y}-${pad(String(mo))}-01`
+        q.due = cand < todayStr() ? `${y + 1}-${pad(String(mo))}-01` : cand
+      },
+    },
+    {
+      // 「月底 / 本月底（前）」：本月最后一天
+      re: /\s(?:本(?:个)?)?月[底末](?:之前|以前|前)?(?=\s)/,
+      handle: (_m, q) => { q.due = monthDayIn(new Date(), 0, 31) },
+    },
+    {
+      // 「月初 / 本月初」：本月 1 号已过就是下月 1 号
+      re: /\s(?:本(?:个)?)?月初(?=\s)/,
+      handle: (_m, q) => {
+        const n = new Date()
+        q.due = n.getDate() === 1 ? toDateStr(n) : monthDayIn(n, 1, 1)
       },
     },
     {

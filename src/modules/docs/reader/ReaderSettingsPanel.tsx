@@ -25,11 +25,32 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
   const [draggingWidth, setDraggingWidth] = useState(false)
   const widthDraftRef = useRef(settings.widthPct)
   const widthRaf = useRef(0)
+  // 字号/行距：连点时先更新面板数字，停手 140ms 再落库，避免每点一下整篇重排
+  const [fontDraft, setFontDraft] = useState(settings.fontSize)
+  const [leadingDraft, setLeadingDraft] = useState(settings.leading)
+  const fontTimer = useRef(0)
+  const leadingTimer = useRef(0)
 
   useEffect(() => {
     setWidthDraft(settings.widthPct)
     widthDraftRef.current = settings.widthPct
   }, [settings.widthPct])
+
+  useEffect(() => { setFontDraft(settings.fontSize) }, [settings.fontSize])
+  useEffect(() => { setLeadingDraft(settings.leading) }, [settings.leading])
+
+  const previewFont = (v: number) => {
+    const next = Math.min(32, Math.max(14, v))
+    setFontDraft(next)
+    window.clearTimeout(fontTimer.current)
+    fontTimer.current = window.setTimeout(() => updateSettings({ fontSize: next }), 140)
+  }
+  const previewLeading = (v: number) => {
+    const next = Math.min(2.2, Math.max(1.6, Math.round(v * 10) / 10))
+    setLeadingDraft(next)
+    window.clearTimeout(leadingTimer.current)
+    leadingTimer.current = window.setTimeout(() => updateSettings({ leading: next }), 140)
+  }
 
   useEffect(() => () => cancelAnimationFrame(widthRaf.current), [])
 
@@ -101,11 +122,12 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
           />
         ) : (
           <>
-            <Stepper label="字号" value={`${settings.fontSize}px`} onMinus={() => updateSettings({ fontSize: Math.max(14, settings.fontSize - 1) })} onPlus={() => updateSettings({ fontSize: Math.min(32, settings.fontSize + 1) })} />
-            <Stepper label="行距" value={settings.leading.toFixed(2)} onMinus={() => updateSettings({ leading: Math.max(1.6, Math.round((settings.leading - 0.1) * 10) / 10) })} onPlus={() => updateSettings({ leading: Math.min(2.2, Math.round((settings.leading + 0.1) * 10) / 10) })} />
+            <Stepper label="字号" value={`${fontDraft}px`} onMinus={() => previewFont(fontDraft - 1)} onPlus={() => previewFont(fontDraft + 1)} />
+            <Stepper label="行距" value={leadingDraft.toFixed(2)} onMinus={() => previewLeading(leadingDraft - 0.1)} onPlus={() => previewLeading(leadingDraft + 0.1)} />
           </>
         )}
-        <div>
+        {/* 手机端固定按屏幕宽度排版，宽度滑块只在桌面出现 */}
+        <div className="hidden md:block">
           <p className="text-[12px] font-medium text-on-surface-2 mb-1.5 flex items-center justify-between">
             <span>正文宽度</span>
             <span className="text-on-surface tabular-nums">{widthDraft}%</span>
@@ -134,10 +156,17 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
           </div>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] text-on-surface-2">排版按文档记忆，栏宽按设备记忆</p>
+          <p className="text-[11px] text-on-surface-2">
+            <span className="md:hidden">手机端按屏幕宽度排版</span>
+            <span className="hidden md:inline">排版按文档记忆，栏宽按设备记忆</span>
+          </p>
           <button
             type="button"
-            onClick={onResetLayout}
+            onClick={() => {
+              window.clearTimeout(fontTimer.current)
+              window.clearTimeout(leadingTimer.current)
+              onResetLayout()
+            }}
             className="shrink-0 text-[11px] font-medium text-primary hover:underline cursor-pointer"
           >
             重置布局

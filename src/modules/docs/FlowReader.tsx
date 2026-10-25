@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { Annotation, AnnotationTextAnchor, DocSettings } from '@/db/db'
@@ -51,18 +51,29 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   /** 正文图片点开看大图（Word 扫描件、截图缩略图都靠它看清） */
   const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null)
 
-  // 双指缩放 = 改字号：docx/epub/pptx/txt 与 Markdown 同一套手感
-  const [liveFont, setLiveFont] = useState(settings.fontSize)
+  // 双指缩放 = 改字号：手势中只写 CSS 变量，不触发 React 重渲染；松手才落库
+  const proseRef = useRef<HTMLDivElement>(null)
   const liveFontRef = useRef(settings.fontSize)
   const baseFontRef = useRef(settings.fontSize)
   const fontAnchor = useRef<{ el: HTMLElement; top: number } | null>(null)
+  const pinchTarget = useRef<HTMLElement | null>(null)
   useEffect(() => {
     liveFontRef.current = settings.fontSize
-    setLiveFont(settings.fontSize)
+    // 松手落库后全局变量已经等于新字号，撤掉可见章节上的临时覆盖
+    const target = pinchTarget.current
+    if (!target) return
+    target.style.removeProperty('--flow-font-size')
+    target.style.removeProperty('--word-font-scale')
+    pinchTarget.current = null
   }, [settings.fontSize])
 
   usePinch(scrollRef, {
     onStart: () => {
+      if (pinchTarget.current) {
+        pinchTarget.current.style.removeProperty('--flow-font-size')
+        pinchTarget.current.style.removeProperty('--word-font-scale')
+        pinchTarget.current = null
+      }
       baseFontRef.current = liveFontRef.current
       const c = scrollRef.current
       const segs = segRefs.current.filter(Boolean) as HTMLElement[]
@@ -70,13 +81,27 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       const cr = c.getBoundingClientRect()
       const hit = segs.find((el) => el.getBoundingClientRect().bottom > cr.top + 8) ?? segs[0]
       fontAnchor.current = hit ? { el: hit, top: hit.getBoundingClientRect().top - cr.top } : null
+      pinchTarget.current = hit ?? null
     },
     onScale: (ratio) => {
       const px = Math.round(Math.min(32, Math.max(14, baseFontRef.current * ratio)))
       liveFontRef.current = px
-      setLiveFont(px)
+      // 手势中只给当前可见章节改字号：其它章节保持旧值，不在每一帧整篇重排。
+      // 松手后 settings 更新，全局变量一次性落到所有章节。
+      const target = fontAnchor.current?.el ?? proseRef.current
+      if (!target) return
+      target.style.setProperty('--flow-font-size', `${px}px`)
+      target.style.setProperty('--word-font-scale', String(px / 16))
     },
-    onEnd: () => { onFontSizeChange?.(liveFontRef.current) },
+    onEnd: () => {
+      if (liveFontRef.current !== settings.fontSize) {
+        onFontSizeChange?.(liveFontRef.current)
+      } else if (pinchTarget.current) {
+        pinchTarget.current.style.removeProperty('--flow-font-size')
+        pinchTarget.current.style.removeProperty('--word-font-scale')
+        pinchTarget.current = null
+      }
+    },
   })
 
   useLayoutEffect(() => {
@@ -85,7 +110,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     if (!a || !c || !a.el.isConnected) return
     const cr = c.getBoundingClientRect()
     c.scrollTop += (a.el.getBoundingClientRect().top - cr.top) - a.top
-  }, [liveFont, scrollRef])
+  }, [settings.fontSize, scrollRef])
 
   useEffect(() => { onLoaded(flow.segments.length) }, [flow.segments.length, onLoaded])
 
@@ -166,10 +191,65 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     }
   }, [annotations, flow])
 
+  // EPUB 图片按需加载：只解压进入视口附近的图片，打开大书不再等全部资源
+  useEffect(() => {
+    const root = scrollRef.current
+    const resolve = flow.resolveImage
+    if (!root || !resolve) return
+    let alive = true
+    const load = async (img: HTMLImageElement) => {
+      const path = img.dataset.epubSrc
+      if (!path) return
+      img.removeAttribute('data-epub-src')
+      const url = await resolve(path)
+      if (!alive) return
+      if (url) img.src = url
+      else img.remove()
+    }
+    const imgs = [...root.querySelectorAll<HTMLImageElement>('img[data-epub-src]')]
+    if (!imgs.length) return
+    if (!('IntersectionObserver' in window)) {
+      for (const img of imgs) void load(img)
+      return
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        io.unobserve(entry.target)
+        void load(entry.target as HTMLImageElement)
+      }
+    }, { root, rootMargin: '800px 0px' })
+    for (const img of imgs) io.observe(img)
+    return () => {
+      alive = false
+      io.disconnect()
+    }
+  }, [flow, scrollRef])
+
+  // 章节闪烁不再重建整棵 DOM，只给目标节点加/摘类，避免打断已加载的图片
+  useEffect(() => {
+    if (flashSeg == null) return
+    const el = segRefs.current[flashSeg]
+    if (!el) return
+    el.classList.add('ann-flash', 'rounded-[10px]')
+    const t = window.setTimeout(() => el.classList.remove('ann-flash', 'rounded-[10px]'), 1600)
+    return () => {
+      window.clearTimeout(t)
+      el.classList.remove('ann-flash', 'rounded-[10px]')
+    }
+  }, [flashSeg])
+
   // 恢复进度：优先深度进度
   // layout effect 让定位发生在绘制这一帧之前（否则先闪一下顶部再瞬移）；
   // 进度是从库里异步读的、可能比正文晚到，所以没拿到目标前不能把自己标成已完成
   const didInit = useRef(false)
+  // 同一位置切换到另一篇文档时，组件会复用；恢复标记必须跟着新 flow 重置
+  useLayoutEffect(() => {
+    restoredRef.current = false
+    didInit.current = false
+    fontAnchor.current = null
+    pinchTarget.current = null
+  }, [flow])
   useLayoutEffect(() => {
     if (didInit.current) return
     const container = scrollRef.current
@@ -263,6 +343,23 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
 
   const themeCls = `theme-${settings.theme}`
 
+  // 字号/行距/主题变化只改外层 CSS 变量；这棵章节树保持引用不变，React 不会重建整篇 DOM
+  const segmentEls = useMemo(() => flow.segments.map((seg, i) => (
+    <section
+      key={i}
+      data-seg={i}
+      ref={(el) => { segRefs.current[i] = el }}
+      className={cn('flow-doc flow-seg', i > 0 && 'mt-10 pt-8 border-t border-outline/60')}
+    >
+      {flow.unit !== 'doc' && (
+        <h2 className="flow-seg-title">{seg.title}</h2>
+      )}
+      {/* seg.html 在 flowDoc 解析阶段已过 sanitizeHtml 白名单清洗（事件属性 / 脚本 / 危险协议都会被摘掉），
+          这里不要再拼接任何未经清洗的外部 HTML */}
+      <div className="flow-body" dangerouslySetInnerHTML={{ __html: seg.html }} />
+    </section>
+  )), [flow])
+
   return (
     <>
     {/* ref 必须挂在这个根节点上：滚动监听、进度上报、位置恢复、目录跳转全走 scrollRef，
@@ -275,6 +372,8 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
         const target = e.target as Element
         const img = target.closest?.('img')
         if (img) {
+          // 还没按需加载的 EPUB 图片只有一个透明占位，别拿它开大图
+          if (img.hasAttribute('data-epub-src')) return
           const src = img.getAttribute('src')
           if (src) {
             e.preventDefault()
@@ -289,38 +388,18 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       className={cn('h-full overflow-y-auto overscroll-contain', themeCls)}
     >
       <div
+        ref={proseRef}
         className="reader-prose mx-auto py-8 md:py-12"
-        style={{ ['--reader-width' as string]: `${settings.widthPct}%` }}
+        style={{
+          ['--reader-width' as string]: `${settings.widthPct}%`,
+          ['--flow-font-size' as string]: `${settings.fontSize}px`,
+          ['--flow-leading' as string]: String(settings.leading),
+          ['--word-font-scale' as string]: String(settings.fontSize / 16),
+          ['--word-leading' as string]: String(settings.leading),
+        }}
       >
         {flow.styles && <style>{flow.styles}</style>}
-        {flow.segments.map((seg, i) => (
-          <section
-            key={i}
-            data-seg={i}
-            ref={(el) => { segRefs.current[i] = el }}
-            className={cn(
-              'flow-doc flow-seg',
-              flashSeg === i && 'ann-flash rounded-[10px]',
-              i > 0 && 'mt-10 pt-8 border-t border-outline/60',
-            )}
-          >
-            {flow.unit !== 'doc' && (
-              <h2 className="flow-seg-title">{seg.title}</h2>
-            )}
-            {/* seg.html 在 flowDoc 解析阶段已过 sanitizeHtml 白名单清洗（事件属性 / 脚本 / 危险协议都会被摘掉），
-                这里不要再拼接任何未经清洗的外部 HTML */}
-            <div
-              className="flow-body"
-              style={{
-                fontSize: liveFont,
-                lineHeight: settings.leading,
-                ['--word-font-scale' as string]: liveFont / 16,
-                ['--word-leading' as string]: settings.leading,
-              }}
-              dangerouslySetInnerHTML={{ __html: seg.html }}
-            />
-          </section>
-        ))}
+        {segmentEls}
         <div className="h-24" />
       </div>
     </div>

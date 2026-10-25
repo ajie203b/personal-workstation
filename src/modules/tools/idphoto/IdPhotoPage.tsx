@@ -17,7 +17,7 @@ import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
-import { saveBlob } from '@/lib/saveFile'
+import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import {
   BUILTIN_SPECS,
   loadCustomSpecs,
@@ -262,7 +262,7 @@ export function IdPhotoPage() {
     if (!result) return
     try {
       const where = await saveBlob(result.blob, photoFilename(spec, spec.format === 'png' ? 'png' : 'jpg'))
-      toast(`证件照已保存 → ${where}`)
+      toast(`证件照已保存 → ${where}`, openSavedAction())
     } catch (e) {
       toast(e instanceof Error ? e.message : '保存失败')
     }
@@ -278,11 +278,11 @@ export function IdPhotoPage() {
       if (asPdf) {
         const pdf = await composeSheetPdf(jpg)
         const where = await saveBlob(new Blob([pdf], { type: 'application/pdf' }), `证件照排版_${spec.name}.pdf`)
-        toast(`排版 PDF 已保存 → ${where}`)
+        toast(`排版 PDF 已保存 → ${where}`, openSavedAction())
       } else {
         const withDpi = await applyJpegDpi(new Blob([jpg], { type: 'image/jpeg' }), 300)
         const where = await saveBlob(withDpi, `证件照排版_${spec.name}_6寸.jpg`)
-        toast(`排版照片已保存 → ${where}`)
+        toast(`排版照片已保存 → ${where}`, openSavedAction())
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : '导出失败')

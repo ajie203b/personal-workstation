@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件右上角「+」：浅主色圆角块，放大点击区域又不抢任务视线 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#D9E3F5" />
+            <corners android:radius="13dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#E8EEF9" />
+            <corners android:radius="13dp" />
+        </shape>
+    </item>
+</selector>

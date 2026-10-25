@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { Check, ChevronRight, Clock3, History, Keyboard, Plus, X } from 'lucide-react'
-import { IconDone } from '@/shared/icons'
-import { useAllAnnotations, useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
+import { ChevronRight, Clock3, History, Keyboard, Plus, X } from 'lucide-react'
+import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
-import { dueCards } from '@/lib/review'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { openDoc } from '@/shared/DeepLink'
@@ -14,7 +12,6 @@ import { GettingStarted } from './GettingStarted'
 import { prefersReducedMotion } from '@/lib/motion'
 import { useMagnetic } from '@/lib/useMagnetic'
 import { cn } from '@/lib/cn'
-import { Button } from '@/shared/ui/Button'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
 export function TodayPage() {
@@ -23,7 +20,11 @@ export function TodayPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
+  const toast = useUi((s) => s.toast)
   const addRef = useRef<HTMLButtonElement>(null)
+  const focusRef = useRef<HTMLDivElement>(null)
+  const jumpRaf = useRef(0)
+  const [rolling, setRolling] = useState(false)
   useMagnetic(addRef)
   // 任务「开始专注」深链：/today?focus-task=<id> → 番茄钟自动绑定
   const focusTaskParam = params.get('focus-task') ?? undefined
@@ -63,6 +64,49 @@ export function TodayPage() {
 
   const date = useMemo(() => new Date(), [today])
 
+  useEffect(() => () => cancelAnimationFrame(jumpRaf.current), [])
+
+  const roll = async () => {
+    if (rolling || !todayTasks.length) return
+    setRolling(true)
+    try {
+      await rolloverTasks(todayTasks)
+      toast(`已把 ${todayTasks.length} 件挪到明天`)
+    } catch {
+      toast('挪动失败，请重试')
+    } finally {
+      setRolling(false)
+    }
+  }
+
+  /**
+   * 圆环 → 番茄钟。番茄钟已完整在视口里就不动；
+   * 否则用缓出曲线滚过去，接近手指下滑的节奏，不瞬移。
+   */
+  const jumpToFocus = () => {
+    const el = focusRef.current
+    const scroller = document.getElementById('main-scroll')
+    if (!el || !scroller) return
+    const er = el.getBoundingClientRect()
+    const sr = scroller.getBoundingClientRect()
+    if (er.top >= sr.top && er.bottom <= sr.bottom) return
+    const centered = scroller.scrollTop + (er.top - sr.top) - Math.max(12, (scroller.clientHeight - er.height) / 2)
+    const target = Math.max(0, er.height < scroller.clientHeight ? centered : scroller.scrollTop + (er.top - sr.top) - 12)
+    const start = scroller.scrollTop
+    const delta = target - start
+    cancelAnimationFrame(jumpRaf.current)
+    if (prefersReducedMotion()) { scroller.scrollTop = target; return }
+    const duration = Math.min(860, Math.max(460, Math.abs(delta) * 0.72))
+    const t0 = performance.now()
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3)
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / duration)
+      scroller.scrollTop = start + delta * ease(p)
+      if (p < 1) jumpRaf.current = requestAnimationFrame(step)
+    }
+    jumpRaf.current = requestAnimationFrame(step)
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-2 pb-24 md:pb-14 flex flex-col gap-2.5 md:gap-4 cascade">
       <Milestone total={todayTasks.length} done={todayDone.length} />
@@ -75,7 +119,7 @@ export function TodayPage() {
             </h1>
           </div>
           {/* 手机：一枚小进度环顶替原来那 4 张数字卡（完成 3/8 一眼可见，不占一屏） */}
-          <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} className="md:hidden shrink-0 mb-0.5" />
+          <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} onClick={jumpToFocus} className="md:hidden shrink-0 mb-0.5" />
           <button
             ref={addRef}
             aria-label="添加任务"
@@ -101,9 +145,6 @@ export function TodayPage() {
         </p>
       </header>
 
-      {/* 今日回顾置顶（v3.1）：先看结论再看清单，手机上也不用滑到底才知道今天收成 */}
-      <TodayReview todayTasks={todayTasks} todayDone={todayDone} weekDone={weekDone} />
-
       <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 md:gap-4 items-start">
         {/* 今日任务 */}
         <section className="md:col-span-3 min-w-0">
@@ -111,6 +152,16 @@ export function TodayPage() {
             <h2 className="text-[15px] font-semibold">今日任务</h2>
             {todayDone.length > 0 && (
               <span className="text-[12px] text-ok font-medium">已完成 {todayDone.length}</span>
+            )}
+            {todayTasks.length > 0 && (
+              <button
+                type="button"
+                disabled={rolling}
+                onClick={() => void roll()}
+                className="ml-auto text-[11.5px] text-on-surface-2 hover:text-on-surface disabled:opacity-50 cursor-pointer"
+              >
+                {rolling ? '挪动中…' : '挪到明天'}
+              </button>
             )}
           </div>
           <TaskList
@@ -154,7 +205,7 @@ export function TodayPage() {
         {/* 侧栏卡片组：手机顺序按「此刻最想用的」排 —— 番茄钟 → 最近阅读，
             进度与键盘卡只在桌面出现（手机上进度环已经在标题旁） */}
         <aside className="md:col-span-2 flex flex-col gap-3 md:gap-4 min-w-0">
-          <div className="order-1 md:order-none min-w-0">
+          <div ref={focusRef} id="focus-timer" className="order-1 md:order-none min-w-0 scroll-mt-4">
             <FocusTimer initialTaskId={focusTaskParam} />
           </div>
 
@@ -182,9 +233,12 @@ export function TodayPage() {
 
 /**
  * 今日完成度小环：手机上一眼看到进度（不再写 3/8 的数字，环本身就是答案）。
+ * 点击它平滑滑到番茄钟——任务多时不用一路划下去找。
  * 环的进度用 stroke-dashoffset 过渡，减少动效时由全局兜底压平。
  */
-function ProgressRing({ done, total, className }: { done: number; total: number; className?: string }) {
+function ProgressRing({ done, total, onClick, className }: {
+  done: number; total: number; onClick: () => void; className?: string
+}) {
   // 今天一件都没有时不画环：0/0 的圆环看着像出错
   if (total === 0) return null
   const pct = done / total
@@ -192,8 +246,14 @@ function ProgressRing({ done, total, className }: { done: number; total: number;
   const C = 2 * Math.PI * R
   const full = done >= total
   return (
-    <div className={className} role="img" aria-label={`今日完成 ${done} / ${total}`} title={`今日完成 ${done} / ${total}`}>
-      <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`今日完成 ${done} / ${total}，跳到番茄钟`}
+      title="跳到番茄钟"
+      className={cn(className, 'cursor-pointer active:scale-95 transition-transform')}
+    >
+      <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90" aria-hidden>
         <circle cx="18" cy="18" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="3.2" />
         <circle
           cx="18" cy="18" r={R} fill="none"
@@ -204,7 +264,7 @@ function ProgressRing({ done, total, className }: { done: number; total: number;
           style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
         />
       </svg>
-    </div>
+    </button>
   )
 }
 
@@ -247,84 +307,6 @@ function KeyboardHint({ className }: { className?: string }) {
         </button>
       </div>
     </div>
-  )
-}
-
-/**
- * 今日回顾（置顶）：完成摘要 + 高亮复习入口 + 未完成顺延。
- * 合并了原来的「今日复习」小卡和页面底部的「今日回顾」，减少首屏高度。
- */
-function TodayReview({
-  todayTasks,
-  todayDone,
-  weekDone,
-}: {
-  todayTasks: import('@/db/db').Task[]
-  todayDone: import('@/db/db').Task[]
-  weekDone: number
-}) {
-  const navigate = useNavigate()
-  const anns = useAllAnnotations()
-  const due = useMemo(() => dueCards(anns, todayStr()).length, [anns])
-  const toast = useUi((s) => s.toast)
-  const [rolling, setRolling] = useState(false)
-
-  if (todayTasks.length === 0 && todayDone.length === 0 && due === 0) return null
-
-  const roll = async () => {
-    if (rolling) return
-    setRolling(true)
-    try {
-      await rolloverTasks(todayTasks)
-      toast(`已把 ${todayTasks.length} 件挪到明天`)
-    } catch {
-      toast('挪动失败，请重试')
-    } finally {
-      setRolling(false)
-    }
-  }
-
-  return (
-    <section className="card px-3.5 py-2.5 md:px-4 md:py-3">
-      <div className="flex items-center gap-2.5 flex-wrap">
-        <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-primary-soft text-primary shrink-0">
-          <IconDone size={17} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-x-2.5 gap-y-1 flex-wrap">
-            <h2 className="text-[13px] font-semibold">今日回顾</h2>
-            <span className="text-[11.5px] text-on-surface-2">
-              完成 <b className="text-ok font-semibold">{todayDone.length}</b> · 未完成{' '}
-              <b className="text-on-surface font-semibold">{todayTasks.length}</b> · 本周{' '}
-              <b className="text-on-surface font-semibold">{weekDone}</b>
-            </span>
-          </div>
-          {todayDone.length > 0 && (
-            <div className="hidden md:flex items-center gap-1.5 mt-1.5 overflow-x-auto whitespace-nowrap">
-              {todayDone.slice(0, 6).map((t) => (
-                <span key={t.id} className="inline-flex items-center gap-1 max-w-[180px] px-2 py-0.5 rounded-md bg-ok/10 text-[11px] text-ok">
-                  <Check size={12} className="shrink-0" aria-hidden />
-                  <span className="truncate">{t.title}</span>
-                </span>
-              ))}
-              {todayDone.length > 6 && <span className="text-[11px] text-on-surface-2 px-1">还有 {todayDone.length - 6} 件</span>}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-          {due > 0 && (
-            <Button size="sm" variant="outline" onClick={() => navigate('/review')}>
-              复习 {due}
-            </Button>
-          )}
-          {todayTasks.length > 0 && (
-            <Button size="sm" variant="outline" disabled={rolling} onClick={() => void roll()}>
-              {rolling ? '挪动中…' : '挪到明天'}
-            </Button>
-          )}
-        </div>
-      </div>
-    </section>
   )
 }
 

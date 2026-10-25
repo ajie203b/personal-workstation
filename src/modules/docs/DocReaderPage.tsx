@@ -24,7 +24,7 @@ import { PdfReader, type TocItem } from './PdfReader'
 import { FlowReader } from './FlowReader'
 import { parseFlowDoc, type FlowDoc } from './flowDoc'
 import { FLOW_KINDS, addBookmarkAt, locatorFor } from './reader/locator'
-import { useReadingPosition } from './reader/useReadingPosition'
+import { DEFAULT_SETTINGS, useReadingPosition } from './reader/useReadingPosition'
 import { useReaderLayout } from './reader/useReaderLayout'
 import { useDocAnnotations } from './reader/useDocAnnotations'
 import { HL_COLORS, type Selection } from './reader/types'
@@ -76,6 +76,18 @@ export function DocReaderPage() {
   /** 手机上收起阅读器顶栏（轻点正文切换），把纵向空间还给正文 */
   const [chromeHidden, setChromeHidden] = useState(false)
   const tapRef = useRef<{ x: number; y: number } | null>(null)
+  /** 重置布局：文档排版回到系统默认，同时恢复左右栏宽度与折叠状态；主题保持不变 */
+  const resetLayout = () => {
+    updateSettings({
+      fontSize: DEFAULT_SETTINGS.fontSize,
+      leading: DEFAULT_SETTINGS.leading,
+      widthPct: DEFAULT_SETTINGS.widthPct,
+      zoom: 1,
+    }, true)
+    resetReaderLayout()
+    toast('已恢复默认布局')
+  }
+
   const [leftTab, setLeftTab] = useState<'toc' | 'marks'>('toc')
   const [rightTab, setRightTab] = useState<'anns' | 'backlinks'>('anns')
   const [mobilePanel, setMobilePanel] = useState<'toc' | 'anns' | null>(null)
@@ -331,7 +343,7 @@ export function DocReaderPage() {
               settings={settings}
               updateSettings={updateSettings}
               onClose={() => setShowSettings(false)}
-              onResetLayout={resetReaderLayout}
+              onResetLayout={resetLayout}
             />
           )}
         </div>

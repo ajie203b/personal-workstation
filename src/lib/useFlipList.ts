@@ -14,6 +14,8 @@ import { prefersReducedMotion } from './motion'
 export function useFlipList<T extends HTMLElement>(
   containerRef: React.RefObject<T>,
   items: readonly { id: string }[],
+  /** 拖拽排序已由 dnd-kit 负责补间；这一轮不要再叠 FLIP */
+  skipNext?: { current: boolean },
 ) {
   const prevIds = useRef<string[]>([])
   const rects = useRef(new Map<string, DOMRect>())
@@ -27,6 +29,12 @@ export function useFlipList<T extends HTMLElement>(
       return m
     }
     const ids = items.map((i) => i.id)
+    if (skipNext?.current) {
+      skipNext.current = false
+      prevIds.current = ids
+      rects.current = readRects()
+      return
+    }
     const changed = ids.length !== prevIds.current.length || ids.some((id, i) => id !== prevIds.current[i])
 
     if (!changed) {

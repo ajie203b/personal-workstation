@@ -1,47 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 2x2 紧凑版：给小米负一屏 / 桌面小格子用，日期 + 「+」+ 3 条带勾选圈的待办 -->
+<!-- 2x2 紧凑版：只留任务和大加号，不显示日期 / 统计 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="8dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
+        android:gravity="end|center_vertical"
         android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/widget_date"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:singleLine="true"
-            android:textColor="#201F1D"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/widget_meta"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxWidth="92dp"
-            android:singleLine="true"
-            android:textColor="#2C55B8"
-            android:textSize="10sp" />
 
         <ImageView
             android:id="@+id/widget_add"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:layout_marginStart="4dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="@drawable/widget_add_fab"
             android:contentDescription="快速添加任务"
-            android:padding="3dp"
+            android:padding="7dp"
             android:src="@drawable/ic_widget_add" />
     </LinearLayout>
 
@@ -49,22 +28,22 @@
         android:id="@+id/widget_tasks"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="1dp"
         android:orientation="vertical">
 
         <LinearLayout
             android:id="@+id/widget_row_1"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="5dp"
+            android:layout_marginTop="3dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <ImageView
                 android:id="@+id/widget_check_1"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_marginEnd="7dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="8dp"
                 android:contentDescription="完成这条任务"
                 android:src="@drawable/widget_check" />
 
@@ -76,22 +55,22 @@
                 android:ellipsize="end"
                 android:singleLine="true"
                 android:textColor="#201F1D"
-                android:textSize="12sp" />
+                android:textSize="14sp" />
         </LinearLayout>
 
         <LinearLayout
             android:id="@+id/widget_row_2"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="5dp"
+            android:layout_marginTop="3dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <ImageView
                 android:id="@+id/widget_check_2"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_marginEnd="7dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="8dp"
                 android:contentDescription="完成这条任务"
                 android:src="@drawable/widget_check" />
 
@@ -103,22 +82,22 @@
                 android:ellipsize="end"
                 android:singleLine="true"
                 android:textColor="#201F1D"
-                android:textSize="12sp" />
+                android:textSize="14sp" />
         </LinearLayout>
 
         <LinearLayout
             android:id="@+id/widget_row_3"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="5dp"
+            android:layout_marginTop="3dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <ImageView
                 android:id="@+id/widget_check_3"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_marginEnd="7dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="8dp"
                 android:contentDescription="完成这条任务"
                 android:src="@drawable/widget_check" />
 
@@ -130,7 +109,7 @@
                 android:ellipsize="end"
                 android:singleLine="true"
                 android:textColor="#201F1D"
-                android:textSize="12sp" />
+                android:textSize="14sp" />
         </LinearLayout>
 
         <!-- 紧凑版不展示第 4 条（负一屏卡片高度有限），保留视图让 Java 侧逻辑统一 -->
@@ -143,9 +122,9 @@
 
             <ImageView
                 android:id="@+id/widget_check_4"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_marginEnd="7dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="8dp"
                 android:contentDescription="完成这条任务"
                 android:src="@drawable/widget_check" />
 
@@ -157,7 +136,7 @@
                 android:ellipsize="end"
                 android:singleLine="true"
                 android:textColor="#201F1D"
-                android:textSize="12sp" />
+                android:textSize="14sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -166,8 +145,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="今天没有待办"
+        android:text="暂无待办"
         android:textColor="#8B887F"
-        android:textSize="12sp"
+        android:textSize="13sp"
         android:visibility="gone" />
 </LinearLayout>

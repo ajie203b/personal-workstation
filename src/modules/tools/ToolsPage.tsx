@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { IconToolArticle, IconToolDownload, IconToolIdPhoto, IconToolNovel, IconToolOcr, IconToolPdf, IconToolQr, IconToolReport, type AppIcon } from '@/shared/icons'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -42,14 +43,28 @@ export function ToolsPage() {
   const job = useFanqie((s) => s.job)
   const tilt = usePressTilt<HTMLAnchorElement>()
   const savedOrder = useLiveQuery(() => db.settings.get('toolOrder'), [])
-  const tools = orderTools(TOOL_CARDS, savedOrder?.value)
+  // 拖拽落位先改本地顺序，再后台落库：否则会先弹回旧位置、等 liveQuery 回来才跳过去
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null)
+  const tools = orderTools(TOOL_CARDS, localOrder ?? savedOrder?.value)
+  useEffect(() => {
+    if (!localOrder) return
+    const saved = Array.isArray(savedOrder?.value) ? savedOrder.value as string[] : null
+    if (saved && saved.length === localOrder.length && saved.every((id, i) => id === localOrder[i])) {
+      setLocalOrder(null)
+    }
+  }, [savedOrder, localOrder])
   const moveTool = (active: string, over: string) => {
     const ids = tools.map(t => t.to)
     const from = ids.indexOf(active)
     const to = ids.indexOf(over)
     if (from < 0 || to < 0) return
-    void db.settings.put({ key: 'toolOrder', value: arrayMove(ids, from, to) })
-      .catch(() => useUi.getState().toast('排序保存失败，请重试'))
+    const next = arrayMove(ids, from, to)
+    setLocalOrder(next)
+    void db.settings.put({ key: 'toolOrder', value: next })
+      .catch(() => {
+        setLocalOrder(null)
+        useUi.getState().toast('排序保存失败，请重试')
+      })
   }
 
   const fanqieBadge = job?.phase === 'running'
