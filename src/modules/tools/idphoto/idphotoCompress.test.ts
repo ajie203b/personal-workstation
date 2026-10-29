@@ -22,6 +22,21 @@ function mockEncoder(baseBytes: number, refW = 295, refH = 413): JpegEncoder {
 }
 
 describe('compressJpegToKb', () => {
+  it.each([41, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 94])(
+    '质量上限落在 %i 时应结束搜索并返回最佳质量',
+    async (limit) => {
+      let calls = 0
+      const encode: JpegEncoder = async (quality) => {
+        if (++calls > 20) throw new Error('压缩质量搜索未收敛')
+        return new Blob([new Uint8Array(Math.round(quality * 100) <= limit ? 10 * 1024 : 21 * 1024)])
+      }
+      const result = await compressJpegToKb(encode, { minKb: 5, maxKb: 20, width: 295, height: 413 })
+      expect(result.quality).toBe(limit / 100)
+      expect(result.bytes).toBeLessThanOrEqual(20 * 1024)
+      expect(calls).toBeLessThanOrEqual(20)
+    },
+  )
+
   it('二分出 [minKb, maxKb] 内的体积与对应质量', async () => {
     // 0.8 质量 = 16KB → 上限 20KB / 下限 5KB，质量会提到接近上限
     const res = await compressJpegToKb(mockEncoder(16 * 1024), {

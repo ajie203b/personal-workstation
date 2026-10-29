@@ -32,15 +32,12 @@ export interface CompressResult {
 /** 编码器：给定质量与尺寸产出 JPEG blob（页面里包 canvas.toBlob，测试里 mock） */
 export type JpegEncoder = (quality: number, width: number, height: number) => Promise<Blob>
 
-/** 二分的精度：质量步进小于 0.01 就停 */
+/** 以整数百分比搜索，避免浮点舍入使区间不再收缩 */
 const QUALITY_MIN = 0.4
 const QUALITY_MAX = 0.95
-const QUALITY_STEP = 0.01
 /** 超大时每次缩到 0.85，最多缩 6 轮（约 0.38 倍边长） */
 const SHRINK_FACTOR = 0.85
 const MAX_SHRINKS = 6
-
-const kb = (bytes: number) => bytes / 1024
 
 /**
  * 二分压到 [minKb, maxKb]。
@@ -54,8 +51,6 @@ export async function compressJpegToKb(
   target: CompressTarget,
 ): Promise<CompressResult> {
   const maxBytes = Math.max(1024, target.maxKb * 1024)
-  const minBytes = Math.max(0, target.minKb * 1024)
-
   let width = Math.max(1, Math.round(target.width))
   let height = Math.max(1, Math.round(target.height))
   let shrinks = 0
@@ -71,28 +66,19 @@ export async function compressJpegToKb(
     }
 
     // 二分：找不超过 maxBytes 的最大质量
-    let lo = QUALITY_MIN
-    let hi = QUALITY_MAX
+    let lo = Math.round(QUALITY_MIN * 100)
+    let hi = Math.round(QUALITY_MAX * 100)
     let best = floor
     let bestQ = QUALITY_MIN
-    while (hi - lo >= QUALITY_STEP) {
-      const mid = Math.round(((lo + hi) / 2) * 100) / 100
-      const blob = await encode(mid, width, height)
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2)
+      const blob = await encode(mid / 100, width, height)
       if (blob.size > maxBytes) {
-        hi = mid
+        hi = mid - 1
       } else {
-        lo = mid
+        lo = mid + 1
         best = blob
-        bestQ = mid
-      }
-    }
-
-    // 低于下限 → 提质量；二分终点就是不超过上限的最大质量，到 0.95 仍小则认了
-    if (kb(best.size) < kb(minBytes) && bestQ < QUALITY_MAX) {
-      const top = await encode(QUALITY_MAX, width, height)
-      if (top.size <= maxBytes) {
-        best = top
-        bestQ = QUALITY_MAX
+        bestQ = mid / 100
       }
     }
 
