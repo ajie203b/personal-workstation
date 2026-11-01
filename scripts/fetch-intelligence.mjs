@@ -13,19 +13,16 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { collect, decodeNextPayload, listOfApiBody, objectsWithIndex } from './lib/intel-parse.mjs'
+import { collect, decodeNextPayload, objectsWithIndex } from './lib/intel-parse.mjs'
+import { fetchApiRanking } from './lib/intel-api.mjs'
 
-const API = 'https://artificialanalysis.ai/api/v2/data/llms/models'
 const PAGE = 'https://artificialanalysis.ai/leaderboards/models'
 const OUT = path.resolve('public/intelligence.json')
 
 const key = process.env.AA_API_KEY?.trim()
 
 async function fromApi() {
-  const res = await fetch(API, { headers: { 'x-api-key': key, accept: 'application/json' } })
-  if (!res.ok) throw new Error(`API 请求失败：HTTP ${res.status}`)
-  const body = await res.json()
-  return { models: collect(listOfApiBody(body)), indexVersion: body?.index_version ?? body?.data?.index_version }
+  return fetchApiRanking(key)
 }
 
 async function fromPublicPage() {
