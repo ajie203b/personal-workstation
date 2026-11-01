@@ -1,6 +1,7 @@
 {
-  "generatedAt": "2026-10-31T10:56:19.842Z",
+  "generatedAt": "2026-11-01T09:55:28.505Z",
   "source": "https://artificialanalysis.ai/",
+  "indexVersion": "v5.0",
   "models": [
     {
       "name": "Gemini 4 Carbon (High)",
@@ -59,11 +60,11 @@
       "score": 50.2
     },
     {
-      "name": "Muse Wonder Full (Max)",
+      "name": "Claude Fable 5.1 (Xhigh)",
       "score": 49.7
     },
     {
-      "name": "Claude Fable 5.1 (Xhigh)",
+      "name": "Muse Wonder Full (Max)",
       "score": 49.7
     },
     {
@@ -99,11 +100,11 @@
       "score": 43.3
     },
     {
-      "name": "GPT-6 Astra (Low)",
+      "name": "Claude Fable 5.1 (Medium)",
       "score": 43
     },
     {
-      "name": "Claude Fable 5.1 (Medium)",
+      "name": "GPT-6 Astra (Low)",
       "score": 43
     },
     {
