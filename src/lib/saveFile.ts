@@ -6,7 +6,7 @@ interface FileExportPlugin {
     fileName: string
     mimeType: string
   }): Promise<{ path: string; uri: string }>
-  openSavedLocation(): Promise<void>
+  openSavedLocation(): Promise<{ location: 'folder' | 'downloads' | 'unavailable' }>
 }
 
 const FileExport = registerPlugin<FileExportPlugin>('FileExport')
@@ -37,6 +37,11 @@ export async function saveBlob(blob: Blob, filename: string): Promise<string> {
       fileName: filename,
       mimeType: blob.type || 'application/octet-stream',
     })
+    try {
+      const opened = await FileExport.openSavedLocation()
+      if (opened?.location === 'folder') return '文件管理器'
+      if (opened?.location === 'downloads') return '文件管理器的下载目录'
+    } catch { /* 文件已保存，打开失败时仍返回实际路径 */ }
     return res.path || `下载/个人工作站/${filename}`
   }
   const url = URL.createObjectURL(blob)

@@ -11,7 +11,6 @@ import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
-import android.widget.Toast;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -66,20 +65,25 @@ public class FileExportPlugin extends Plugin {
 
     /**
      * 打开「下载/个人工作站」，让用户直接看到刚生成的文件。
-     * 先试目标目录，打不开再退到「下载」根目录；都不行就用系统 Toast 告诉路径。
+     * 先试目标目录，打不开再退到「下载」根目录；把结果交给前端提示。
      */
     @PluginMethod
     public void openSavedLocation(PluginCall call) {
         if (openFolder(Environment.DIRECTORY_DOWNLOADS + File.separator + DIR_NAME)) {
-            call.resolve();
+            resolveLocation(call, "folder");
             return;
         }
         if (openFolder(Environment.DIRECTORY_DOWNLOADS)) {
-            call.resolve();
+            resolveLocation(call, "downloads");
             return;
         }
-        Toast.makeText(getContext(), "文件在「下载/" + DIR_NAME + "」", Toast.LENGTH_LONG).show();
-        call.resolve();
+        resolveLocation(call, "unavailable");
+    }
+
+    private void resolveLocation(PluginCall call, String location) {
+        JSObject result = new JSObject();
+        result.put("location", location);
+        call.resolve(result);
     }
 
     private boolean openFolder(String relativePath) {
