@@ -170,11 +170,24 @@ async function installDesktop(update: AvailableUpdate, onProgress: (p: InstallPr
   if (!u) throw new Error('更新信息已失效，请重新检查')
   let downloaded = 0
   let total = 0
-  await u.download((ev) => {
-    if (ev.event === 'Started') total = ev.data.contentLength ?? 0
-    else if (ev.event === 'Progress') downloaded += ev.data.chunkLength
-    onProgress({ downloaded, total, percent: progressPercent(downloaded, total), phase: 'downloading' })
-  })
+  for (let attempt = 0; ; attempt++) {
+    downloaded = 0
+    total = 0
+    if (attempt) onProgress({ downloaded, total, percent: 0, phase: 'downloading' })
+    try {
+      await u.download((ev) => {
+        if (ev.event === 'Started') total = ev.data.contentLength ?? 0
+        else if (ev.event === 'Progress') downloaded += ev.data.chunkLength
+        onProgress({ downloaded, total, percent: progressPercent(downloaded, total), phase: 'downloading' })
+      })
+      break
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/error decoding response body|timed?\s*out|timeout|connection (?:reset|closed|aborted)|unexpected eof|network error/i.test(message)) throw error
+      if (attempt >= 2) throw new Error('更新包下载中断，多次重试仍未成功。请检查 GitHub 下载连接，或前往发布页下载安装。')
+      await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)))
+    }
+  }
   onProgress({ downloaded, total, percent: 100, phase: 'installing' })
   // Windows：启动 NSIS（被动模式）后当前进程会退出，安装完自动重新打开
   await u.install()

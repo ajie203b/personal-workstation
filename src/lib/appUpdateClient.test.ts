@@ -87,6 +87,37 @@ describe('checkAppUpdate concurrency', () => {
   })
 })
 
+describe('desktop update download recovery', () => {
+  it('retries an interrupted response before installing the verified update', async () => {
+    const native = desktopUpdate()
+    native.download.mockRejectedValueOnce(new Error('error decoding response body')).mockResolvedValueOnce(undefined)
+    const { installAppUpdate } = await import('./appUpdateClient')
+    const progress = vi.fn()
+    const result = await installAppUpdate({ platform: 'desktop', version: '3.4.0', currentVersion: '3.3.5', notes: '', tauriUpdate: native as never }, progress)
+    expect(result).toBe('restarting')
+    expect(native.download).toHaveBeenCalledTimes(2)
+    expect(native.install).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry or install after a signature validation failure', async () => {
+    const native = desktopUpdate()
+    native.download.mockRejectedValue(new Error('signature verification failed'))
+    const { installAppUpdate } = await import('./appUpdateClient')
+    await expect(installAppUpdate({ platform: 'desktop', version: '3.4.0', currentVersion: '3.3.5', notes: '', tauriUpdate: native as never }, vi.fn())).rejects.toThrow('signature')
+    expect(native.download).toHaveBeenCalledTimes(1)
+    expect(native.install).not.toHaveBeenCalled()
+  })
+
+  it('stops after three failed downloads and offers a clear recovery message', async () => {
+    const native = desktopUpdate()
+    native.download.mockRejectedValue('error decoding response body')
+    const { installAppUpdate } = await import('./appUpdateClient')
+    await expect(installAppUpdate({ platform: 'desktop', version: '3.4.0', currentVersion: '3.3.5', notes: '', tauriUpdate: native as never }, vi.fn())).rejects.toThrow('多次重试')
+    expect(native.download).toHaveBeenCalledTimes(3)
+    expect(native.install).not.toHaveBeenCalled()
+  })
+})
+
 describe('Android update package validation and recovery', () => {
   beforeEach(() => { boundary.platform = 'android' })
 
