@@ -5,6 +5,7 @@
 #   pwsh -ExecutionPolicy Bypass -File .\scripts\release.ps1 -Publish    APK + exe + Release + Pages + 线上版本核验
 #   加 -SkipPull 不切 main、不拉代码（测某个分支时用）
 #   发布中断后加 -Resume：校验本地检查点并继续，不重复构建 APK
+#   已发布版本会自动准备下一个补丁版本；匹配的未完成检查点会自动续跑。
 # GitHub 只读请求遇到临时网络错误时最多尝试三次；发布写操作失败后可用 -Resume 安全续跑。
 # 产物都放在仓库的 apk\ 目录（已在 .gitignore 里）。
 # -Exe / -Publish 需要 GitHub CLI：winget install GitHub.cli，然后 gh auth login
@@ -151,6 +152,33 @@ if (Test-Path -LiteralPath $updaterConfigPath) {
 if ($Publish) {
     if (Run git @('status', '--porcelain') -Capture) { throw '发布前请先提交工作区改动' }
     $commit = (Run git @('rev-parse', 'HEAD') -Capture).Trim()
+    # 只查询本次标签，避免历史标签差异阻塞；未完成发布可以复用本地检查点。
+    $localTag = Run git @('tag', '--list', $tag) -Capture
+    $remoteTags = @(Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag", "refs/tags/$tag^{}") -Capture -Retry)
+    if (-not $Resume -and ($localTag -or $remoteTags.Count)) {
+        $checkpoint = if (Test-Path -LiteralPath $statePath) { Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json -AsHashtable } else { $null }
+        if ($checkpoint -and $checkpoint.schema -eq 1 -and $checkpoint.commit -eq $commit -and $checkpoint.version -eq $verName) {
+            Write-Host "发现匹配的发布检查点，自动续跑 $tag"
+            $Resume = $true
+        } else {
+            if (-not $localTag) { Run git @('fetch', 'origin', "refs/tags/${tag}:refs/tags/${tag}") -Retry }
+            if ($verName -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw '自动升级仅支持数字版本号，请手动处理' }
+            $major = [int]$Matches[1]; $minor = [int]$Matches[2]; $patch = [int]$Matches[3]
+            do {
+                $patch++
+                $nextVersion = "$major.$minor.$patch"
+                $nextTag = "v$nextVersion"
+                $nextLocal = Run git @('tag', '--list', $nextTag) -Capture
+                $nextRemote = @(Run git @('ls-remote', '--tags', 'origin', "refs/tags/$nextTag", "refs/tags/$nextTag^{}") -Capture -Retry)
+            } while ($nextLocal -or $nextRemote.Count)
+            Step "准备新版本 $nextTag"
+            & (Join-Path $PSScriptRoot 'prepare-release.ps1') -PreviousTag $tag -Version $nextVersion
+            Write-Host "版本准备完成，继续发布 $nextTag"
+            # 重新执行完整预检，让版本、提交和所有产物始终对应。
+            & $PSCommandPath -Publish -SkipPull
+            return
+        }
+    }
     if ($Resume) {
         if (-not (Test-Path -LiteralPath $statePath)) { throw '找不到发布检查点，请先使用普通 -Publish 构建并发布' }
         $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json -AsHashtable
@@ -161,10 +189,6 @@ if ($Publish) {
             (Get-DistHash) -ne $state.distHash) { throw '本地构建产物已改变，不能续跑，请恢复原产物或升版本重新发布' }
         Step "从检查点继续 $tag（提交 $($commit.Substring(0, 7))）"
     }
-    # 只检查本次标签，历史标签有同名差异也不会阻塞新版本，更不会覆盖它们。
-    $localTag = Run git @('tag', '--list', $tag) -Capture
-    $remoteTags = @(Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag", "refs/tags/$tag^{}") -Capture -Retry)
-    if (-not $Resume -and ($localTag -or $remoteTags.Count)) { throw "标签 $tag 已存在，请用 -Resume 继续本机发布，或先核对并升级版本号" }
     if ($Resume) {
         if ($localTag -and (Run git @('rev-parse', "refs/tags/$tag^{commit}") -Capture) -ne $commit) { throw '本地标签指向不同提交，已停止' }
         $remoteTagCommit = $null
@@ -285,6 +309,11 @@ if ($Exe) {
     $since = (Get-Date).ToUniversalTime().AddSeconds(-30)
 
     if ($Publish) {
+        $publishBranch = (Run git @('rev-parse', '--abbrev-ref', 'HEAD') -Capture).Trim()
+        if (-not $Resume -and $publishBranch -eq 'main') {
+            Step '推送 main，确保发布源码与远端同步'
+            Run git @('push', 'origin', 'main')
+        }
         Step "推送标签 $tag 并创建 Release"
         if (-not $Resume -or -not $remoteTagCommit) {
             if (-not $localTag) { Run git @('tag', $tag) }

@@ -23,6 +23,7 @@ function script:git {
         'status --porcelain' { return }
         'checkout main' { return }
         'pull*' { return }
+        'fetch origin refs/tags/*' { return }
         'fetch --tags*' {
             if ($global:ReleaseTest.options.HistoricalTagConflict) { $global:LASTEXITCODE = 1 }
             return
@@ -30,7 +31,7 @@ function script:git {
         'tag --list *' { if ($global:ReleaseTest.remote.LocalTag) { 'v9.9.9' }; return }
         'ls-remote --tags origin refs/tags/*' {
             if ($global:ReleaseTest.options.RemoteTagMismatch) { "$('b' * 40) refs/tags/v9.9.9" }
-            elseif ($global:ReleaseTest.options.RemoteTagExists) { 'abc123 refs/tags/v9.9.9' }
+            elseif ($global:ReleaseTest.options.RemoteTagExists -and $command -like '*refs/tags/v9.9.9*') { 'abc123 refs/tags/v9.9.9' }
             elseif ($global:ReleaseTest.remote.RemoteTag) { "$($global:ReleaseTest.remote.RemoteTag) refs/tags/v9.9.9" }
             return
         }
@@ -38,6 +39,7 @@ function script:git {
         'rev-parse refs/tags/v9.9.9^{commit}' { $global:ReleaseTest.remote.LocalTag; return }
         'tag v9.9.9' { $global:ReleaseTest.remote.LocalTag = 'a' * 40; return }
         'push origin v9.9.9' { $global:ReleaseTest.remote.RemoteTag = 'a' * 40; return }
+        'push origin main' { return }
         'rev-parse --abbrev-ref HEAD' { 'main'; return }
         default { throw "Unexpected git command: $command" }
     }
@@ -401,9 +403,14 @@ try {
             $result = Invoke-Scenario 'old-tag' @{ HistoricalTagConflict = $true }
             Assert (-not $result.Error -and $result.Completed) "Unrelated tag blocked release: $($result.Error)"
         }
-        'existing remote release tag stops before build' = {
+        'existing remote release tag prepares a new version before build' = {
             $result = Invoke-Scenario 'existing-tag' @{ RemoteTagExists = $true }
-            Assert ($result.Error -and -not $result.Events.Contains('npm install') -and -not $result.Events.Contains('git push origin v9.9.9')) 'Remote tag must be checked before build/push'
+            Assert ($result.Error -match 'prepare-release.ps1' -and -not $result.Events.Contains('npm install') -and -not $result.Events.Contains('git push origin v9.9.9')) 'A conflicting tag must invoke version preparation before build/push'
+        }
+        'matching interrupted checkpoint resumes automatically' = {
+            $null = Invoke-Scenario 'auto-resume' @{ DeployFails = $true }
+            $result = Invoke-Scenario 'auto-resume' @{} @('-Publish', '-SkipPull') -Reuse
+            Assert (-not $result.Error -and $result.Completed -and -not $result.Events.Contains('npm install')) "Expected safe automatic resume: $($result.Error)"
         }
         'APK only does not deploy Pages' = {
             $result = Invoke-Scenario 'apk-only' @{} @('-SkipPull')
