@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   DndContext, DragOverlay, MouseSensor, TouchSensor, useSensor, useSensors, useDroppable,
   closestCorners, pointerWithin, type CollisionDetection, type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { arraySwap, rectSwappingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { CalendarCheck, CalendarDays, Hourglass, Inbox, GripVertical, type LucideIcon } from 'lucide-react'
 import { TIERS, TIER_LABEL, type Task, type Tier } from '@/db/db'
@@ -13,7 +13,7 @@ import { useUi } from '@/stores/ui'
 import { TaskItem } from './TaskItem'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
-import { SORT_DURATION, SORT_EASING, SORT_TRANSITION } from '@/lib/sortMotion'
+import { SORT_EASING, SORT_TRANSITION } from '@/lib/sortMotion'
 import { prefersReducedMotion } from '@/lib/motion'
 
 const TIER_ICON: Record<Tier, LucideIcon> = {
@@ -36,6 +36,7 @@ const collision: CollisionDetection = (args) => {
 /** 同数据四视图之「看板」：按四清单分列，长按拖拽跨列移动 + 列内 FLIP 补位 */
 export function BoardView({ tasks }: { tasks: Task[] }) {
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [pendingOrder, setPendingOrder] = useState<{ tier: Tier; ids: string[] } | null>(null)
   // 桌面按下拖动 6px 起拖；移动端长按 200ms 起拖——轻点仍是「打开详情」，滑动仍能滚页
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -46,8 +47,19 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
     const map = {} as Record<Tier, Task[]>
     for (const t of TIERS) map[t] = []
     for (const task of sortTasks(tasks.filter((t) => t.status !== 'done'))) map[task.tier].push(task)
+    if (pendingOrder) {
+      const tierTasks = map[pendingOrder.tier]
+      const byId = new Map(tierTasks.map(task => [task.id, task]))
+      map[pendingOrder.tier] = [...pendingOrder.ids.map(id => byId.get(id)).filter((task): task is Task => !!task), ...tierTasks.filter(task => !pendingOrder.ids.includes(task.id))]
+    }
     return map
-  }, [tasks])
+  }, [tasks, pendingOrder])
+
+  useEffect(() => {
+    if (!pendingOrder) return
+    const saved = sortTasks(tasks.filter(t => t.status !== 'done' && t.tier === pendingOrder.tier)).map(t => t.id)
+    if (saved.length !== pendingOrder.ids.length || saved.every((id, index) => id === pendingOrder.ids[index])) setPendingOrder(null)
+  }, [tasks, pendingOrder])
 
   const activeTask = activeId ? tasks.find((t) => t.id === activeId) : null
 
@@ -70,13 +82,18 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
       haptic('light')
       void moveTier(id, toTier)
     } else if (from && String(target) !== toTier) {
-      void reorderTasks(byTier[toTier].map(t => t.id), id, String(target))
-        .catch(() => useUi.getState().toast('排序保存失败，请重试'))
+      const ids = byTier[toTier].map(t => t.id)
+      const fromIndex = ids.indexOf(id)
+      const toIndex = ids.indexOf(String(target))
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return
+      setPendingOrder({ tier: toTier, ids: arraySwap(ids, fromIndex, toIndex) })
+      void reorderTasks(ids, id, String(target), 'swap')
+        .catch(() => { setPendingOrder(null); useUi.getState().toast('排序保存失败，请重试') })
     }
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveId(null)}>
       {/* 窄屏一列一屏左右滑（吸附），到 sm 才铺成 2 列 / xl 4 列 */}
       <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-3 -mx-4 px-4 md:mx-0 md:px-0 enter">
         {TIERS.map((tier) => (
@@ -85,9 +102,9 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
           </div>
         ))}
       </div>
-      <DragOverlay dropAnimation={{ duration: prefersReducedMotion() ? 0 : SORT_DURATION, easing: SORT_EASING }}>
+      <DragOverlay dropAnimation={{ duration: prefersReducedMotion() ? 0 : 220, easing: SORT_EASING }}>
         {activeTask && (
-          <div className="drop-settle rotate-[0.6deg] scale-[1.02] drop-shadow-lg">
+          <div aria-hidden="true" className="overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/15">
             <TaskItem task={activeTask} overlay />
           </div>
         )}
@@ -113,7 +130,7 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
         <span className="text-[13px] font-semibold">{TIER_LABEL[tier]}</span>
         <span className="text-[11px] text-on-surface-2 bg-surface-3 px-1.5 py-0.5 rounded-full">{tasks.length}</span>
       </div>
-      <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={tasks.map((t) => t.id)} strategy={rectSwappingStrategy}>
         <div className="flex flex-col gap-2 flex-1">
           {tasks.map((task) => (
             <SortableCard key={task.id} task={task} />

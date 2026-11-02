@@ -32,4 +32,16 @@ describe('自定义任务顺序', () => {
     expect(sortTasks(await db.tasks.toArray()).map(t => t.id)).toEqual(['b', 'c', 'a'])
     expect((await db.tasks.get('a'))?.pinned).toBeFalsy()
   })
+  it('交换非相邻任务时保留中间和隐藏任务的位置', async () => {
+    await db.tasks.bulkPut([task('a', { sortOrder: 0 }), task('hidden', { tier: 'someday', sortOrder: 1 }), task('b', { sortOrder: 2 }), task('c', { sortOrder: 3 })])
+    await reorderTasks(['a', 'b', 'c'], 'a', 'c', 'swap')
+    expect(sortTasks(await db.tasks.toArray()).map(t => t.id)).toEqual(['c', 'hidden', 'b', 'a'])
+  })
+  it('跨置顶边界交换时同时交换两项的置顶状态', async () => {
+    await db.tasks.bulkPut([task('a', { pinned: true, sortOrder: 0 }), task('b', { sortOrder: 1 }), task('c', { sortOrder: 2 })])
+    await reorderTasks(['a', 'b', 'c'], 'a', 'c', 'swap')
+    expect(sortTasks(await db.tasks.toArray()).map(t => t.id)).toEqual(['c', 'b', 'a'])
+    expect((await db.tasks.get('a'))?.pinned).toBeFalsy()
+    expect((await db.tasks.get('c'))?.pinned).toBe(true)
+  })
 })

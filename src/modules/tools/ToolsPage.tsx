@@ -7,7 +7,7 @@ import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
 import { useFanqie } from '@/stores/fanqie'
 import { cn } from '@/lib/cn'
 import { usePressTilt } from '@/lib/usePressTilt'
-import { arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
+import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { orderTools } from './toolOrder'
 import { useUi } from '@/stores/ui'
@@ -58,7 +58,7 @@ export function ToolsPage() {
     const from = ids.indexOf(active)
     const to = ids.indexOf(over)
     if (from < 0 || to < 0) return
-    const next = arrayMove(ids, from, to)
+    const next = arraySwap(ids, from, to)
     setLocalOrder(next)
     void db.settings.put({ key: 'toolOrder', value: next })
       .catch(() => {
@@ -77,6 +77,23 @@ export function ToolsPage() {
           ? `本地 ${localBooks} 本`
           : 'TXT / EPUB'
 
+  const toolCard = (t: ToolCard, overlay = false) => (
+    <Link
+      ref={!overlay && t.to === '/tools/fanqie' ? tilt.ref : undefined}
+      {...(!overlay && t.to === '/tools/fanqie' ? tilt.tiltProps : {})}
+      to={t.to}
+      draggable={false}
+      tabIndex={overlay ? -1 : undefined}
+      aria-label={t.title}
+      className={cn('tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4', 'flex flex-col overflow-hidden select-none')}
+    >
+      <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0"><t.icon size={22} /></span>
+      {t.to === '/tools/fanqie' ? <span className={cn('absolute top-4 right-3.5 max-w-[calc(100%-4.5rem)] truncate text-[10.5px] tabular-nums', job?.phase === 'running' ? 'text-primary font-medium' : 'text-on-surface-2')}>{fanqieBadge}</span>
+        : t.badge ? <span className="absolute top-4 right-3.5 truncate text-[10.5px] text-on-surface-2 tabular-nums">{t.badge}</span> : null}
+      <span className="mt-auto min-w-0"><span className="block text-[15px] font-semibold leading-5">{t.title}</span><span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">{t.sub}</span></span>
+    </Link>
+  )
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 cascade">
       <div className="hidden md:block">
@@ -91,43 +108,15 @@ export function ToolsPage() {
           <h2 className="text-[13px] font-semibold text-on-surface-2">小工具</h2>
           <span className="text-[11px] text-on-surface-2">长按拖动排序</span>
         </div>
-        <DragSort ids={tools.map(t => t.to)} strategy={rectSortingStrategy} onMove={moveTool}>
+        <DragSort ids={tools.map(t => t.to)} strategy={rectSwappingStrategy} onMove={moveTool}
+          renderOverlay={id => {
+            const tool = tools.find(t => t.to === id)
+            return tool ? <div aria-hidden="true" className="h-full overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/15">{toolCard(tool, true)}</div> : null
+          }}>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {tools.map((t) => (
             <DragSortItem key={t.to} id={t.to} className="w-full max-w-[190px]">
-            <Link
-              ref={t.to === '/tools/fanqie' ? tilt.ref : undefined}
-              {...(t.to === '/tools/fanqie' ? tilt.tiltProps : {})}
-              to={t.to}
-              draggable={false}
-              aria-label={t.title}
-              className={cn(
-                'tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4',
-                'flex flex-col overflow-hidden select-none',
-              )}
-            >
-              <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0">
-                <t.icon size={22} />
-              </span>
-              {t.to === '/tools/fanqie' ? (
-                <span
-                  className={cn(
-                    'absolute top-4 right-3.5 max-w-[calc(100%-4.5rem)] truncate text-[10.5px] tabular-nums',
-                    job?.phase === 'running' ? 'text-primary font-medium' : 'text-on-surface-2',
-                  )}
-                >
-                  {fanqieBadge}
-                </span>
-              ) : t.badge ? (
-                <span className="absolute top-4 right-3.5 truncate text-[10.5px] text-on-surface-2 tabular-nums">
-                  {t.badge}
-                </span>
-              ) : null}
-              <span className="mt-auto min-w-0">
-                <span className="block text-[15px] font-semibold leading-5">{t.title}</span>
-                <span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">{t.sub}</span>
-              </span>
-            </Link>
+            {toolCard(t)}
             </DragSortItem>
           ))}
         </div>

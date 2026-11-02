@@ -11,7 +11,7 @@ import { useFlipList } from '@/lib/useFlipList'
 import { haptic } from '@/lib/haptics'
 import { isFutureTask } from '@/lib/date'
 import { cn } from '@/lib/cn'
-import { verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { reorderTasks } from '@/db/tasks'
 import { useDndContext } from '@dnd-kit/core'
@@ -139,17 +139,20 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
   }
 
   return (
-    <DragSort ids={orderedTasks.map(t => t.id)} strategy={verticalListSortingStrategy}
+    <DragSort ids={orderedTasks.map(t => t.id)} strategy={rectSwappingStrategy}
+      renderOverlay={id => {
+        const task = orderedTasks.find(t => t.id === id)
+        return task ? <div aria-hidden="true" className="h-full overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/15"><TaskItem task={task} overlay /></div> : null
+      }}
       onMove={(active, over) => {
         const ids = orderedTasks.map((t) => t.id)
         const from = ids.indexOf(active)
         const to = ids.indexOf(over)
         if (from < 0 || to < 0) return
-        const next = [...ids]
-        next.splice(to, 0, next.splice(from, 1)[0])
+        const next = arraySwap(ids, from, to)
         skipFlip.current = true
         setOptimisticIds(next)
-        void reorderTasks(ids, active, over).catch(() => {
+        void reorderTasks(ids, active, over, 'swap').catch(() => {
           setOptimisticIds(null)
           useUi.getState().toast('排序保存失败，请重试')
         })

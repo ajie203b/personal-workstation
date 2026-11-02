@@ -262,7 +262,7 @@ export function sortTasks(tasks: Task[]): Task[] {
 }
 
 /** 重排当前可见任务，隐藏任务保留槽位；跨置顶区域时跟随落点的置顶状态。 */
-export async function reorderTasks(visibleIds: string[], activeId: string, overId: string): Promise<void> {
+export async function reorderTasks(visibleIds: string[], activeId: string, overId: string, mode: 'move' | 'swap' = 'move'): Promise<void> {
   if (activeId === overId) return
   await db.transaction('rw', db.tasks, async () => {
     const all = sortTasks((await db.tasks.toArray()).filter(t => t.status !== 'done'))
@@ -273,9 +273,11 @@ export async function reorderTasks(visibleIds: string[], activeId: string, overI
     if (from < 0 || to < 0) return
     const targetPinned = byId.get(overId)?.pinned
     if (!!byId.get(activeId)?.pinned !== !!targetPinned) {
+      if (mode === 'swap') await db.tasks.update(overId, { pinned: byId.get(activeId)?.pinned || undefined })
       await db.tasks.update(activeId, { pinned: targetPinned || undefined })
     }
-    visible.splice(to, 0, visible.splice(from, 1)[0])
+    if (mode === 'swap') [visible[from], visible[to]] = [visible[to], visible[from]]
+    else visible.splice(to, 0, visible.splice(from, 1)[0])
     const ids = new Set(visible)
     let index = 0
     const updatedAt = Date.now()

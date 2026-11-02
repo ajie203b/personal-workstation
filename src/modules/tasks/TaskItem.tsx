@@ -35,7 +35,7 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
 
   return (
     <div
-      id={`task-${task.id}`}
+      id={overlay ? undefined : `task-${task.id}`}
       data-flip-id={flip ? `task-${task.id}` : undefined}
       aria-current={focused ? 'true' : undefined}
       // 共享元素转场：这张卡在旧快照里带转场名，详情容器在新快照里带同名，
