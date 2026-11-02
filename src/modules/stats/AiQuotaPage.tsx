@@ -116,7 +116,11 @@ export function AiQuotaPage() {
       <div><button disabled={saving} type="submit" className="rounded-xl bg-primary-action px-4 py-2 text-sm text-on-primary-action disabled:opacity-50">保存记录</button></div>
     </form>}
     {!entries.length && !draft && <div className="card p-8 text-center text-on-surface-2"><WalletCards size={28} className="mx-auto mb-3 opacity-60" /><p className="font-medium text-on-surface">还没有额度记录</p><p className="mt-1 text-sm">添加一个会员或 API 套餐，开始规划使用。</p></div>}
-    <DragSort ids={orderedEntries.map(entry => entry.id)} strategy={rectSwappingStrategy} onMove={moveEntry}>
+    <DragSort ids={orderedEntries.map(entry => entry.id)} strategy={rectSwappingStrategy} onMove={moveEntry}
+      renderOverlay={id => {
+        const entry = orderedEntries.find(item => item.id === id)
+        return entry ? <div data-quota-overlay aria-hidden="true" className="h-full overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/15"><QuotaCard entry={entry} onEdit={() => {}} onDelete={() => {}} overlay /></div> : null
+      }}>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full"><QuotaCard entry={entry} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => void remove(entry)} /></DragSortItem>)}</div>
     </DragSort>
 
@@ -124,7 +128,7 @@ export function AiQuotaPage() {
 }
 
 
-function QuotaCard({ entry, onEdit, onDelete }: { entry: QuotaEntry; onEdit: () => void; onDelete: () => void }) {
+function QuotaCard({ entry, onEdit, onDelete, overlay = false }: { entry: QuotaEntry; onEdit: () => void; onDelete: () => void; overlay?: boolean }) {
   const mode = quotaDisplayMode(entry)
   const summary = mode === 'quota' ? quotaSummary(entry) : null
   const expiry = quotaExpiry(entry.expiresAt, todayStr())
@@ -135,7 +139,7 @@ function QuotaCard({ entry, onEdit, onDelete }: { entry: QuotaEntry; onEdit: () 
     <div className="flex items-start gap-3">
       <BrandIcon name={entry.name} provider={entry.provider} />
       <div className="min-w-0 flex-1"><h2 className="font-semibold leading-5 break-words">{entry.name}</h2><p className="mt-1 text-xs text-on-surface-2 break-words">{metadata}</p></div>
-      <div className="flex shrink-0"><button type="button" aria-label={`编辑 ${entry.name}`} onClick={onEdit} className="p-2 text-on-surface-2 hover:text-on-surface"><Pencil size={16} /></button><button type="button" aria-label={`删除 ${entry.name}`} onClick={onDelete} className="p-2 text-on-surface-2 hover:text-on-surface"><Trash2 size={16} /></button></div>
+      <div className="flex shrink-0"><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`编辑 ${entry.name}`} onClick={onEdit} className="p-2 text-on-surface-2 hover:text-on-surface"><Pencil size={16} /></button><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`删除 ${entry.name}`} onClick={onDelete} className="p-2 text-on-surface-2 hover:text-on-surface"><Trash2 size={16} /></button></div>
     </div>
     {mode === 'balance' && <div><p className="text-xs text-on-surface-2">账户余额</p><p className="mt-1 text-lg font-semibold break-words">{entry.balance != null ? <>{number(entry.balance)} <span className="text-sm font-normal text-on-surface-2">{entry.balanceUnit || '元'}</span></> : <span className="text-sm font-normal text-on-surface-2">尚未填写余额</span>}</p></div>}
     {mode === 'quota' && (summary ? <div>
