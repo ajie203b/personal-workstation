@@ -181,6 +181,11 @@ function Invoke-Scenario([string]$Name, [hashtable]$Options = @{}, [string[]]$Fl
     Set-Content (Join-Path $fixture 'scripts/release.ps1') $source
     Set-Content (Join-Path $fixture 'scripts/deploy-gh-pages.sh') '# mocked at process boundary'
     Set-Content (Join-Path $fixture 'package.json') '{"version":"9.9.9"}'
+    if (-not $Options.MissingLock) {
+        $lockVersion = if ($Options.WrongLockVersion) { '9.9.8' } else { '9.9.9' }
+        $rootVersion = if ($Options.WrongLockRootVersion) { '9.9.8' } else { '9.9.9' }
+        @{ version = $lockVersion; packages = @{ '' = @{ version = $rootVersion } } } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $fixture 'package-lock.json')
+    }
     Set-Content (Join-Path $fixture 'android/app/build.gradle') "versionName `"9.9.9`"`nversionCode 999"
     Set-Content (Join-Path $fixture 'CHANGELOG.md') "## v9.9.9`n`nTest release."
     foreach ($file in @('local/jdk-21/bin/java.exe', 'sdk/build-tools/35.0.0/apksigner.bat', 'git/cmd/git.exe',
@@ -215,6 +220,12 @@ function Assert($Condition, [string]$Message) { if (-not $Condition) { throw $Me
 $failed = 0
 try {
     $cases = [ordered]@{
+        'missing or mismatched lockfile stops before build and tag' = {
+            foreach ($option in @('MissingLock', 'WrongLockVersion', 'WrongLockRootVersion')) {
+                $result = Invoke-Scenario "lock-$option" @{ $option = $true }
+                Assert ($result.Error -match 'package-lock' -and -not $result.Events.Contains('npm install') -and -not ($result.Events -match '^git push')) "Lockfile $option must stop before build and push: $($result.Error)"
+            }
+        }
         'signed release verifies updater files before Pages deployment' = {
             $result = Invoke-Scenario 'signed-release' @{ UpdaterEnabled = $true }
             Assert (-not $result.Error -and $result.Completed) "Signed release failed: $($result.Error)"

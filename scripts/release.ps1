@@ -98,6 +98,15 @@ if (-not $SkipPull -and -not $Resume) {
 }
 
 $pkgVer = (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
+$lockPath = Join-Path $Root 'package-lock.json'
+if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { throw '缺少 package-lock.json，不能确认发布版本' }
+try { $lock = Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable }
+catch { throw 'package-lock.json 格式无效，不能确认发布版本' }
+$lockVer = $lock.version
+$lockRootVer = if ($lock.packages -is [System.Collections.IDictionary] -and $lock.packages.Contains('')) { $lock.packages[''].version } else { $null }
+if (-not $pkgVer -or $lockVer -ne $pkgVer -or $lockRootVer -ne $pkgVer) {
+    throw "版本不一致：package.json=$pkgVer，package-lock.json=$lockVer，package-lock.json 根包=$lockRootVer"
+}
 $gradle = Get-Content android\app\build.gradle -Raw -Encoding UTF8
 $verName = [regex]::Match($gradle, 'versionName\s+"([^"]+)"').Groups[1].Value
 $verCode = [regex]::Match($gradle, 'versionCode\s+(\d+)').Groups[1].Value
