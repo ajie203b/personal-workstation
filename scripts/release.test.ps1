@@ -92,6 +92,24 @@ function script:gh {
     $argv = @($args)
     $command = $argv -join ' '
     $global:ReleaseTest.events.Add("gh $command")
+    if ($global:ReleaseTest.options.AuthDenied -and $command -eq 'auth status') {
+        $global:LASTEXITCODE = 1
+        'HTTP 401: authentication failed'
+        return
+    }
+    if (($global:ReleaseTest.options.TransientCommand -and $command -like $global:ReleaseTest.options.TransientCommand -and
+            -not $global:ReleaseTest.transientFailed) -or
+        ($global:ReleaseTest.options.PermanentCommand -and $command -like $global:ReleaseTest.options.PermanentCommand)) {
+        if ($command -like 'run download *') {
+            $destination = $argv[[array]::IndexOf($argv, '-D') + 1]
+            New-Item -ItemType Directory -Force $destination | Out-Null
+            Set-Content (Join-Path $destination 'Kairos_9.9.9_x64-setup.exe') 'partial download'
+        }
+        $global:ReleaseTest.transientFailed = $true
+        $global:LASTEXITCODE = 1
+        'net/http: TLS handshake timeout'
+        return
+    }
     switch -Wildcard ($command) {
         'auth status' { return }
         'api repos/{owner}/{repo}/pages --jq .html_url' { 'https://example.github.io/workstation/'; return }
@@ -220,6 +238,27 @@ function Assert($Condition, [string]$Message) { if (-not $Condition) { throw $Me
 $failed = 0
 try {
     $cases = [ordered]@{
+        'transient GitHub API timeout retries safely' = {
+            $result = Invoke-Scenario 'github-api-retry' @{ TransientCommand = 'api repos/{owner}/{repo}/pages*' }
+            Assert (-not $result.Error -and $result.Completed -and @($result.Events | Where-Object { $_ -like 'gh api repos/{owner}/{repo}/pages*' }).Count -eq 2) "Expected API retry: $($result.Error)"
+        }
+        'transient artifact download uses a fresh destination' = {
+            $result = Invoke-Scenario 'github-download-retry' @{ TransientCommand = 'run download *' }
+            $downloads = @($result.Events | Where-Object { $_ -like 'gh run download *' })
+            Assert (-not $result.Error -and $result.Completed -and $downloads.Count -eq 2 -and $downloads[0] -ne $downloads[1]) "Expected isolated download retry: $($result.Error)"
+        }
+        'repeated GitHub timeout stops after bounded attempts' = {
+            $result = Invoke-Scenario 'github-timeout' @{ PermanentCommand = 'api repos/{owner}/{repo}/pages*' }
+            Assert ($result.Error -and -not $result.Completed -and @($result.Events | Where-Object { $_ -like 'gh api repos/{owner}/{repo}/pages*' }).Count -eq 3) 'Expected three attempts and a clear failure'
+        }
+        'authentication errors do not retry' = {
+            $result = Invoke-Scenario 'github-auth-denied' @{ AuthDenied = $true }
+            Assert ($result.Error -and -not $result.Completed -and @($result.Events | Where-Object { $_ -eq 'gh auth status' }).Count -eq 1) 'Authentication failures must stop immediately'
+        }
+        'release creation is never automatically repeated after a timeout' = {
+            $result = Invoke-Scenario 'github-create-timeout' @{ PermanentCommand = 'release create *' }
+            Assert ($result.Error -and -not $result.Completed -and @($result.Events | Where-Object { $_ -like 'gh release create *' }).Count -eq 1) 'Release creation must not be blindly repeated'
+        }
         'missing or mismatched lockfile stops before build and tag' = {
             foreach ($option in @('MissingLock', 'WrongLockVersion', 'WrongLockRootVersion')) {
                 $result = Invoke-Scenario "lock-$option" @{ $option = $true }

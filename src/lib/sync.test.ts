@@ -117,6 +117,20 @@ it('两台设备顺序新增、修改和删除额度时不会丢失或复活', a
   expect(await read()).toEqual([{ id: 'a', deleted: true, updatedAt: 4 }, { id: 'b', name: '新建', updatedAt: 3 }])
 })
 
+it('额度卡片顺序和余额字段随 WebDAV 同步到另一台设备', async () => {
+  const dav = fakeDav()
+  vi.stubGlobal('fetch', dav.fetchImpl)
+  const records = [
+    { id: 'a', name: '会员', sortOrder: 1, updatedAt: 5 },
+    { id: 'b', name: '余额', sortOrder: 0, displayMode: 'balance', balance: 28, balanceUnit: '元', updatedAt: 5 },
+  ]
+  await db.settings.put({ key: 'aiQuotaEntries', value: records })
+  await syncNow()
+  await db.settings.delete('aiQuotaEntries')
+  await syncNow()
+  expect((await db.settings.get('aiQuotaEntries'))?.value).toEqual(records)
+})
+
 describe('WebDAV 同步：请求期间的本地改动', () => {
   it('请求期间新建的任务不会被旧快照删掉，并会推送上去', async () => {
     const dav = fakeDav({ [SYNC_URL]: JSON.stringify({ app: 'personal-workstation', version: 4, tasks: [], settings: [], docs: [], positions: [], annotations: [], bookmarks: [], focusSessions: [], folders: [], tombstones: [], blobMeta: [] }) })

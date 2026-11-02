@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import { prefersReducedMotion } from './motion'
+import { SORT_DURATION, SORT_EASING } from './sortMotion'
 
 /**
  * FLIP 补位（动效方案 5.C）：列表增删/换序后，留下的节点从旧位置滑到新位置，
@@ -64,7 +65,7 @@ export function useFlipList<T extends HTMLElement>(
       // 否则同一元素上其它 transform（如按压 :active、拖拽位移）会永久失效
       const a = el.animate(
         [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
-        { duration: 260, easing: 'cubic-bezier(.2, 0, 0, 1)' },
+        { duration: SORT_DURATION, easing: SORT_EASING },
       )
       a.finished.then(() => a.cancel()).catch(() => {})
     }

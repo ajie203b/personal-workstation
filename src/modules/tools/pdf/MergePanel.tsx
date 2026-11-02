@@ -9,6 +9,7 @@ import { FileText, GripVertical, X } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
+import { SORT_TRANSITION } from '@/lib/sortMotion'
 import { uid } from '@/lib/id'
 import { mergePdfs } from './pdfOps'
 import { yieldToUi, type ToolOutput } from './output'
@@ -94,7 +95,7 @@ export function MergePanel() {
 }
 
 function MergeRow({ item, index, onRemove }: { item: Item; index: number; onRemove: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, transition: SORT_TRANSITION })
   return (
     <li
       ref={setNodeRef}

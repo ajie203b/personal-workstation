@@ -13,6 +13,8 @@ import { useUi } from '@/stores/ui'
 import { TaskItem } from './TaskItem'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
+import { SORT_DURATION, SORT_EASING, SORT_TRANSITION } from '@/lib/sortMotion'
+import { prefersReducedMotion } from '@/lib/motion'
 
 const TIER_ICON: Record<Tier, LucideIcon> = {
   today: CalendarCheck,
@@ -83,7 +85,7 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
           </div>
         ))}
       </div>
-      <DragOverlay>
+      <DragOverlay dropAnimation={{ duration: prefersReducedMotion() ? 0 : SORT_DURATION, easing: SORT_EASING }}>
         {activeTask && (
           <div className="drop-settle rotate-[0.6deg] scale-[1.02] drop-shadow-lg">
             <TaskItem task={activeTask} overlay />
@@ -129,10 +131,9 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
 
 /** sortable 卡片自带 droppable，所以落点可能是别的卡片 id；列容器另外注册成整列落点兜底 */
 function SortableCard({ task }: { task: Task }) {
-  // 落位/让位用弹簧缓动，落点不再是硬贴（P1 看板落位回弹）
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
-    transition: { duration: 300, easing: 'cubic-bezier(.34, 1.32, .5, 1)' },
+    transition: SORT_TRANSITION,
   })
   return (
     <div

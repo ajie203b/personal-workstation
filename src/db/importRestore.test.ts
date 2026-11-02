@@ -14,7 +14,7 @@ vi.mock('@capacitor/local-notifications', () => ({
 import type { Task } from './db'
 
 const { db } = await import('./db')
-const { importAll } = await import('./tasks')
+const { exportAll, importAll } = await import('./tasks')
 
 const task: Task = { id: 't1', title: '读书', tier: 'today', priority: 2, status: 'todo', tags: [], createdAt: 1, updatedAt: 1 }
 
@@ -30,6 +30,15 @@ beforeEach(async () => {
 })
 
 describe('恢复快照', () => {
+  it('备份和恢复保留模型额度卡片顺序与余额', async () => {
+    const records = [{ id: 'a', name: '会员', sortOrder: 1, updatedAt: 2 }, { id: 'b', name: '余额', sortOrder: 0, displayMode: 'balance', balance: 28, balanceUnit: '元', updatedAt: 3 }]
+    await db.settings.put({ key: 'aiQuotaEntries', value: records })
+    const backup = await exportAll()
+    await db.settings.delete('aiQuotaEntries')
+    await importAll(backup, 'replace')
+    expect((await db.settings.get('aiQuotaEntries'))?.value).toEqual(records)
+  })
+
   it('保留本机专属设置（WebDAV 口令、同步时间戳不被清掉）', async () => {
     await db.settings.put({ key: 'webdav', value: { url: 'https://dav.test/mine', username: 'u', password: 'p', auto: true } })
     await db.settings.put({ key: 'lastSyncAt', value: 42 })

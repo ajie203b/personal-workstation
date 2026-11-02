@@ -5,6 +5,7 @@
 #   pwsh -ExecutionPolicy Bypass -File .\scripts\release.ps1 -Publish    APK + exe + Release + Pages + 线上版本核验
 #   加 -SkipPull 不切 main、不拉代码（测某个分支时用）
 #   发布中断后加 -Resume：校验本地检查点并继续，不重复构建 APK
+# GitHub 只读请求遇到临时网络错误时最多尝试三次；发布写操作失败后可用 -Resume 安全续跑。
 # 产物都放在仓库的 apk\ 目录（已在 .gitignore 里）。
 # -Exe / -Publish 需要 GitHub CLI：winget install GitHub.cli，然后 gh auth login
 [CmdletBinding()]
@@ -40,23 +41,48 @@ function Step($msg) {
     Write-Host "`n==> $msg" -ForegroundColor Cyan
     Add-Content -LiteralPath $LogFile -Value "`n[$(Get-Date -Format 'HH:mm:ss')] $msg" -Encoding UTF8
 }
-function Run($exe, [string[]]$argv, [switch]$Capture) {
-    Add-Content -LiteralPath $LogFile -Value "> $exe $($argv -join ' ')" -Encoding UTF8
-    $lines = [Collections.Generic.List[string]]::new()
-    & $exe @argv 2>&1 | ForEach-Object {
-        $line = $_.ToString()
-        $lines.Add($line)
-        Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
-        if (-not $Capture -and $VerbosePreference -eq 'Continue') { Write-Host $line }
-        elseif (-not $Capture -and $line -match '\b\d+ (high|critical) severity vulnerabilities\b') {
-            Write-Host "依赖审计提示：$line（详情见日志）" -ForegroundColor Yellow
+function Run($exe, [string[]]$argv, [switch]$Capture, [switch]$Retry, [string]$DownloadDirectory) {
+    $maxAttempts = if ($Retry) { 3 } else { 1 }
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        $attemptArgs = @($argv)
+        $attemptDirectory = $null
+        if ($DownloadDirectory) {
+            $destinationIndex = [array]::IndexOf($attemptArgs, '-D')
+            if ($destinationIndex -lt 0 -or $destinationIndex -ge $attemptArgs.Count - 1) { throw '下载目录参数无效' }
+            # A failed extraction can leave files behind. Never reuse its directory.
+            $attemptDirectory = Join-Path $DownloadDirectory "attempt-$attempt"
+            $attemptArgs[$destinationIndex + 1] = $attemptDirectory
         }
-    }
-    if ($LASTEXITCODE -ne 0) {
+        Add-Content -LiteralPath $LogFile -Value "> $exe $($attemptArgs -join ' ')" -Encoding UTF8
+        $lines = [Collections.Generic.List[string]]::new()
+        & $exe @attemptArgs 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            $lines.Add($line)
+            Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
+            if (-not $Capture -and $VerbosePreference -eq 'Continue') { Write-Host $line }
+            elseif (-not $Capture -and $line -match '\b\d+ (high|critical) severity vulnerabilities\b') {
+                Write-Host "依赖审计提示：$line（详情见日志）" -ForegroundColor Yellow
+            }
+        }
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            if ($DownloadDirectory) { return $attemptDirectory }
+            if ($Capture) { return $lines }
+            return
+        }
+        $failureText = $lines -join "`n"
+        $transient = $failureText -match '(?i)timed?\s*out|timeout|connection (?:reset|refused|closed)|unexpected EOF|context deadline exceeded|temporary failure|HTTP (?:429|502|503|504)\b|\b(?:502|503|504) (?:Bad Gateway|Service Unavailable|Gateway Timeout)'
+        if ($Retry -and $transient -and $attempt -lt $maxAttempts) {
+            $delay = 3 * $attempt
+            $message = "网络暂时失败，${delay} 秒后重试（$attempt/$maxAttempts）：$exe $($argv[0..([math]::Min(1, $argv.Count - 1))] -join ' ')"
+            Write-Host $message -ForegroundColor Yellow
+            Add-Content -LiteralPath $LogFile -Value $message -Encoding UTF8
+            Start-Sleep -Seconds $delay
+            continue
+        }
         $lines | Select-Object -Last 12 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
-        throw "失败：$exe $($argv -join ' ')（退出码 $LASTEXITCODE）"
+        throw "失败：$exe $($argv -join ' ')（退出码 $exitCode）"
     }
-    if ($Capture) { $lines }
 }
 function Get-DistHash {
     $directory = Join-Path $Root 'dist'
@@ -73,7 +99,7 @@ function Save-Checkpoint {
     Move-Item -LiteralPath $temporary -Destination $statePath -Force
 }
 function Read-Release {
-    Run gh @('api', "repos/{owner}/{repo}/releases/tags/$tag") -Capture | ConvertFrom-Json
+    Run gh @('api', "repos/{owner}/{repo}/releases/tags/$tag") -Capture -Retry | ConvertFrom-Json
 }
 
 # ---------- 预检 ----------
@@ -86,7 +112,7 @@ if ($Exe) {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
         throw '没装 GitHub CLI：先运行 winget install GitHub.cli，重开终端后 gh auth login'
     }
-    Run gh @('auth', 'status')
+    Run gh @('auth', 'status') -Retry
 }
 
 if (-not $SkipPull -and -not $Resume) {
@@ -137,7 +163,7 @@ if ($Publish) {
     }
     # 只检查本次标签，历史标签有同名差异也不会阻塞新版本，更不会覆盖它们。
     $localTag = Run git @('tag', '--list', $tag) -Capture
-    $remoteTags = @(Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag", "refs/tags/$tag^{}") -Capture)
+    $remoteTags = @(Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag", "refs/tags/$tag^{}") -Capture -Retry)
     if (-not $Resume -and ($localTag -or $remoteTags.Count)) { throw "标签 $tag 已存在，请用 -Resume 继续本机发布，或先核对并升级版本号" }
     if ($Resume) {
         if ($localTag -and (Run git @('rev-parse', "refs/tags/$tag^{commit}") -Capture) -ne $commit) { throw '本地标签指向不同提交，已停止' }
@@ -158,7 +184,7 @@ if ($Publish) {
     $gitBash = Join-Path $gitRoot 'bin/bash.exe'
     if (-not (Test-Path -LiteralPath $gitBash)) { throw '找不到 Git Bash，请安装 Git for Windows 后再发布' }
     if (-not (Test-Path -LiteralPath './scripts/deploy-gh-pages.sh')) { throw '缺少 Pages 部署脚本' }
-    $pagesUrl = ((Run gh @('api', 'repos/{owner}/{repo}/pages', '--jq', '.html_url') -Capture) | Out-String).Trim()
+    $pagesUrl = ((Run gh @('api', 'repos/{owner}/{repo}/pages', '--jq', '.html_url') -Capture -Retry) | Out-String).Trim()
     $pagesUri = $null
     if (-not [uri]::TryCreate($pagesUrl, [UriKind]::Absolute, [ref]$pagesUri) -or $pagesUri.Scheme -ne 'https') {
         throw "GitHub Pages 地址无效，请检查仓库 Pages 设置：$pagesUrl"
@@ -225,7 +251,7 @@ function Wait-DesktopRun($event, $since) {
         $arguments = @('run', 'list', '--workflow', $DesktopWorkflow, '--event', $event, '--limit', '5',
             '--json', 'databaseId,createdAt,headSha,headBranch')
         if ($Publish) { $arguments += @('--branch', $tag, '--commit', $commit) }
-        $runs = Run gh $arguments -Capture | ConvertFrom-Json
+        $runs = Run gh $arguments -Capture -Retry | ConvertFrom-Json
         $run = $runs | Where-Object {
             if ($Publish) { $_.headSha -eq $commit -and $_.headBranch -eq $tag }
             else { ([datetime]$_.createdAt).ToUniversalTime() -ge $since }
@@ -267,7 +293,7 @@ if ($Exe) {
         $releaseExists = $false
         if ($Resume) {
             $filter = ".[] | select(.tag_name == $($tag | ConvertTo-Json -Compress)) | .tag_name"
-            $releaseExists = [bool](Run gh @('api', '--paginate', 'repos/{owner}/{repo}/releases?per_page=100', '--jq', $filter) -Capture)
+            $releaseExists = [bool](Run gh @('api', '--paginate', 'repos/{owner}/{repo}/releases?per_page=100', '--jq', $filter) -Capture -Retry)
         }
         if ($releaseExists) {
             $existing = Read-Release
@@ -292,7 +318,7 @@ if ($Exe) {
 
     $desktopComplete = $false
     if ($Resume) {
-        $run = Run gh @('run', 'view', "$runId", '--json', 'headSha,headBranch,status,conclusion,attempt') -Capture | ConvertFrom-Json
+        $run = Run gh @('run', 'view', "$runId", '--json', 'headSha,headBranch,status,conclusion,attempt') -Capture -Retry | ConvertFrom-Json
         if ($run.headSha -ne $commit -or $run.headBranch -ne $tag) { throw '桌面构建任务的提交或标签与本次发布不符，已停止' }
         $desktopComplete = $run.status -eq 'completed' -and $run.conclusion -eq 'success'
         if ($run.status -eq 'completed' -and -not $desktopComplete) {
@@ -303,7 +329,7 @@ if ($Exe) {
             Run gh $rerunArguments
             for ($attempt = 0; $attempt -lt 30; $attempt++) {
                 Start-Sleep -Seconds 4
-                $retry = Run gh @('run', 'view', "$runId", '--json', 'attempt') -Capture | ConvertFrom-Json
+                $retry = Run gh @('run', 'view', "$runId", '--json', 'attempt') -Capture -Retry | ConvertFrom-Json
                 if ($retry.attempt -gt $previousAttempt) { break }
             }
             if ($retry.attempt -le $previousAttempt) { throw '桌面构建重试尚未启动，请稍后续跑' }
@@ -311,7 +337,7 @@ if ($Exe) {
     }
     if (-not $desktopComplete) {
         Step "等待桌面版打包（任务 $runId，一般 10 分钟左右，详细进度见日志）"
-        Run gh @('run', 'watch', "$runId", '--exit-status', '--interval', '20')
+        Run gh @('run', 'watch', "$runId", '--exit-status', '--interval', '20') -Retry
     }
 
     $expectedExe = "Kairos_${verName}_x64-setup.exe"
@@ -322,8 +348,8 @@ if ($Exe) {
     } else {
         Step '下载 exe'
         $tmp = Join-Path $env:TEMP "kairos-exe-$runId-$([guid]::NewGuid().ToString('N'))"
-        Run gh @('run', 'download', "$runId", '-n', 'Kairos-windows', '-D', $tmp)
-        $installers = @(Get-ChildItem -LiteralPath $tmp -Filter $expectedExe -Recurse -File)
+        $downloadedDirectory = Run gh @('run', 'download', "$runId", '-n', 'Kairos-windows', '-D', $tmp) -Retry -DownloadDirectory $tmp
+        $installers = @(Get-ChildItem -LiteralPath $downloadedDirectory -Filter $expectedExe -Recurse -File)
         if ($installers.Count -ne 1) { throw "构建附件中未找到唯一的 $expectedExe，已停止" }
         Copy-Item -LiteralPath $installers[0].FullName -Destination $exeOut -Force
         if ($Publish) {
@@ -352,7 +378,7 @@ if ($Exe) {
             if ($exeAsset.digest -ne "sha256:$($state.exeHash)") { throw 'Release EXE 与本机下载的构建附件不一致' }
             $updaterDirectory = Join-Path $outDir "updater-$tag"
             New-Item -ItemType Directory -Force $updaterDirectory | Out-Null
-            Run gh @('release', 'download', $tag, '--pattern', 'latest.json', '--pattern', "$expectedExe.sig", '--dir', $updaterDirectory, '--clobber')
+            Run gh @('release', 'download', $tag, '--pattern', 'latest.json', '--pattern', "$expectedExe.sig", '--dir', $updaterDirectory, '--clobber') -Retry
             Run node @('scripts/verify-updater.mjs', '--config', $updaterConfigPath, '--artifact', $exeOut,
                 '--signature', (Join-Path $updaterDirectory "$expectedExe.sig"), '--manifest', (Join-Path $updaterDirectory 'latest.json'), '--version', $verName)
         }

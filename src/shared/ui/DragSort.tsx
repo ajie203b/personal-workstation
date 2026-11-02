@@ -4,6 +4,7 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, type Sorting
 import { CSS } from '@dnd-kit/utilities'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
+import { SORT_DURATION, SORT_EASING, SORT_TRANSITION } from '@/lib/sortMotion'
 
 /** 触摸长按后才起拖，普通滑动仍交给页面滚动。 */
 export function DragSort({ ids, strategy, onMove, children }: {
@@ -50,12 +51,12 @@ export function DragSort({ ids, strategy, onMove, children }: {
   )
 }
 
-export function DragSortItem({ id, children, className, as: Tag = 'div' }: {
-  id: string; children: ReactNode; className?: string; as?: 'li' | 'div'
+export function DragSortItem({ id, children, className, label, as: Tag = 'div' }: {
+  id: string; children: ReactNode; className?: string; label?: string; as?: 'li' | 'div'
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id })
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id, transition: SORT_TRANSITION })
   return (
-    <Tag ref={setNodeRef} {...attributes} {...listeners} role={Tag === 'li' ? 'listitem' : undefined}
+    <Tag ref={setNodeRef} {...attributes} {...listeners} role={Tag === 'li' ? 'listitem' : label ? 'group' : undefined} aria-label={label}
       data-sortable={id} data-dragging={isDragging || undefined}
       onContextMenu={e => e.preventDefault()}
       className={cn(
@@ -69,7 +70,7 @@ export function DragSortItem({ id, children, className, as: Tag = 'div' }: {
         // 拖动中跟手不补间；落位与其它卡片换位用同一条缓出曲线，避免瞬移和弹簧过冲
         transition: isDragging
           ? 'scale 160ms var(--ease-soft-spring), rotate 160ms var(--ease-soft-spring), box-shadow 180ms var(--ease-standard)'
-          : 'transform 250ms cubic-bezier(.22,.8,.36,1), scale 160ms var(--ease-standard), rotate 160ms var(--ease-standard)',
+          : `transform ${SORT_DURATION}ms ${SORT_EASING}, scale 160ms var(--ease-standard), rotate 160ms var(--ease-standard)`,
         scale: isDragging ? '1.025' : '1',
         rotate: isDragging ? '-0.4deg' : '0deg',
         willChange: isDragging ? 'transform' : undefined,
