@@ -38,23 +38,28 @@ function mondayOf(d: Date): Date {
 
 export function StatsPage() {
   const [view, setView] = useState<'tasks' | 'quota'>('tasks')
+  const [range, setRange] = useState<'week' | 'month'>('week')
   return (
     <div>
       <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4">
-        <div className="inline-flex gap-1 rounded-xl bg-surface-3/70 p-1" role="group" aria-label="统计页面切换">
-          <button type="button" aria-pressed={view === 'tasks'} onClick={() => setView('tasks')} className={cn('flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px]', view === 'tasks' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><BarChart3 size={15} />任务统计</button>
-          <button type="button" aria-pressed={view === 'quota'} onClick={() => setView('quota')} className={cn('flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px]', view === 'quota' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><WalletCards size={15} />模型额度</button>
+        <div className="hidden md:block mb-4"><h1 className="text-[22px] font-bold leading-8">统计</h1><p className="text-[13px] text-on-surface-2 mt-0.5">查看任务数据与模型额度</p></div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex shrink-0 gap-1 rounded-xl bg-surface-3/70 p-1" role="group" aria-label="统计页面切换">
+            <button type="button" aria-pressed={view === 'tasks'} onClick={() => setView('tasks')} className={cn('flex items-center gap-1 rounded-lg px-2.5 py-2 text-[13px] whitespace-nowrap', view === 'tasks' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><BarChart3 size={15} />任务统计</button>
+            <button type="button" aria-pressed={view === 'quota'} onClick={() => setView('quota')} className={cn('flex items-center gap-1 rounded-lg px-2.5 py-2 text-[13px] whitespace-nowrap', view === 'quota' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><WalletCards size={15} />模型额度</button>
+          </div>
+          {view === 'tasks' && <div className="flex shrink-0 items-center gap-0.5 rounded-[12px] bg-surface-3/70 p-[3px]" role="group" aria-label="统计时间范围">
+            {(['week', 'month'] as const).map(r => <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)} className={cn('h-8 rounded-[10px] px-3 text-[13px] font-medium transition-colors', range === r ? 'bg-surface text-on-surface shadow-sm' : 'text-on-surface-2 hover:text-on-surface')}>{r === 'week' ? '周' : '月'}</button>)}
+          </div>}
         </div>
       </div>
-      <div key={view} className="stats-view-transition">{view === 'tasks' ? <TaskStatistics /> : <AiQuotaPage />}</div>
+      <div key={view} className="stats-view-transition">{view === 'tasks' ? <TaskStatistics range={range} /> : <AiQuotaPage />}</div>
     </div>
   )
 }
 
-function TaskStatistics() {
+function TaskStatistics({ range }: { range: 'week' | 'month' }) {
   const [metric, setMetric] = useState<Metric>('tasks')
-  /** 顶部「周 / 月」统一控制对比卡与专注走势 */
-  const [range, setRange] = useState<'week' | 'month'>('week')
 
   useEffect(() => { void migrateLegacyFocusRecords() }, [])
 
@@ -173,29 +178,6 @@ function TaskStatistics() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 cascade">
-      <div className="flex items-center gap-3">
-        <div className="hidden md:block">
-          <h1 className="text-[22px] font-bold leading-8">统计</h1>
-          <p className="text-[13px] text-on-surface-2 mt-0.5">全部来自本机历史数据 · 完成打卡 / 专注 / 批注</p>
-        </div>
-        {/* 周 / 月 一个开关管全部图表，不用每张卡各切一次 */}
-        <div className="ml-auto flex items-center gap-0.5 p-[3px] rounded-[12px] bg-surface-3/70">
-          {(['week', 'month'] as const).map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setRange(r)}
-              className={cn(
-                'h-8 px-3 rounded-[10px] text-[13px] font-medium transition-colors cursor-pointer',
-                range === r ? 'bg-surface text-on-surface shadow-sm' : 'text-on-surface-2 hover:text-on-surface',
-              )}
-            >
-              {r === 'week' ? '周' : '月'}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* 概览四卡：手机上一屏四列，不横滑 */}
       <div className="grid grid-cols-4 gap-2 md:gap-3">
         <StatCard icon={<CheckCircle2 size={16} />} label="累计完成" shortLabel="完成" value={doneTasks.length} unit="件" />
