@@ -2,6 +2,7 @@ import { CapacitorHttp, registerPlugin } from '@capacitor/core'
 import type { Table } from 'dexie'
 import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
 import { exportSnapshotParts } from '@/db/tasks'
+import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
 import { isNative, isTauri } from './native'
 import { mergePayloads, type SyncPayload } from './syncMerge'
 import { planReconcile } from './syncReconcile'
@@ -200,7 +201,7 @@ function base64ToBlob(text: string, type: string): Blob {
 /* ---------------- 本地写入 ---------------- */
 
 // 注意不含 db.blobs：文档本体不在 JSON 里，清掉就找不回来了
-const SYNCED_TABLES = [db.tasks, db.docs, db.positions, db.annotations, db.bookmarks, db.focusSessions, db.folders, db.tombstones]
+const SYNCED_TABLES = [db.tasks, db.docs, db.positions, db.annotations, db.bookmarks, db.focusSessions, db.folders, db.tombstones, db.settings]
 
 const taskTs = (t: Task) => t.updatedAt ?? t.createdAt
 const docTs = (d: Doc) => d.updatedAt ?? d.addedAt
@@ -231,6 +232,19 @@ interface ApplyStat {
   pending: number
 }
 
+/** 同步期间仍可能编辑额度；在事务内与当前数据再次合并。 */
+async function applyQuota(p: SyncPayload, base: SyncPayload, replaceAll: boolean): Promise<void> {
+  const incoming = p.settings?.find(s => s.key === QUOTA_KEY)
+  const original = base.settings?.find(s => s.key === QUOTA_KEY)
+  const current = await db.settings.get(QUOTA_KEY)
+  if (replaceAll && JSON.stringify(current?.value) === JSON.stringify(original?.value)) {
+    if (incoming) await db.settings.put(incoming)
+    else await db.settings.delete(QUOTA_KEY)
+    return
+  }
+  if (incoming || current) await db.settings.put({ key: QUOTA_KEY, value: mergeQuotaRecords(current?.value, incoming?.value) })
+}
+
 async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean }, base: SyncPayload): Promise<ApplyStat> {
   const p = merged.payload
   const stat: ApplyStat = { pending: 0 }
@@ -254,6 +268,7 @@ async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean 
       await db.focusSessions.bulkPut(p.focusSessions)
       await db.folders.bulkPut(p.folders ?? [])
       await db.tombstones.bulkPut(p.tombstones)
+      await applyQuota(p, base, true)
     })
     await db.settings.put({ key: 'syncEpoch', value: p.epoch ?? Date.now() })
     return stat
@@ -268,6 +283,7 @@ async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean 
     await reconcileInto(db.focusSessions, p.focusSessions, base.focusSessions ?? [], (f) => f.id, (f) => f.ts, stat)
     await reconcileInto(db.folders, p.folders ?? [], base.folders ?? [], (f) => f.id, (f) => f.updatedAt, stat)
     await reconcileInto(db.tombstones, p.tombstones, base.tombstones ?? [], (t) => t.id, (t) => t.ts, stat)
+    await applyQuota(p, base, false)
   })
   if (p.epoch) {
     const cur = (await db.settings.get('syncEpoch'))?.value as number | undefined

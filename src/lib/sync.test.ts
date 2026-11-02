@@ -80,6 +80,43 @@ beforeEach(async () => {
   await setWebdavConfig({ url: BASE, username: 'u', password: 'p', auto: false })
 })
 
+it('WebDAV 合并额度记录并把结果写回本机及云端', async () => {
+  const legacy = { id: 'legacy', name: '旧记录' }
+  const local = { id: 'local', name: '本机', updatedAt: 3 }
+  const remote = { id: 'remote', name: '云端', updatedAt: 4 }
+  const gone = { id: 'gone', deleted: true, updatedAt: 5 }
+  await db.settings.put({ key: 'aiQuotaEntries', value: [legacy, local, gone] })
+  const dav = fakeDav({ [SYNC_URL]: JSON.stringify({ app: 'personal-workstation', version: 4, tasks: [], settings: [{ key: 'aiQuotaEntries', value: [remote, { id: 'gone', name: '已删除' }] }], docs: [], positions: [], annotations: [], bookmarks: [], focusSessions: [], folders: [], tombstones: [], blobMeta: [] }) })
+  vi.stubGlobal('fetch', dav.fetchImpl)
+  await syncNow()
+  const actual = (await db.settings.get('aiQuotaEntries'))?.value
+  expect(actual).toEqual([gone, legacy, local, remote])
+  const cloud = JSON.parse(dav.files.get(SYNC_URL)!)
+  expect(cloud.settings.find((s: { key: string }) => s.key === 'aiQuotaEntries').value).toEqual(actual)
+})
+
+it('两台设备顺序新增、修改和删除额度时不会丢失或复活', async () => {
+  const dav = fakeDav()
+  vi.stubGlobal('fetch', dav.fetchImpl)
+  const write = async (value: unknown[]) => db.settings.put({ key: 'aiQuotaEntries', value })
+  const read = async () => (await db.settings.get('aiQuotaEntries'))?.value as Array<Record<string, unknown>>
+  await write([{ id: 'a', name: '初始', updatedAt: 1 }])
+  await syncNow()
+  await db.settings.delete('aiQuotaEntries') // 模拟第二台新设备
+  await syncNow()
+  expect(await read()).toEqual([{ id: 'a', name: '初始', updatedAt: 1 }])
+  await write([{ id: 'a', name: '修改', updatedAt: 2 }, { id: 'b', name: '新建', updatedAt: 3 }])
+  await syncNow()
+  await write([{ id: 'a', name: '初始', updatedAt: 1 }]) // 第一台设备旧快照
+  await syncNow()
+  expect(await read()).toEqual([{ id: 'a', name: '修改', updatedAt: 2 }, { id: 'b', name: '新建', updatedAt: 3 }])
+  await write([{ id: 'a', deleted: true, updatedAt: 4 }, { id: 'b', name: '新建', updatedAt: 3 }])
+  await syncNow()
+  await write([{ id: 'a', name: '初始', updatedAt: 1 }, { id: 'b', name: '新建', updatedAt: 3 }])
+  await syncNow()
+  expect(await read()).toEqual([{ id: 'a', deleted: true, updatedAt: 4 }, { id: 'b', name: '新建', updatedAt: 3 }])
+})
+
 describe('WebDAV 同步：请求期间的本地改动', () => {
   it('请求期间新建的任务不会被旧快照删掉，并会推送上去', async () => {
     const dav = fakeDav({ [SYNC_URL]: JSON.stringify({ app: 'personal-workstation', version: 4, tasks: [], settings: [], docs: [], positions: [], annotations: [], bookmarks: [], focusSessions: [], folders: [], tombstones: [], blobMeta: [] }) })

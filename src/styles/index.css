@@ -1256,3 +1256,6 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
   100% { transform: scale(1.12); opacity: 0; }
 }
 
+@keyframes stats-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.stats-view-transition { animation: stats-view-in 220ms ease-out both; }
+@media (prefers-reduced-motion: reduce) { .stats-view-transition { animation: none; } }

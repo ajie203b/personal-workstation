@@ -6,6 +6,8 @@ import { migrateLegacyFocusRecords } from '@/db/focus'
 import { cn } from '@/lib/cn'
 import { fmtListDate, toDateStr } from '@/lib/date'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
+import { WalletCards, BarChart3 } from 'lucide-react'
+import { AiQuotaPage } from './AiQuotaPage'
 
 /** 统计页（v1.3）：完成热力图 + 周报 + 标签分布 + 专注排行。全部本地数据。 */
 
@@ -35,6 +37,21 @@ function mondayOf(d: Date): Date {
 }
 
 export function StatsPage() {
+  const [view, setView] = useState<'tasks' | 'quota'>('tasks')
+  return (
+    <div>
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4">
+        <div className="inline-flex gap-1 rounded-xl bg-surface-3/70 p-1" role="group" aria-label="统计页面切换">
+          <button type="button" aria-pressed={view === 'tasks'} onClick={() => setView('tasks')} className={cn('flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px]', view === 'tasks' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><BarChart3 size={15} />任务统计</button>
+          <button type="button" aria-pressed={view === 'quota'} onClick={() => setView('quota')} className={cn('flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px]', view === 'quota' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><WalletCards size={15} />模型额度</button>
+        </div>
+      </div>
+      <div key={view} className="stats-view-transition">{view === 'tasks' ? <TaskStatistics /> : <AiQuotaPage />}</div>
+    </div>
+  )
+}
+
+function TaskStatistics() {
   const [metric, setMetric] = useState<Metric>('tasks')
   /** 顶部「周 / 月」统一控制对比卡与专注走势 */
   const [range, setRange] = useState<'week' | 'month'>('week')

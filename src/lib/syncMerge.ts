@@ -1,4 +1,5 @@
 import type { Annotation, Bookmark, Doc, FocusSession, Folder, ReadingPosition, SettingKV, Task, Tombstone } from '@/db/db'
+import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
 
 /**
  * WebDAV 同步的合并逻辑（纯函数，便于单测）。
@@ -87,6 +88,9 @@ function mergeSettings(local: SettingKV[], remote: SettingKV[]): SettingKV[] {
   const map = new Map<string, SettingKV>()
   for (const s of remote) map.set(s.key, s)
   for (const s of local) map.set(s.key, s)
+  const l = local.find(s => s.key === QUOTA_KEY)
+  const r = remote.find(s => s.key === QUOTA_KEY)
+  if (l || r) map.set(QUOTA_KEY, { key: QUOTA_KEY, value: mergeQuotaRecords(l?.value, r?.value) })
   return [...map.values()]
 }
 
