@@ -3,12 +3,10 @@ package com.personal.workstation;
 import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentValues;
-import android.content.Intent;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
-import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
 
@@ -63,44 +61,26 @@ public class FileExportPlugin extends Plugin {
         writeLegacy(call, fileName, mimeType, dataBase64);
     }
 
-    /**
-     * 打开「下载/个人工作站」，让用户直接看到刚生成的文件。
-     * 先试目标目录，打不开再退到「下载」根目录；把结果交给前端提示。
-     */
+    /** 优先打开实际保存目录；系统不支持时打开下载列表，保存结果不会丢失。 */
     @PluginMethod
     public void openSavedLocation(PluginCall call) {
-        if (openFolder(Environment.DIRECTORY_DOWNLOADS + File.separator + DIR_NAME)) {
-            resolveLocation(call, "folder");
-            return;
-        }
-        if (openFolder(Environment.DIRECTORY_DOWNLOADS)) {
-            resolveLocation(call, "downloads");
-            return;
-        }
-        resolveLocation(call, "unavailable");
-    }
+        getActivity().runOnUiThread(() -> {
+            String path = Environment.DIRECTORY_DOWNLOADS + File.separator + DIR_NAME;
+            String location = FileLocationNavigator.open(new FileLocationNavigator.Launcher() {
+                @Override public boolean openDirectory(String packageName) {
+                    getActivity().startActivity(FileLocationIntents.directory(path, packageName));
+                    return true;
+                }
 
-    private void resolveLocation(PluginCall call, String location) {
-        JSObject result = new JSObject();
-        result.put("location", location);
-        call.resolve(result);
-    }
-
-    private boolean openFolder(String relativePath) {
-        Uri uri = DocumentsContract.buildDocumentUri(
-            "com.android.externalstorage.documents",
-            "primary:" + relativePath
-        );
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            getContext().startActivity(intent);
-            return true;
-        } catch (Exception e) {
-            // 某些机型没有能处理目录 content:// 的文件管理器，交给调用方继续兜底
-            return false;
-        }
+                @Override public boolean openDownloads() {
+                    getActivity().startActivity(FileLocationIntents.downloads());
+                    return true;
+                }
+            });
+            JSObject result = new JSObject();
+            result.put("location", location);
+            call.resolve(result);
+        });
     }
 
     @PermissionCallback
