@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T11:51:21.246Z",
+  "generatedAt": "2026-11-02T13:32:04.042Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
@@ -10,6 +10,10 @@
     {
       "name": "Claude Opus 5.5 (Max)",
       "score": 58.4
+    },
+    {
+      "name": "Gemini 4 Carbon (Medium)",
+      "score": 57.7
     },
     {
       "name": "Claude Opus 5.5 (Xhigh)",
@@ -118,10 +122,6 @@
     {
       "name": "Claude Fable 5.1 (Low)",
       "score": 38.5
-    },
-    {
-      "name": "GPT-6.1 Terra (Medium)",
-      "score": 38.1
     }
   ]
 }
