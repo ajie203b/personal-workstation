@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeCacheStorage } from './fakeCacheStorage'
-import { deleteModel, getModel, sha256Hex } from './modelCache'
+import { deleteModel, getModel, pruneModel, sha256Hex } from './modelCache'
 
 const enc = (s: string) => new TextEncoder().encode(s).buffer as ArrayBuffer
 const text = (b: ArrayBuffer) => new TextDecoder().decode(b)
@@ -106,5 +106,48 @@ describe('modelCache SHA-256 校验', () => {
     const buf = await getModel({ id: 'm/encoder.onnx', version: 'rev1', urls: ['https://good.mirror/encoder.onnx'] })
     expect(text(buf)).toBe('anything')
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: 'force-cache' })
+  })
+})
+
+describe('pruneModel：只清未通过校验的缓存', () => {
+  const OTHER_KEY = 'https://model-cache.local/m%2Fdecoder.onnx@rev1'
+
+  it('已校验条目保留，不重下；未缓存的返回 false', async () => {
+    const sha = await sha256Hex(GOOD)
+    serve({ 'https://good.mirror/encoder.onnx': GOOD })
+    await getModel({ id: 'm/encoder.onnx', version: 'rev1', urls: ['https://good.mirror/encoder.onnx'], sha256: sha })
+    expect(await pruneModel('m/encoder.onnx', 'rev1', sha)).toBe(true)
+    expect(await cached()).toBe(text(GOOD))
+    expect(await pruneModel('m/decoder.onnx', 'rev1', sha)).toBe(false)
+    // 再取一次直接命中缓存
+    fetchMock.mockClear()
+    await getModel({ id: 'm/encoder.onnx', version: 'rev1', urls: ['https://good.mirror/encoder.onnx'], sha256: sha })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('没有标记 / 标记不符 / 长度对不上：删掉', async () => {
+    const sha = await sha256Hex(GOOD)
+    const c = await storage.open('model-cache-v1')
+    await c.put(KEY, new Response(GOOD.slice(0))) // 无标记
+    expect(await pruneModel('m/encoder.onnx', 'rev1', sha)).toBe(false)
+    expect(await cached()).toBeUndefined()
+
+    await c.put(KEY, new Response(GOOD.slice(0), { headers: { 'x-model-sha256': 'deadbeef', 'x-model-length': String(GOOD.byteLength) } }))
+    expect(await pruneModel('m/encoder.onnx', 'rev1', sha)).toBe(false)
+    expect(await cached()).toBeUndefined()
+
+    // 写入被截断：标记对，但实际字节比标记的长度短
+    await c.put(KEY, new Response(GOOD.slice(0, 5), { headers: { 'x-model-sha256': sha, 'x-model-length': String(GOOD.byteLength) } }))
+    expect(await pruneModel('m/encoder.onnx', 'rev1', sha)).toBe(false)
+    expect(await cached()).toBeUndefined()
+  })
+
+  it('只动指定条目，别的文件缓存不受影响', async () => {
+    const sha = await sha256Hex(GOOD)
+    const c = await storage.open('model-cache-v1')
+    await c.put(KEY, new Response(enc('坏的')))
+    await c.put(OTHER_KEY, new Response(enc('别的文件')))
+    expect(await pruneModel('m/encoder.onnx', 'rev1', sha)).toBe(false)
+    expect(await c.match(OTHER_KEY)).toBeDefined()
   })
 })

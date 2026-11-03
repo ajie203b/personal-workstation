@@ -4,7 +4,7 @@ import type { ModelSourceConfig } from './recognizer'
 
 export type WorkerIn =
   | { type: 'config'; source: ModelSourceConfig }
-  /** fresh：先清掉本模型的缓存再下载（「重试 / 换源」按钮） */
+  /** fresh：先释放会话、清掉未通过校验的缓存文件，再加载（只补下缺的 / 坏的；「重试 / 重新加载模型」按钮） */
   | { type: 'load'; id: number; fresh?: boolean }
   | { type: 'recognize'; id: number; key: string; strokes: Stroke[]; charHeight: number }
   | { type: 'compute'; id: number; key: string; latex: string }

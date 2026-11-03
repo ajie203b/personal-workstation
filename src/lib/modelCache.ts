@@ -171,6 +171,33 @@ export async function deleteModel(id: string, version: string): Promise<void> {
   await c.delete(keyUrl(id, version))
 }
 
+/**
+ * 只清坏的：缓存条目的「已校验」标记（sha256 + 长度）与期望一致且与实际字节数相符就保留，
+ * 否则（缺失标记、标记不符、长度对不上、读不出来）删掉，下次 getModel 重新下载。
+ * 不重算哈希（87MB 的编码器算一遍要好几秒）；标记被伪造的情况由调用方在建会话失败时 deleteModel 兜底。
+ * 返回 true = 保留（已校验），false = 不存在或已删除。
+ */
+export async function pruneModel(id: string, version: string, sha256: string): Promise<boolean> {
+  if (typeof caches === 'undefined') return false
+  const c = await cache()
+  const key = keyUrl(id, version)
+  let ok = false
+  try {
+    const hit = await c.match(key)
+    if (!hit) return false
+    const marked = hit.headers.get(VERIFIED_HEADER)
+    const markedLen = Number(hit.headers.get(LENGTH_HEADER))
+    if (marked === sha256 && Number.isFinite(markedLen) && markedLen > 0) {
+      const len = (await hit.arrayBuffer()).byteLength
+      ok = len === markedLen
+    }
+  } catch {
+    ok = false
+  }
+  if (!ok) await c.delete(key).catch(() => undefined)
+  return ok
+}
+
 /** 清掉全部模型缓存，返回释放的字节数 */
 export async function clearModelCache(): Promise<number> {
   const freed = await modelCacheBytes()

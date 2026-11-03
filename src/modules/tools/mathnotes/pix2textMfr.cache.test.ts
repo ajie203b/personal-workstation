@@ -4,8 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeCacheStorage } from '@/lib/fakeCacheStorage'
-import { getModel, sha256Hex } from '@/lib/modelCache'
-import { MFR_FILES, MFR_REVISION, Pix2TextMfrRecognizer, mfrCacheId, type FileLoader, type MfrRuntime } from './pix2textMfr'
+import { getModel, pruneModel, sha256Hex } from '@/lib/modelCache'
+import { MFR_FILES, MFR_REVISION, Pix2TextMfrRecognizer, mfrCacheId, type CachePruner, type FileLoader, type MfrRuntime } from './pix2textMfr'
 import type { ModelSourceConfig } from './recognizer'
 
 const enc = (s: string) => new TextEncoder().encode(s).buffer as ArrayBuffer
@@ -27,6 +27,11 @@ let shaMap: Record<string, string>
 /** 真实 sha → 假文件 sha，其余照走生产用的 getModel（镜像回退 + 校验 + 缓存） */
 const loader: FileLoader = (id, urls, onProgress, sha256) =>
   getModel({ id, version: MFR_REVISION, urls, onProgress, sha256: shaMap[sha256] })
+/** 同理：重试时按假文件的 sha 判断缓存是否已校验 */
+const prune: CachePruner = (id, sha256) => pruneModel(id, MFR_REVISION, shaMap[sha256])
+
+/** 某个文件被 fetch 了几次（任意源） */
+const fetchedTimes = (file: string) => fetchMock.mock.calls.filter(([u]) => String(u).endsWith(`/${file}`)).length
 
 /** 假运行时：只认正确的模型字节，否则像 onnxruntime 一样建会话失败 */
 function fakeRuntime() {
@@ -94,7 +99,7 @@ describe('Pix2Text 模型缓存恢复', () => {
   it('首选镜像以 200 返回错误内容：不缓存，自动换下一源加载成功', async () => {
     serveMirrors()
     const { runtime, prepared } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: SOURCE, loader })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: SOURCE, loader, prune })
     await r.load()
     expect(prepared.get('mfr-encoder')).toBe('ENCODER-OK')
     expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
@@ -107,43 +112,106 @@ describe('Pix2Text 模型缓存恢复', () => {
     serveMirrors()
     await seed('encoder_model.onnx', '<html>旧版本缓存的错误页</html>')
     const { runtime } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
     await r.load()
     expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
   })
 
-  it('坏缓存骗过了标记（磁盘损坏等）：建会话失败即清掉该缓存，点「重试」恢复', async () => {
+  it('伪造标记（磁盘损坏等）导致建会话失败：清掉该文件缓存，点「重试」只重下它并恢复', async () => {
     serveMirrors()
     const forged = await sha256Hex(enc(FAKE['encoder_model.onnx']))
     const badBody = 'ENCODER-XX' // 与正确文件等长，标记和长度都对得上
     await seed('encoder_model.onnx', badBody, { 'x-model-sha256': forged, 'x-model-length': String(enc(badBody).byteLength) })
     const { runtime, prepared } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
 
     await expect(r.load()).rejects.toThrow(/protobuf/)
-    // 建会话失败 → 对应缓存已删
+    // 标记一致也要清：建会话失败 → 对应缓存已删；另外两个已校验文件留着
     expect(await cacheEntry('encoder_model.onnx')).toBeUndefined()
+    expect(await cacheEntry('decoder_model.onnx')).toBe('DECODER-OK')
+    expect(await cacheEntry('tokenizer.json')).toBe(FAKE['tokenizer.json'])
 
-    // 「重试」= reset（清本模型全部缓存与会话）+ load
-    await r.reset()
-    expect(await cacheEntry('decoder_model.onnx')).toBeUndefined()
-    expect(await cacheEntry('tokenizer.json')).toBeUndefined()
+    // 「重试」= reset（释放会话 + 只清未通过校验的）+ load
+    fetchMock.mockClear()
+    expect(await r.reset()).toEqual(['encoder_model.onnx'])
     await r.load()
+    expect(prepared.get('mfr-encoder')).toBe('ENCODER-OK')
+    expect(prepared.get('mfr-decoder')).toBe('DECODER-OK')
+    expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
+    expect(fetchedTimes('encoder_model.onnx')).toBe(1)
+    expect(fetchedTimes('decoder_model.onnx')).toBe(0)
+    expect(fetchedTimes('tokenizer.json')).toBe(0)
+  })
+
+  it('decoder 缺失、encoder 已校验：重试只下载 decoder', async () => {
+    serveMirrors()
+    const { runtime, prepared } = fakeRuntime()
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    await r.load()
+    const c = await storage.open('model-cache-v1')
+    await c.delete(`https://model-cache.local/${encodeURIComponent(mfrCacheId('decoder_model.onnx'))}@${encodeURIComponent(MFR_REVISION)}`)
+
+    fetchMock.mockClear()
+    expect(await r.reset()).toEqual(['decoder_model.onnx'])
+    // 会话已释放，重建
+    expect(prepared.size).toBe(0)
+    await r.load()
+    expect(fetchedTimes('encoder_model.onnx')).toBe(0)
+    expect(fetchedTimes('tokenizer.json')).toBe(0)
+    expect(fetchedTimes('decoder_model.onnx')).toBe(1)
+    expect(prepared.get('mfr-encoder')).toBe('ENCODER-OK')
+    expect(prepared.get('mfr-decoder')).toBe('DECODER-OK')
+    expect(await cacheEntry('decoder_model.onnx')).toBe('DECODER-OK')
+  })
+
+  it('encoder 缓存坏了（标记不符）：重试只重下 encoder', async () => {
+    serveMirrors()
+    const { runtime, prepared } = fakeRuntime()
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    await r.load()
+    // 模拟坏条目：内容被截断，标记的长度与实际不符
+    await seed('encoder_model.onnx', 'ENC', { 'x-model-sha256': shaMap[MFR_FILES[0].sha256], 'x-model-length': '10' })
+
+    fetchMock.mockClear()
+    expect(await r.reset()).toEqual(['encoder_model.onnx'])
+    expect(await cacheEntry('encoder_model.onnx')).toBeUndefined()
+    expect(await cacheEntry('decoder_model.onnx')).toBe('DECODER-OK')
+    await r.load()
+    expect(fetchedTimes('encoder_model.onnx')).toBe(1)
+    expect(fetchedTimes('decoder_model.onnx')).toBe(0)
+    expect(fetchedTimes('tokenizer.json')).toBe(0)
     expect(prepared.get('mfr-encoder')).toBe('ENCODER-OK')
     expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
   })
 
-  it('换源后重试：先清缓存，新源的正确文件生效', async () => {
+  it('换源后「重新加载模型」：已校验的不动，只从新源补下缺的', async () => {
     serveMirrors()
     const { runtime } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'custom', customBase: 'https://bad.mirror/only' }, loader })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'custom', customBase: 'https://bad.mirror/only' }, loader, prune })
     // 只有坏镜像 + 内置源；内置 GitHub 源能兜底
     await r.load()
-    await r.reset()
-    expect(await cacheEntry('encoder_model.onnx')).toBeUndefined()
+    const c = await storage.open('model-cache-v1')
+    await c.delete(`https://model-cache.local/${encodeURIComponent(mfrCacheId('tokenizer.json'))}@${encodeURIComponent(MFR_REVISION)}`)
     r.setSource({ preferred: 'github' })
-    await r.load()
+    fetchMock.mockClear()
+    expect(await r.reset()).toEqual(['tokenizer.json'])
     expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(GOOD_BASE)
+    await r.load()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe(`${GOOD_BASE}/tokenizer.json`)
+    expect(await cacheEntry('tokenizer.json')).toBe(FAKE['tokenizer.json'])
+  })
+
+  it('全部已校验时重试：不下载任何文件，只重建会话', async () => {
+    serveMirrors()
+    const { runtime, prepared } = fakeRuntime()
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    await r.load()
+    fetchMock.mockClear()
+    expect(await r.reset()).toEqual([])
+    expect(prepared.size).toBe(0)
+    await r.load()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(prepared.size).toBe(2)
   })
 })

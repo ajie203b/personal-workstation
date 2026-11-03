@@ -145,7 +145,7 @@ export function MathNotesPage() {
     setModel({ phase: 'loading', ratio, file })
   }, [])
 
-  /** fresh：用户点了「重试」或在识别设置里换源后重新下载——先清本模型缓存，坏缓存才不会被反复读到 */
+  /** fresh：用户点了「重试」或在识别设置里点「重新加载模型」——释放会话并清掉未通过校验的缓存文件，只补下缺的 / 坏的 */
   const loadModel = useCallback(async (opts: { fresh?: boolean } = {}) => {
     const engine = engineRef.current
     if (!engine) return
@@ -940,7 +940,7 @@ export function MathNotesPage() {
           <div className="flex justify-end gap-2">
             {model.phase !== 'ready' && model.phase !== 'loading' && (
               <Button variant="primary" className="h-9 px-4" onClick={() => void loadModel({ fresh: true })}>
-                重新下载模型
+                重新加载模型
               </Button>
             )}
             <Button variant="outline" className="h-9 px-4" onClick={() => setSettingsOpen(false)}>

@@ -11,8 +11,9 @@
  * 模型文件不进安装包：首次打开工具时按下载源顺序下载，存 Cache Storage（lib/modelCache）。
  * 每个文件都带 SHA-256（与 models 分支 pix2text-mfr-1.5/SHA256SUMS 一致）：镜像回了错误内容不会进缓存，
  * 缓存坏了会被删掉重下；ONNX 建会话失败时也清掉对应文件的缓存，下次加载重新下载。
+ * 「重试 / 重新加载模型」只清未通过校验的文件（pruneModel），已校验的大文件不重下。
  */
-import { deleteModel, getModel } from '@/lib/modelCache'
+import { deleteModel, getModel, pruneModel } from '@/lib/modelCache'
 import type { TensorData } from '@/lib/onnx'
 import { toPixelValues, MFR_INPUT_SIZE, type GrayImage } from './preprocess'
 import { decodeIds, parseTokenizer, postProcessLatex, type MfrTokenizer } from './tokenizer'
@@ -50,17 +51,22 @@ export interface MfrRuntime {
 export type FileLoader = (id: string, urls: string[], onProgress: (ratio: number) => void, sha256: string) => Promise<ArrayBuffer>
 /** 删掉某个文件的缓存 */
 export type CacheEvictor = (id: string) => Promise<void>
+/** 检查某个文件的缓存：已校验标记与期望一致就保留（返回 true），否则删掉（返回 false） */
+export type CachePruner = (id: string, sha256: string) => Promise<boolean>
 
 const defaultLoader: FileLoader = (id, urls, onProgress, sha256) =>
   getModel({ id, version: MFR_REVISION, urls, onProgress, sha256 })
 
 const defaultEvict: CacheEvictor = (id) => deleteModel(id, MFR_REVISION)
 
+const defaultPrune: CachePruner = (id, sha256) => pruneModel(id, MFR_REVISION, sha256)
+
 export interface Pix2TextMfrOptions {
   runtime: MfrRuntime
   source?: ModelSourceConfig
   loader?: FileLoader
   evict?: CacheEvictor
+  prune?: CachePruner
 }
 
 /** 取 logits 最后一个位置的 argmax 与 softmax 概率 */
@@ -91,12 +97,14 @@ export class Pix2TextMfrRecognizer implements Recognizer {
   private readonly runtime: MfrRuntime
   private readonly loader: FileLoader
   private readonly evict: CacheEvictor
+  private readonly prune: CachePruner
   private source: ModelSourceConfig
 
   constructor(opts: Pix2TextMfrOptions) {
     this.runtime = opts.runtime
     this.loader = opts.loader ?? defaultLoader
     this.evict = opts.evict ?? defaultEvict
+    this.prune = opts.prune ?? defaultPrune
     this.source = opts.source ?? DEFAULT_SOURCE
   }
 
@@ -120,10 +128,12 @@ export class Pix2TextMfrRecognizer implements Recognizer {
   }
 
   /**
-   * 「重试 / 换源」：先清掉本模型三个文件的缓存与已建会话，下次 load 从头下载。
-   * 用户点这两个按钮时多半是坏缓存在作怪（镜像回过错误内容），只换 URL 不清缓存还是读到同一份。
+   * 「重试 / 重新加载模型」：释放已建会话，并只清掉未通过校验的文件缓存——
+   * 已校验标记（sha256 + 长度）与期望一致的保留，缺失 / 不符 / 损坏的删掉，下次 load 只补下这些。
+   * 换源后同理只从新源补下缺的 / 坏的。标记一致但内容不可用（伪造、磁盘损坏）的情况，
+   * 由 load 里建会话失败时清对应文件兜底。返回本次被清掉（需要重下）的文件名。
    */
-  async reset(): Promise<void> {
+  async reset(): Promise<string[]> {
     if (this.loading) await this.loading.catch(() => undefined)
     this.tokenizer = null
     this.loading = null
@@ -131,7 +141,16 @@ export class Pix2TextMfrRecognizer implements Recognizer {
       await this.runtime.drop('mfr-encoder').catch(() => undefined)
       await this.runtime.drop('mfr-decoder').catch(() => undefined)
     }
-    for (const f of FILES) await this.evict(mfrCacheId(f.file)).catch(() => undefined)
+    const cleared: string[] = []
+    for (const f of FILES) {
+      const kept = await this.prune(mfrCacheId(f.file), f.sha256).catch(async () => {
+        // 检查本身出错：保守起见按坏缓存处理
+        await this.evict(mfrCacheId(f.file)).catch(() => undefined)
+        return false
+      })
+      if (!kept) cleared.push(f.file)
+    }
+    return cleared
   }
 
   private async fetchFile(file: (typeof FILES)[number], done: number, total: number, onProgress?: (p: LoadProgress) => void) {
