@@ -118,7 +118,13 @@ type OrtModule = typeof import('onnxruntime-web')
 class InlineOnnxRunner {
   private ort: OrtModule | null = null
   private sessions = new Map<string, InferenceSession>()
+  private providers = new Map<string, 'webgpu' | 'wasm'>()
   private ready = new Map<string, Promise<void>>()
+
+  /** 某个会话实际用上的后端（prepare 完成后才有） */
+  provider(key: string): 'webgpu' | 'wasm' | undefined {
+    return this.providers.get(key)
+  }
 
   private async runtime(): Promise<OrtModule> {
     if (!this.ort) {
@@ -129,20 +135,26 @@ class InlineOnnxRunner {
     return this.ort
   }
 
-  async prepare(key: string, modelBuffer: ArrayBuffer): Promise<void> {
+  /**
+   * 建会话。wasmOnly：跳过 WebGPU（某些机型 WebGPU 建会话成功、推理时才报错，
+   * 调用方可以 drop 后用 wasmOnly 重建）。
+   */
+  async prepare(key: string, modelBuffer: ArrayBuffer, opts: { wasmOnly?: boolean } = {}): Promise<void> {
     const existing = this.ready.get(key)
     if (existing) return existing
     const p = (async () => {
       const ort = await this.runtime()
-      if ((navigator as Navigator & { gpu?: unknown }).gpu) {
+      if (!opts.wasmOnly && (navigator as Navigator & { gpu?: unknown }).gpu) {
         try {
           this.sessions.set(key, await ort.InferenceSession.create(modelBuffer, { executionProviders: ['webgpu'] }))
+          this.providers.set(key, 'webgpu')
           return
         } catch {
           // 降级 wasm
         }
       }
       this.sessions.set(key, await ort.InferenceSession.create(modelBuffer, { executionProviders: ['wasm'] }))
+      this.providers.set(key, 'wasm')
     })()
     this.ready.set(key, p)
     try {
@@ -173,8 +185,18 @@ class InlineOnnxRunner {
     return outputs
   }
 
+  /** 释放单个会话（之后可重新 prepare） */
+  async drop(key: string): Promise<void> {
+    const session = this.sessions.get(key)
+    this.sessions.delete(key)
+    this.providers.delete(key)
+    this.ready.delete(key)
+    await session?.release().catch(() => undefined)
+  }
+
   dispose(): void {
     this.sessions.clear()
+    this.providers.clear()
     this.ready.clear()
     this.ort = null
   }
@@ -186,6 +208,8 @@ function inWorkerContext(): boolean {
 
 let workerSingleton: OnnxRunner | null = null
 let inlineSingleton: InlineOnnxRunner | null = null
+
+export type { InlineOnnxRunner }
 
 export function getOnnxRunner(mode: 'auto' | 'worker' = 'auto'): OnnxRunner | InlineOnnxRunner {
   if (mode === 'worker' || !inWorkerContext()) {

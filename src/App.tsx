@@ -38,6 +38,7 @@ const PdfToolPage = lazy(() => import('@/modules/tools/pdf/PdfToolPage').then((m
 const ArticleToolPage = lazy(() => import('@/modules/tools/article/ArticleToolPage').then((m) => ({ default: m.ArticleToolPage })))
 const IdPhotoPage = lazy(() => import('@/modules/tools/idphoto/IdPhotoPage').then((m) => ({ default: m.IdPhotoPage })))
 const OcrPage = lazy(() => import('@/modules/tools/ocr/OcrPage').then((m) => ({ default: m.OcrPage })))
+const MathNotesPage = lazy(() => import('@/modules/tools/mathnotes/MathNotesPage').then((m) => ({ default: m.MathNotesPage })))
 const NjustReportPage = lazy(() => import('@/modules/tools/njust/NjustReportPage').then((m) => ({ default: m.NjustReportPage })))
 
 const RouteLoader = <PageSkeleton />
@@ -129,6 +130,7 @@ export default function App() {
             <Route path="tools/article" element={<ArticleToolPage />} />
             <Route path="tools/idphoto" element={<IdPhotoPage />} />
             <Route path="tools/ocr" element={<OcrPage />} />
+            <Route path="tools/math-notes" element={<MathNotesPage />} />
             <Route path="tools/njust-report" element={<NjustReportPage />} />
             <Route path="review" element={<ReviewPage />} />
             <Route path="docs" element={<DocsPage />} />

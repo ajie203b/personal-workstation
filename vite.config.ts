@@ -80,12 +80,18 @@ export default defineConfig(({ mode }) => {
           navigateFallback: 'index.html',
           globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,bcmap,pfb,ttf}', '**/qpdf-*.wasm'],
           // ONNX 模型与 ort / MediaPipe 的 wasm 体积大且按需用，不进预缓存；wasm 走运行时 CacheFirst
-          globIgnores: ['**/*.onnx', '**/ort-*.wasm', '**/mediapipe/**'],
+          // 手写计算 Worker 内含 Compute Engine（约 6MB），同样按需：第一次打开工具时缓存，之后离线可用
+          globIgnores: ['**/*.onnx', '**/ort-*.wasm', '**/mediapipe/**', '**/mathnotes.worker-*.js'],
           runtimeCaching: [
             {
               urlPattern: /(\/mediapipe\/.+|\/assets\/ort-wasm[^/]*\.wasm)$/,
               handler: 'CacheFirst',
               options: { cacheName: 'ort-runtime', expiration: { maxEntries: 32 } },
+            },
+            {
+              urlPattern: /\/assets\/mathnotes\.worker-[^/]*\.js$/,
+              handler: 'CacheFirst',
+              options: { cacheName: 'mathnotes-runtime', expiration: { maxEntries: 4 } },
             },
           ],
         },

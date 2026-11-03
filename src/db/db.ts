@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { FanqieChapterMeta } from '@/lib/fanqie'
+import type { MathNotePage } from '@/modules/tools/mathnotes/types'
 
 export const TIERS = ['today', 'upcoming', 'anytime', 'someday'] as const
 export type Tier = (typeof TIERS)[number]
@@ -393,6 +394,7 @@ class WorkstationDB extends Dexie {
   fanqieChapters!: Table<FanqieChapterRow, string>
   signatures!: Table<SignatureRow, string>
   qrHistory!: Table<QrHistoryRow, string>
+  mathNotes!: Table<MathNotePage, string>
 
   constructor() {
     super('workstation')
@@ -445,6 +447,10 @@ class WorkstationDB extends Dexie {
       docs: 'id, hash, kind, lastOpenedAt, folderId, sourceUrl',
       signatures: 'id, createdAt',
       qrHistory: 'id, action, createdAt',
+    })
+    // v10（手写计算）：数学笔记页——笔迹 + 识别结果（纯增表；同番茄书架，不参与备份/同步）
+    this.version(10).stores({
+      mathNotes: 'id, updatedAt',
     })
   }
 }
