@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-02T13:32:04.042Z",
+  "generatedAt": "2026-11-03T12:49:49.918Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
@@ -38,6 +38,10 @@
     {
       "name": "Claude Sonnet 5.5 (Max)",
       "score": 54.2
+    },
+    {
+      "name": "Gemini 4 Carbon (Low)",
+      "score": 53.7
     },
     {
       "name": "GPT-6.1 Sol (Xhigh)",
@@ -118,10 +122,6 @@
     {
       "name": "Claude Sonnet 5.5 (High)",
       "score": 41.1
-    },
-    {
-      "name": "Claude Fable 5.1 (Low)",
-      "score": 38.5
     }
   ]
 }
