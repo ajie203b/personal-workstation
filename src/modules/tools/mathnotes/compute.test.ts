@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeLatex, flattenColumnArithmetic, formatNumber, normalizeLatex } from './compute'
+import { complexNearlyEqual, computeLatex, flattenColumnArithmetic, formatNumber, normalizeLatex } from './compute'
 
 describe('normalizeLatex', () => {
   it('去掉识别模型的排版空白与数字间空格', () => {
@@ -113,5 +113,30 @@ describe('formatNumber', () => {
     expect(formatNumber(1 / 3).text).toBe('0.3333333333')
     expect(formatNumber(2 ** 60).text).toBe('1.152922×10^18')
     expect(formatNumber(-0).text).toBe('0')
+  })
+})
+
+describe('验算：复数等式同时比较实部与虚部（回归）', () => {
+  const verdict = (latex: string) => computeLatex(latex).text
+  it('虚部不同判 ✗', () => {
+    expect(verdict('i=2i')).not.toBe('✓')
+    expect(verdict('1+i=1+2i')).not.toBe('✓')
+    expect(computeLatex('i=2i').latex).toContain('\\ne')
+    expect(computeLatex('1+i=1+2i').latex).toContain('\\ne')
+  })
+  it('真正相等的复数判 ✓', () => {
+    expect(verdict('i=i')).toBe('✓')
+    expect(verdict('(1+i)^2=2i')).toBe('✓')
+  })
+  it('实数验算不受影响', () => {
+    expect(verdict('2+2=4')).toBe('✓')
+    expect(verdict('2+2=5')).not.toBe('✓')
+    expect(verdict('0.1+0.2=0.3')).toBe('✓')
+  })
+  it('complexNearlyEqual 的容差', () => {
+    expect(complexNearlyEqual([0, 1], [0, 2])).toBe(false)
+    expect(complexNearlyEqual([1e12, 1], [1e12, 1 + 1e-6])).toBe(true)
+    expect(complexNearlyEqual([0, 1], [0, 1 + 1e-6])).toBe(false)
+    expect(complexNearlyEqual([NaN, 0], [NaN, 0])).toBe(false)
   })
 })

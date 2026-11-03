@@ -249,7 +249,7 @@ function formatScalar(e: Expr): { latex: string; text: string; alt?: string } {
   const latex = tidyLatex(e.latex)
   if (!e.unknowns?.length) {
     const n = e.N()
-    if (n.isNumberLiteral && typeof n.re === 'number' && Number.isFinite(n.re) && (n.im ?? 0) === 0) {
+    if (n.isNumberLiteral && typeof n.re === 'number' && Number.isFinite(n.re) && Math.abs(n.im ?? 0) <= 1e-12 * Math.max(1, Math.abs(n.re))) {
       return { latex, text: '', alt: formatNumber(n.re).text }
     }
   }
@@ -292,6 +292,30 @@ function hasCalculus(e: Expr): boolean {
   return /"(D|Integrate|Limit|Sum|Product|Derivative)"/.test(JSON.stringify(e.json))
 }
 
+/** 取复数的实部 / 虚部；虚部缺省（实数）按 0 处理 */
+function complexParts(e: Expr): [number, number] {
+  const re = typeof e.re === 'number' ? e.re : NaN
+  const im = typeof e.im === 'number' && !Number.isNaN(e.im) ? e.im : 0
+  return [re, im]
+}
+
+/**
+ * 两个数值（可为复数）是否相等：实部、虚部同时比较。
+ * 容差按复数模取相对误差：|l − r| ≤ 1e-9 · max(1, |l|, |r|)。
+ */
+export function complexNearlyEqual(a: [number, number], b: [number, number]): boolean {
+  const [ar, ai] = a
+  const [br, bi] = b
+  if (![ar, ai, br, bi].every(Number.isFinite)) return false
+  const diff = Math.hypot(ar - br, ai - bi)
+  const scale = Math.max(1, Math.hypot(ar, ai), Math.hypot(br, bi))
+  return diff <= 1e-9 * scale
+}
+
+function numbersEqual(l: Expr, r: Expr): boolean {
+  return complexNearlyEqual(complexParts(l), complexParts(r))
+}
+
 /** 方程（组）求解 */
 function solve(equations: Expr[]): ComputeResult {
   const unknowns = [...new Set(equations.flatMap((eq) => eq.unknowns ?? []))].sort()
@@ -303,7 +327,7 @@ function solve(equations: Expr[]): ComputeResult {
     if (!lhs || !rhs) return error('没认出这个等式')
     const l = lhs.N()
     const r = rhs.N()
-    if (l.isNumberLiteral && r.isNumberLiteral && Math.abs(l.re - r.re) < 1e-9 * Math.max(1, Math.abs(l.re))) {
+    if (l.isNumberLiteral && r.isNumberLiteral && numbersEqual(l, r)) {
       return { kind: 'below', latex: '\\checkmark', text: '✓' }
     }
     const v = formatScalar(lhs.evaluate())

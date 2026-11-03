@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, ChevronRight, Eraser, FilePlus2, FileX2, Loader2, MoreHorizontal, PenLine, Redo2, Settings2, Sigma, Trash2, Undo2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuSeparator } from '@/shared/ui/Menu'
@@ -8,7 +8,9 @@ import { Dialog } from '@/shared/ui/Sheet'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { BackButton } from '@/shared/ui/BackButton'
-import { answerAnchor, clusterStrokes, detectTrailingEquals, estimateCharHeight, pressureWidth, smoothAppend, strokeBox, strokesHitBy } from './geometry'
+import { clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, pressureWidth, smoothAppend, strokeBox, strokesHitBy } from './geometry'
+import { PointerGesture } from './pointerGesture'
+import { RecognitionQueue } from './recognitionQueue'
 import { MathEngine } from './mathEngine'
 import { MathView } from './MathView'
 import { MathEditorDialog } from './MathEditorDialog'
@@ -38,12 +40,27 @@ type ModelState =
 interface OverlayItem {
   key: string
   block: InkBlock
-  res: BlockResult
+  /** 识别结果；识别失败时为空，此时 failed 是失败原因 */
+  res: BlockResult | null
+  failed?: string
   x: number
   y: number
   fontSize: number
   placement: 'inline' | 'below'
+  /** 答案比可视宽度还宽时限宽（答案自身横向滚动） */
+  maxWidth?: number
 }
+
+interface RecognizeJob {
+  key: string
+  pageId: string
+  strokes: Stroke[]
+  charHeight: number
+}
+
+/** 识别失败标记 / 「?」标记的宽度 */
+const MARK_WIDTH = 26
+const FAIL_MARK_WIDTH = 104
 
 function cssVar(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
@@ -98,7 +115,7 @@ export function MathNotesPage() {
   const resultsRef = useRef<Map<string, BlockResult>>(new Map())
   const undoRef = useRef<Action[]>([])
   const redoRef = useRef<Action[]>([])
-  const inflightRef = useRef<Set<string>>(new Set())
+  const queueRef = useRef<RecognitionQueue<RecognizeJob> | null>(null)
   const [version, setVersion] = useState(0)
   const bump = useCallback(() => setVersion((v) => v + 1), [])
 
@@ -113,6 +130,9 @@ export function MathNotesPage() {
   const [editing, setEditing] = useState<string | null>(null)
   const [editBusy, setEditBusy] = useState(false)
   const [recognizing, setRecognizing] = useState(0)
+  const [viewW, setViewW] = useState(0)
+  /** 答案元素实测宽度（key → CSS 像素），用于判断等号右侧放不放得下 */
+  const [answerWidths, setAnswerWidths] = useState<Map<string, number>>(() => new Map())
 
   const scrollYRef = useRef(0)
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
@@ -185,6 +205,8 @@ export function MathNotesPage() {
       resultsRef.current = new Map(page.results.map((r) => [r.key, r]))
       undoRef.current = []
       redoRef.current = []
+      // 换页：上一页还没发出的识别请求作废
+      queueRef.current?.submit([])
       scrollYRef.current = 0
       setPageId(page.id)
       setLastPageId(page.id)
@@ -251,6 +273,7 @@ export function MathNotesPage() {
       const rect = el.getBoundingClientRect()
       const dpr = Math.min(3, window.devicePixelRatio || 1)
       sizeRef.current = { w: rect.width, h: rect.height, dpr }
+      setViewW(rect.width)
       canvas.width = Math.round(rect.width * dpr)
       canvas.height = Math.round(rect.height * dpr)
       canvas.style.width = `${rect.width}px`
@@ -275,43 +298,69 @@ export function MathNotesPage() {
 
   /* ---------- 识别调度 ---------- */
 
+  const getQueue = useCallback((): RecognitionQueue<RecognizeJob> => {
+    if (queueRef.current) return queueRef.current
+    const q = new RecognitionQueue<RecognizeJob>(
+      async (job) => {
+        const engine = engineRef.current
+        if (!engine) throw new DOMException('已取消', 'AbortError')
+        const r = await engine.recognize(job.key, job.strokes, job.charHeight, onModelProgress)
+        // 模型若是在这次识别里顺带加载完的，状态条也要收起来
+        setModel((m) => (m.phase === 'ready' ? m : { phase: 'ready', backend: engine.backend ?? 'wasm' }))
+        if (pageRef.current?.id !== job.pageId) return
+        // 识别期间笔画变了（key 不在了）就丢弃，最新版本已在队列里
+        const still = clusterStrokes(strokesRef.current).some((b) => b.key === job.key)
+        if (!still) return
+        resultsRef.current.set(job.key, { key: job.key, recognized: r.latex, result: r.result })
+        bump()
+        scheduleSave()
+      },
+      {
+        onChange: () => {
+          setRecognizing(queueRef.current?.busy ?? 0)
+          bump()
+        },
+        onError: (_job, e) => {
+          // 模型下载阶段的失败仍走底部的「换下载源 / 重试」条；块上同时有 ⚠ 标记可单独重试
+          const message = e instanceof Error ? e.message : '识别失败'
+          setModel((m) => (m.phase === 'loading' ? { phase: 'error', message } : m))
+        },
+      },
+    )
+    queueRef.current = q
+    return q
+  }, [bump, onModelProgress, scheduleSave])
+
+  useEffect(
+    () => () => {
+      queueRef.current?.dispose()
+      queueRef.current = null
+    },
+    [],
+  )
+
+  /** 把当前笔迹下所有未识别的块（最新版本）交给队列；过时的排队请求被替换掉 */
   const runRecognition = useCallback(() => {
-    const engine = engineRef.current
     const page = pageRef.current
-    if (!engine || !page) return
+    if (!engineRef.current || !page) return
     const strokes = strokesRef.current
     const h = estimateCharHeight(strokes)
     const blocks = clusterStrokes(strokes, { charHeight: h })
+    const jobs: RecognizeJob[] = []
     for (const block of blocks) {
-      if (resultsRef.current.has(block.key) || inflightRef.current.has(block.key)) continue
-      const blockStrokes = strokes.filter((s) => block.strokeIds.includes(s.id))
-      inflightRef.current.add(block.key)
-      setRecognizing((n) => n + 1)
-      const pid = page.id
-      engine
-        .recognize(block.key, blockStrokes, h, onModelProgress)
-        .then((r) => {
-          if (pageRef.current?.id !== pid) return
-          // 模型若是在这次识别里顺带加载完的，状态条也要收起来
-          setModel((m) => (m.phase === 'ready' ? m : { phase: 'ready', backend: engine.backend ?? 'wasm' }))
-          // 识别期间笔画变了（key 不在了）就丢弃，下一轮会重新识别
-          const still = clusterStrokes(strokesRef.current).some((b) => b.key === block.key)
-          if (!still) return
-          resultsRef.current.set(block.key, { key: block.key, recognized: r.latex, result: r.result })
-          bump()
-          scheduleSave()
-        })
-        .catch((e) => {
-          if (e instanceof DOMException && e.name === 'AbortError') return
-          const message = e instanceof Error ? e.message : '识别失败'
-          setModel((m) => (m.phase === 'loading' ? { phase: 'error', message } : m))
-        })
-        .finally(() => {
-          inflightRef.current.delete(block.key)
-          setRecognizing((n) => Math.max(0, n - 1))
-        })
+      if (resultsRef.current.has(block.key)) continue
+      jobs.push({ key: block.key, pageId: page.id, strokes: strokes.filter((s) => block.strokeIds.includes(s.id)), charHeight: h })
     }
-  }, [bump, onModelProgress, scheduleSave])
+    getQueue().submit(jobs)
+  }, [getQueue])
+
+  const retryBlock = useCallback(
+    (key: string) => {
+      getQueue().retry(key)
+      runRecognition()
+    },
+    [getQueue, runRecognition],
+  )
 
   const scheduleRecognition = useCallback(
     (immediate: boolean) => {
@@ -406,10 +455,10 @@ export function MathNotesPage() {
 
   /* ---------- 指针输入 ---------- */
 
-  const drawingRef = useRef<{ pointerId: number; stroke: Stroke; startedAt: number } | null>(null)
+  /** 进行中的书写（笔 / 橡皮）；手势判定交给 PointerGesture 状态机 */
+  const drawingRef = useRef<{ pointerId: number; stroke: Stroke } | null>(null)
   const erasedRef = useRef<Stroke[]>([])
-  const penSeenRef = useRef(false)
-  const touchesRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const gestureRef = useRef(new PointerGesture())
   const panRef = useRef<{ y: number; scroll: number } | null>(null)
 
   const toWorld = (e: { clientX: number; clientY: number }): { x: number; y: number } => {
@@ -428,13 +477,6 @@ export function MathNotesPage() {
     redraw()
   }
 
-  const cancelCurrentStroke = () => {
-    const d = drawingRef.current
-    if (!d) return
-    drawingRef.current = null
-    redraw()
-  }
-
   const eraseAt = (x: number, y: number) => {
     const hit = new Set(strokesHitBy(strokesRef.current, x, y, ERASER_RADIUS))
     if (!hit.size) return
@@ -443,49 +485,79 @@ export function MathNotesPage() {
     redraw()
   }
 
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType === 'pen') penSeenRef.current = true
-    if (e.pointerType === 'touch') {
-      // 手掌误触：用过触控笔后，手指只用来滚动；接触面特别大的触点直接忽略
-      if (e.width > 40 && e.height > 40) return
-      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      if (touchesRef.current.size >= 2 || penSeenRef.current) {
-        // 两指（或笔模式下的手指）= 滚动画布
-        if (drawingRef.current && Date.now() - drawingRef.current.startedAt < 250) cancelCurrentStroke()
-        const ys = [...touchesRef.current.values()].map((t) => t.y)
-        panRef.current = { y: ys.reduce((a, b) => a + b, 0) / ys.length, scroll: scrollYRef.current }
-        e.currentTarget.setPointerCapture(e.pointerId)
-        return
+  /**
+   * 结束进行中的书写。commit：笔画入库（橡皮则提交擦除）；discard：丢弃笔画（橡皮擦掉的仍提交，免得「擦了又没记录」）。
+   * 不论哪种，绘制状态都清空，后续触摸不会被当成仍在书写而忽略。
+   */
+  const finishDrawing = (end: 'commit' | 'discard', last?: { x: number; y: number; t: number }) => {
+    const d = drawingRef.current
+    drawingRef.current = null
+    // 不主动释放指针捕获：被第二指打断时这根手指还按着、要参与滚动；抬起时浏览器会自动释放
+    if (!d) return
+    if (toolRef.current === 'eraser' || !d.stroke.id) {
+      if (erasedRef.current.length) {
+        pushAction({ type: 'erase', strokes: erasedRef.current })
+        erasedRef.current = []
+        afterChange()
       }
+      return
     }
-    if (e.button !== 0 && e.pointerType === 'mouse') return
-    if (drawingRef.current) return
+    const pts = d.stroke.points
+    if (end === 'discard' || !pts.length) {
+      redraw()
+      return
+    }
+    // 平滑会让终点略微滞后，补上真实落点
+    const tail = pts[pts.length - 1]
+    if (last && tail && Math.hypot(tail.x - last.x, tail.y - last.y) > 0.5) pts.push({ x: last.x, y: last.y, p: tail.p, t: last.t })
+    strokesRef.current = [...strokesRef.current, d.stroke]
+    pushAction({ type: 'add', strokes: [d.stroke] })
+    afterChange(d.stroke)
+  }
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const kind = e.pointerType === 'pen' ? 'pen' : e.pointerType === 'touch' ? 'touch' : 'mouse'
+    const r = gestureRef.current.down({
+      id: e.pointerId,
+      kind,
+      x: e.clientX,
+      y: e.clientY,
+      t: e.timeStamp,
+      button: e.button,
+      // 手掌误触：接触面特别大的触点直接忽略
+      palm: kind === 'touch' && e.width > 40 && e.height > 40,
+    })
+    if (r.action === 'ignore') return
+    if (r.action === 'pan') {
+      // 两指（或笔模式下的手指）= 滚动画布；进行中的笔画必须结束
+      if (r.interrupted && drawingRef.current?.pointerId === r.interrupted.pointerId) finishDrawing(r.interrupted.end)
+      panRef.current = { y: r.centerY, scroll: scrollYRef.current }
+      e.currentTarget.setPointerCapture(e.pointerId)
+      return
+    }
     e.currentTarget.setPointerCapture(e.pointerId)
     window.clearTimeout(idleTimer.current)
     const { x, y } = toWorld(e)
     if (toolRef.current === 'eraser') {
       erasedRef.current = []
-      drawingRef.current = { pointerId: e.pointerId, stroke: { id: '', points: [], width: 0 }, startedAt: Date.now() }
+      drawingRef.current = { pointerId: e.pointerId, stroke: { id: '', points: [], width: 0 } }
       eraseAt(x, y)
       return
     }
     const p = e.pointerType === 'pen' ? e.pressure || 0.5 : 0.5
     const stroke: Stroke = { id: `${Date.now().toString(36)}-${uid().slice(0, 8)}`, points: [{ x, y, p, t: e.timeStamp }], width: PEN_WIDTH }
-    drawingRef.current = { pointerId: e.pointerId, stroke, startedAt: Date.now() }
+    drawingRef.current = { pointerId: e.pointerId, stroke }
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType === 'touch' && touchesRef.current.has(e.pointerId)) {
-      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      if (panRef.current) {
-        const ys = [...touchesRef.current.values()].map((t) => t.y)
-        const cy = ys.reduce((a, b) => a + b, 0) / ys.length
-        scrollTo(panRef.current.scroll + (panRef.current.y - cy))
-        return
-      }
+    const g = gestureRef.current
+    const m = g.move(e.pointerId, e.clientX, e.clientY)
+    if (m && panRef.current) {
+      scrollTo(panRef.current.scroll + (panRef.current.y - m.panCenterY))
+      return
     }
     const d = drawingRef.current
-    if (!d || d.pointerId !== e.pointerId) return
+    if (!d || d.pointerId !== e.pointerId || !g.isDrawing(e.pointerId)) return
     const events = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [e.nativeEvent]
     if (toolRef.current === 'eraser') {
       for (const ev of events.length ? events : [e.nativeEvent]) {
@@ -514,38 +586,22 @@ export function MathNotesPage() {
     }
   }
 
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType === 'touch') {
-      touchesRef.current.delete(e.pointerId)
-      if (panRef.current) {
-        if (touchesRef.current.size === 0) panRef.current = null
-        return
-      }
+  /** pointerup / pointercancel / lostpointercapture 共用 */
+  const onPointerEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const cancelled = e.type !== 'pointerup'
+    const r = gestureRef.current.up(e.pointerId, cancelled)
+    if (r.action === 'panRebase') {
+      panRef.current = { y: r.centerY, scroll: scrollYRef.current }
+    } else if (r.action === 'endPan') {
+      panRef.current = null
+    } else if (r.action === 'endDraw' && drawingRef.current?.pointerId === e.pointerId) {
+      finishDrawing(r.end, r.end === 'commit' ? { ...toWorld(e), t: e.timeStamp } : undefined)
     }
-    const d = drawingRef.current
-    if (!d || d.pointerId !== e.pointerId) return
-    drawingRef.current = null
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    if (toolRef.current === 'eraser') {
-      if (erasedRef.current.length) {
-        pushAction({ type: 'erase', strokes: erasedRef.current })
-        erasedRef.current = []
-        afterChange()
-      }
-      return
+    // 状态机已完全复位但页面这边还残留书写 / 滚动状态：一并清掉（兜底，避免画布卡死）
+    if (gestureRef.current.mode === 'idle') {
+      if (drawingRef.current) finishDrawing('discard')
+      panRef.current = null
     }
-    if (e.type === 'pointercancel') {
-      redraw()
-      return
-    }
-    // 平滑会让终点略微滞后，补上真实落点
-    const { x, y } = toWorld(e)
-    const pts = d.stroke.points
-    const last = pts[pts.length - 1]
-    if (last && Math.hypot(last.x - x, last.y - y) > 0.5) pts.push({ x, y, p: last.p, t: e.timeStamp })
-    strokesRef.current = [...strokesRef.current, d.stroke]
-    pushAction({ type: 'add', strokes: [d.stroke] })
-    afterChange(d.stroke)
   }
 
   const onWheel = (e: React.WheelEvent) => {
@@ -560,17 +616,38 @@ export function MathNotesPage() {
     if (!strokes.length) return []
     const h = estimateCharHeight(strokes)
     const blocks = clusterStrokes(strokes, { charHeight: h })
+    const queue = queueRef.current
     const items: OverlayItem[] = []
     for (const block of blocks) {
-      const res = resultsRef.current.get(block.key)
-      if (!res) continue
+      const res = resultsRef.current.get(block.key) ?? null
+      const failed = res ? undefined : queue?.failureOf(block.key)
+      if (!res && !failed) continue
       const eq = detectTrailingEquals(strokes.filter((s) => block.strokeIds.includes(s.id)), h)
-      const inline = res.result.kind === 'inline' || (res.result.kind === 'error' && eq)
-      const a = answerAnchor(block, inline ? eq : null, h)
-      items.push({ key: block.key, block, res, x: a.x, y: a.y, fontSize: a.fontSize, placement: a.placement })
+      const r = res?.result
+      const isMark = !r || r.kind === 'error'
+      const inline = r?.kind === 'inline' || (isMark && eq)
+      // 标记（? / ⚠）没有尾部等号时放在块右侧中线；放不下同样换到下方
+      const anchorEq = inline ? eq : isMark ? { box: { ...block.box, maxX: block.box.maxX + 10 - h * 0.3 }, midY: (block.box.minY + block.box.maxY) / 2 } : null
+      const fontSize = Math.round(Math.min(96, Math.max(18, h * 0.95)))
+      const measured = answerWidths.get(block.key)
+      const width = !r ? FAIL_MARK_WIDTH : r.kind === 'error' ? MARK_WIDTH : (measured ?? estimateAnswerWidth(plainOf(r.text || r.latex), anchorEq ? fontSize : Math.round(fontSize * 0.75), r.alt))
+      const a = fitAnswer(block, anchorEq, h, { answerWidth: width, viewWidth: viewW })
+      items.push({ key: block.key, block, res, failed, x: a.x, y: a.y, fontSize: a.fontSize, placement: a.placement, maxWidth: a.maxWidth })
     }
     return items
-  }, [version])
+  }, [version, viewW, answerWidths])
+
+  const onMeasure = useCallback((key: string, width: number) => {
+    setAnswerWidths((prev) => {
+      const old = prev.get(key)
+      if (old != null && Math.abs(old - width) < 1) return prev
+      const next = new Map(prev)
+      next.set(key, width)
+      // 只保留当前还在的块，避免无限增长
+      if (next.size > 400) for (const k of [...next.keys()].slice(0, next.size - 400)) next.delete(k)
+      return next
+    })
+  }, [])
 
   const editingBlock = editing ? (resultsRef.current.get(editing) ?? null) : null
 
@@ -745,14 +822,22 @@ export function MathNotesPage() {
           className={cn('absolute inset-0 touch-none', tool === 'eraser' ? 'cursor-cell' : 'cursor-crosshair')}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          onPointerUp={onPointerEnd}
+          onPointerCancel={onPointerEnd}
+          onLostPointerCapture={onPointerEnd}
           onContextMenu={(e) => e.preventDefault()}
         />
         {/* 答案层：世界坐标，随滚动整体平移；只有答案本身可点 */}
         <div ref={overlayRef} className="absolute inset-0 pointer-events-none" aria-live="polite">
           {overlay.map((it) => (
-            <OverlayAnswer key={it.key} item={it} showLatex={showLatex} onOpen={() => setEditing(it.key)} />
+            <OverlayAnswer
+              key={it.key}
+              item={it}
+              showLatex={showLatex}
+              onOpen={() => setEditing(it.key)}
+              onRetry={() => retryBlock(it.key)}
+              onMeasure={onMeasure}
+            />
           ))}
         </div>
 
@@ -867,21 +952,63 @@ export function MathNotesPage() {
   )
 }
 
-/** 单个算式块的答案 / 解 / 报错标记 / 识别原文 */
-function OverlayAnswer({ item, showLatex, onOpen }: { item: OverlayItem; showLatex: boolean; onOpen: () => void }) {
+/** LaTeX → 粗略的可见字符（估宽用） */
+function plainOf(latex: string): string {
+  return latex.replace(/\\[a-zA-Z]+/g, 'x').replace(/[{}^_\\]/g, '')
+}
+
+/** 单个算式块的答案 / 解 / 报错标记 / 识别失败标记 / 识别原文 */
+export function OverlayAnswer({
+  item,
+  showLatex,
+  onOpen,
+  onRetry,
+  onMeasure,
+}: {
+  item: OverlayItem
+  showLatex: boolean
+  onOpen: () => void
+  onRetry: () => void
+  onMeasure: (key: string, width: number) => void
+}) {
   const { res, block } = item
-  const r = res.result
-  const latexChip = showLatex ? (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="absolute pointer-events-auto cursor-pointer rounded-[8px] bg-surface/90 border border-outline px-1.5 py-0.5 text-[12px] text-on-surface-2 shadow-sm max-w-[80vw] overflow-hidden"
-      style={{ left: block.box.minX, top: block.box.minY - 6, transform: 'translateY(-100%)' }}
-      title="点击修改识别结果"
-    >
-      <MathView latex={res.edited ?? res.recognized} />
-    </button>
-  ) : null
+  const r = res?.result
+  const answerRef = useRef<HTMLButtonElement>(null)
+  // 实测答案宽度（scrollWidth 不受 maxWidth 限制），右侧放不下时改放下方
+  useLayoutEffect(() => {
+    const el = answerRef.current
+    if (el) onMeasure(item.key, el.scrollWidth)
+  })
+
+  const latexChip =
+    showLatex && res ? (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="absolute pointer-events-auto cursor-pointer rounded-[8px] bg-surface/90 border border-outline px-1.5 py-0.5 text-[12px] text-on-surface-2 shadow-sm max-w-[80vw] overflow-hidden"
+        style={{ left: block.box.minX, top: block.box.minY - 6, transform: 'translateY(-100%)' }}
+        title="点击修改识别结果"
+      >
+        <MathView latex={res.edited ?? res.recognized} />
+      </button>
+    ) : null
+
+  if (!r) {
+    // 识别推理失败：在算式位置给出失败标记，点击重试该块
+    return (
+      <button
+        type="button"
+        onClick={onRetry}
+        title={`识别失败：${item.failed ?? ''}（点击重试）`}
+        aria-label={`识别失败：${item.failed ?? ''}，点击重试`}
+        data-testid="mathnotes-recognize-failed"
+        className="absolute pointer-events-auto cursor-pointer whitespace-nowrap rounded-full border px-2 py-0.5 text-[12px] font-medium bg-surface/90 shadow-sm text-danger border-danger/60"
+        style={{ left: item.x, top: item.y, transform: 'translateY(-50%)', width: FAIL_MARK_WIDTH }}
+      >
+        ⚠ 识别失败 · 重试
+      </button>
+    )
+  }
 
   if (r.kind === 'none') return latexChip
 
@@ -896,10 +1023,10 @@ function OverlayAnswer({ item, showLatex, onOpen }: { item: OverlayItem; showLat
           aria-label={`没算出来：${r.message ?? ''}，点击修改`}
           className="absolute pointer-events-auto cursor-pointer grid place-items-center rounded-full border-2 font-bold"
           style={{
-            left: item.placement === 'inline' ? item.x : block.box.maxX + 10,
-            top: item.placement === 'inline' ? item.y : (block.box.minY + block.box.maxY) / 2,
-            width: 26,
-            height: 26,
+            left: item.x,
+            top: item.y,
+            width: MARK_WIDTH,
+            height: MARK_WIDTH,
             transform: 'translateY(-50%)',
             borderColor: ANSWER_COLOR,
             color: ANSWER_COLOR,
@@ -918,15 +1045,17 @@ function OverlayAnswer({ item, showLatex, onOpen }: { item: OverlayItem; showLat
     <>
       {latexChip}
       <button
+        ref={answerRef}
         type="button"
         onClick={onOpen}
         title="点击修改"
-        className="absolute pointer-events-auto cursor-pointer text-left leading-none whitespace-nowrap"
+        className={cn('absolute pointer-events-auto cursor-pointer text-left leading-none whitespace-nowrap', item.maxWidth != null && 'overflow-x-auto overflow-y-hidden')}
         style={{
           left: item.x,
           // 写在等号后：与等号中线对齐；写在下方：从块底下往下排，多行解不会盖住算式
           top: inline ? item.y : item.y - item.fontSize / 2,
           transform: inline ? 'translateY(-50%)' : undefined,
+          maxWidth: item.maxWidth,
           color: ANSWER_COLOR,
           fontSize: item.fontSize,
           fontFamily: HAND_FONT,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { answerAnchor, clusterStrokes, detectTrailingEquals, estimateCharHeight, strokesHitBy } from './geometry'
+import { answerAnchor, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, strokesHitBy } from './geometry'
 import { rasterizeStrokes, toPixelValues, MFR_INPUT_SIZE } from './preprocess'
 import { writeText } from './testInk'
 import type { Stroke } from './types'
@@ -111,5 +111,75 @@ describe('preprocess', () => {
     expect(byIds(writeText('1', 0, 0), []).length).toBe(0)
     const img = rasterizeStrokes(writeText('1', 0, 0), 40)
     expect(img.width).toBeGreaterThan(8)
+  })
+})
+
+describe('fitAnswer（答案不被画布右边界裁掉，回归）', () => {
+  // 等号在 x≈182~202，答案默认从 ~214 开始
+  const setup = (ox = 20) => {
+    const strokes = writeText('12+34=', ox, 20, 40)
+    const h = estimateCharHeight(strokes)
+    const eq = detectTrailingEquals(strokes, h)!
+    const [block] = clusterStrokes(strokes)
+    return { h, eq, block }
+  }
+  const inside = (a: { x: number; maxWidth?: number }, w: number, view: number) => {
+    expect(a.x).toBeGreaterThanOrEqual(0)
+    expect(a.x + Math.min(w, a.maxWidth ?? w)).toBeLessThanOrEqual(view)
+  }
+
+  it('右侧放得下：仍写在等号后', () => {
+    const { h, eq, block } = setup()
+    const a = fitAnswer(block, eq, h, { answerWidth: 60, viewWidth: 400 })
+    expect(a.placement).toBe('inline')
+    expect(a.wrapped).toBe(false)
+    expect(a.x).toBeCloseTo(answerAnchor(block, eq, h).x, 5)
+    inside(a, 60, 400)
+  })
+
+  it('右侧放不下：改到算式下方、左对齐算式，完全可见', () => {
+    const { h, eq, block } = setup()
+    const a = fitAnswer(block, eq, h, { answerWidth: 150, viewWidth: 320 })
+    expect(a.placement).toBe('below')
+    expect(a.wrapped).toBe(true)
+    expect(a.x).toBe(block.box.minX)
+    expect(a.y - a.fontSize / 2).toBeGreaterThan(block.box.maxY)
+    inside(a, 150, 320)
+  })
+
+  it('算式本身靠右：下方答案整体左移贴住右边界', () => {
+    const { h, eq, block } = setup(150)
+    const a = fitAnswer(block, eq, h, { answerWidth: 250, viewWidth: 380, margin: 8 })
+    expect(a.placement).toBe('below')
+    expect(a.x).toBe(380 - 8 - 250)
+    inside(a, 250, 380)
+  })
+
+  it('比可视宽度还宽：贴左边界并限宽（答案自身横向滚动）', () => {
+    const { h, eq, block } = setup()
+    const a = fitAnswer(block, eq, h, { answerWidth: 900, viewWidth: 360, margin: 8 })
+    expect(a.x).toBe(8)
+    expect(a.maxWidth).toBe(344)
+    inside(a, 900, 360)
+  })
+
+  it('本来就放下方的结果（解方程）超出右边界时也收回来', () => {
+    const strokes = writeText('x+1=0', 200, 20, 40)
+    const h = estimateCharHeight(strokes)
+    const [block] = clusterStrokes(strokes)
+    const a = fitAnswer(block, null, h, { answerWidth: 200, viewWidth: 320 })
+    expect(a.placement).toBe('below')
+    expect(a.wrapped).toBe(false)
+    inside(a, 200, 320)
+  })
+
+  it('视口宽度未知时不调整', () => {
+    const { h, eq, block } = setup()
+    expect(fitAnswer(block, eq, h, { answerWidth: 900, viewWidth: 0 }).placement).toBe('inline')
+  })
+
+  it('estimateAnswerWidth 随字数与近似值增长', () => {
+    expect(estimateAnswerWidth('46', 40)).toBeLessThan(estimateAnswerWidth('123456789', 40))
+    expect(estimateAnswerWidth('1/3', 40, '0.3333333333')).toBeGreaterThan(estimateAnswerWidth('1/3', 40))
   })
 })

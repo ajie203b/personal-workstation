@@ -209,6 +209,53 @@ export function answerAnchor(block: InkBlock, equals: EqualsMark | null, charHei
   }
 }
 
+export interface FitOptions {
+  /** 答案（含 ≈ 近似值）渲染后的宽度，CSS 像素；未测量时用 estimateAnswerWidth 估算 */
+  answerWidth: number
+  /** 画布可视宽度 */
+  viewWidth: number
+  /** 离右 / 左边界的留白 */
+  margin?: number
+}
+
+export interface FittedAnswer extends AnswerAnchor {
+  /** 本应写在等号后，但右侧放不下，改到了算式下方 */
+  wrapped: boolean
+  /** 答案比整个可视宽度还宽时，答案元素自身要限宽并允许横向滚动（单位 CSS 像素） */
+  maxWidth?: number
+}
+
+/**
+ * 按可用宽度摆放答案，保证完全落在可视范围内（画布容器会裁掉溢出部分）：
+ * - 等号右侧放得下 → 照旧写在等号后；
+ * - 放不下 → 换到算式下方，与算式左对齐；若仍超出右边界则整体左移贴住右边界（不越过左边界）；
+ * - 比可视宽度还宽 → 贴左边界，并给出 maxWidth 让答案自身横向滚动。
+ * 字号保持不变，方便沿用已测得的宽度。
+ */
+export function fitAnswer(block: InkBlock, equals: EqualsMark | null, charHeight: number, opts: FitOptions): FittedAnswer {
+  const margin = opts.margin ?? 8
+  const base = answerAnchor(block, equals, charHeight)
+  const right = opts.viewWidth - margin
+  const w = Math.max(0, opts.answerWidth)
+  // 视口宽度未知（还没布局）时不做调整
+  if (!(opts.viewWidth > 0)) return { ...base, wrapped: false }
+  if (base.placement === 'inline' && base.x + w <= right) return { ...base, wrapped: false }
+  const wrapped = base.placement === 'inline'
+  const fontSize = base.fontSize
+  const y = wrapped ? block.box.maxY + charHeight * 0.35 + fontSize * 0.5 : base.y
+  const avail = right - margin
+  if (w > avail) return { x: margin, y, fontSize, placement: 'below', wrapped, maxWidth: Math.max(0, avail) }
+  const x = Math.max(margin, Math.min(block.box.minX, right - w))
+  return { x, y, fontSize, placement: 'below', wrapped }
+}
+
+/** 渲染前的答案宽度粗估：字符数 × 字号 × 0.62（手写体偏宽），≈ 近似值按小字号另计 */
+export function estimateAnswerWidth(text: string, fontSize: number, alt?: string): number {
+  const main = Math.max(1, text.length) * fontSize * 0.62
+  const altW = alt ? 8 + (alt.length + 2) * Math.max(13, fontSize * 0.5) * 0.62 : 0
+  return Math.ceil(main + altW)
+}
+
 /** 点到线段的距离 */
 function distToSegment(px: number, py: number, a: InkPoint, b: InkPoint): number {
   const dx = b.x - a.x
