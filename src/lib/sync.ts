@@ -38,6 +38,7 @@ const LAST_KEY = 'lastSyncAt'
 const LAST_ERROR_KEY = 'lastSyncError'
 /** 笔记同步失败的原因（主同步照常成功；成功一次就清掉） */
 const MATH_ERROR_KEY = 'lastMathNotesSyncError'
+const MATH_BASELINE_KEY = 'mathNotesSyncBaseline'
 /** 本机的笔记清空纪元（只在本机，不进导出 / 同步，见 tasks.ts LOCAL_ONLY_SETTINGS） */
 export const MATH_EPOCH_KEY = 'mathNotesSyncEpoch'
 const SYNC_FILE = 'sync.json'
@@ -166,8 +167,9 @@ async function getText(cfg: WebdavConfig, url: string): Promise<DavResponse | nu
   return res
 }
 
-async function putText(cfg: WebdavConfig, url: string, text: string, etag?: string): Promise<DavResponse> {
-  const res = await dav(cfg, 'PUT', url, text, etag ? { 'If-Match': etag } : undefined)
+async function putText(cfg: WebdavConfig, url: string, text: string, etag?: string, createOnly = false): Promise<DavResponse> {
+  const condition: Record<string, string> | undefined = etag ? { 'If-Match': etag } : createOnly ? { 'If-None-Match': '*' } : undefined
+  const res = await dav(cfg, 'PUT', url, text, condition)
   if (res.status === 412) throw new Error('CONFLICT')
   if (res.status >= 400) throw new Error(`WebDAV 写入失败（HTTP ${res.status}）`)
   return res
@@ -376,7 +378,8 @@ async function syncMathNotesOnce(cfg: WebdavConfig, base: string, app: string): 
     tombstones: await db.tombstones.toArray(),
     epoch: await readMathEpoch(),
   }
-  const merged = mergeMathNotes(local, remote)
+  const baseline = (await db.settings.get(MATH_BASELINE_KEY))?.value as Record<string, PackedMathNote> | undefined
+  const merged = mergeMathNotes(local, remote, baseline)
 
   await db.transaction('rw', [db.mathNotes, db.tombstones, db.settings], async () => {
     // 远端墓碑落到本机（id 唯一，混进总墓碑表无妨；也防止本机旧副本以后被推回来）
@@ -406,7 +409,9 @@ async function syncMathNotesOnce(cfg: WebdavConfig, base: string, app: string): 
   const relevant = [...merged.tombstones.map((t) => t.id), ...(remote?.notes ?? []).map((n) => n.id), ...baseRows.map((n) => n.id)]
   const tombstones = noteTombstones(allTomb, relevant)
   const file = buildMathNotesFile(app, after.map(packMathNote), tombstones, merged.epoch)
-  await putText(cfg, url, JSON.stringify(file), got?.etag)
+  await putText(cfg, url, JSON.stringify(file), got?.etag, !got)
+  // 只有远端写入成功才更新共同基线；使用实际上传的快照，避免吞掉上传期间的新编辑。
+  await db.settings.put({ key: MATH_BASELINE_KEY, value: Object.fromEntries(file.notes.map((n) => [n.id, n])) })
   return after.length
 }
 

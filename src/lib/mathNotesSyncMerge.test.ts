@@ -12,6 +12,7 @@ describe('mergeMathNotes（独立笔记同步文件）', () => {
     const r = mergeMathNotes(
       { notes: [packed('a', 100, '本地旧'), packed('l', 1)], tombstones: [], epoch: undefined },
       file([packed('a', 200, '远端新'), packed('r', 1)]),
+      { a: packed('a', 100, '本地旧') },
     )
     expect(Object.fromEntries(r.notes.map((n) => [n.id, n.title]))).toEqual({ a: '远端新', l: 'l', r: 'r' })
     expect(r.replaceLocal).toBe(false)
@@ -56,4 +57,27 @@ describe('mergeMathNotes（独立笔记同步文件）', () => {
     expect(() => parseMathNotesFile(JSON.stringify({ kind: MATH_NOTES_SYNC_KIND, version: 99, notes: [] }))).toThrow(/升级/)
     expect(parseMathNotesFile(JSON.stringify(file([packed('a', 1)]))).notes).toHaveLength(1)
   })
+})
+
+
+it('同一页从共同版本分别修改后同步，保留双方修改', () => {
+  const base = packed('a', 100, '共同版本')
+  const local = packed('a', 200, '本机修改')
+  const remote = packed('a', 300, '另一台修改')
+  const result = mergeMathNotes({ notes: [local], tombstones: [], epoch: 0 }, file([remote]), { a: base })
+  expect(result.notes.map(n => n.title).sort()).toEqual(['另一台修改', '本机修改（冲突副本）'].sort())
+})
+
+
+it('只有本机修改时，即使设备时钟较慢也保留本机修改', () => {
+  const base = packed('a', 100, '共同版本')
+  const local = packed('a', 101, '本机修改')
+  const remote = { ...base, updatedAt: 500 }
+  const result = mergeMathNotes({ notes: [local], tombstones: [], epoch: 0 }, file([remote]), { a: base })
+  expect(result.notes.map(n => n.title)).toEqual(['本机修改'])
+})
+
+it('缺少共同基线且内容不同时保留两边，避免恢复或首次同步覆盖数据', () => {
+  const result = mergeMathNotes({ notes: [packed('a', 200, '本机')], tombstones: [], epoch: 0 }, file([packed('a', 300, '远端')]))
+  expect(result.notes.map(n => n.title).sort()).toEqual(['本机（冲突副本）', '远端'].sort())
 })

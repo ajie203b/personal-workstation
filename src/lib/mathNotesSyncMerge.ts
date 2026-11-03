@@ -1,4 +1,5 @@
 import type { Tombstone } from '@/db/db'
+import { uid } from '@/lib/id'
 import type { PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
 
 /**
@@ -11,12 +12,12 @@ import type { PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
  * 为什么是一个文件而不是每页一个文件：
  * - 笔迹已紧凑编码，一页常见几十 KB，几十页也就 1~2 MB，单文件一次 GET/PUT 足够；
  * - 每页一个文件需要 PROPFIND 列目录、N 次请求，坚果云对请求频率有限制，安卓上也慢；
- * - 冲突粒度仍是「页」：合并按页 id + updatedAt 取新，配合 ETag(If-Match) 防并发覆盖，
- *   两台设备改不同的页互不影响；同一页两边都改由编辑器另存冲突副本（见 store.commitPage）。
+ * - 冲突粒度仍是「页」：用本机上次同步成功的版本判断双方是否修改，配合 ETag 防并发覆盖；
+ *   两台设备改不同的页互不影响；同一页两边都改时保留冲突副本。
  * 以后页数多到单文件明显变慢，再按 id 前缀分片即可，格式里留了 version。
  *
- * 规则（与 syncMerge.ts 一致，但只管笔记，自带墓碑与清空纪元）：
- * - 同一 id 取 updatedAt 更晚的一份；两端独有的都保留
+ * 规则（只管笔记，自带墓碑与清空纪元）：
+ * - 同一页从共同版本分别编辑时，保留远端原页和本地冲突副本；单端修改直接采用新版本
  * - 墓碑优先：任何一端有墓碑的 id 从结果里去掉
  * - 纪元：本机「清空数据」时记下的笔记纪元。双方都有纪元且不同时，更大的一侧整份胜出；
  *   本机从没同步过笔记（纪元为空）时正常合并，不会把首次同步前写的笔记清掉
@@ -76,7 +77,14 @@ export function noteTombstones(all: Tombstone[], relevantIds: Iterable<string>):
   return all.filter((t) => ids.has(t.id))
 }
 
-export function mergeMathNotes(local: MathNotesLocalState, remote: MathNotesSyncFile | null): MathNotesMergeResult {
+/** 忽略保存时间，仅比较实际内容，避免同内容重复生成冲突副本。 */
+function sameContent(a: PackedMathNote, b: PackedMathNote): boolean {
+  const { updatedAt: _a, ...contentA } = a
+  const { updatedAt: _b, ...contentB } = b
+  return JSON.stringify(contentA) === JSON.stringify(contentB)
+}
+
+export function mergeMathNotes(local: MathNotesLocalState, remote: MathNotesSyncFile | null, baseline: Record<string, PackedMathNote> = {}): MathNotesMergeResult {
   const localEpoch = local.epoch
   if (!remote) {
     return {
@@ -111,7 +119,21 @@ export function mergeMathNotes(local: MathNotesLocalState, remote: MathNotesSync
   for (const n of remote.notes) {
     if (dead.has(n.id)) continue
     const cur = map.get(n.id)
-    if (!cur || n.updatedAt > cur.updatedAt) map.set(n.id, n)
+    if (!cur) { map.set(n.id, n); continue }
+    const base = baseline[n.id]
+    if (sameContent(cur, n)) {
+      if (n.updatedAt > cur.updatedAt) map.set(n.id, n)
+    } else if (base && sameContent(n, base)) {
+      // 远端未改，本地更新。
+    } else if (base && sameContent(cur, base)) {
+      map.set(n.id, n)
+    } else {
+      // 两边均有修改（或没有共同基线），不能依赖时钟丢弃任何一边。
+      const title = cur.title.endsWith('（冲突副本）') ? cur.title : `${cur.title}（冲突副本）`
+      const copy = { ...cur, id: uid(), title, createdAt: cur.createdAt + 1 }
+      map.set(n.id, n)
+      map.set(copy.id, copy)
+    }
   }
   return {
     notes: [...map.values()],

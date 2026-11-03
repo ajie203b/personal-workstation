@@ -193,3 +193,16 @@ describe('NoteSession：双方都编辑不丢任何一方', () => {
     expect(await db.mathNotes.count()).toBe(0)
   })
 })
+
+
+it('切页时旧会话保存切页前的草稿，而不是随后载入的新页面', async () => {
+  const first = page()
+  await db.mathNotes.put(first)
+  let draft = { strokes: [stroke('edited')], results: [] as MathNotePage['results'] }
+  const session = new NoteSession(first, () => draft, { onReplaced: () => {}, onConflict: () => {}, onDeleted: () => {} })
+  session.markEdited('user')
+  const closing = session.close()
+  draft = { strokes: [stroke('other-page')], results: [] }
+  await closing
+  expect((await db.mathNotes.get(first.id))?.strokes.map(s => s.id)).toEqual(['edited'])
+})

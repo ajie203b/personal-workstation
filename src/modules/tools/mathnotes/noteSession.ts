@@ -51,6 +51,7 @@ export class NoteSession {
   private seq = 0
   private chain: Promise<unknown> = Promise.resolve()
   private closed = false
+  private closingDraft: NoteDraft | undefined
 
   constructor(
     page: MathNotePage,
@@ -104,6 +105,8 @@ export class NoteSession {
 
   /** 离开页面 / 换页：有改动就保存，之后不再响应外部变更 */
   async close(): Promise<CommitOutcome | null> {
+    // 切页时编辑器的共享 refs 会立即换成新页，先固定旧页草稿。
+    if (this.dirty) this.closingDraft = this.getDraft()
     const r = await this.save()
     this.closed = true
     return r
@@ -112,7 +115,7 @@ export class NoteSession {
   private async doSave(): Promise<CommitOutcome | null> {
     if (!this.dirty) return null
     const seq = this.seq
-    const draft = this.getDraft()
+    const draft = this.closingDraft ?? this.getDraft()
     let out: CommitOutcome
     try {
       out = await commitPage(

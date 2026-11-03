@@ -370,3 +370,46 @@ describe('WebDAV 同步：手写计算笔记（独立文件 mathnotes-sync.json�
     expect(mathFile(dav).notes).toEqual([])
   })
 })
+
+
+it('创建独立笔记文件遇到并发创建时重新合并，保留双方笔记', async () => {
+  const MATH_URL = `${BASE}/mathnotes-sync.json`
+  const { packMathNote } = await import('@/modules/tools/mathnotes/backupCodec')
+  const { buildMathNotesFile } = await import('./mathNotesSyncMerge')
+  const local = { id: 'local', title: '本机', createdAt: 1, updatedAt: 1, strokes: [], results: [] }
+  const remote = { id: 'remote', title: '另一台', createdAt: 1, updatedAt: 1, strokes: [], results: [] }
+  const dav = fakeDav()
+  let first = true
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === MATH_URL && init?.method === 'PUT' && first) {
+      first = false
+      dav.files.set(MATH_URL, JSON.stringify(buildMathNotesFile('personal-workstation', [packMathNote(remote)], [], 0)))
+      const headers = new Headers(init.headers)
+      if (headers.get('If-None-Match') === '*') return new Response('', { status: 412 })
+    }
+    return dav.fetchImpl(input, init)
+  })
+  await db.mathNotes.put(local)
+  const report = await syncNow()
+  expect(report.mathNotes.ok).toBe(true)
+  expect(JSON.parse(dav.files.get(MATH_URL)!).notes.map((n: {id:string}) => n.id).sort()).toEqual(['local', 'remote'])
+})
+
+
+it('两端已保存的离线修改同步后都保留，重复同步不产生更多副本', async () => {
+  const MATH_URL = `${BASE}/mathnotes-sync.json`
+  const initial = { id: 'shared', title: '共同版本', createdAt: 1, updatedAt: 100, strokes: [], results: [] }
+  const dav = fakeDav()
+  vi.stubGlobal('fetch', dav.fetchImpl)
+  await db.mathNotes.put(initial)
+  await syncNow()
+  await db.mathNotes.put({ ...initial, title: '本机修改', updatedAt: 200 })
+  const cloud = JSON.parse(dav.files.get(MATH_URL)!)
+  cloud.notes[0] = { ...cloud.notes[0], title: '远端修改', updatedAt: 300 }
+  dav.files.set(MATH_URL, JSON.stringify(cloud))
+  await syncNow()
+  expect((await db.mathNotes.toArray()).map(n => n.title).sort()).toEqual(['远端修改', '本机修改（冲突副本）'].sort())
+  await syncNow()
+  expect((await db.mathNotes.toArray()).map(n => n.title).sort()).toEqual(['远端修改', '本机修改（冲突副本）'].sort())
+  expect(JSON.parse(dav.files.get(MATH_URL)!).notes).toHaveLength(2)
+})
