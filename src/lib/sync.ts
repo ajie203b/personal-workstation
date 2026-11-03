@@ -2,17 +2,21 @@ import { CapacitorHttp, registerPlugin } from '@capacitor/core'
 import type { Table } from 'dexie'
 import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
 import { exportSnapshotParts } from '@/db/tasks'
+import { packMathNote, unpackMathNote, type PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
 import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
 import { isNative, isTauri } from './native'
 import { mergePayloads, type SyncPayload } from './syncMerge'
 import { planReconcile } from './syncReconcile'
+import { buildMathNotesFile, mergeMathNotes, noteTombstones, parseMathNotesFile, MATH_NOTES_SYNC_FILE, type MathNotesSyncFile } from './mathNotesSyncMerge'
 
 /**
  * 可选 WebDAV 同步（v2.0）：本地优先不变，只是把同一份数据放到自己的 WebDAV 上。
  *
  * 远端布局（相对配置里的目录）：
- *   sync.json          全部结构化数据（任务/文档元信息/批注/书签/位置/专注/墓碑）
- *   blobs/<hash>.b64   文档本体（base64 存文本，避免 WebView 里传二进制要过 CORS / 原生插件）
+ *   sync.json            全部结构化数据（任务/文档元信息/批注/书签/位置/专注/墓碑）
+ *   mathnotes-sync.json  手写计算笔记（独立文件：旧版客户端会重写整份 sync.json、抹掉不认识的字段，
+ *                        独立文件它们不碰；规则见 mathNotesSyncMerge.ts）
+ *   blobs/<hash>.b64     文档本体（base64 存文本，避免 WebView 里传二进制要过 CORS / 原生插件）
  *
  * 合并规则在 syncMerge.ts（纯函数、有单测）。文档本体按 hash 寻址：只传缺的那几份。
  * 网页版受浏览器跨域限制，需要 WebDAV 服务端给 CORS；安卓壳内走 CapacitorHttp，
@@ -32,6 +36,11 @@ export const JIANGUOYUN_URL = 'https://dav.jianguoyun.com/dav/Kairos/'
 const CFG_KEY = 'webdav'
 const LAST_KEY = 'lastSyncAt'
 const LAST_ERROR_KEY = 'lastSyncError'
+/** 笔记同步失败的原因（主同步照常成功；成功一次就清掉） */
+const MATH_ERROR_KEY = 'lastMathNotesSyncError'
+const MATH_BASELINE_KEY = 'mathNotesSyncBaseline'
+/** 本机的笔记清空纪元（只在本机，不进导出 / 同步，见 tasks.ts LOCAL_ONLY_SETTINGS） */
+export const MATH_EPOCH_KEY = 'mathNotesSyncEpoch'
 const SYNC_FILE = 'sync.json'
 const AUTO_MIN_INTERVAL = 10 * 60 * 1000
 
@@ -158,8 +167,9 @@ async function getText(cfg: WebdavConfig, url: string): Promise<DavResponse | nu
   return res
 }
 
-async function putText(cfg: WebdavConfig, url: string, text: string, etag?: string): Promise<DavResponse> {
-  const res = await dav(cfg, 'PUT', url, text, etag ? { 'If-Match': etag } : undefined)
+async function putText(cfg: WebdavConfig, url: string, text: string, etag?: string, createOnly = false): Promise<DavResponse> {
+  const condition: Record<string, string> | undefined = etag ? { 'If-Match': etag } : createOnly ? { 'If-None-Match': '*' } : undefined
+  const res = await dav(cfg, 'PUT', url, text, condition)
   if (res.status === 412) throw new Error('CONFLICT')
   if (res.status >= 400) throw new Error(`WebDAV 写入失败（HTTP ${res.status}）`)
   return res
@@ -201,6 +211,7 @@ function base64ToBlob(text: string, type: string): Blob {
 /* ---------------- 本地写入 ---------------- */
 
 // 注意不含 db.blobs：文档本体不在 JSON 里，清掉就找不回来了
+// 也不含 db.mathNotes：笔记走独立的 mathnotes-sync.json（见下方 syncMathNotes）
 const SYNCED_TABLES = [db.tasks, db.docs, db.positions, db.annotations, db.bookmarks, db.focusSessions, db.folders, db.tombstones, db.settings]
 
 const taskTs = (t: Task) => t.updatedAt ?? t.createdAt
@@ -315,6 +326,8 @@ export interface SyncReport {
   at: number
   /** 同步期间又发生的本地改动条数：本地已保留，下一轮同步会推送 */
   pendingLocal: number
+  /** 手写计算笔记（独立文件）的同步结果；失败不影响主同步 */
+  mathNotes: { ok: true; pages: number } | { ok: false; error: string }
 }
 
 /** 读一份「当前本地状态」的同步载荷（文档本体不进来，全文索引是派生数据也不进来） */
@@ -324,7 +337,91 @@ async function readLocalPayload(): Promise<SyncPayload> {
   local.tombstones = await db.tombstones.toArray()
   local.epoch = (await db.settings.get('syncEpoch'))?.value as number | undefined
   delete local.docText
+  // 笔记不进 sync.json（旧版客户端会抹掉它），走独立文件
+  delete local.mathNotes
   return local
+}
+
+/**
+ * 迁移：本分支测试期写进 sync.json 的 mathNotes。按「updatedAt 新者胜、墓碑优先」并进本机，
+ * 随后由独立文件推上去；sync.json 推送时已不再带这个字段（readLocalPayload 删掉了），迁移一次即止。
+ */
+async function adoptLegacyMathNotes(legacy: PackedMathNote[] | undefined): Promise<void> {
+  if (!legacy?.length) return
+  await db.transaction('rw', db.mathNotes, db.tombstones, async () => {
+    const dead = new Set((await db.tombstones.toArray()).map((t) => t.id))
+    for (const packed of legacy) {
+      if (dead.has(packed.id)) continue
+      const cur = await db.mathNotes.get(packed.id)
+      if (!cur || packed.updatedAt > cur.updatedAt) await db.mathNotes.put(unpackMathNote(packed))
+    }
+  })
+}
+
+async function readMathEpoch(): Promise<number | undefined> {
+  const v = (await db.settings.get(MATH_EPOCH_KEY))?.value
+  return typeof v === 'number' ? v : undefined
+}
+
+/**
+ * 笔记独立同步：GET mathnotes-sync.json → 合并 → 三方对账落库 → 带 If-Match 推回。
+ * 并发冲突（412）时重跑一次。返回同步后的笔记页数。
+ */
+async function syncMathNotesOnce(cfg: WebdavConfig, base: string, app: string): Promise<number> {
+  const url = join(base, MATH_NOTES_SYNC_FILE)
+  const got = await getText(cfg, url)
+  const remote: MathNotesSyncFile | null = got?.text ? parseMathNotesFile(got.text) : null
+
+  const baseRows = await db.mathNotes.toArray()
+  const local = {
+    notes: baseRows.map(packMathNote),
+    tombstones: await db.tombstones.toArray(),
+    epoch: await readMathEpoch(),
+  }
+  const baseline = (await db.settings.get(MATH_BASELINE_KEY))?.value as Record<string, PackedMathNote> | undefined
+  const merged = mergeMathNotes(local, remote, baseline)
+
+  await db.transaction('rw', [db.mathNotes, db.tombstones, db.settings], async () => {
+    // 远端墓碑落到本机（id 唯一，混进总墓碑表无妨；也防止本机旧副本以后被推回来）
+    for (const t of merged.tombstones) {
+      const cur = await db.tombstones.get(t.id)
+      if (!cur || t.ts > cur.ts) await db.tombstones.put(t)
+    }
+    const dead = new Set((await db.tombstones.toArray()).map((t) => t.id))
+    const incoming = merged.notes.filter((n) => !dead.has(n.id)).map(unpackMathNote)
+    if (merged.replaceLocal) {
+      await db.mathNotes.clear()
+      await db.mathNotes.bulkPut(incoming)
+    } else {
+      const current = (await db.mathNotes.toArray()).filter((n) => !dead.has(n.id))
+      // 同步期间本机删掉的页：不让合并结果把它放回来
+      const plan = planReconcile({ merged: incoming, base: baseRows, current, key: (n) => n.id, ts: (n) => n.updatedAt })
+      if (plan.put.length) await db.mathNotes.bulkPut(plan.put)
+      const del = [...plan.del, ...(await db.mathNotes.toCollection().primaryKeys() as string[]).filter((id) => dead.has(id))]
+      if (del.length) await db.mathNotes.bulkDelete(del)
+    }
+    await db.settings.put({ key: MATH_EPOCH_KEY, value: merged.epoch })
+  })
+
+  // 推送内容以落库后的本机状态为准（同步期间的新编辑不必等下一轮）
+  const after = await db.mathNotes.toArray()
+  const allTomb = await db.tombstones.toArray()
+  const relevant = [...merged.tombstones.map((t) => t.id), ...(remote?.notes ?? []).map((n) => n.id), ...baseRows.map((n) => n.id)]
+  const tombstones = noteTombstones(allTomb, relevant)
+  const file = buildMathNotesFile(app, after.map(packMathNote), tombstones, merged.epoch)
+  await putText(cfg, url, JSON.stringify(file), got?.etag, !got)
+  // 只有远端写入成功才更新共同基线；使用实际上传的快照，避免吞掉上传期间的新编辑。
+  await db.settings.put({ key: MATH_BASELINE_KEY, value: Object.fromEntries(file.notes.map((n) => [n.id, n])) })
+  return after.length
+}
+
+async function syncMathNotes(cfg: WebdavConfig, base: string, app: string): Promise<number> {
+  try {
+    return await syncMathNotesOnce(cfg, base, app)
+  } catch (e) {
+    if (e instanceof Error && e.message === 'CONFLICT') return await syncMathNotesOnce(cfg, base, app)
+    throw e
+  }
 }
 
 async function performSync(): Promise<SyncReport> {
@@ -345,6 +442,9 @@ async function performSync(): Promise<SyncReport> {
       throw new Error('远端 sync.json 不是合法 JSON（可能被别的程序占用）')
     }
   }
+
+  // 迁移：旧格式 sync.json 里的笔记先并进本机，之后只走独立文件
+  await adoptLegacyMathNotes(remote?.mathNotes)
 
   const local = await readLocalPayload()
   const merged = mergePayloads(local, remote)
@@ -390,6 +490,17 @@ async function performSync(): Promise<SyncReport> {
   pushed.blobMeta = merged.payload.blobMeta
   await putText(cfg, syncUrl, JSON.stringify(pushed), got?.etag)
 
+  // 4) 笔记独立文件：失败只记原因，不让主同步失败
+  let mathNotes: SyncReport['mathNotes']
+  try {
+    mathNotes = { ok: true, pages: await syncMathNotes(cfg, base, pushed.app) }
+    await db.settings.delete(MATH_ERROR_KEY)
+  } catch (e) {
+    const message = e instanceof Error ? (e.message === 'CONFLICT' ? '笔记同步文件被另一台设备同时修改，下次同步会重试' : e.message) : String(e)
+    mathNotes = { ok: false, error: message }
+    await db.settings.put({ key: MATH_ERROR_KEY, value: { at: Date.now(), message } }).catch(() => undefined)
+  }
+
   const at = Date.now()
   await db.settings.put({ key: LAST_KEY, value: at })
   await db.settings.delete(LAST_ERROR_KEY)
@@ -400,6 +511,7 @@ async function performSync(): Promise<SyncReport> {
     blobsDown,
     at,
     pendingLocal: stat.pending,
+    mathNotes,
   }
 }
 

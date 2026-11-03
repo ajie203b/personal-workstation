@@ -6,6 +6,7 @@ import { nextDueForRepeat } from '@/lib/repeat'
 import { syncTaskNotification } from '@/lib/notify'
 import { markDeleted } from '@/lib/tombstones'
 import { validateSnapshot } from './snapshotSchema'
+import { packMathNote, unpackMathNote, type PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
 
 export interface NewTaskInput {
   /** 小组件离线队列用固定 id 去重；普通新建不传，自动生成 */
@@ -310,6 +311,8 @@ interface ExportPayload {
   /** v3.3 工具矩阵：手写签名 / 二维码历史（可选，老备份没有） */
   signatures?: SignatureRow[]
   qrHistory?: QrHistoryRow[]
+  /** 手写计算的笔记页（可选，老备份没有）；笔迹按 mathnotes/backupCodec.ts 紧凑编码 */
+  mathNotes?: PackedMathNote[]
   /** 手动导出的 JSON：文档本体内联 base64 */
   blobRows?: { hash: string; type: string; data: string }[]
   /** 目录式快照：文档本体在 blobs/<hash>，这里只留清单 */
@@ -319,7 +322,8 @@ interface ExportPayload {
 const SNAPSHOT_HEAD = { app: 'personal-workstation' as const, version: 4 as const }
 
 /** 只属于本机的设置：WebDAV 口令、同步/备份时间戳、通知权限状态 */
-const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt', 'notifyEnabled'])
+// mathNotesSyncEpoch：本机的笔记清空纪元，只描述这台设备，跟着备份 / 同步走到别处会误判「对方清空过」
+const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt', 'notifyEnabled', 'mathNotesSyncEpoch', 'mathNotesSyncBaseline', 'lastMathNotesSyncError'])
 
 /**
  * 一次读出所有表（手动导出与自动快照共用）。
@@ -327,7 +331,7 @@ const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt',
  * 有意不含 aiProviders：那张表存的是明文 apiKey，AI 面板下线后已无用途，
  * 导出 / 自动快照 / WebDAV 同步（同样走这个函数）都不该把它带出去。
  */
-type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders' | 'signatures' | 'qrHistory'>
+type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders' | 'signatures' | 'qrHistory' | 'mathNotes'>
 
 async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
   const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiSessions, aiMessages, aiUsage, docText, focusSessions] = await Promise.all([
@@ -348,6 +352,7 @@ async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
   const folders = await db.folders.toArray()
   const signatures = await db.signatures.toArray()
   const qrHistory = await db.qrHistory.toArray()
+  const mathNotes = (await db.mathNotes.toArray()).map(packMathNote)
   return {
     // 设备本地的口令 / 时间戳不进导出，避免同步或备份时把 WebDAV 口令带出去
     data: {
@@ -366,6 +371,7 @@ async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
       folders,
       signatures,
       qrHistory,
+      mathNotes,
     },
     blobs: blobs.map((r) => ({ hash: r.hash, type: r.blob.type, blob: r.blob })),
   }
@@ -438,6 +444,7 @@ const IMPORT_TABLES: [string, Table<any, any>][] = [
   ['folders', db.folders],
   ['signatures', db.signatures],
   ['qrHistory', db.qrHistory],
+  ['mathNotes', db.mathNotes],
 ]
 
 /**
@@ -506,6 +513,8 @@ async function writeAll(raw: unknown, mode: ImportMode): Promise<ImportResult> {
       if (has('folders')) await db.folders.bulkPut(data.folders as Folder[])
       if (has('signatures')) await db.signatures.bulkPut(data.signatures as SignatureRow[])
       if (has('qrHistory')) await db.qrHistory.bulkPut(data.qrHistory as QrHistoryRow[])
+      // 笔记页按 id 合并（merge 同 id 覆盖；replace 已先清表）；老备份没有这个字段就不动本机笔记
+      if (has('mathNotes')) await db.mathNotes.bulkPut((data.mathNotes as PackedMathNote[]).map(unpackMathNote))
     },
   )
   return result
@@ -537,7 +546,7 @@ export async function importSnapshotParts(
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions, db.tombstones, db.folders],
+    [db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions, db.tombstones, db.folders, db.mathNotes],
     async () => {
       await db.tasks.clear()
       await db.settings.clear()
@@ -554,10 +563,14 @@ export async function clearAllData(): Promise<void> {
       await db.focusSessions.clear()
       await db.tombstones.clear()
       await db.folders.clear()
+      await db.mathNotes.clear()
       localStorage.removeItem('ws-doc-tabs')
       localStorage.removeItem('ws-focus-records')
     },
   )
-  // 清空也是一次「删除」：写一个纪元时间戳，另一台设备同步时不会把旧数据合并回来
-  await db.settings.put({ key: 'syncEpoch', value: Date.now() })
+  // 清空也是一次「删除」：写一个纪元时间戳，另一台设备同步时不会把旧数据合并回来。
+  // 笔记走独立同步文件，单独记一个同值的笔记纪元（见 lib/mathNotesSyncMerge.ts）
+  const epoch = Date.now()
+  await db.settings.put({ key: 'syncEpoch', value: epoch })
+  await db.settings.put({ key: 'mathNotesSyncEpoch', value: epoch })
 }

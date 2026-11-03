@@ -111,6 +111,15 @@ export const IconToolOcr = makeStroke(
   <path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3M6 16l3-8 3 8M7.1 13h3.8M15 8h3m-3 4h3m-3 4h2" />,
 )
 
+/** 手写计算：手写的 x² 与等号 */
+export const IconToolMath = makeStroke(
+  <>
+    <path d="M3.5 8.5 9 15M9 8.5 3.5 15" />
+    <path d="M11.5 5.6c.4-.9 2.6-1 2.6.4 0 .9-1.3 1.5-2.6 2.6h2.9" strokeWidth={1.5} />
+    <path d="M14 13.5h6.5M14 17.5h6.5" />
+  </>,
+)
+
 /** NJUST 报告排版：带标题行的文档 */
 export const IconToolReport = makeStroke(
   <>

@@ -20,13 +20,14 @@ import { cn } from '@/lib/cn'
  * 解析成 auto，阅读容器被内容撑到全高、滚动条落到 main 上，内层 onScroll 一次都不触发
  * （表现：PDF 只渲染前 3 页，后面全白；docx 划不动；位置恢复与目录跳转失效）。
  */
-const SELF_SCROLLING = /^\/docs\//
+const SELF_SCROLLING = /^\/(docs\/|tools\/math-notes$)/
 
 /**
  * 沉浸模式：阅读器 / 编辑器 / 高亮复习自己带工具栏，全局顶栏与底栏全部让位。
  * 手机上原来顶栏 56 + 阅读器工具栏 56 + 底栏 56 ≈ 170px 被三套壳吃掉，正文只剩一条缝。
+ * 手写计算同理：画布要尽量大，手机上整屏都给它。
  */
-const IMMERSIVE = [/^\/docs\/.+/, /^\/review$/]
+const IMMERSIVE = [/^\/docs\/.+/, /^\/review$/, /^\/tools\/math-notes$/]
 
 export function AppShell() {
   useThemeEffect()

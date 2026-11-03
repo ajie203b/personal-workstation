@@ -1,5 +1,6 @@
 import type { Annotation, Bookmark, Doc, FocusSession, Folder, ReadingPosition, SettingKV, Task, Tombstone } from '@/db/db'
 import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
+import type { PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
 
 /**
  * WebDAV 同步的合并逻辑（纯函数，便于单测）。
@@ -25,6 +26,11 @@ export interface SyncPayload {
   folders: Folder[]
   tombstones: Tombstone[]
   blobMeta: { hash: string; type: string }[]
+  /**
+   * 仅用于迁移：本分支测试期曾把笔记写进 sync.json。现在笔记走独立的 mathnotes-sync.json
+   * （旧版客户端会重写 sync.json、抹掉不认识的字段），这里只读不写，合并结果里也不再带它。
+   */
+  mathNotes?: PackedMathNote[]
   /** 清空数据的纪元：更晚的一侧代表「我刚清空过」，整份数据算数 */
   epoch?: number
 }
@@ -94,10 +100,17 @@ function mergeSettings(local: SettingKV[], remote: SettingKV[]): SettingKV[] {
   return [...map.values()]
 }
 
+/** 合并结果不带 mathNotes：笔记只走 mathnotes-sync.json，旧格式里的只在迁移时读一次 */
+function withoutMathNotes(p: SyncPayload): SyncPayload {
+  const { mathNotes: _legacy, ...rest } = p
+  void _legacy
+  return rest
+}
+
 export function mergePayloads(local: SyncPayload, remote: SyncPayload | null, now = Date.now()): MergeResult {
   if (!remote) {
     return {
-      payload: { ...local, exportedAt: new Date(now).toISOString() },
+      payload: { ...withoutMathNotes(local), exportedAt: new Date(now).toISOString() },
       replaceAll: false,
     }
   }
@@ -109,13 +122,13 @@ export function mergePayloads(local: SyncPayload, remote: SyncPayload | null, no
 
   if (localEpoch > remoteEpoch) {
     return {
-      payload: { ...local, epoch, blobMeta, exportedAt: new Date(now).toISOString() },
+      payload: { ...withoutMathNotes(local), epoch, blobMeta, exportedAt: new Date(now).toISOString() },
       replaceAll: true,
     }
   }
   if (remoteEpoch > localEpoch) {
     return {
-      payload: { ...remote, epoch, blobMeta, exportedAt: new Date(now).toISOString() },
+      payload: { ...withoutMathNotes(remote), epoch, blobMeta, exportedAt: new Date(now).toISOString() },
       replaceAll: true,
     }
   }

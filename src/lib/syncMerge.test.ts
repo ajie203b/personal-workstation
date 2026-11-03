@@ -119,3 +119,14 @@ describe('mergePayloads', () => {
     expect(r.payload.blobMeta.map((m) => m.hash).sort()).toEqual(['a', 'b'])
   })
 })
+
+describe('mergePayloads · 手写计算笔记已移出 sync.json', () => {
+  const packed = (id: string, updatedAt: number) => ({
+    id, title: id, enc: 1 as const, strokes: [{ id: 's', width: 3, t0: 0, pts: [10, 20, 50, 0] }], results: [], createdAt: 1, updatedAt,
+  })
+
+  it('两端（测试期的旧格式）带着 mathNotes：合并结果里也不再写回（笔记走 mathnotes-sync.json）', () => {
+    const r = mergePayloads(payload({ mathNotes: [packed('a', 1)] }), payload({ mathNotes: [packed('b', 1)] }))
+    expect(r.payload.mathNotes).toBeUndefined()
+  })
+})
