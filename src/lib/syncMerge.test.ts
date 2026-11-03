@@ -119,3 +119,31 @@ describe('mergePayloads', () => {
     expect(r.payload.blobMeta.map((m) => m.hash).sort()).toEqual(['a', 'b'])
   })
 })
+
+describe('mergePayloads · 手写计算笔记', () => {
+  const packed = (id: string, updatedAt: number, title = id) => ({
+    id, title, enc: 1 as const, strokes: [{ id: 's', width: 3, t0: 0, pts: [10, 20, 50, 0] }], results: [], createdAt: 1, updatedAt,
+  })
+
+  it('同 id 取 updatedAt 更新的一份，两端独有的都保留', () => {
+    const r = mergePayloads(
+      payload({ mathNotes: [packed('a', 100, '本地旧'), packed('l', 1)] }),
+      payload({ mathNotes: [packed('a', 200, '远端新'), packed('r', 1)] }),
+    )
+    const byId = Object.fromEntries((r.payload.mathNotes ?? []).map((n) => [n.id, n.title]))
+    expect(byId).toEqual({ a: '远端新', l: 'l', r: 'r' })
+  })
+
+  it('删除墓碑生效：另一端不会把删掉的笔记推回来', () => {
+    const r = mergePayloads(
+      payload({ mathNotes: [], tombstones: [{ id: 'gone', ts: 500 }] }),
+      payload({ mathNotes: [packed('gone', 100)] }),
+    )
+    expect(r.payload.mathNotes).toEqual([])
+  })
+
+  it('老版本的 sync.json 没有 mathNotes：本地笔记照常保留', () => {
+    const r = mergePayloads(payload({ mathNotes: [packed('a', 1)] }), payload())
+    expect(r.payload.mathNotes?.map((n) => n.id)).toEqual(['a'])
+  })
+})

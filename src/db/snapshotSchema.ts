@@ -241,6 +241,33 @@ export function validateSnapshot(raw: unknown): ValidatedSnapshot {
     num(p, r, 'createdAt', path)
   })
 
+  checkRows(p, raw, 'mathNotes', (r, path) => {
+    str(p, r, 'id', path)
+    str(p, r, 'title', path, true)
+    num(p, r, 'createdAt', path)
+    num(p, r, 'updatedAt', path)
+    if (r.results !== undefined && !isArr(r.results)) p.add(`${path}.results`, '应为数组')
+    if (!isArr(r.strokes)) {
+      p.add(`${path}.strokes`, '应为数组')
+      return
+    }
+    r.strokes.forEach((s, i) => {
+      const at = `${path}.strokes[${i}]`
+      if (!isObj(s)) { p.add(at, '应为对象'); return }
+      str(p, s, 'id', at)
+      num(p, s, 'width', at)
+      if (isArr(s.pts)) {
+        // 紧凑编码：每 4 个整数一个点
+        if (s.pts.length % 4 !== 0 || s.pts.some((v) => !isNum(v))) p.add(`${at}.pts`, '应为 4 的倍数个数字')
+        num(p, s, 't0', at)
+      } else if (isArr(s.points)) {
+        if (s.points.some((pt) => !isObj(pt) || !isNum(pt.x) || !isNum(pt.y))) p.add(`${at}.points`, '采样点应含数字 x/y')
+      } else {
+        p.add(at, '缺少笔迹采样点')
+      }
+    })
+  })
+
   checkRows(p, raw, 'settings', (r, path) => {
     str(p, r, 'key', path)
     if (r.value === undefined) p.add(`${path}.value`, '缺失')

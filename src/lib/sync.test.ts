@@ -192,3 +192,35 @@ describe('WebDAV 同步：请求期间的本地改动', () => {
     expect(err?.message).toContain('HTTP 500')
   })
 })
+
+describe('WebDAV 同步：手写计算笔记', () => {
+  const page = {
+    id: 'n1', title: '第 1 页', createdAt: 1000, updatedAt: 2000,
+    strokes: [{ id: 's1', width: 3, points: [{ x: 10.2, y: 20.4, p: 0.5, t: 1730000000000 }, { x: 12.6, y: 21, p: 0.6, t: 1730000000016 }] }],
+    results: [{ key: 's1', recognized: '1+1=', result: { kind: 'inline' as const, latex: '2', text: '2' } }],
+  }
+
+  it('推到云端后另一台设备能拿回完整笔迹；删除用墓碑同步，不会复活', async () => {
+    const dav = fakeDav()
+    vi.stubGlobal('fetch', dav.fetchImpl)
+    await db.mathNotes.put(page)
+    await syncNow()
+    const cloud = JSON.parse(dav.files.get(SYNC_URL)!)
+    expect(cloud.mathNotes).toHaveLength(1)
+    expect(cloud.mathNotes[0].enc).toBe(1)
+
+    // 模拟新设备：本地没有这页笔记
+    await db.mathNotes.clear()
+    await syncNow()
+    const back = await db.mathNotes.get('n1')
+    expect(back?.results).toEqual(page.results)
+    expect(back?.strokes[0].points).toEqual(page.strokes[0].points)
+
+    // 删掉这一页（带墓碑）→ 同步后云端也没有了
+    const { deletePage } = await import('@/modules/tools/mathnotes/store')
+    await deletePage('n1')
+    await syncNow()
+    expect(JSON.parse(dav.files.get(SYNC_URL)!).mathNotes).toEqual([])
+    expect(await db.mathNotes.get('n1')).toBeUndefined()
+  })
+})

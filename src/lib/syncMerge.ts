@@ -1,5 +1,6 @@
 import type { Annotation, Bookmark, Doc, FocusSession, Folder, ReadingPosition, SettingKV, Task, Tombstone } from '@/db/db'
 import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
+import type { PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
 
 /**
  * WebDAV 同步的合并逻辑（纯函数，便于单测）。
@@ -25,6 +26,8 @@ export interface SyncPayload {
   folders: Folder[]
   tombstones: Tombstone[]
   blobMeta: { hash: string; type: string }[]
+  /** 手写计算笔记页（紧凑编码，见 backupCodec.ts）；老版本的 sync.json 没有 */
+  mathNotes?: PackedMathNote[]
   /** 清空数据的纪元：更晚的一侧代表「我刚清空过」，整份数据算数 */
   epoch?: number
 }
@@ -137,6 +140,7 @@ export function mergePayloads(local: SyncPayload, remote: SyncPayload | null, no
       bookmarks: mergeByKey(local.bookmarks ?? [], remote.bookmarks ?? [], (b) => b.id, markTs, dead),
       focusSessions: mergeByKey(local.focusSessions ?? [], remote.focusSessions ?? [], (f) => f.id, (f) => f.ts, dead),
       folders: mergeByKey(local.folders ?? [], remote.folders ?? [], (f) => f.id, (f) => f.updatedAt, dead),
+      mathNotes: mergeByKey(local.mathNotes ?? [], remote.mathNotes ?? [], (n) => n.id, (n) => n.updatedAt, dead),
       tombstones,
       blobMeta,
     },

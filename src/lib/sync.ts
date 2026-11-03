@@ -2,6 +2,7 @@ import { CapacitorHttp, registerPlugin } from '@capacitor/core'
 import type { Table } from 'dexie'
 import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
 import { exportSnapshotParts } from '@/db/tasks'
+import { unpackMathNote } from '@/modules/tools/mathnotes/backupCodec'
 import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
 import { isNative, isTauri } from './native'
 import { mergePayloads, type SyncPayload } from './syncMerge'
@@ -201,7 +202,7 @@ function base64ToBlob(text: string, type: string): Blob {
 /* ---------------- 本地写入 ---------------- */
 
 // 注意不含 db.blobs：文档本体不在 JSON 里，清掉就找不回来了
-const SYNCED_TABLES = [db.tasks, db.docs, db.positions, db.annotations, db.bookmarks, db.focusSessions, db.folders, db.tombstones, db.settings]
+const SYNCED_TABLES = [db.tasks, db.docs, db.positions, db.annotations, db.bookmarks, db.focusSessions, db.folders, db.mathNotes, db.tombstones, db.settings]
 
 const taskTs = (t: Task) => t.updatedAt ?? t.createdAt
 const docTs = (d: Doc) => d.updatedAt ?? d.addedAt
@@ -258,6 +259,7 @@ async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean 
       await db.bookmarks.clear()
       await db.focusSessions.clear()
       await db.folders.clear()
+      await db.mathNotes.clear()
       await db.tombstones.clear()
       await db.docText.clear()
       await db.tasks.bulkPut(p.tasks)
@@ -267,6 +269,7 @@ async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean 
       await db.bookmarks.bulkPut(p.bookmarks)
       await db.focusSessions.bulkPut(p.focusSessions)
       await db.folders.bulkPut(p.folders ?? [])
+      await db.mathNotes.bulkPut((p.mathNotes ?? []).map(unpackMathNote))
       await db.tombstones.bulkPut(p.tombstones)
       await applyQuota(p, base, true)
     })
@@ -282,6 +285,8 @@ async function applyLocally(merged: { payload: SyncPayload; replaceAll: boolean 
     await reconcileInto(db.bookmarks, p.bookmarks, base.bookmarks ?? [], (b) => b.id, markTs, stat)
     await reconcileInto(db.focusSessions, p.focusSessions, base.focusSessions ?? [], (f) => f.id, (f) => f.ts, stat)
     await reconcileInto(db.folders, p.folders ?? [], base.folders ?? [], (f) => f.id, (f) => f.updatedAt, stat)
+    // 笔记页：合并结果是紧凑编码，落库前解码；对账只看 id + updatedAt
+    await reconcileInto(db.mathNotes, (p.mathNotes ?? []).map(unpackMathNote), (base.mathNotes ?? []).map(unpackMathNote), (n) => n.id, (n) => n.updatedAt, stat)
     await reconcileInto(db.tombstones, p.tombstones, base.tombstones ?? [], (t) => t.id, (t) => t.ts, stat)
     await applyQuota(p, base, false)
   })

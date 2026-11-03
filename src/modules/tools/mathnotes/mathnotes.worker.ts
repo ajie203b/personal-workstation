@@ -34,6 +34,7 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
   void enqueue(async () => {
     try {
       if (msg.type === 'load') {
+        if (msg.fresh) await recognizer.reset()
         await recognizer.load((p) => post({ type: 'progress', id: msg.id, ratio: p.ratio, file: p.file }))
         post({ type: 'loaded', id: msg.id, backend: recognizer.backend ?? 'wasm' })
         return

@@ -12,6 +12,7 @@ vi.mock('@capacitor/local-notifications', () => ({
 }))
 
 import type { Task } from './db'
+import type { MathNotePage } from '@/modules/tools/mathnotes/types'
 
 const { db } = await import('./db')
 const { exportAll, importAll } = await import('./tasks')
@@ -92,5 +93,73 @@ describe('导入校验', () => {
 
   it('坏 JSON 给出人话', async () => {
     await expect(importAll('{oops', 'replace')).rejects.toThrow(/不是合法 JSON/)
+  })
+})
+
+const note = (id: string, patch: Partial<MathNotePage> = {}): MathNotePage => ({
+  id,
+  title: `第 ${id} 页`,
+  strokes: [
+    { id: `${id}-s1`, width: 3, points: [{ x: 10.25, y: 20.5, p: 0.5, t: 1730000000000 }, { x: 15.75, y: 22, p: 0.62, t: 1730000000016 }, { x: 31, y: 40.1, p: 0.7, t: 1730000000033 }] },
+    { id: `${id}-s2`, width: 2.5, points: [{ x: 100, y: 50, p: 0.5, t: 1730000001000 }] },
+  ],
+  results: [{ key: `${id}-s1|${id}-s2`, recognized: '1+1=', edited: '1+1=', result: { kind: 'inline', latex: '2', text: '2' } }],
+  createdAt: 1000,
+  updatedAt: 2000,
+  ...patch,
+})
+
+describe('手写计算笔记的备份', () => {
+  it('导出 → 清库 → 导入后笔迹与识别结果完整（坐标保留 0.1px）', async () => {
+    const a = note('a')
+    await db.mathNotes.bulkPut([a, note('b', { strokes: [], results: [] })])
+    const backup = await exportAll()
+    expect(JSON.parse(backup).mathNotes).toHaveLength(2)
+
+    await db.mathNotes.clear()
+    expect(await db.mathNotes.count()).toBe(0)
+    await importAll(backup, 'replace')
+
+    const back = await db.mathNotes.get('a')
+    expect(back).toBeTruthy()
+    expect(back!.title).toBe(a.title)
+    expect(back!.results).toEqual(a.results)
+    expect(back!.updatedAt).toBe(a.updatedAt)
+    expect(back!.strokes.map((s) => [s.id, s.width, s.points.length])).toEqual(a.strokes.map((s) => [s.id, s.width, s.points.length]))
+    a.strokes.forEach((s, i) => s.points.forEach((p, j) => {
+      const q = back!.strokes[i].points[j]
+      expect(Math.abs(q.x - p.x)).toBeLessThanOrEqual(0.0501)
+      expect(Math.abs(q.y - p.y)).toBeLessThanOrEqual(0.0501)
+      expect(Math.abs(q.p - p.p)).toBeLessThanOrEqual(0.0051)
+      expect(q.t).toBe(p.t)
+    }))
+    expect(await db.mathNotes.get('b')).toMatchObject({ strokes: [], results: [] })
+  })
+
+  it('合并导入按 id 覆盖，不动本机其他笔记', async () => {
+    await db.mathNotes.bulkPut([note('keep'), note('a', { title: '旧标题' })])
+    await importAll(snapshot({ mathNotes: [note('a', { title: '新标题' })] }), 'merge')
+    expect((await db.mathNotes.get('a'))?.title).toBe('新标题')
+    expect(await db.mathNotes.get('keep')).toBeTruthy()
+  })
+
+  it('旧版备份没有 mathNotes 字段：导入不报错，也不清掉本机笔记', async () => {
+    await db.mathNotes.put(note('local'))
+    const r = await importAll(snapshot(), 'replace')
+    expect(r.tasks).toBe(1)
+    expect(await db.mathNotes.get('local')).toBeTruthy()
+  })
+
+  it('笔迹结构损坏：拒绝整份导入', async () => {
+    await expect(importAll(snapshot({ mathNotes: [{ ...note('x'), strokes: [{ id: 's', width: 2, pts: [1, 2, 3] }] }] }))).rejects.toThrow(/mathNotes\[0\]\.strokes\[0\]\.pts/)
+    expect(await db.tasks.count()).toBe(0)
+  })
+
+  it('紧凑编码明显比原始 JSON 小', async () => {
+    const points = Array.from({ length: 2000 }, (_, i) => ({ x: 100 + i * 0.37123, y: 200 + Math.sin(i) * 13.3337, p: 0.4 + (i % 50) / 100, t: 1730000000000 + i * 8 }))
+    const big = note('big', { strokes: [{ id: 's', width: 3, points }] })
+    await db.mathNotes.put(big)
+    const packed = JSON.stringify(JSON.parse(await exportAll()).mathNotes)
+    expect(packed.length).toBeLessThan(JSON.stringify([big]).length / 2.5)
   })
 })

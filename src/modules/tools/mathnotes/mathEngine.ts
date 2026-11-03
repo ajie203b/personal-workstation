@@ -67,9 +67,9 @@ export class MathEngine {
     this.worker?.postMessage({ type: 'config', source } satisfies WorkerIn)
   }
 
-  /** 下载并加载模型；返回推理后端名 */
-  async load(onProgress?: (ratio: number, file: string) => void): Promise<string> {
-    const out = await this.request({ type: 'load', id: this.nextId++ }, onProgress)
+  /** 下载并加载模型；返回推理后端名。fresh=true 先清本模型缓存（「重试 / 换源」） */
+  async load(onProgress?: (ratio: number, file: string) => void, opts: { fresh?: boolean } = {}): Promise<string> {
+    const out = await this.request({ type: 'load', id: this.nextId++, fresh: opts.fresh }, onProgress)
     this.backend = out.type === 'loaded' ? out.backend : 'wasm'
     return this.backend
   }

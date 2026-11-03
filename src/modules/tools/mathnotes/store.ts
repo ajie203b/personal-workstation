@@ -1,6 +1,7 @@
-/** 数学笔记的本地存储（Dexie mathNotes 表 + settings 里的下载源配置） */
+/** 数学笔记的本地存储（Dexie mathNotes 表 + settings 里的下载源配置）；笔记进 JSON 备份 / 自动快照 / WebDAV 同步 */
 import { db } from '@/db/db'
 import { uid } from '@/lib/id'
+import { markDeleted } from '@/lib/tombstones'
 import type { MathNotePage } from './types'
 import { DEFAULT_SOURCE, type ModelSourceConfig } from './recognizer'
 
@@ -20,8 +21,12 @@ export async function savePage(page: MathNotePage): Promise<void> {
   await db.mathNotes.put({ ...page, updatedAt: Date.now() })
 }
 
+/** 删除同时记墓碑：笔记参与 WebDAV 同步，没有墓碑的话另一台设备会把它推回来 */
 export async function deletePage(id: string): Promise<void> {
-  await db.mathNotes.delete(id)
+  await db.transaction('rw', db.mathNotes, db.tombstones, async () => {
+    await db.mathNotes.delete(id)
+    await markDeleted(id)
+  })
 }
 
 export async function getSource(): Promise<ModelSourceConfig> {

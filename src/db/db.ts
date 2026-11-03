@@ -448,7 +448,7 @@ class WorkstationDB extends Dexie {
       signatures: 'id, createdAt',
       qrHistory: 'id, action, createdAt',
     })
-    // v10（手写计算）：数学笔记页——笔迹 + 识别结果（纯增表；同番茄书架，不参与备份/同步）
+    // v10（手写计算）：数学笔记页——笔迹 + 识别结果（纯增表；进 JSON 备份 / 自动快照 / WebDAV 同步，笔迹紧凑编码）
     this.version(10).stores({
       mathNotes: 'id, updatedAt',
     })

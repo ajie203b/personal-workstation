@@ -9,8 +9,10 @@
  * 贪心解码；置信度按 Pix2Text 的口径取逐步最大概率的几何平均。
  *
  * 模型文件不进安装包：首次打开工具时按下载源顺序下载，存 Cache Storage（lib/modelCache）。
+ * 每个文件都带 SHA-256（与 models 分支 pix2text-mfr-1.5/SHA256SUMS 一致）：镜像回了错误内容不会进缓存，
+ * 缓存坏了会被删掉重下；ONNX 建会话失败时也清掉对应文件的缓存，下次加载重新下载。
  */
-import { getModel } from '@/lib/modelCache'
+import { deleteModel, getModel } from '@/lib/modelCache'
 import type { TensorData } from '@/lib/onnx'
 import { toPixelValues, MFR_INPUT_SIZE, type GrayImage } from './preprocess'
 import { decodeIds, parseTokenizer, postProcessLatex, type MfrTokenizer } from './tokenizer'
@@ -20,11 +22,16 @@ export const MFR_REPO = 'breezedeus/pix2text-mfr-1.5'
 /** 固定到具体提交，避免上游改动后缓存与模型不一致 */
 export const MFR_REVISION = '1cef9f0bdcd6a4c63df7de1311fb0894593340cc'
 
-const FILES = [
-  { key: 'encoder', file: 'encoder_model.onnx', mb: 87.5 },
-  { key: 'decoder', file: 'decoder_model.onnx', mb: 32.0 },
-  { key: 'tokenizer', file: 'tokenizer.json', mb: 0.11 },
+/** 运行时只用这三个文件；sha256 取自 models 分支 pix2text-mfr-1.5/SHA256SUMS（与 HF 上游逐字节一致） */
+export const MFR_FILES = [
+  { key: 'encoder', file: 'encoder_model.onnx', mb: 87.5, sha256: '080a3f660f08bc9ebcacdd96e34be6b6400f8c7e62d7cd0dd8251badc37f610b' },
+  { key: 'decoder', file: 'decoder_model.onnx', mb: 32.0, sha256: '917deb98e91a0453c5f234f58a0f32f9fb037de8527c7eb4ed394daf9e692f2a' },
+  { key: 'tokenizer', file: 'tokenizer.json', mb: 0.11, sha256: '4ffbeb2143e6a38324bb6111b7a8109530d38a076a8439aa5777535f0a32758a' },
 ] as const
+const FILES = MFR_FILES
+
+/** 缓存条目标识（modelCache 的 id）；版本另带 MFR_REVISION */
+export const mfrCacheId = (file: string) => `pix2text-mfr-1.5/${file}`
 
 const BOS = 1
 const EOS = 2
@@ -39,16 +46,21 @@ export interface MfrRuntime {
   drop?(key: string): Promise<void>
 }
 
-/** 取文件字节；默认走 modelCache（镜像回退 + Cache Storage） */
-export type FileLoader = (id: string, urls: string[], onProgress: (ratio: number) => void) => Promise<ArrayBuffer>
+/** 取文件字节；默认走 modelCache（镜像回退 + SHA-256 校验 + Cache Storage） */
+export type FileLoader = (id: string, urls: string[], onProgress: (ratio: number) => void, sha256: string) => Promise<ArrayBuffer>
+/** 删掉某个文件的缓存 */
+export type CacheEvictor = (id: string) => Promise<void>
 
-const defaultLoader: FileLoader = (id, urls, onProgress) =>
-  getModel({ id, version: MFR_REVISION, urls, onProgress })
+const defaultLoader: FileLoader = (id, urls, onProgress, sha256) =>
+  getModel({ id, version: MFR_REVISION, urls, onProgress, sha256 })
+
+const defaultEvict: CacheEvictor = (id) => deleteModel(id, MFR_REVISION)
 
 export interface Pix2TextMfrOptions {
   runtime: MfrRuntime
   source?: ModelSourceConfig
   loader?: FileLoader
+  evict?: CacheEvictor
 }
 
 /** 取 logits 最后一个位置的 argmax 与 softmax 概率 */
@@ -78,11 +90,13 @@ export class Pix2TextMfrRecognizer implements Recognizer {
   private wasmOnly = false
   private readonly runtime: MfrRuntime
   private readonly loader: FileLoader
+  private readonly evict: CacheEvictor
   private source: ModelSourceConfig
 
   constructor(opts: Pix2TextMfrOptions) {
     this.runtime = opts.runtime
     this.loader = opts.loader ?? defaultLoader
+    this.evict = opts.evict ?? defaultEvict
     this.source = opts.source ?? DEFAULT_SOURCE
   }
 
@@ -105,11 +119,39 @@ export class Pix2TextMfrRecognizer implements Recognizer {
     return this.loading
   }
 
+  /**
+   * 「重试 / 换源」：先清掉本模型三个文件的缓存与已建会话，下次 load 从头下载。
+   * 用户点这两个按钮时多半是坏缓存在作怪（镜像回过错误内容），只换 URL 不清缓存还是读到同一份。
+   */
+  async reset(): Promise<void> {
+    if (this.loading) await this.loading.catch(() => undefined)
+    this.tokenizer = null
+    this.loading = null
+    if (this.runtime.drop) {
+      await this.runtime.drop('mfr-encoder').catch(() => undefined)
+      await this.runtime.drop('mfr-decoder').catch(() => undefined)
+    }
+    for (const f of FILES) await this.evict(mfrCacheId(f.file)).catch(() => undefined)
+  }
+
   private async fetchFile(file: (typeof FILES)[number], done: number, total: number, onProgress?: (p: LoadProgress) => void) {
     const urls = modelFileUrls(this.source, MFR_REPO, MFR_REVISION, file.file)
-    return this.loader(`pix2text-mfr-1.5/${file.file}`, urls, (r) =>
-      onProgress?.({ ratio: r < 0 ? -1 : (done + r * file.mb) / total, file: file.file }),
+    return this.loader(
+      mfrCacheId(file.file),
+      urls,
+      (r) => onProgress?.({ ratio: r < 0 ? -1 : (done + r * file.mb) / total, file: file.file }),
+      file.sha256,
     )
+  }
+
+  /** 建会话失败：多半是缓存里的模型文件坏了（校验前写进去的旧缓存），删掉让下次重新下载 */
+  private async prepareOrEvict(key: string, file: string, buf: ArrayBuffer): Promise<void> {
+    try {
+      await this.runtime.prepare(key, buf, { wasmOnly: this.wasmOnly })
+    } catch (e) {
+      await this.evict(mfrCacheId(file)).catch(() => undefined)
+      throw e
+    }
   }
 
   private async doLoad(onProgress?: (p: LoadProgress) => void): Promise<void> {
@@ -121,9 +163,15 @@ export class Pix2TextMfrRecognizer implements Recognizer {
       done += f.mb
       onProgress?.({ ratio: done / total, file: f.file })
     }
-    const tokenizer = parseTokenizer(new TextDecoder().decode(buffers.tokenizer))
-    await this.runtime.prepare('mfr-encoder', buffers.encoder, { wasmOnly: this.wasmOnly })
-    await this.runtime.prepare('mfr-decoder', buffers.decoder, { wasmOnly: this.wasmOnly })
+    let tokenizer: MfrTokenizer
+    try {
+      tokenizer = parseTokenizer(new TextDecoder().decode(buffers.tokenizer))
+    } catch (e) {
+      await this.evict(mfrCacheId('tokenizer.json')).catch(() => undefined)
+      throw e
+    }
+    await this.prepareOrEvict('mfr-encoder', 'encoder_model.onnx', buffers.encoder)
+    await this.prepareOrEvict('mfr-decoder', 'decoder_model.onnx', buffers.decoder)
     this.tokenizer = tokenizer
   }
 

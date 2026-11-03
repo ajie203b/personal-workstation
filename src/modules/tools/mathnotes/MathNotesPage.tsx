@@ -97,7 +97,7 @@ function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, from = 0) {
  * 没写等号的方程 / 方程组 / 矩阵，结果写在算式下方。点答案可用 MathLive 纠错重算。
  *
  * 画布按笔迹包围盒把笔画聚成独立算式块（横写、竖写都行），每块单独识别、单独出答案。
- * 笔迹和识别结果存本机 IndexedDB（mathNotes 表），支持多页。
+ * 笔迹和识别结果存本机 IndexedDB（mathNotes 表），支持多页；随 JSON 备份 / 自动快照 / WebDAV 同步走。
  */
 export function MathNotesPage() {
   const navigate = useNavigate()
@@ -145,12 +145,13 @@ export function MathNotesPage() {
     setModel({ phase: 'loading', ratio, file })
   }, [])
 
-  const loadModel = useCallback(async () => {
+  /** fresh：用户点了「重试」或在识别设置里换源后重新下载——先清本模型缓存，坏缓存才不会被反复读到 */
+  const loadModel = useCallback(async (opts: { fresh?: boolean } = {}) => {
     const engine = engineRef.current
     if (!engine) return
     setModel({ phase: 'loading', ratio: 0, file: '' })
     try {
-      const backend = await engine.load(onModelProgress)
+      const backend = await engine.load(onModelProgress, opts)
       setModel({ phase: 'ready', backend })
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
@@ -872,7 +873,7 @@ export function MathNotesPage() {
                 <Button size="sm" variant="outline" className="h-8 px-3 shrink-0" onClick={() => setSettingsOpen(true)}>
                   换下载源
                 </Button>
-                <Button size="sm" variant="primary" className="h-8 px-3 shrink-0" onClick={() => void loadModel()}>
+                <Button size="sm" variant="primary" className="h-8 px-3 shrink-0" onClick={() => void loadModel({ fresh: true })}>
                   重试
                 </Button>
               </div>
@@ -938,8 +939,8 @@ export function MathNotesPage() {
           </div>
           <div className="flex justify-end gap-2">
             {model.phase !== 'ready' && model.phase !== 'loading' && (
-              <Button variant="primary" className="h-9 px-4" onClick={() => void loadModel()}>
-                下载 / 加载模型
+              <Button variant="primary" className="h-9 px-4" onClick={() => void loadModel({ fresh: true })}>
+                重新下载模型
               </Button>
             )}
             <Button variant="outline" className="h-9 px-4" onClick={() => setSettingsOpen(false)}>
