@@ -1,5 +1,19 @@
 # 更新记录
 
+## v3.6.7 · 2026年11月3日
+
+- fix: preserve math notes across page switches and sync conflicts
+- data: 每日更新官方模型图表
+- data: 每日更新模型智能排名
+- fix(math-notes): 同步进来的笔记不被旧编辑器覆盖；笔记改走独立同步文件；模型只在确认损坏时删缓存
+- fix(math-notes): 重试 / 重新加载模型只清未通过校验的模型文件
+- fix(math-notes): 笔记进备份与 WebDAV 同步；模型文件 SHA-256 校验与坏缓存恢复
+- fix(math-notes): 按代码审查修复复数验算、双指卡死、答案裁切、识别排队与失败提示
+- feat(math-notes): 默认从本仓库 models 分支下载 Pix2Text 模型
+- feat: 新增「手写计算」小工具（数学笔记式手写识别 + 自动计算）
+
+安卓版本码为 82。
+
 ## v3.6.6 · 2026年11月3日
 
 - 修复安卓端模型额度日期选择器出现在页面底部的问题，日期面板会显示在当前屏幕内。
