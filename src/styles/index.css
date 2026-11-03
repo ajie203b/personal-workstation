@@ -516,7 +516,7 @@ select:focus-visible {
 .check-path.on { stroke-dashoffset: 0; }
 
 /* 页面入场：300ms / 12px 上移淡入（MD3 medium2） */
-.enter { animation: fade-up var(--dur-2) var(--ease-standard) both; }
+.enter { animation: fade-up var(--dur-2) var(--ease-standard) backwards; }
 
 /* 弹层打开时背后页面退后一步（ui-motion 12）；scale 是独立变换，不和切页的 transform 动画打架 */
 .page-flow { min-width: 0; }
@@ -541,7 +541,7 @@ select:focus-visible {
   from { opacity: 0.8; transform: translateX(var(--flow-x, 6px)); }
   to { opacity: 1; transform: translateX(0); }
 }
-.page-flow-in { animation: page-flow-in var(--dur-2) var(--ease-standard) both; }
+.page-flow-in { animation: page-flow-in var(--dur-2) var(--ease-standard) backwards; }
 
 /* ---------------- 阅读器宽度滑块 ---------------- */
 .reader-range {
@@ -597,7 +597,8 @@ select:focus-visible {
 /* ---------------- 时间选择面板 ---------------- */
 .time-panel {
   transform-origin: top center;
-  animation: fade-up 220ms var(--ease-standard) both;
+  /* 定位依赖 translateX(-50%)，不要用动画覆盖 transform。 */
+  animation: fade-in 220ms var(--ease-standard) backwards;
 }
 
 /* ---------------- 自绘单选下拉（SelectMenu） ----------------
@@ -741,7 +742,7 @@ select:focus-visible {
 .nav-badge.nav-badge-out { animation: badge-out 220ms var(--ease-standard) forwards; }
 
 /* 同层内容最多错峰 105ms，避免等待整屏逐项播放。 */
-.cascade > * { animation: fade-up var(--dur-2) var(--ease-standard) both; }
+.cascade > * { animation: fade-up var(--dur-2) var(--ease-standard) backwards; }
 .cascade > *:nth-child(1) { animation-delay: 0ms; }
 .cascade > *:nth-child(2) { animation-delay: 15ms; }
 .cascade > *:nth-child(3) { animation-delay: 30ms; }
@@ -1257,5 +1258,5 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 }
 
 @keyframes stats-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.stats-view-transition { animation: stats-view-in 220ms ease-out both; }
+.stats-view-transition { animation: stats-view-in 220ms ease-out backwards; }
 @media (prefers-reduced-motion: reduce) { .stats-view-transition { animation: none; } }

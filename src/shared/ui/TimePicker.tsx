@@ -27,6 +27,7 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
   const [minute, setMinute] = useState('00')
   const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -56,26 +57,32 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
       tracking = false
       if (!moved) setOpen(false)
     }
+    const onCancel = () => { tracking = false }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setOpen(false)
+        triggerRef.current?.focus({ preventScroll: true })
+      }
     }
     document.addEventListener('pointerdown', onDown)
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
-    document.addEventListener('pointercancel', onUp)
-    window.addEventListener('keydown', onKey)
+    document.addEventListener('pointercancel', onCancel)
+    window.addEventListener('keydown', onKey, true)
     return () => {
       document.removeEventListener('pointerdown', onDown)
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
-      document.removeEventListener('pointercancel', onUp)
-      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointercancel', onCancel)
+      window.removeEventListener('keydown', onKey, true)
     }
   }, [open])
 
-  // 面板展开后把它滚进可视区：手机上一屏放不下时，不用先摸黑往下拖
+  // 桌面面板就地展开，必要时滚进可视区；手机固定浮层无需滚动背景。
   useEffect(() => {
-    if (!open) return
+    if (!open || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767px)').matches)) return
     const t = window.setTimeout(() => {
       panelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     }, 40)
@@ -109,6 +116,7 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
   return (
     <div ref={rootRef} className={cn('flex flex-col gap-1.5', className)}>
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -141,7 +149,6 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
               'fixed left-1/2 -translate-x-1/2 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 w-[min(380px,92vw)] max-h-[72dvh]',
               'md:static md:z-auto md:w-auto md:max-h-[min(62vh,440px)] md:translate-x-0 md:bottom-auto',
             )}
-            style={{ animation: 'scale-in var(--dur-1) var(--ease-standard)' }}
           >
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12px] font-semibold text-on-surface-2">选择时间</span>

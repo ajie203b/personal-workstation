@@ -42,14 +42,14 @@ export function DatePicker({ value = '', onChange, ariaLabel = '日期' }: {
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
     document.addEventListener('pointercancel', cancel)
-    document.addEventListener('keydown', key, true)
+    window.addEventListener('keydown', key, true)
     root.current?.querySelector<HTMLElement>('[data-date-panel] button')?.focus({ preventScroll: true })
     return () => {
       document.removeEventListener('pointerdown', down)
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerup', up)
       document.removeEventListener('pointercancel', cancel)
-      document.removeEventListener('keydown', key, true)
+      window.removeEventListener('keydown', key, true)
     }
   }, [open])
 

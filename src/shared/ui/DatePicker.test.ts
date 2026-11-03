@@ -43,7 +43,11 @@ it('可跳选年、月，并清空日期', () => {
 })
 it('Escape 仅关闭日期面板，不提交默认日期', () => {
   click('截止日期')
-  act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  const outerEscape = vi.fn()
+  document.addEventListener('keydown', outerEscape, true)
+  act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  document.removeEventListener('keydown', outerEscape, true)
   expect(node.querySelector('[role="dialog"]')).toBeNull()
   expect(onChange).not.toHaveBeenCalled()
+  expect(outerEscape).not.toHaveBeenCalled()
 })
