@@ -834,7 +834,7 @@ export function MathNotesPage() {
               size="sm"
               ariaLabel="模型下载源"
             />
-            <p className="text-[11.5px] text-on-surface-2">{MODEL_SOURCES.find((s) => s.id === source.preferred)?.hint}；首选源失败会自动换另一个。</p>
+            <p className="text-[11.5px] text-on-surface-2">{MODEL_SOURCES.find((s) => s.id === source.preferred)?.hint}；首选源失败会按 GitHub → Hugging Face → hf-mirror 自动换下一个。</p>
             {source.preferred === 'custom' && (
               <input
                 value={source.customBase ?? ''}

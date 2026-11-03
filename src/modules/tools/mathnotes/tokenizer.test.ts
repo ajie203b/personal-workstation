@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { decodeIds, parseTokenizer, postProcessLatex } from './tokenizer'
 import { lastStepArgmax } from './pix2textMfr'
-import { modelFileUrls } from './recognizer'
+import { DEFAULT_SOURCE, modelFileUrls } from './recognizer'
 
 // 迷你版 tokenizer.json：结构与 Pix2Text MFR 1.5 一致（ByteLevel BPE，Ġ 表示前导空格）
 const MINI = JSON.stringify({
@@ -35,13 +35,26 @@ describe('贪心解码取最后一步', () => {
 })
 
 describe('模型下载源', () => {
-  it('首选源在前，其余作为回退', () => {
-    const urls = modelFileUrls({ preferred: 'hf-mirror' }, 'breezedeus/pix2text-mfr-1.5', 'abc', 'encoder_model.onnx')
-    expect(urls).toEqual([
-      'https://hf-mirror.com/breezedeus/pix2text-mfr-1.5/resolve/abc/encoder_model.onnx',
-      'https://huggingface.co/breezedeus/pix2text-mfr-1.5/resolve/abc/encoder_model.onnx',
+  const repo = 'breezedeus/pix2text-mfr-1.5'
+  const gh = 'https://raw.githubusercontent.com/ajie203b/personal-workstation/models/pix2text-mfr-1.5/encoder_model.onnx'
+  const hf = 'https://huggingface.co/breezedeus/pix2text-mfr-1.5/resolve/abc/encoder_model.onnx'
+  const mirror = 'https://hf-mirror.com/breezedeus/pix2text-mfr-1.5/resolve/abc/encoder_model.onnx'
+
+  it('默认：自己仓库 raw → huggingface.co → hf-mirror.com', () => {
+    expect(DEFAULT_SOURCE.preferred).toBe('github')
+    expect(modelFileUrls(DEFAULT_SOURCE, repo, 'abc', 'encoder_model.onnx')).toEqual([gh, hf, mirror])
+  })
+  it('首选源提到最前，其余保持默认顺序作为回退', () => {
+    expect(modelFileUrls({ preferred: 'hf' }, repo, 'abc', 'encoder_model.onnx')).toEqual([hf, gh, mirror])
+    expect(modelFileUrls({ preferred: 'hf-mirror' }, repo, 'abc', 'encoder_model.onnx')).toEqual([mirror, gh, hf])
+  })
+  it('自定义在最前，后面接全部内置源；没填地址时等同默认', () => {
+    expect(modelFileUrls({ preferred: 'custom', customBase: 'http://192.168.1.2:8000/' }, 'r/m', 'v', 'f')).toEqual([
+      'http://192.168.1.2:8000/f',
+      'https://raw.githubusercontent.com/ajie203b/personal-workstation/models/m/f',
+      'https://huggingface.co/r/m/resolve/v/f',
+      'https://hf-mirror.com/r/m/resolve/v/f',
     ])
-    expect(modelFileUrls({ preferred: 'hf' }, 'r', 'v', 'f')[0]).toBe('https://huggingface.co/r/resolve/v/f')
-    expect(modelFileUrls({ preferred: 'custom', customBase: 'http://192.168.1.2:8000/' }, 'r', 'v', 'f')[0]).toBe('http://192.168.1.2:8000/f')
+    expect(modelFileUrls({ preferred: 'custom', customBase: '  ' }, repo, 'abc', 'encoder_model.onnx')).toEqual([gh, hf, mirror])
   })
 })

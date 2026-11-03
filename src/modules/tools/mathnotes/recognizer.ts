@@ -37,7 +37,7 @@ export interface Recognizer {
 
 /* ============ 下载源 ============ */
 
-export type ModelSourceId = 'hf-mirror' | 'hf' | 'custom'
+export type ModelSourceId = 'github' | 'hf' | 'hf-mirror' | 'custom'
 
 export interface ModelSourceOption {
   id: ModelSourceId
@@ -46,8 +46,9 @@ export interface ModelSourceOption {
 }
 
 export const MODEL_SOURCES: ModelSourceOption[] = [
-  { id: 'hf-mirror', label: 'hf-mirror.com', hint: '国内镜像，优先推荐' },
+  { id: 'github', label: 'GitHub', hint: '本仓库 models 分支的原样镜像（raw.githubusercontent.com），默认' },
   { id: 'hf', label: 'Hugging Face', hint: '官方主站，境外网络更快' },
+  { id: 'hf-mirror', label: 'hf-mirror.com', hint: '第三方镜像，部分网络会跳回 huggingface.co' },
   { id: 'custom', label: '自定义', hint: '填一个直接放着三个模型文件的目录地址（自建 ModelScope 仓库、局域网文件服务器等）' },
 ]
 
@@ -61,24 +62,41 @@ export interface ModelSourceConfig {
   customBase?: string
 }
 
-export const DEFAULT_SOURCE: ModelSourceConfig = { preferred: 'hf-mirror' }
+export const DEFAULT_SOURCE: ModelSourceConfig = { preferred: 'github' }
 
-const BASES: Record<Exclude<ModelSourceId, 'custom'>, string> = {
-  'hf-mirror': 'https://hf-mirror.com',
-  hf: 'https://huggingface.co',
+/**
+ * 自己仓库的孤立分支 models（不含源码历史）里放着与 HF 上游逐字节相同的模型文件，
+ * 目录名 = HF 仓库名的最后一段（breezedeus/pix2text-mfr-1.5 → pix2text-mfr-1.5/）。
+ * raw.githubusercontent.com 带 `Access-Control-Allow-Origin: *`，浏览器可直接 fetch；
+ * GitHub Release 资产不带 CORS，所以不用 Release。
+ */
+export const GITHUB_MODELS_BASE = 'https://raw.githubusercontent.com/ajie203b/personal-workstation/models'
+
+/** 内置源的回退顺序：首选源提到最前，其余按这个顺序 */
+const BUILTIN_ORDER: Exclude<ModelSourceId, 'custom'>[] = ['github', 'hf', 'hf-mirror']
+
+function builtinUrl(id: Exclude<ModelSourceId, 'custom'>, repo: string, revision: string, file: string): string {
+  switch (id) {
+    case 'github':
+      return `${GITHUB_MODELS_BASE}/${repo.split('/').pop()}/${file}`
+    case 'hf':
+      return `https://huggingface.co/${repo}/resolve/${revision}/${file}`
+    case 'hf-mirror':
+      return `https://hf-mirror.com/${repo}/resolve/${revision}/${file}`
+  }
 }
 
 /**
- * 某个文件的候选下载地址：首选源在前，其余源作为回退（modelCache 会按顺序重试）。
- * 注意：实测 hf-mirror.com 对部分 IP 会 308 跳回 huggingface.co（OCR 模块也因此弃用了它），
- * 所以两个 HF 源都保留；国内直连都不通时用「自定义」指向自建镜像。
+ * 某个文件的候选下载地址：首选源在前，其余源作为回退（modelCache 会按顺序重试，连不上 20 秒换下一个）。
+ * 默认顺序：自己仓库 raw → huggingface.co → hf-mirror.com（实测 hf-mirror 对部分 IP 会 308 跳回 huggingface.co）。
+ * 国内直连都不通时用「自定义」指向自建镜像。
  */
 export function modelFileUrls(cfg: ModelSourceConfig, repo: string, revision: string, file: string): string[] {
-  const path = `${repo}/resolve/${revision}/${file}`
   const urls: string[] = []
   const custom = cfg.customBase?.trim().replace(/\/+$/, '')
   if (cfg.preferred === 'custom' && custom) urls.push(`${custom}/${file}`)
-  const order: Exclude<ModelSourceId, 'custom'>[] = cfg.preferred === 'hf' ? ['hf', 'hf-mirror'] : ['hf-mirror', 'hf']
-  for (const id of order) urls.push(`${BASES[id]}/${path}`)
+  const first = BUILTIN_ORDER.find((id) => id === cfg.preferred)
+  const order = first ? [first, ...BUILTIN_ORDER.filter((id) => id !== first)] : BUILTIN_ORDER
+  for (const id of order) urls.push(builtinUrl(id, repo, revision, file))
   return [...new Set(urls)]
 }
