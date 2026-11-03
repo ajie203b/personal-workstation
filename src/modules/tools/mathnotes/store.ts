@@ -17,8 +17,57 @@ export async function listPages(): Promise<MathNotePage[]> {
   return db.mathNotes.orderBy('updatedAt').toArray().then((rows) => rows.sort((a, b) => a.createdAt - b.createdAt))
 }
 
-export async function savePage(page: MathNotePage): Promise<void> {
-  await db.mathNotes.put({ ...page, updatedAt: Date.now() })
+/** 新建一页时落库（原样写入，updatedAt 用页面自带的创建时间） */
+export async function createPage(page: MathNotePage): Promise<void> {
+  await db.mathNotes.put(page)
+}
+
+export const CONFLICT_SUFFIX = '（冲突副本）'
+
+export type CommitOutcome =
+  /** 库里还是打开时那一版：已写入，updatedAt = 最后一次编辑的时间 */
+  | { kind: 'saved'; page: MathNotePage }
+  /** 库里这页已被同步更新 / 删除，本地只有派生改动（自动识别结果）：不写库，以库里的为准 */
+  | { kind: 'stale'; latest: MathNotePage | undefined }
+  /** 库里这页已被同步更新 / 删除，本地也编辑过：不覆盖对方，本地版本另存为一页冲突副本 */
+  | { kind: 'conflict'; latest: MathNotePage | undefined; copy: MathNotePage }
+
+/**
+ * 乐观并发写入：baseline 是编辑器载入这一页时库里的 updatedAt。
+ * 写入前在事务里比对库中当前值——同步可能已经把另一台设备的新版本写进来了，
+ * 这时绝不能用旧编辑器里的内容覆盖它（更不能盖上一个更新的时间戳再同步出去）。
+ *
+ * updatedAt 取最后一次编辑的时间（而不是保存时间）；若本机时钟比对方慢，
+ * 至少比 baseline 大 1，保证同步合并时这次编辑算「更新」。
+ */
+export async function commitPage(
+  draft: MathNotePage,
+  baseline: number,
+  opts: { editedAt: number; userEdited: boolean; now?: number },
+): Promise<CommitOutcome> {
+  return db.transaction('rw', db.mathNotes, db.tombstones, async () => {
+    const cur = await db.mathNotes.get(draft.id)
+    const deleted = !cur || Boolean(await db.tombstones.get(draft.id))
+    if (!deleted && cur.updatedAt === baseline) {
+      const page = { ...draft, updatedAt: Math.max(opts.editedAt, baseline + 1) }
+      await db.mathNotes.put(page)
+      return { kind: 'saved', page }
+    }
+    const latest = deleted ? undefined : cur
+    if (!opts.userEdited) return { kind: 'stale', latest }
+    const now = opts.now ?? Date.now()
+    const base = draft.title.endsWith(CONFLICT_SUFFIX) ? draft.title : `${draft.title}${CONFLICT_SUFFIX}`
+    const copy: MathNotePage = {
+      ...draft,
+      id: uid(),
+      title: base,
+      // 排在原页后面
+      createdAt: draft.createdAt + 1,
+      updatedAt: Math.max(opts.editedAt, now),
+    }
+    await db.mathNotes.put(copy)
+    return { kind: 'conflict', latest, copy }
+  })
 }
 
 /** 删除同时记墓碑：笔记参与 WebDAV 同步，没有墓碑的话另一台设备会把它推回来 */

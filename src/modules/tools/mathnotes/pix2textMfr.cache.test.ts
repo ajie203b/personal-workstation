@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeCacheStorage } from '@/lib/fakeCacheStorage'
 import { getModel, pruneModel, sha256Hex } from '@/lib/modelCache'
-import { MFR_FILES, MFR_REVISION, Pix2TextMfrRecognizer, mfrCacheId, type CachePruner, type FileLoader, type MfrRuntime } from './pix2textMfr'
+import { MFR_FILES, MFR_REVISION, ModelCorruptError, ModelRuntimeError, Pix2TextMfrRecognizer, classifySessionError, mfrCacheId, type BytesVerifier, type CachePruner, type FileLoader, type MfrRuntime } from './pix2textMfr'
 import type { ModelSourceConfig } from './recognizer'
 
 const enc = (s: string) => new TextEncoder().encode(s).buffer as ArrayBuffer
@@ -29,15 +29,20 @@ const loader: FileLoader = (id, urls, onProgress, sha256) =>
   getModel({ id, version: MFR_REVISION, urls, onProgress, sha256: shaMap[sha256] })
 /** 同理：重试时按假文件的 sha 判断缓存是否已校验 */
 const prune: CachePruner = (id, sha256) => pruneModel(id, MFR_REVISION, shaMap[sha256])
+/** 建会话失败后的字节复核：同样按假文件的 sha 比对（生产代码对真实字节算 SHA-256） */
+const verify: BytesVerifier = async (buf, sha256) => (await sha256Hex(buf)) === shaMap[sha256]
 
 /** 某个文件被 fetch 了几次（任意源） */
 const fetchedTimes = (file: string) => fetchMock.mock.calls.filter(([u]) => String(u).endsWith(`/${file}`)).length
 
 /** 假运行时：只认正确的模型字节，否则像 onnxruntime 一样建会话失败 */
-function fakeRuntime() {
+function fakeRuntime(opts: { failWith?: () => Error } = {}) {
   const prepared = new Map<string, string>()
+  const ctl = { failWith: opts.failWith, prepareCalls: 0 }
   const runtime: MfrRuntime = {
     async prepare(key, buf) {
+      ctl.prepareCalls++
+      if (ctl.failWith) throw ctl.failWith()
       const s = text(buf)
       const want = key === 'mfr-encoder' ? FAKE['encoder_model.onnx'] : FAKE['decoder_model.onnx']
       if (s !== want) throw new Error(`failed to load model ${key}: protobuf parsing failed`)
@@ -50,7 +55,7 @@ function fakeRuntime() {
       prepared.delete(key)
     },
   }
-  return { runtime, prepared }
+  return { runtime, prepared, ctl }
 }
 
 /** bad.mirror 一律以 200 回错误页；GitHub 源回正确文件 */
@@ -99,7 +104,7 @@ describe('Pix2Text 模型缓存恢复', () => {
   it('首选镜像以 200 返回错误内容：不缓存，自动换下一源加载成功', async () => {
     serveMirrors()
     const { runtime, prepared } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: SOURCE, loader, prune })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: SOURCE, loader, prune, verify })
     await r.load()
     expect(prepared.get('mfr-encoder')).toBe('ENCODER-OK')
     expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
@@ -112,21 +117,23 @@ describe('Pix2Text 模型缓存恢复', () => {
     serveMirrors()
     await seed('encoder_model.onnx', '<html>旧版本缓存的错误页</html>')
     const { runtime } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify })
     await r.load()
     expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
   })
 
-  it('伪造标记（磁盘损坏等）导致建会话失败：清掉该文件缓存，点「重试」只重下它并恢复', async () => {
+  it('真实字节损坏（标记对得上、内容坏了）导致建会话失败：复核 SHA-256 不符 → 清掉该文件缓存，点「重试」只重下它并恢复', async () => {
     serveMirrors()
     const forged = await sha256Hex(enc(FAKE['encoder_model.onnx']))
     const badBody = 'ENCODER-XX' // 与正确文件等长，标记和长度都对得上
     await seed('encoder_model.onnx', badBody, { 'x-model-sha256': forged, 'x-model-length': String(enc(badBody).byteLength) })
     const { runtime, prepared } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify })
 
-    await expect(r.load()).rejects.toThrow(/protobuf/)
-    // 标记一致也要清：建会话失败 → 对应缓存已删；另外两个已校验文件留着
+    const err = await r.load().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ModelCorruptError)
+    expect((err as Error).message).toContain('encoder_model.onnx 已损坏')
+    // 标记一致但字节复核不符 → 对应缓存已删；另外两个已校验文件留着
     expect(await cacheEntry('encoder_model.onnx')).toBeUndefined()
     expect(await cacheEntry('decoder_model.onnx')).toBe('DECODER-OK')
     expect(await cacheEntry('tokenizer.json')).toBe(FAKE['tokenizer.json'])
@@ -146,7 +153,7 @@ describe('Pix2Text 模型缓存恢复', () => {
   it('decoder 缺失、encoder 已校验：重试只下载 decoder', async () => {
     serveMirrors()
     const { runtime, prepared } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify })
     await r.load()
     const c = await storage.open('model-cache-v1')
     await c.delete(`https://model-cache.local/${encodeURIComponent(mfrCacheId('decoder_model.onnx'))}@${encodeURIComponent(MFR_REVISION)}`)
@@ -167,7 +174,7 @@ describe('Pix2Text 模型缓存恢复', () => {
   it('encoder 缓存坏了（标记不符）：重试只重下 encoder', async () => {
     serveMirrors()
     const { runtime, prepared } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify })
     await r.load()
     // 模拟坏条目：内容被截断，标记的长度与实际不符
     await seed('encoder_model.onnx', 'ENC', { 'x-model-sha256': shaMap[MFR_FILES[0].sha256], 'x-model-length': '10' })
@@ -187,7 +194,7 @@ describe('Pix2Text 模型缓存恢复', () => {
   it('换源后「重新加载模型」：已校验的不动，只从新源补下缺的', async () => {
     serveMirrors()
     const { runtime } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'custom', customBase: 'https://bad.mirror/only' }, loader, prune })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'custom', customBase: 'https://bad.mirror/only' }, loader, prune, verify })
     // 只有坏镜像 + 内置源；内置 GitHub 源能兜底
     await r.load()
     const c = await storage.open('model-cache-v1')
@@ -205,7 +212,7 @@ describe('Pix2Text 模型缓存恢复', () => {
   it('全部已校验时重试：不下载任何文件，只重建会话', async () => {
     serveMirrors()
     const { runtime, prepared } = fakeRuntime()
-    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify })
     await r.load()
     fetchMock.mockClear()
     expect(await r.reset()).toEqual([])
@@ -213,5 +220,58 @@ describe('Pix2Text 模型缓存恢复', () => {
     await r.load()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(prepared.size).toBe(2)
+  })
+
+  it('字节正确但建会话抛内存不足：不删缓存、重试不重下，提示关闭其他应用', async () => {
+    serveMirrors()
+    const { runtime, prepared, ctl } = fakeRuntime({ failWith: () => new Error("failed to allocate a buffer of size 91750400: std::bad_alloc") })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify })
+
+    const err = await r.load().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ModelRuntimeError)
+    expect((err as ModelRuntimeError).kind).toBe('oom')
+    expect((err as Error).message).toContain('设备内存不足')
+    expect((err as Error).message).toContain('关闭其他应用')
+    // 三个文件都还在缓存里
+    expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
+    expect(await cacheEntry('decoder_model.onnx')).toBe('DECODER-OK')
+    expect(await cacheEntry('tokenizer.json')).toBe(FAKE['tokenizer.json'])
+
+    // 关掉其他应用后「重试」：一个文件都不重下，直接重建会话
+    ctl.failWith = undefined
+    fetchMock.mockClear()
+    expect(await r.reset()).toEqual([])
+    await r.load()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(prepared.get('mfr-encoder')).toBe('ENCODER-OK')
+    expect(prepared.get('mfr-decoder')).toBe('DECODER-OK')
+  })
+
+  it('字节正确但运行时不支持（WebAssembly 不可用）：不删缓存，提示 WebView 版本要求', async () => {
+    serveMirrors()
+    const { runtime } = fakeRuntime({ failWith: () => new ReferenceError('WebAssembly is not defined') })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify })
+    const err = await r.load().catch((e: unknown) => e)
+    expect((err as ModelRuntimeError).kind).toBe('unsupported')
+    expect((err as Error).message).toContain('93')
+    expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
+    fetchMock.mockClear()
+    expect(await r.reset()).toEqual([])
+  })
+
+  it('字节复核本身失败（例如内存不足算不动哈希）：保守保留缓存', async () => {
+    serveMirrors()
+    const { runtime } = fakeRuntime({ failWith: () => new RangeError('Array buffer allocation failed') })
+    const r = new Pix2TextMfrRecognizer({ runtime, source: { preferred: 'github' }, loader, prune, verify: async () => { throw new RangeError('Array buffer allocation failed') } })
+    const err = await r.load().catch((e: unknown) => e)
+    expect((err as ModelRuntimeError).kind).toBe('oom')
+    expect(await cacheEntry('encoder_model.onnx')).toBe('ENCODER-OK')
+  })
+
+  it('错误归类：常见的 onnxruntime / 浏览器报错文本', () => {
+    expect(classifySessionError(new RangeError('WebAssembly.Memory(): could not allocate memory')).kind).toBe('oom')
+    expect(classifySessionError(new Error('Aborted(OOM)')).kind).toBe('oom')
+    expect(classifySessionError(new Error('no available backend found. ERR: [wasm] RuntimeError')).kind).toBe('unsupported')
+    expect(classifySessionError(new Error('Load model failed: protobuf parsing failed')).kind).toBe('unknown')
   })
 })

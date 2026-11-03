@@ -322,7 +322,8 @@ interface ExportPayload {
 const SNAPSHOT_HEAD = { app: 'personal-workstation' as const, version: 4 as const }
 
 /** 只属于本机的设置：WebDAV 口令、同步/备份时间戳、通知权限状态 */
-const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt', 'notifyEnabled'])
+// mathNotesSyncEpoch：本机的笔记清空纪元，只描述这台设备，跟着备份 / 同步走到别处会误判「对方清空过」
+const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastAutoBackupAt', 'notifyEnabled', 'mathNotesSyncEpoch', 'lastMathNotesSyncError'])
 
 /**
  * 一次读出所有表（手动导出与自动快照共用）。
@@ -567,6 +568,9 @@ export async function clearAllData(): Promise<void> {
       localStorage.removeItem('ws-focus-records')
     },
   )
-  // 清空也是一次「删除」：写一个纪元时间戳，另一台设备同步时不会把旧数据合并回来
-  await db.settings.put({ key: 'syncEpoch', value: Date.now() })
+  // 清空也是一次「删除」：写一个纪元时间戳，另一台设备同步时不会把旧数据合并回来。
+  // 笔记走独立同步文件，单独记一个同值的笔记纪元（见 lib/mathNotesSyncMerge.ts）
+  const epoch = Date.now()
+  await db.settings.put({ key: 'syncEpoch', value: epoch })
+  await db.settings.put({ key: 'mathNotesSyncEpoch', value: epoch })
 }

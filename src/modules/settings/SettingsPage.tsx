@@ -608,7 +608,8 @@ function WebdavCard() {
       setNote({
         ok: true,
         text: `已同步：${r.tasks} 条任务、${r.docs} 篇文档（上传 ${r.blobsUp} / 下载 ${r.blobsDown} 个文件）`
-          + (r.pendingLocal > 0 ? `；另有 ${r.pendingLocal} 条同步期间的改动已保留，下次同步会推送` : ''),
+          + (r.pendingLocal > 0 ? `；另有 ${r.pendingLocal} 条同步期间的改动已保留，下次同步会推送` : '')
+          + (r.mathNotes.ok ? '' : `；手写计算笔记这次没同步上（${r.mathNotes.error}），下次同步会重试`),
       })
       toast('同步完成')
     } catch (e) {

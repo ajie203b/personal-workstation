@@ -163,3 +163,23 @@ describe('手写计算笔记的备份', () => {
     expect(packed.length).toBeLessThan(JSON.stringify([big]).length / 2.5)
   })
 })
+
+describe('JSON 备份里的 mathNotes 与已发布的旧版（v3.6.6）导入兼容', () => {
+  it('新版导出的备份（含 mathNotes）能通过 v3.6.6 的导入校验，未知字段被忽略而不是报错', async () => {
+    const legacy = await import('@/lib/__legacy__/v3.6.6/snapshotSchema')
+    const note: MathNotePage = {
+      id: 'n1', title: '第 1 页', createdAt: 1, updatedAt: 2,
+      strokes: [{ id: 's', width: 3, points: [{ x: 1, y: 2, p: 0.5, t: 3 }] }], results: [],
+    }
+    await db.tasks.put(task)
+    await db.mathNotes.put(note)
+    const backup = JSON.parse(await exportAll()) as Record<string, unknown>
+    expect(Array.isArray(backup.mathNotes)).toBe(true)
+    // 版本号没变（旧版最高支持 4），旧版校验通过、原样返回数据
+    const r = legacy.validateSnapshot(backup)
+    expect(r.version).toBe(4)
+    expect(r.data.mathNotes).toBe(backup.mathNotes)
+    // 旧版 writeAll 只按自己的 IMPORT_TABLES 逐表写入（v3.6.6 src/db/tasks.ts），mathNotes 不在其中，
+    // 所以旧版导入只是忽略这份笔记，其余数据照常恢复
+  })
+})

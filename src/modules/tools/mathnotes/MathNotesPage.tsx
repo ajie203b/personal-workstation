@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { liveQuery } from 'dexie'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from '@/db/db'
 import { ChevronLeft, ChevronRight, Eraser, FilePlus2, FileX2, Loader2, MoreHorizontal, PenLine, Redo2, Settings2, Sigma, Trash2, Undo2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuSeparator } from '@/shared/ui/Menu'
 import { cn } from '@/lib/cn'
@@ -15,7 +18,8 @@ import { MathEngine } from './mathEngine'
 import { MathView } from './MathView'
 import { MathEditorDialog } from './MathEditorDialog'
 import { MODEL_SOURCES, DEFAULT_SOURCE, type ModelSourceConfig, type ModelSourceId } from './recognizer'
-import { deletePage, getLastPageId, getSource, listPages, newPage, savePage, setLastPageId, setSource } from './store'
+import { createPage, deletePage, getLastPageId, getSource, listPages, newPage, setLastPageId, setSource } from './store'
+import { NoteSession, type EditKind } from './noteSession'
 import type { BlockResult, InkBlock, InkPoint, MathNotePage, Stroke } from './types'
 import { uid } from '@/lib/id'
 
@@ -108,9 +112,12 @@ export function MathNotesPage() {
   const overlayRef = useRef<HTMLDivElement>(null)
   const engineRef = useRef<MathEngine | null>(null)
 
-  const [pages, setPages] = useState<MathNotePage[]>([])
+  // 页列表直接订阅库：同步进来的新页 / 删掉的页 / 冲突副本都会自动出现在翻页里
+  const pages = useLiveQuery(listPages, [], [] as MathNotePage[])
   const [pageId, setPageId] = useState<string>('')
   const pageRef = useRef<MathNotePage | null>(null)
+  /** 当前页与库之间的保存状态（dirty / baseline / 冲突处理），见 noteSession.ts */
+  const sessionRef = useRef<NoteSession | null>(null)
   const strokesRef = useRef<Stroke[]>([])
   const resultsRef = useRef<Map<string, BlockResult>>(new Map())
   const undoRef = useRef<Action[]>([])
@@ -178,42 +185,89 @@ export function MathNotesPage() {
 
   /* ---------- 页面数据 ---------- */
 
-  const flushSave = useCallback(() => {
-    window.clearTimeout(saveTimer.current)
-    const page = pageRef.current
-    if (!page) return
+  /** 当前编辑器内容（只保留还对得上笔画的识别结果） */
+  const currentDraft = useCallback(() => {
     const keys = new Set(clusterStrokes(strokesRef.current).map((b) => b.key))
-    const next: MathNotePage = {
-      ...page,
+    return {
       strokes: strokesRef.current,
       results: [...resultsRef.current.values()].filter((r) => keys.has(r.key)),
     }
-    pageRef.current = next
-    setPages((ps) => ps.map((p) => (p.id === next.id ? next : p)))
-    void savePage(next).catch(() => toast('笔记保存失败'))
-  }, [toast])
+  }, [])
+
+  /** 有改动才写库（乐观并发，见 noteSession.ts）；没编辑过什么都不写 */
+  const flushSave = useCallback(() => {
+    window.clearTimeout(saveTimer.current)
+    const session = sessionRef.current
+    if (!session?.isDirty) return
+    void session.save().catch(() => undefined)
+  }, [])
 
   const scheduleSave = useCallback(() => {
     window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(flushSave, 600)
   }, [flushSave])
 
-  const openPage = useCallback(
-    (page: MathNotePage) => {
-      if (pageRef.current && pageRef.current.id !== page.id) flushSave()
+  /** 记一次改动：user = 用户亲手改的；derived = 自动识别写回的结果 */
+  const markEdited = useCallback(
+    (kind: EditKind) => {
+      sessionRef.current?.markEdited(kind)
+      scheduleSave()
+    },
+    [scheduleSave],
+  )
+
+  /** 把一页内容装进编辑器（换页、或库里的新版本替换当前内容） */
+  const loadIntoEditor = useCallback(
+    (page: MathNotePage, opts: { keepScroll?: boolean } = {}) => {
       pageRef.current = page
       strokesRef.current = page.strokes.map((s) => ({ ...s, points: [...s.points] }))
       resultsRef.current = new Map(page.results.map((r) => [r.key, r]))
+      // 撤销栈指向的是旧内容，换了内容就作废
       undoRef.current = []
       redoRef.current = []
-      // 换页：上一页还没发出的识别请求作废
       queueRef.current?.submit([])
-      scrollYRef.current = 0
-      setPageId(page.id)
-      setLastPageId(page.id)
+      if (!opts.keepScroll) scrollYRef.current = 0
       bump()
     },
-    [bump, flushSave],
+    [bump],
+  )
+
+  /** 本页在别处被删（同步来的墓碑）：换到别的页，没页了就新建一页 */
+  const onCurrentDeletedRef = useRef<() => void>(() => undefined)
+
+  const openPage = useCallback(
+    (page: MathNotePage) => {
+      const prev = sessionRef.current
+      if (prev && prev.id !== page.id) {
+        window.clearTimeout(saveTimer.current)
+        void prev.close().catch(() => undefined)
+      }
+      const session = new NoteSession(page, currentDraft, {
+        onReplaced: (latest) => {
+          if (sessionRef.current !== session) return
+          loadIntoEditor(latest, { keepScroll: true })
+          toast('这一页已更新为其他设备同步来的版本')
+        },
+        onConflict: (copy) => {
+          toast(`这一页在其他设备上也改过：你的修改已另存为「${copy.title}」，原页保留同步来的版本`)
+          // 已换页 / 已离开时只提示；还在这一页就切到副本继续写
+          if (sessionRef.current !== session) return
+          pageRef.current = copy
+          setPageId(copy.id)
+          setLastPageId(copy.id)
+        },
+        onDeleted: () => {
+          if (sessionRef.current !== session) return
+          onCurrentDeletedRef.current()
+        },
+        onError: () => toast('笔记保存失败'),
+      })
+      sessionRef.current = session
+      loadIntoEditor(page)
+      setPageId(page.id)
+      setLastPageId(page.id)
+    },
+    [currentDraft, loadIntoEditor, toast],
   )
 
   useEffect(() => {
@@ -223,10 +277,9 @@ export function MathNotesPage() {
       let list = rows
       if (!list.length) {
         const first = newPage(1)
-        await savePage(first)
+        await createPage(first)
         list = [first]
       }
-      setPages(list)
       const last = getLastPageId()
       openPage(list.find((p) => p.id === last) ?? list[list.length - 1])
     })
@@ -237,8 +290,27 @@ export function MathNotesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 离开页面前把没落盘的改动写掉
-  useEffect(() => () => flushSave(), [flushSave])
+  // 打开期间监听库里这一页：同步写进来的新版本在本地没编辑时自动刷新，编辑过则另存冲突副本
+  useEffect(() => {
+    if (!pageId) return
+    const sub = liveQuery(() => db.mathNotes.get(pageId)).subscribe({
+      next: (row) => {
+        const session = sessionRef.current
+        if (session && session.id === pageId) void session.onExternal(row).catch(() => undefined)
+      },
+      error: () => undefined,
+    })
+    return () => sub.unsubscribe()
+  }, [pageId])
+
+  // 离开页面：有改动才保存，没编辑过不写库
+  useEffect(
+    () => () => {
+      window.clearTimeout(saveTimer.current)
+      void sessionRef.current?.close().catch(() => undefined)
+    },
+    [],
+  )
 
   /* ---------- 画布渲染 ---------- */
 
@@ -314,7 +386,7 @@ export function MathNotesPage() {
         if (!still) return
         resultsRef.current.set(job.key, { key: job.key, recognized: r.latex, result: r.result })
         bump()
-        scheduleSave()
+        markEdited('derived')
       },
       {
         onChange: () => {
@@ -330,7 +402,7 @@ export function MathNotesPage() {
     )
     queueRef.current = q
     return q
-  }, [bump, onModelProgress, scheduleSave])
+  }, [bump, onModelProgress, markEdited])
 
   useEffect(
     () => () => {
@@ -381,7 +453,7 @@ export function MathNotesPage() {
   const afterChange = useCallback(
     (lastStroke?: Stroke) => {
       bump()
-      scheduleSave()
+      markEdited('user')
       if (!lastStroke) {
         scheduleRecognition(false)
         return
@@ -392,7 +464,7 @@ export function MathNotesPage() {
       const eq = block ? detectTrailingEquals(strokes.filter((s) => block.strokeIds.includes(s.id)), h) : null
       scheduleRecognition(Boolean(eq))
     },
-    [bump, scheduleRecognition, scheduleSave],
+    [bump, scheduleRecognition, markEdited],
   )
 
   /* ---------- 编辑操作 ---------- */
@@ -667,7 +739,7 @@ export function MathNotesPage() {
       const result = await engine.compute(key, input)
       resultsRef.current.set(key, { ...current, edited: latex, result })
       bump()
-      scheduleSave()
+      markEdited('user')
       setEditing(null)
     } catch (e) {
       toast(e instanceof Error ? e.message : '计算失败')
@@ -686,7 +758,7 @@ export function MathNotesPage() {
       const result = await engine.compute(key, current.recognized)
       resultsRef.current.set(key, { key, recognized: current.recognized, result })
       bump()
-      scheduleSave()
+      markEdited('user')
       setEditing(null)
     } finally {
       setEditBusy(false)
@@ -698,33 +770,40 @@ export function MathNotesPage() {
   const pageIndex = pages.findIndex((p) => p.id === pageId)
   const goPage = (delta: number) => {
     const target = pages[pageIndex + delta]
-    if (target) {
-      flushSave()
-      openPage(target)
-    }
+    if (target) openPage(target)
   }
   const addPage = async () => {
-    flushSave()
     const p = newPage(pages.length + 1)
-    await savePage(p)
-    setPages((ps) => [...ps, p])
+    await createPage(p)
     openPage(p)
+  }
+  /** 换到 id 之外的某一页（优先原位置的前一页）；一页不剩就新建 */
+  const openNeighbourOf = async (id: string, index: number) => {
+    const rest = (await listPages()).filter((p) => p.id !== id)
+    if (!rest.length) {
+      const p = newPage(1)
+      await createPage(p)
+      openPage(p)
+    } else {
+      openPage(rest[Math.max(0, Math.min(rest.length - 1, index - 1))])
+    }
+  }
+  onCurrentDeletedRef.current = () => {
+    const id = pageRef.current?.id
+    if (!id) return
+    toast('这一页已在其他设备上删除')
+    sessionRef.current = null
+    void openNeighbourOf(id, pageIndex)
   }
   const removePage = async () => {
     const page = pageRef.current
     if (!page) return
-    await deletePage(page.id)
-    const rest = pages.filter((p) => p.id !== page.id)
+    window.clearTimeout(saveTimer.current)
+    // 主动删除：本页未保存的改动随之作废，不再写库
+    sessionRef.current = null
     pageRef.current = null
-    if (!rest.length) {
-      const p = newPage(1)
-      await savePage(p)
-      setPages([p])
-      openPage(p)
-    } else {
-      setPages(rest)
-      openPage(rest[Math.max(0, pageIndex - 1)])
-    }
+    await deletePage(page.id)
+    await openNeighbourOf(page.id, pageIndex)
     setDeleteOpen(false)
   }
 
