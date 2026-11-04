@@ -413,3 +413,17 @@ it('两端已保存的离线修改同步后都保留，重复同步不产生更�
   expect((await db.mathNotes.toArray()).map(n => n.title).sort()).toEqual(['远端修改', '本机修改（冲突副本）'].sort())
   expect(JSON.parse(dav.files.get(MATH_URL)!).notes).toHaveLength(2)
 })
+
+
+it('插入的图像随手写笔记同步并恢复', async () => {
+  const dav = fakeDav()
+  vi.stubGlobal('fetch', dav.fetchImpl)
+  const graphs = [{ id: 'g1', expression: 'y=a*x', x: 20, y: 80, width: 280, height: 220, range: 10, centerX: 3, centerY: -2, hiddenCurves: [1], tMin: 0, tMax: 6.28 }]
+  const note = { id: 'graph-note', title: '图像', strokes: [], results: [], graphs, createdAt: 1, updatedAt: 2 }
+  await db.mathNotes.put(note)
+  await syncNow()
+  await db.mathNotes.clear()
+  await db.settings.delete('mathNotesSyncEpoch')
+  await syncNow()
+  expect((await db.mathNotes.get('graph-note'))?.graphs).toEqual(graphs)
+})

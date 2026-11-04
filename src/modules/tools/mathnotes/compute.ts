@@ -14,6 +14,7 @@
  */
 import { ComputeEngine } from '@cortex-js/compute-engine'
 import type { ComputeResult } from './types'
+import { computeUnits } from './units'
 
 export interface MathBackend {
   readonly id: string
@@ -368,6 +369,20 @@ function solve(equations: Expr[]): ComputeResult {
 
 /** 主入口：LaTeX → 结果 */
 export function computeLatex(raw: string): ComputeResult {
+  const unitResult = computeUnits(raw)
+  if (unitResult) return unitResult
+  // 自然输入：每行或分号分隔一个方程；LaTeX 环境交给下方原有解析。
+  if (!/\\begin\s*\{/.test(raw)) {
+    const rows = raw.split(/\r?\n|(?<!\\)[;；]/).map(row => row.trim()).filter(Boolean)
+    if (rows.length > 1 && rows.some(row => row.includes('=') || row.includes('＝'))) {
+      if (rows.length > 4 || rows.some(row => (row.match(/[=＝]/g) ?? []).length !== 1 || /[=＝]\s*$/.test(row))) return error('方程组每行需要一个完整等式（最多四行）')
+      try {
+        const equations = rows.map(row => engineRef.parse(normalizeLatex(row)))
+        if (equations.some(eq => invalid(eq) || eq.operator !== 'Equal')) return error('方程组没认全，点开修改后重试')
+        return solve(equations)
+      } catch { return error('方程组无法求解，请检查每行等式') }
+    }
+  }
   let s = normalizeLatex(raw)
   if (!s) return { kind: 'none', latex: '', text: '' }
 
@@ -378,9 +393,12 @@ export function computeLatex(raw: string): ComputeResult {
     const flat = flattenColumnArithmetic(stacked.rows)
     if (flat) s = `${flat}=`
     else if (stacked.rows.some((r) => r.includes('='))) {
-      const eqs = stacked.rows.filter((r) => r.includes('=')).map((r) => engineRef.parse(r))
-      if (eqs.some(invalid)) return error('方程组没认全，点开修改后重试')
-      return solve(eqs)
+      if (stacked.rows.some(row => (row.match(/=/g) ?? []).length !== 1 || /=\s*$/.test(row))) return error('方程组每行需要一个完整等式')
+      try {
+        const eqs = stacked.rows.map((r) => engineRef.parse(r))
+        if (eqs.some(eq => invalid(eq) || eq.operator !== 'Equal')) return error('方程组没认全，点开修改后重试')
+        return solve(eqs)
+      } catch { return error('方程组无法求解，请检查每行等式') }
     }
   }
 

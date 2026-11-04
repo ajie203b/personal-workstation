@@ -37,3 +37,30 @@ it('常用运算符插入光标位置', async () => {
   await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="插入+"]')!.click())
   expect(input.value).toBe('1+2')
 })
+
+
+it('可从已识别的公式打开图像', async () => {
+  const host = document.createElement('div'); document.body.appendChild(host)
+  const root = createRoot(host)
+  cleanup = () => { act(() => root.unmount()); host.remove() }
+  const onPlot = vi.fn()
+  const block = { key: 'f', recognized: 'y=x^2', result: { kind: 'none' as const, latex: '', text: '' } }
+  await act(async () => root.render(<MathEditorDialog open block={block} busy={false} onOpenChange={() => {}} onSubmit={() => {}} onReset={() => {}} onPlot={onPlot} />))
+  const button = [...document.querySelectorAll('button')].find(b => b.textContent?.includes('查看图像'))!
+  await act(async () => button.click())
+  expect(onPlot).toHaveBeenCalledWith('y=x^2')
+})
+
+
+it('选中易混淆字符时提供候选并只替换该字符', async () => {
+  const host = document.createElement('div'); document.body.appendChild(host)
+  const root = createRoot(host); cleanup = () => { act(() => root.unmount()); host.remove() }
+  const block = { key: 'a', recognized: '1O+2=', result: { kind: 'none' as const, latex: '', text: '' } }
+  await act(async () => root.render(<MathEditorDialog open block={block} busy={false} onOpenChange={() => {}} onSubmit={() => {}} onReset={() => {}} />))
+  const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="识别结果"]')!
+  await act(async () => { input.focus(); input.setSelectionRange(1, 2); input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'ArrowRight' })) })
+  const candidate = [...document.querySelectorAll('button')].find(b => b.textContent === '0')
+  expect(candidate).toBeDefined()
+  await act(async () => candidate!.click())
+  expect(input.value).toBe('10+2=')
+})

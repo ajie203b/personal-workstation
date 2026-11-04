@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { answerAnchor, columnRows, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, strokesHitBy } from './geometry'
+import { answerAnchor, columnRows, systemRows, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, strokesHitBy } from './geometry'
 import { rasterizeStrokes, toPixelValues, MFR_INPUT_SIZE } from './preprocess'
 import { writeText } from './testInk'
 import type { Stroke } from './types'
@@ -212,4 +212,14 @@ it('同一页可以同时识别两个相距较远的竖式', () => {
   const blocks = clusterStrokes(strokes, { charHeight: 40 })
   expect(blocks).toHaveLength(2)
   expect(blocks.every(b => columnRows(strokes.filter(s => b.strokeIds.includes(s.id)), 40))).toBe(true)
+})
+
+
+it('左侧大括号将两行手写方程组合为一个识别块', () => {
+  const brace: Stroke = { id: 'brace', width: 3, points: [{x:25,y:5,p:.5,t:0},{x:15,y:15,p:.5,t:1},{x:15,y:45,p:.5,t:2},{x:5,y:55,p:.5,t:3},{x:15,y:65,p:.5,t:4},{x:15,y:95,p:.5,t:5},{x:25,y:105,p:.5,t:6}] }
+  const rows = [...writeText('x+1=3', 40, 12, 35, 'a'), ...writeText('2x=4', 40, 68, 35, 'b')]
+  const all = [brace, ...rows]
+  expect(systemRows(all, 35)?.rows).toHaveLength(2)
+  expect(clusterStrokes(all, { charHeight: 35 })).toHaveLength(1)
+  expect(systemRows(rows, 35)).toBeNull()
 })

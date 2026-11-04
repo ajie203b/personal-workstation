@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { columnExpression } from './recognitionMath'
 import { recoverTrailingEquals, manualExpression } from './mathText'
 import { computeLatex } from './compute'
-import { recognizeInk } from './recognitionMath'
+import { computeRecognized, recognizeInk } from './recognitionMath'
 import { writeText } from './testInk'
 import type { Stroke } from './types'
 
@@ -42,4 +42,24 @@ it('竖式优先逐行识别；无法可靠解析时回退整块识别', async (
   const fallback = await recognizeInk(strokes, 40, async () => ({ latex: ++calls === 1 ? '123' : calls === 2 ? '45' : '123+45=', confidence: .8, ms: 10 }))
   expect(fallback.latex).toBe('123+45=')
   expect(calls).toBe(3)
+})
+
+
+it('大括号内多行分别识别后作为一个方程组求解', async () => {
+  const brace: Stroke = { id:'brace', width:3, points:[{x:25,y:5,p:.5,t:0},{x:15,y:15,p:.5,t:1},{x:15,y:45,p:.5,t:2},{x:5,y:55,p:.5,t:3},{x:15,y:65,p:.5,t:4},{x:15,y:95,p:.5,t:5},{x:25,y:105,p:.5,t:6}] }
+  const all = [brace, ...writeText('x+1=3',40,12,35,'a'), ...writeText('2x=4',40,68,35,'b')]
+  let calls = 0
+  const result = await recognizeInk(all, 35, async () => ({ latex: ++calls === 1 ? 'x+y=3' : 'x-y=1', confidence:.9, ms:10 }))
+  expect(computeLatex(result.latex).latex).toBe('x=2,\\ y=1')
+  expect(calls).toBe(2)
+})
+
+
+it('方程组只有一行识别成功时不把单个方程误报为整组解', async () => {
+  const brace: Stroke = { id:'brace', width:3, points:[{x:25,y:5,p:.5,t:0},{x:15,y:15,p:.5,t:1},{x:15,y:45,p:.5,t:2},{x:5,y:55,p:.5,t:3},{x:15,y:65,p:.5,t:4},{x:15,y:95,p:.5,t:5},{x:25,y:105,p:.5,t:6}] }
+  const all = [brace, ...writeText('x+1=3',40,12,35,'a'), ...writeText('2x=4',40,68,35,'b')]
+  let calls = 0
+  const result = await recognizeInk(all, 35, async () => ({ latex: ++calls === 1 ? 'x+1=3' : calls === 2 ? '2x' : 'x+1=3', confidence:.9, ms:10 }))
+  expect(computeRecognized(result).kind).toBe('error')
+  expect(result.latex).toBe('x+1=3\n2x')
 })

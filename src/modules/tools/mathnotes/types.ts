@@ -72,12 +72,30 @@ export interface BlockResult {
   result: ComputeResult
 }
 
+/** 插入笔记的图像；位置是画布世界坐标，随页面备份和同步。 */
+export interface NoteGraph {
+  id: string
+  expression: string
+  sourceKey?: string
+  x: number
+  y: number
+  width: number
+  height: number
+  range: number
+  centerX?: number
+  centerY?: number
+  hiddenCurves?: number[]
+  tMin: number
+  tMax: number
+}
+
 /** 一页笔记 */
 export interface MathNotePage {
   id: string
   title: string
   strokes: Stroke[]
   results: BlockResult[]
+  graphs?: NoteGraph[]
   createdAt: number
   updatedAt: number
 }

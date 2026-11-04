@@ -5,6 +5,8 @@
 import type { ComputeResult, Stroke } from './types'
 import type { ModelSourceConfig } from './recognizer'
 import type { WorkerIn, WorkerOut } from './workerProtocol'
+import type { PlotCurve } from './plot'
+import type { PageEntry, PageEvaluation } from './variables'
 
 export interface RecognizedBlock {
   key: string
@@ -22,6 +24,8 @@ type Pending = {
 
 export class MathEngine {
   private worker: Worker | null = null
+  private plotWorker: Worker | null = null
+  private plotPending = new Map<number, Pending>()
   private pending = new Map<number, Pending>()
   private nextId = 1
   private source: ModelSourceConfig | null = null
@@ -86,9 +90,54 @@ export class MathEngine {
     return out.result
   }
 
+  private async secondaryRequest(makeMessage: (id: number) => WorkerIn): Promise<WorkerOut> {
+    if (!this.plotWorker) {
+      const worker = new Worker(new URL('./plot.worker.ts', import.meta.url), { type: 'module' })
+      worker.onmessage = (event: MessageEvent<WorkerOut>) => {
+        const msg = event.data
+        const pending = this.plotPending.get(msg.id)
+        if (!pending) return
+        this.plotPending.delete(msg.id)
+        if (msg.type === 'error') pending.reject(new Error(msg.message)); else pending.resolve(msg)
+      }
+      worker.onerror = (event) => {
+        for (const pending of this.plotPending.values()) pending.reject(new Error(event.message || '绘图进程异常退出'))
+        this.plotPending.clear()
+        worker.terminate()
+        if (this.plotWorker === worker) this.plotWorker = null
+      }
+      this.plotWorker = worker
+    }
+    const id = this.nextId++
+    const worker = this.plotWorker
+    const out = await new Promise<WorkerOut>((resolve, reject) => {
+      this.plotPending.set(id, { resolve, reject })
+      try { worker.postMessage(makeMessage(id)) }
+      catch (error) { this.plotPending.delete(id); reject(error) }
+    })
+    return out
+  }
+
+
+  async evaluatePage(entries: PageEntry[]): Promise<PageEvaluation> {
+    const out = await this.secondaryRequest(id => ({ type: 'evaluatePage', id, entries }))
+    if (out.type !== 'pageEvaluated') throw new Error('变量计算失败')
+    return out.evaluation
+  }
+
+  async plot(latex: string, min: number, max: number, count = 241, tMin?: number, tMax?: number, variables?: Record<string, number>, centerX?: number, centerY?: number): Promise<PlotCurve[]> {
+    const out = await this.secondaryRequest(id => ({ type: 'plot', id, latex, min, max, count, tMin, tMax, variables, centerX, centerY }))
+    if (out.type !== 'plotted') throw new Error('函数图像计算失败')
+    return out.curves
+  }
+
   dispose(): void {
     this.worker?.terminate()
     this.worker = null
+    this.plotWorker?.terminate()
+    this.plotWorker = null
+    for (const pending of this.plotPending.values()) pending.reject(new DOMException('已取消', 'AbortError'))
+    this.plotPending.clear()
     for (const p of this.pending.values()) p.reject(new DOMException('已取消', 'AbortError'))
     this.pending.clear()
   }

@@ -99,6 +99,34 @@ export function columnRows(strokes: Stroke[], h: number): { rows: Stroke[][]; ba
   return null
 }
 
+/** 找到左侧手写大括号所覆盖的多行。没有大括号时不合并相邻独立算式。 */
+export function systemRows(strokes: Stroke[], h: number): { rows: Stroke[][]; brace: Stroke } | null {
+  const live = strokes.filter(s => s.points.length > 0)
+  for (const brace of live) {
+    const b = strokeBox(brace), height = boxH(b)
+    if (height < h * 1.5 || height > h * 7 || boxW(b) > h * 1.5 || brace.points.length < 5) continue
+    const middle = brace.points.filter(p => Math.abs(p.y - (b.minY + b.maxY) / 2) < height * 0.15)
+    const ends = brace.points.filter(p => p.y < b.minY + height * 0.18 || p.y > b.maxY - height * 0.18)
+    if (!middle.length || !ends.length || Math.min(...middle.map(p => p.x)) > Math.max(...ends.map(p => p.x)) - h * 0.1) continue
+    const items = live.filter(s => {
+      if (s === brace) return false
+      const box = strokeBox(s), centerY = (box.minY + box.maxY) / 2
+      return box.minX >= b.minX && box.minX <= b.maxX + h * 12 && centerY >= b.minY - h * 0.25 && centerY <= b.maxY + h * 0.25
+    }).sort((a, c) => (strokeBox(a).minY + strokeBox(a).maxY) - (strokeBox(c).minY + strokeBox(c).maxY))
+    const rows: Stroke[][] = []
+    for (const stroke of items) {
+      const box = strokeBox(stroke), centerY = (box.minY + box.maxY) / 2
+      const row = rows.find(group => {
+        const centers = group.map(item => { const r = strokeBox(item); return (r.minY + r.maxY) / 2 })
+        return Math.abs(centerY - centers.reduce((a, c) => a + c, 0) / centers.length) < h * 0.7
+      })
+      if (row) row.push(stroke); else rows.push([stroke])
+    }
+    if (rows.length >= 2 && rows.length <= 4 && rows.every(row => row.some(s => boxH(strokeBox(s)) > h * 0.3))) return { rows, brace }
+  }
+  return null
+}
+
 export interface ClusterOptions {
   /** 字高；不传则按笔画估计 */
   charHeight?: number
@@ -138,6 +166,20 @@ export function clusterStrokes(strokes: Stroke[], opts: ClusterOptions = {}): In
       }
     }
     groups = next
+  }
+
+  // 大括号包围的方程组作为整体识别；多个方程组相互独立。
+  let systemRemaining = live
+  for (;;) {
+    const system = systemRows(systemRemaining, h)
+    if (!system) break
+    const ids = new Set([system.brace.id, ...system.rows.flat().map(s => s.id)])
+    const affected = groups.filter(g => g.ids.some(id => ids.has(id)))
+    if (affected.length > 1) {
+      const combined = affected.reduce((a, g) => ({ ids: [...a.ids, ...g.ids], box: unionBox(a.box, g.box) }))
+      groups = [...groups.filter(g => !affected.includes(g)), combined]
+    }
+    systemRemaining = systemRemaining.filter(s => !ids.has(s.id))
   }
 
   // 底线把上下两行归成一个识别块；普通横写与分数保持原有聚类。

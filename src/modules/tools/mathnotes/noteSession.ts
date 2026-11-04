@@ -1,5 +1,5 @@
 import { commitPage, type CommitOutcome } from './store'
-import type { BlockResult, MathNotePage, Stroke } from './types'
+import type { BlockResult, MathNotePage, NoteGraph, Stroke } from './types'
 
 /**
  * 编辑器里「当前打开的这一页」与库之间的同步状态（不依赖 React，便于单测）。
@@ -29,6 +29,7 @@ export type EditKind =
 export interface NoteDraft {
   strokes: Stroke[]
   results: BlockResult[]
+  graphs?: NoteGraph[]
 }
 
 export interface NoteSessionHooks {
@@ -119,7 +120,7 @@ export class NoteSession {
     let out: CommitOutcome
     try {
       out = await commitPage(
-        { ...this.page, strokes: draft.strokes, results: draft.results },
+        { ...this.page, strokes: draft.strokes, results: draft.results, ...(draft.graphs ? { graphs: draft.graphs } : {}) },
         this.page.updatedAt,
         { editedAt: this.editedAt, userEdited: this.userEdited, now: this.clock() },
       )

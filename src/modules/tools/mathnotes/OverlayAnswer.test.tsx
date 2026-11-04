@@ -92,3 +92,15 @@ it('识别失败时可以手动输入算式', () => {
   act(() => el.querySelector<HTMLButtonElement>('button[aria-label="手动输入算式"]')!.click())
   expect(manual).toHaveBeenCalledOnce()
 })
+
+
+it('按需显示模式不提前展示答案，点击后请求显示；关闭模式隐藏结果', () => {
+  const reveal = vi.fn()
+  const item = { key: 'k1', block, res: { key: 'k1', recognized: '1+2=', result: { kind: 'inline' as const, latex: '3', text: '3' } }, x: 200, y: 40, fontSize: 38, placement: 'inline' as const }
+  const el = render(<OverlayAnswer item={item} showLatex={false} mode="suggest" onReveal={reveal} onOpen={() => {}} onRetry={() => {}} onMeasure={() => {}} />)
+  const btn = [...el.querySelectorAll('button')].find(b => b.textContent === '显示结果')!
+  expect(el.textContent).not.toContain('3')
+  act(() => btn.click()); expect(reveal).toHaveBeenCalledOnce()
+  act(() => root!.render(<OverlayAnswer item={item} showLatex={false} mode="off" onOpen={() => {}} onRetry={() => {}} onMeasure={() => {}} />))
+  expect(el.textContent).not.toContain('3')
+})

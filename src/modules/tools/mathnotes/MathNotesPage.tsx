@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import { liveQuery } from 'dexie'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
-import { ChevronLeft, ChevronRight, Eraser, FilePlus2, FileX2, Loader2, MoreHorizontal, PenLine, Redo2, Settings2, Sigma, Trash2, Undo2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eraser, FilePlus2, FileX2, Loader2, MoreHorizontal, PenLine, LassoSelect, Redo2, Settings2, Sigma, Trash2, Undo2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuSeparator } from '@/shared/ui/Menu'
 import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
@@ -11,17 +11,21 @@ import { Dialog } from '@/shared/ui/Sheet'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { BackButton } from '@/shared/ui/BackButton'
-import { clusterStrokes, columnRows, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, pressureWidth, smoothAppend, strokeBox, strokesHitBy } from './geometry'
+import { clusterStrokes, columnRows, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, pressureWidth, smoothAppend, strokeBox, unionBox, strokesHitBy } from './geometry'
 import { PointerGesture } from './pointerGesture'
+import { selectInLasso, transformStrokes } from './lasso'
 import { RecognitionQueue } from './recognitionQueue'
 import { MathEngine } from './mathEngine'
 import { MathView } from './MathView'
 import { manualExpression } from './mathText'
 import { MathEditorDialog } from './MathEditorDialog'
+import { FunctionPlotDialog } from './FunctionPlotDialog'
+import { EmbeddedGraph } from './EmbeddedGraph'
+import { findGraphSource } from './graphLink'
 import { MODEL_SOURCES, DEFAULT_SOURCE, type ModelSourceConfig, type ModelSourceId } from './recognizer'
 import { createPage, deletePage, getLastPageId, getSource, listPages, newPage, setLastPageId, setSource } from './store'
 import { NoteSession, type EditKind } from './noteSession'
-import type { BlockResult, InkBlock, InkPoint, MathNotePage, Stroke } from './types'
+import type { BlockResult, InkBlock, InkPoint, MathNotePage, NoteGraph, Stroke } from './types'
 import { uid } from '@/lib/id'
 
 /** 答案颜色：苹果数学笔记那种暖黄/橙，深浅色模式下都醒目 */
@@ -34,8 +38,8 @@ const ERASER_RADIUS = 12
 const IDLE_MS = 1000
 const GRID = 28
 
-type Tool = 'pen' | 'eraser'
-type Action = { type: 'add'; strokes: Stroke[] } | { type: 'erase'; strokes: Stroke[] } | { type: 'clear'; strokes: Stroke[] }
+type Tool = 'pen' | 'eraser' | 'lasso'
+type Action = { type: 'add'; strokes: Stroke[] } | { type: 'erase'; strokes: Stroke[] } | { type: 'clear'; strokes: Stroke[]; graphs?: NoteGraph[] } | { type: 'graphs'; before: NoteGraph[]; after: NoteGraph[] } | { type: 'move'; before: Stroke[]; after: Stroke[] }
 type ModelState =
   | { phase: 'idle' }
   | { phase: 'loading'; ratio: number; file: string }
@@ -122,6 +126,11 @@ export function MathNotesPage() {
   /** 当前页与库之间的保存状态（dirty / baseline / 冲突处理），见 noteSession.ts */
   const sessionRef = useRef<NoteSession | null>(null)
   const strokesRef = useRef<Stroke[]>([])
+  const graphsRef = useRef<NoteGraph[]>([])
+  const graphDrag = useRef<{ id: string; pointerId: number; x: number; y: number; original: NoteGraph } | null>(null)
+  const [selected, setSelected] = useState<string[]>([])
+  const lassoRef = useRef<{ pointerId: number; points: {x: number; y: number}[] } | null>(null)
+  const selectionDrag = useRef<{ pointerId: number; x: number; y: number; before: Stroke[] } | null>(null)
   const resultsRef = useRef<Map<string, BlockResult>>(new Map())
   const undoRef = useRef<Action[]>([])
   const redoRef = useRef<Action[]>([])
@@ -133,9 +142,23 @@ export function MathNotesPage() {
   const toolRef = useRef<Tool>('pen')
   toolRef.current = tool
   const [showLatex, setShowLatex] = useState(false)
+  const [resultMode, setResultMode] = useState<'auto' | 'suggest' | 'off'>('auto')
+  const [revealed, setRevealed] = useState<Set<string>>(new Set())
+  useEffect(() => { void db.settings.get('mathNotesResultMode').then(row => { if (row?.value === 'auto' || row?.value === 'suggest' || row?.value === 'off') setResultMode(row.value) }) }, [])
   const [model, setModel] = useState<ModelState>({ phase: 'idle' })
   const [source, setSourceState] = useState<ModelSourceConfig>(DEFAULT_SOURCE)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [plotOpen, setPlotOpen] = useState(false)
+  const [plotInput, setPlotInput] = useState('y=x^2')
+  const [plotSource, setPlotSource] = useState<string | undefined>()
+  const [plotGraphId, setPlotGraphId] = useState<string | undefined>()
+  const [pageVariables, setPageVariables] = useState<Record<string, number>>({})
+  const lastEvaluation = useRef('')
+  const plotFunction = useCallback(async (latex: string, min: number, max: number, tMin: number, tMax: number, centerX = 0, centerY = 0) => {
+    const engine = engineRef.current
+    if (!engine) throw new Error('计算器尚未准备好')
+    return engine.plot(latex, min, max, 241, tMin, tMax, pageVariables, centerX, centerY)
+  }, [pageVariables])
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [manualFallback, setManualFallback] = useState<BlockResult | null>(null)
@@ -194,6 +217,7 @@ export function MathNotesPage() {
     const keys = new Set(clusterStrokes(strokesRef.current).map((b) => b.key))
     return {
       strokes: strokesRef.current,
+      graphs: graphsRef.current,
       results: [...resultsRef.current.values()].filter((r) => keys.has(r.key)),
     }
   }, [])
@@ -220,10 +244,46 @@ export function MathNotesPage() {
     [scheduleSave],
   )
 
+  // 变量按页面阅读顺序重新计算；只接受与当前笔迹快照一致的后台结果。
+  useEffect(() => {
+    const page = pageRef.current
+    const engine = engineRef.current
+    if (!page || !engine) return
+    const entries = clusterStrokes(strokesRef.current).flatMap(block => {
+      const row = resultsRef.current.get(block.key)
+      if (!row || (row.edited == null && row.result.message?.includes('方程组未识别完整'))) return []
+      return [{ key: block.key, latex: row.edited ?? row.recognized }]
+    })
+    const signature = JSON.stringify([page.id, entries])
+    if (signature === lastEvaluation.current) return
+    let active = true
+    const timer = window.setTimeout(() => {
+      void engine.evaluatePage(entries).then(output => {
+        if (!active || pageRef.current?.id !== page.id) return
+        lastEvaluation.current = signature
+        setPageVariables(previous => JSON.stringify(previous) === JSON.stringify(output.variables) ? previous : output.variables)
+        let changed = false
+        for (const entry of entries) {
+          const old = resultsRef.current.get(entry.key), next = output.results[entry.key]
+          if (old && next && JSON.stringify(old.result) !== JSON.stringify(next)) {
+            resultsRef.current.set(entry.key, { ...old, result: next }); changed = true
+          }
+        }
+        if (changed) { bump(); markEdited('derived') }
+      }).catch(() => { /* 识别结果仍可使用，下次编辑时重试 */ })
+    }, 150)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [version, pageId, bump, markEdited])
+
   /** 把一页内容装进编辑器（换页、或库里的新版本替换当前内容） */
   const loadIntoEditor = useCallback(
     (page: MathNotePage, opts: { keepScroll?: boolean } = {}) => {
       pageRef.current = page
+      setSelected([])
+      setRevealed(new Set())
+      lastEvaluation.current = ''
+      setPageVariables({})
+      graphsRef.current = page.graphs?.map(graph => ({ ...graph })) ?? []
       strokesRef.current = page.strokes.map((s) => ({ ...s, points: [...s.points] }))
       resultsRef.current = new Map(page.results.map((r) => [r.key, r]))
       // 撤销栈指向的是旧内容，换了内容就作废
@@ -338,6 +398,11 @@ export function MathNotesPage() {
       if (b.maxY < top || b.minY > bottom || b.maxX < -20 || b.minX > w + 20) continue
       drawStroke(ctx, s)
     }
+    const lasso = lassoRef.current
+    if (lasso && lasso.points.length > 1) {
+      ctx.save(); ctx.strokeStyle = cssVar('--primary', '#2c55b8'); ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.beginPath()
+      lasso.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.restore()
+    }
     if (containerRef.current) containerRef.current.style.backgroundPositionY = `${-scrollYRef.current}px`
     if (overlayRef.current) overlayRef.current.style.transform = `translateY(${-scrollYRef.current}px)`
   }, [])
@@ -389,6 +454,15 @@ export function MathNotesPage() {
         const still = clusterStrokes(strokesRef.current).some((b) => b.key === job.key)
         if (!still) return
         resultsRef.current.set(job.key, { key: job.key, recognized: r.latex, result: r.result })
+        setRevealed(previous => { if (!previous.has(job.key)) return previous; const next = new Set(previous); next.delete(job.key); return next })
+        // 原公式局部重写后，保留未改变笔画的关联，并更新图像保存的表达式。
+        const blocks = clusterStrokes(strokesRef.current)
+        graphsRef.current = graphsRef.current.map(graph => {
+          if (!graph.sourceKey) return graph
+          const nextKey = findGraphSource(graph.sourceKey, blocks)
+          if (nextKey !== job.key || nextKey === graph.sourceKey) return graph
+          return { ...graph, sourceKey: nextKey, expression: r.latex }
+        })
         bump()
         markEdited('derived')
       },
@@ -482,11 +556,16 @@ export function MathNotesPage() {
   const undo = useCallback(() => {
     const a = undoRef.current.pop()
     if (!a) return
-    if (a.type === 'add') {
+    if (a.type === 'graphs') { graphsRef.current = a.before
+    } else if (a.type === 'move') {
+      const map = new Map(a.before.map(stroke => [stroke.id, stroke]))
+      strokesRef.current = strokesRef.current.map(stroke => map.get(stroke.id) ?? stroke)
+    } else if (a.type === 'add') {
       const ids = new Set(a.strokes.map((s) => s.id))
       strokesRef.current = strokesRef.current.filter((s) => !ids.has(s.id))
     } else {
       strokesRef.current = [...strokesRef.current, ...a.strokes]
+      if (a.type === 'clear' && a.graphs) graphsRef.current = a.graphs
     }
     redoRef.current.push(a)
     afterChange()
@@ -495,19 +574,26 @@ export function MathNotesPage() {
   const redo = useCallback(() => {
     const a = redoRef.current.pop()
     if (!a) return
-    if (a.type === 'add') strokesRef.current = [...strokesRef.current, ...a.strokes]
+    if (a.type === 'graphs') { graphsRef.current = a.after
+    } else if (a.type === 'move') {
+      const map = new Map(a.after.map(stroke => [stroke.id, stroke]))
+      strokesRef.current = strokesRef.current.map(stroke => map.get(stroke.id) ?? stroke)
+    } else if (a.type === 'add') strokesRef.current = [...strokesRef.current, ...a.strokes]
     else {
       const ids = new Set(a.strokes.map((s) => s.id))
       strokesRef.current = strokesRef.current.filter((s) => !ids.has(s.id))
+      if (a.type === 'clear' && a.graphs) graphsRef.current = []
     }
     undoRef.current.push(a)
     afterChange()
   }, [afterChange])
 
   const clearAll = () => {
-    if (!strokesRef.current.length) return
-    pushAction({ type: 'clear', strokes: strokesRef.current })
+    if (!strokesRef.current.length && !graphsRef.current.length) return
+    pushAction({ type: 'clear', strokes: strokesRef.current, graphs: graphsRef.current })
     strokesRef.current = []
+    graphsRef.current = []
+    setSelected([])
     resultsRef.current.clear()
     afterChange()
     toast('已清空本页，可点撤销找回')
@@ -546,6 +632,7 @@ export function MathNotesPage() {
   const maxScroll = () => {
     let bottom = 0
     for (const s of strokesRef.current) bottom = Math.max(bottom, strokeBox(s).maxY)
+    for (const graph of graphsRef.current) bottom = Math.max(bottom, graph.y + graph.height)
     return Math.max(0, bottom + sizeRef.current.h * 0.6)
   }
 
@@ -608,6 +695,7 @@ export function MathNotesPage() {
     if (r.action === 'pan') {
       // 两指（或笔模式下的手指）= 滚动画布；进行中的笔画必须结束
       if (r.interrupted && drawingRef.current?.pointerId === r.interrupted.pointerId) finishDrawing(r.interrupted.end)
+      if (lassoRef.current) { lassoRef.current = null; redraw() }
       panRef.current = { y: r.centerY, scroll: scrollYRef.current }
       e.currentTarget.setPointerCapture(e.pointerId)
       return
@@ -615,6 +703,7 @@ export function MathNotesPage() {
     e.currentTarget.setPointerCapture(e.pointerId)
     window.clearTimeout(idleTimer.current)
     const { x, y } = toWorld(e)
+    if (toolRef.current === 'lasso') { setSelected([]); lassoRef.current = { pointerId: e.pointerId, points: [{ x, y }] }; return }
     if (toolRef.current === 'eraser') {
       erasedRef.current = []
       drawingRef.current = { pointerId: e.pointerId, stroke: { id: '', points: [], width: 0 } }
@@ -633,6 +722,7 @@ export function MathNotesPage() {
       scrollTo(panRef.current.scroll + (panRef.current.y - m.panCenterY))
       return
     }
+    if (lassoRef.current?.pointerId === e.pointerId && g.isDrawing(e.pointerId)) { lassoRef.current.points.push(toWorld(e)); redraw(); return }
     const d = drawingRef.current
     if (!d || d.pointerId !== e.pointerId || !g.isDrawing(e.pointerId)) return
     const events = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [e.nativeEvent]
@@ -667,6 +757,11 @@ export function MathNotesPage() {
   const onPointerEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const cancelled = e.type !== 'pointerup'
     const r = gestureRef.current.up(e.pointerId, cancelled)
+    if (lassoRef.current?.pointerId === e.pointerId) {
+      const polygon = lassoRef.current.points; lassoRef.current = null
+      if (!cancelled) setSelected(selectInLasso(strokesRef.current, polygon))
+      redraw()
+    }
     if (r.action === 'panRebase') {
       panRef.current = { y: r.centerY, scroll: scrollYRef.current }
     } else if (r.action === 'endPan') {
@@ -683,6 +778,24 @@ export function MathNotesPage() {
 
   const onWheel = (e: React.WheelEvent) => {
     scrollTo(scrollYRef.current + e.deltaY)
+  }
+
+  const selectionStrokes = strokesRef.current.filter(s => selected.includes(s.id))
+  const selectionBox = selectionStrokes.length ? selectionStrokes.map(strokeBox).reduce(unionBox) : null
+  const changeSelection = (scale: number) => {
+    if (!selectionBox || !selectionStrokes.length) return
+    const ids = new Set(selected), before = selectionStrokes
+    const center = { x: (selectionBox.minX + selectionBox.maxX) / 2, y: (selectionBox.minY + selectionBox.maxY) / 2 }
+    strokesRef.current = transformStrokes(strokesRef.current, ids, 0, 0, scale, center)
+    pushAction({ type: 'move', before, after: strokesRef.current.filter(s => ids.has(s.id)) }); afterChange()
+  }
+  const copySelection = () => {
+    const copies = transformStrokes(selectionStrokes, new Set(selected), 15, 15).map(s => ({ ...s, id: uid() }))
+    strokesRef.current = [...strokesRef.current, ...copies]; setSelected(copies.map(s => s.id)); pushAction({ type: 'add', strokes: copies }); afterChange()
+  }
+  const deleteSelection = () => {
+    const ids = new Set(selected), removed = strokesRef.current.filter(s => ids.has(s.id))
+    strokesRef.current = strokesRef.current.filter(s => !ids.has(s.id)); setSelected([]); pushAction({ type: 'erase', strokes: removed }); afterChange()
   }
 
   /* ---------- 答案浮层 ---------- */
@@ -758,6 +871,8 @@ export function MathNotesPage() {
       if (pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== original) return
       getQueue().retry(key)
       resultsRef.current.set(key, { ...current, edited: latex, result })
+      setRevealed(previous => { const next = new Set(previous); next.delete(key); return next })
+      graphsRef.current = graphsRef.current.map(graph => graph.sourceKey === key ? { ...graph, expression: latex } : graph)
       bump()
       markEdited('user')
       setEditing(null)
@@ -779,6 +894,7 @@ export function MathNotesPage() {
       const result = await engine.compute(key, current.recognized)
       if (pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== current) return
       resultsRef.current.set(key, { key, recognized: current.recognized, result })
+      graphsRef.current = graphsRef.current.map(graph => graph.sourceKey === key ? { ...graph, expression: current.recognized } : graph)
       bump()
       markEdited('user')
       setEditing(null)
@@ -876,11 +992,14 @@ export function MathNotesPage() {
         <button type="button" aria-label="重做" title="重做" className={toolBtn(false)} onClick={redo} disabled={!redoRef.current.length}>
           <Redo2 size={17} />
         </button>
-        <button type="button" aria-label="笔" title="笔" aria-pressed={tool === 'pen'} className={toolBtn(tool === 'pen')} onClick={() => setTool('pen')}>
+        <button type="button" aria-label="笔" title="笔" aria-pressed={tool === 'pen'} className={toolBtn(tool === 'pen')} onClick={() => { setTool('pen'); setSelected([]) }}>
           <PenLine size={17} />
         </button>
-        <button type="button" aria-label="橡皮" title="橡皮（整笔擦除）" aria-pressed={tool === 'eraser'} className={toolBtn(tool === 'eraser')} onClick={() => setTool('eraser')}>
+        <button type="button" aria-label="橡皮" title="橡皮（整笔擦除）" aria-pressed={tool === 'eraser'} className={toolBtn(tool === 'eraser')} onClick={() => { setTool('eraser'); setSelected([]) }}>
           <Eraser size={17} />
+        </button>
+        <button type="button" aria-label="套索选择" title="圈选笔迹后可移动、复制和缩放" aria-pressed={tool === 'lasso'} className={toolBtn(tool === 'lasso')} onClick={() => { setTool('lasso'); setSelected([]) }}>
+          <LassoSelect size={17} />
         </button>
         <button type="button" aria-label="显示识别结果" title="显示识别结果（点公式可修改）" aria-pressed={showLatex} className={toolBtn(showLatex)} onClick={() => setShowLatex((v) => !v)}>
           <Sigma size={17} />
@@ -898,6 +1017,9 @@ export function MathNotesPage() {
             </MenuItem>
             <MenuItem onSelect={clearAll}>
               <Trash2 size={15} /> 清空本页
+            </MenuItem>
+            <MenuItem onSelect={() => { setPlotSource(undefined); setPlotGraphId(undefined); setPlotInput('y=x^2'); setPlotOpen(true) }}>
+              <Sigma size={15} /> 函数图像
             </MenuItem>
             <MenuItem onSelect={() => setSettingsOpen(true)}>
               <Settings2 size={15} /> 识别设置
@@ -938,12 +1060,45 @@ export function MathNotesPage() {
               key={it.key}
               item={it}
               showLatex={showLatex}
+              mode={resultMode}
+              revealed={revealed.has(it.key)}
+              onReveal={() => setRevealed(previous => new Set(previous).add(it.key))}
               onOpen={() => setEditing(it.key)}
               onRetry={() => retryBlock(it.key)}
               onManual={() => openManual(it.key)}
               onMeasure={onMeasure}
             />
           ))}
+          {graphsRef.current.map(graph => {
+            const source = graph.sourceKey ? resultsRef.current.get(graph.sourceKey) : undefined
+            const expression = source ? (source.edited ?? source.recognized) : graph.expression
+            const updateGraph = (patch: Partial<NoteGraph>) => { const before = graphsRef.current; graphsRef.current = graphsRef.current.map(g => g.id === graph.id ? { ...g, ...patch } : g); pushAction({ type: 'graphs', before, after: graphsRef.current }); bump(); markEdited('user') }
+            return <div key={graph.id} className="absolute pointer-events-auto rounded-xl border border-outline bg-surface shadow-sm overflow-hidden" style={{ left: graph.x, top: graph.y, width: graph.width, height: graph.height }}>
+              <div className="h-8 flex items-center gap-1 px-2 bg-surface-2 border-b border-outline touch-none cursor-move" aria-label="拖动图像"
+                onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); graphDrag.current = { id: graph.id, pointerId: e.pointerId, x: e.clientX, y: e.clientY, original: graph } }}
+                onPointerMove={e => { const d = graphDrag.current; if (!d || d.id !== graph.id || d.pointerId !== e.pointerId) return; graphsRef.current = graphsRef.current.map(g => g.id === d.id ? { ...d.original, x: Math.max(0, d.original.x + e.clientX - d.x), y: Math.max(0, d.original.y + e.clientY - d.y) } : g); bump() }}
+                onPointerUp={() => { const d = graphDrag.current; if (!d || d.id !== graph.id) return; const current = graphsRef.current.find(g => g.id === d.id); graphDrag.current = null; if (current && (current.x !== d.original.x || current.y !== d.original.y)) { const before = graphsRef.current.map(g => g.id === d.id ? d.original : g); pushAction({ type: 'graphs', before, after: graphsRef.current }); markEdited('user') } }}
+                onPointerCancel={() => { const d = graphDrag.current; if (d?.id === graph.id) { graphsRef.current = graphsRef.current.map(g => g.id === d.id ? d.original : g); graphDrag.current = null; bump() } }}>
+                <span className="flex-1 truncate text-xs">{expression}</span>
+                <button type="button" onPointerDown={e => e.stopPropagation()} aria-label="缩小图像" onClick={() => updateGraph({ width: Math.max(160, graph.width * .85), height: Math.max(140, graph.height * .85) })}>−</button>
+                <button type="button" onPointerDown={e => e.stopPropagation()} aria-label="放大图像" onClick={() => updateGraph({ width: Math.min(600, graph.width * 1.15), height: Math.min(500, graph.height * 1.15) })}>＋</button>
+                <button type="button" onPointerDown={e => e.stopPropagation()} aria-label="删除图像" onClick={() => { const before = graphsRef.current; graphsRef.current = graphsRef.current.filter(g => g.id !== graph.id); pushAction({ type: 'graphs', before, after: graphsRef.current }); bump(); markEdited('user') }}>×</button>
+              </div>
+              <div style={{ height: 'calc(100% - 2rem)' }}><EmbeddedGraph graph={graph} expression={expression} plot={plotFunction} onOpen={() => { setPlotInput(expression); setPlotSource(graph.sourceKey); setPlotGraphId(graph.id); setPlotOpen(true) }} /></div>
+            </div>
+          })}
+          {selectionBox && tool === 'lasso' && <div className="absolute pointer-events-auto border-2 border-primary rounded-lg bg-primary/5 touch-none cursor-move" style={{ left: selectionBox.minX - 6, top: selectionBox.minY - 6, width: Math.max(24, selectionBox.maxX - selectionBox.minX + 12), height: Math.max(24, selectionBox.maxY - selectionBox.minY + 12) }}
+            onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); selectionDrag.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, before: strokesRef.current } }}
+            onPointerMove={e => { const d = selectionDrag.current; if (!d || d.pointerId !== e.pointerId) return; strokesRef.current = transformStrokes(d.before, new Set(selected), e.clientX - d.x, e.clientY - d.y); bump() }}
+            onPointerUp={e => { const d = selectionDrag.current; if (!d || d.pointerId !== e.pointerId) return; selectionDrag.current = null; const ids = new Set(selected); const before = d.before.filter(s => ids.has(s.id)); const after = strokesRef.current.filter(s => ids.has(s.id)); if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 1) { pushAction({ type: 'move', before, after }); afterChange() } }}
+            onPointerCancel={() => { const d = selectionDrag.current; if (d) { strokesRef.current = d.before; selectionDrag.current = null; bump() } }}>
+            <div className="absolute left-0 -top-10 flex gap-1 whitespace-nowrap" onPointerDown={e => e.stopPropagation()}>
+              <button type="button" aria-label="缩小选中笔迹" className="rounded-lg bg-surface border border-outline px-2 py-1" onClick={() => changeSelection(.85)}>−</button>
+              <button type="button" aria-label="放大选中笔迹" className="rounded-lg bg-surface border border-outline px-2 py-1" onClick={() => changeSelection(1.15)}>+</button>
+              <button type="button" className="rounded-lg bg-surface border border-outline px-2 py-1" onClick={copySelection}>复制</button>
+              <button type="button" className="rounded-lg bg-surface border border-outline px-2 py-1" onClick={deleteSelection}>删除</button>
+            </div>
+          </div>}
         </div>
 
         {!strokesRef.current.length && pageId && (
@@ -1000,7 +1155,18 @@ export function MathNotesPage() {
         }}
         onSubmit={(latex) => void submitEdit(latex)}
         onReset={() => void resetEdit()}
+        onPlot={(latex) => { setPlotSource(editing ?? undefined); setPlotGraphId(undefined); setEditing(null); setPlotInput(latex); setPlotOpen(true) }}
       />
+      <FunctionPlotDialog open={plotOpen} initial={plotInput} initialRange={graphsRef.current.find(graph => graph.id === plotGraphId)?.range ?? 10} initialCenterX={graphsRef.current.find(graph => graph.id === plotGraphId)?.centerX ?? 0} initialCenterY={graphsRef.current.find(graph => graph.id === plotGraphId)?.centerY ?? 0} initialTMin={graphsRef.current.find(graph => graph.id === plotGraphId)?.tMin ?? 0} initialTMax={graphsRef.current.find(graph => graph.id === plotGraphId)?.tMax ?? Math.PI * 2} initialHidden={graphsRef.current.find(graph => graph.id === plotGraphId)?.hiddenCurves?.join(',') ?? ''} onOpenChange={setPlotOpen} plot={plotFunction} onInsert={(expression, range, tMin, tMax, centerX, centerY, hiddenCurves) => {
+        const source = plotSource ? resultsRef.current.get(plotSource) : undefined
+        const sourceKey = source && (source.edited ?? source.recognized) === expression ? plotSource : undefined
+        const before = graphsRef.current
+        const existing = graphsRef.current.find(graph => graph.id === plotGraphId)
+        if (existing) graphsRef.current = graphsRef.current.map(graph => graph.id === existing.id ? { ...graph, expression, sourceKey, range, tMin, tMax, centerX, centerY, hiddenCurves } : graph)
+        else graphsRef.current = [...graphsRef.current, { id: uid(), expression, sourceKey, x: 16, y: scrollYRef.current + 36, width: Math.min(280, Math.max(180, viewW - 32)), height: 220, range, tMin, tMax, centerX, centerY, hiddenCurves }]
+        pushAction({ type: 'graphs', before, after: graphsRef.current })
+        setPlotOpen(false); bump(); markEdited('user')
+      }} />
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen} title="删除这一页？" description="本页的笔迹和识别结果都会删除，无法恢复。">
         <div className="flex items-center justify-end gap-2">
@@ -1034,6 +1200,10 @@ export function MathNotesPage() {
                 className="h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[12.5px] outline-none focus:border-primary/60"
               />
             )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[12.5px] font-medium">计算结果</p>
+            <Segmented<'auto' | 'suggest' | 'off'> options={[{ value: 'auto', label: '自动显示' }, { value: 'suggest', label: '点击显示' }, { value: 'off', label: '关闭' }]} value={resultMode} onChange={value => { setResultMode(value); setRevealed(new Set()); void db.settings.put({ key: 'mathNotesResultMode', value }) }} size="sm" ariaLabel="计算结果显示方式" />
           </div>
           <div className="rounded-[12px] bg-surface-2 px-3 py-2 text-[12px] text-on-surface-2 leading-relaxed">
             {model.phase === 'ready' && <>模型已就绪 · 推理后端 {model.backend === 'webgpu' ? 'WebGPU' : 'WASM（CPU）'}</>}
@@ -1069,6 +1239,9 @@ export function OverlayAnswer({
   onOpen,
   onRetry,
   onManual,
+  mode = 'auto',
+  revealed = false,
+  onReveal,
   onMeasure,
 }: {
   item: OverlayItem
@@ -1076,6 +1249,9 @@ export function OverlayAnswer({
   onOpen: () => void
   onRetry: () => void
   onManual?: () => void
+  mode?: 'auto' | 'suggest' | 'off'
+  revealed?: boolean
+  onReveal?: () => void
   onMeasure: (key: string, width: number) => void
 }) {
   const { res, block } = item
@@ -1140,6 +1316,12 @@ export function OverlayAnswer({
       </>
     )
   }
+
+  if (mode === 'off') return latexChip
+  if (mode === 'suggest' && !revealed) return <>
+    {latexChip}
+    <button type="button" onClick={onReveal} className="absolute pointer-events-auto rounded-full border border-outline bg-surface px-2 py-1 text-xs text-primary shadow-sm" style={{ left: item.x, top: item.y, transform: 'translateY(-50%)' }}>显示结果</button>
+  </>
 
   const inline = item.placement === 'inline'
   const simpleText = r.text && !/[\\{}]/.test(r.text)

@@ -156,3 +156,22 @@ it('加减乘除竖式分行结果都能计算', () => {
     expect(computeLatex(`${flat}=`).text).toBe(answer)
   }
 })
+
+
+it('普通换行或分号输入的方程组可以求解', () => {
+  expect(computeLatex('x+y=3\nx-y=1').latex).toBe('x=2,\\ y=1')
+  expect(computeLatex('x+y=3；x-y=1').latex).toBe('x=2,\\ y=1')
+})
+
+it('方程组某行未识别完整时不应静默忽略', () => {
+  expect(computeLatex('\\begin{cases}x+y=3\\\\x-y\\end{cases}').kind).toBe('error')
+  expect(computeLatex('x+y=3\nx-y').kind).toBe('error')
+})
+
+
+it('无解和无穷多解不误报成唯一数值解', () => {
+  const none = computeLatex('x+y=2\nx+y=3')
+  expect(none.kind === 'error' || none.latex.includes('无解')).toBe(true)
+  const many = computeLatex('x+y=2\n2x+2y=4')
+  expect(many.kind === 'error' || many.latex.includes('无穷') || many.latex.includes('参数')).toBe(true)
+})

@@ -206,3 +206,14 @@ it('切页时旧会话保存切页前的草稿，而不是随后载入的新页�
   await closing
   expect((await db.mathNotes.get(first.id))?.strokes.map(s => s.id)).toEqual(['edited'])
 })
+
+
+it('笔记保存时图像配置随草稿落库', async () => {
+  const initial = page()
+  await db.mathNotes.put(initial)
+  const graphs = [{ id: 'g', expression: 'y=x^2', x: 20, y: 80, width: 280, height: 220, range: 10, tMin: 0, tMax: 6.28 }]
+  const session = new NoteSession(initial, () => ({ strokes: initial.strokes, results: initial.results, graphs }), { onReplaced: () => {}, onConflict: () => {}, onDeleted: () => {} })
+  session.markEdited('user')
+  await session.close()
+  expect((await db.mathNotes.get(initial.id))?.graphs).toEqual(graphs)
+})

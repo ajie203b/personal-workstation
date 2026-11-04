@@ -43,3 +43,10 @@ describe('backupCodec', () => {
     expect('enc' in unpackMathNote(packed)).toBe(false)
   })
 })
+
+
+it('插入的图像配置随笔记备份并恢复', () => {
+  const graphs = [{ id: 'g', expression: 'y=a*x', sourceKey: 'a|b', x: 20, y: 80, width: 280, height: 220, range: 10, centerX: 3, centerY: -2, hiddenCurves: [1], tMin: 0, tMax: 6.28 }]
+  const page = { id: 'p', title: '笔记', strokes: [], results: [], graphs, createdAt: 1, updatedAt: 2 }
+  expect(unpackMathNote(packMathNote(page)).graphs).toEqual(graphs)
+})
