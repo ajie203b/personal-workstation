@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { answerAnchor, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, strokesHitBy } from './geometry'
+import { answerAnchor, columnRows, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, strokesHitBy } from './geometry'
 import { rasterizeStrokes, toPixelValues, MFR_INPUT_SIZE } from './preprocess'
 import { writeText } from './testInk'
 import type { Stroke } from './types'
@@ -182,4 +182,34 @@ describe('fitAnswer（答案不被画布右边界裁掉，回归）', () => {
     expect(estimateAnswerWidth('46', 40)).toBeLessThan(estimateAnswerWidth('123456789', 40))
     expect(estimateAnswerWidth('1/3', 40, '0.3333333333')).toBeGreaterThan(estimateAnswerWidth('1/3', 40))
   })
+})
+
+
+it('带底线的两行竖式能分行并合并为同一个识别块', () => {
+  const top = writeText('123', 30, 10, 40, 'top')
+  const lower = writeText('+45', 30, 70, 40, 'lower')
+  const bar: Stroke = { id: 'bar', width: 3, points: [{ x: 20, y: 125, p: 0.5, t: 0 }, { x: 150, y: 125, p: 0.5, t: 1 }] }
+  const strokes = [...top, ...lower, bar]
+  expect(columnRows(strokes, 40)?.rows).toHaveLength(2)
+  expect(clusterStrokes(strokes, { charHeight: 40 })).toHaveLength(1)
+})
+
+
+it('竖式答案对齐算式右边缘', () => {
+  const block = { key: 'a', strokeIds: [], box: { minX: 40, minY: 10, maxX: 180, maxY: 120 } }
+  const a = fitAnswer(block, null, 40, { answerWidth: 60, viewWidth: 300, alignRight: true })
+  expect(a.x).toBe(120)
+})
+
+
+it('同一页可以同时识别两个相距较远的竖式', () => {
+  const make = (x: number, prefix: string): Stroke[] => [
+    ...writeText('123', x + 10, 10, 40, prefix + 'top'),
+    ...writeText('+45', x + 10, 70, 40, prefix + 'lower'),
+    { id: prefix + 'bar', width: 3, points: [{ x, y: 125, p: 0.5, t: 0 }, { x: x + 130, y: 125, p: 0.5, t: 1 }] },
+  ]
+  const strokes = [...make(20, 'a'), ...make(400, 'b')]
+  const blocks = clusterStrokes(strokes, { charHeight: 40 })
+  expect(blocks).toHaveLength(2)
+  expect(blocks.every(b => columnRows(strokes.filter(s => b.strokeIds.includes(s.id)), 40))).toBe(true)
 })

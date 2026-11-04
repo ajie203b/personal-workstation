@@ -73,6 +73,32 @@ export function estimateCharHeight(strokes: Pick<Stroke, 'points'>[], fallback =
   return Math.min(240, Math.max(16, h))
 }
 
+/** 检测带底线的两行竖式候选；只做几何分行，是否是算术由识别结果再确认。 */
+export function columnRows(strokes: Stroke[], h: number): { rows: Stroke[][]; bar: Stroke } | null {
+  const live = strokes.filter(s => s.points.length > 0)
+  for (const bar of live) {
+    const b = strokeBox(bar)
+    if (boxW(b) < h * 1.3 || boxH(b) > h * 0.18) continue
+    const above = live.filter(s => {
+      if (s === bar) return false
+      const box = strokeBox(s)
+      return box.maxY < b.minY && b.minY - box.maxY < h * 3.2 && box.maxX >= b.minX - h * 0.6 && box.minX <= b.maxX + h * 0.3
+    }).sort((a, c) => (strokeBox(a).minY + strokeBox(a).maxY) - (strokeBox(c).minY + strokeBox(c).maxY))
+    const rows: Stroke[][] = []
+    for (const stroke of above) {
+      const box = strokeBox(stroke)
+      const y = (box.minY + box.maxY) / 2
+      const row = rows.find(group => {
+        const centers = group.map(item => { const r = strokeBox(item); return (r.minY + r.maxY) / 2 })
+        return Math.abs(y - centers.reduce((a, c) => a + c, 0) / centers.length) < h * 0.65
+      })
+      if (row) row.push(stroke); else rows.push([stroke])
+    }
+    if (rows.length === 2 && rows.every(row => row.some(s => boxH(strokeBox(s)) > h * 0.3))) return { rows, bar }
+  }
+  return null
+}
+
 export interface ClusterOptions {
   /** 字高；不传则按笔画估计 */
   charHeight?: number
@@ -112,6 +138,20 @@ export function clusterStrokes(strokes: Stroke[], opts: ClusterOptions = {}): In
       }
     }
     groups = next
+  }
+
+  // 底线把上下两行归成一个识别块；普通横写与分数保持原有聚类。
+  let remaining = live
+  for (;;) {
+    const column = columnRows(remaining, h)
+    if (!column) break
+    const ids = new Set([column.bar.id, ...column.rows.flat().map(s => s.id)])
+    const affected = groups.filter(g => g.ids.some(id => ids.has(id)))
+    if (affected.length > 1) {
+      const combined = affected.reduce((a, g) => ({ ids: [...a.ids, ...g.ids], box: unionBox(a.box, g.box) }))
+      groups = [...groups.filter(g => !affected.includes(g)), combined]
+    }
+    remaining = remaining.filter(s => !ids.has(s.id))
   }
 
   const blocks: InkBlock[] = groups.map((g) => {
@@ -216,6 +256,8 @@ export interface FitOptions {
   viewWidth: number
   /** 离右 / 左边界的留白 */
   margin?: number
+  /** 竖式结果与底线右侧对齐 */
+  alignRight?: boolean
 }
 
 export interface FittedAnswer extends AnswerAnchor {
@@ -245,7 +287,8 @@ export function fitAnswer(block: InkBlock, equals: EqualsMark | null, charHeight
   const y = wrapped ? block.box.maxY + charHeight * 0.35 + fontSize * 0.5 : base.y
   const avail = right - margin
   if (w > avail) return { x: margin, y, fontSize, placement: 'below', wrapped, maxWidth: Math.max(0, avail) }
-  const x = Math.max(margin, Math.min(block.box.minX, right - w))
+  const desiredX = opts.alignRight ? block.box.maxX - w : block.box.minX
+  const x = Math.max(margin, Math.min(desiredX, right - w))
   return { x, y, fontSize, placement: 'below', wrapped }
 }
 

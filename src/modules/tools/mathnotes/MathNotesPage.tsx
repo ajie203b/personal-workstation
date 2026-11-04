@@ -11,11 +11,12 @@ import { Dialog } from '@/shared/ui/Sheet'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { BackButton } from '@/shared/ui/BackButton'
-import { clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, pressureWidth, smoothAppend, strokeBox, strokesHitBy } from './geometry'
+import { clusterStrokes, columnRows, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, pressureWidth, smoothAppend, strokeBox, strokesHitBy } from './geometry'
 import { PointerGesture } from './pointerGesture'
 import { RecognitionQueue } from './recognitionQueue'
 import { MathEngine } from './mathEngine'
 import { MathView } from './MathView'
+import { manualExpression } from './mathText'
 import { MathEditorDialog } from './MathEditorDialog'
 import { MODEL_SOURCES, DEFAULT_SOURCE, type ModelSourceConfig, type ModelSourceId } from './recognizer'
 import { createPage, deletePage, getLastPageId, getSource, listPages, newPage, setLastPageId, setSource } from './store'
@@ -51,6 +52,8 @@ interface OverlayItem {
   y: number
   fontSize: number
   placement: 'inline' | 'below'
+  fontWeight?: number
+  canCorrect?: boolean
   /** 答案比可视宽度还宽时限宽（答案自身横向滚动） */
   maxWidth?: number
 }
@@ -64,7 +67,7 @@ interface RecognizeJob {
 
 /** 识别失败标记 / 「?」标记的宽度 */
 const MARK_WIDTH = 26
-const FAIL_MARK_WIDTH = 104
+const FAIL_MARK_WIDTH = 184
 
 function cssVar(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
@@ -135,6 +138,7 @@ export function MathNotesPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
+  const [manualFallback, setManualFallback] = useState<BlockResult | null>(null)
   const [editBusy, setEditBusy] = useState(false)
   const [recognizing, setRecognizing] = useState(0)
   const [viewW, setViewW] = useState(0)
@@ -695,17 +699,23 @@ export function MathNotesPage() {
       const res = resultsRef.current.get(block.key) ?? null
       const failed = res ? undefined : queue?.failureOf(block.key)
       if (!res && !failed) continue
-      const eq = detectTrailingEquals(strokes.filter((s) => block.strokeIds.includes(s.id)), h)
+      const blockStrokes = strokes.filter((s) => block.strokeIds.includes(s.id))
+      const blockHeight = estimateCharHeight(blockStrokes, h)
+      const column = columnRows(blockStrokes, blockHeight)
+      const eq = column ? null : detectTrailingEquals(blockStrokes, blockHeight)
       const r = res?.result
-      const isMark = !r || r.kind === 'error'
+      const canCorrect = r?.kind === 'none' && Boolean(eq || column)
+      const isMark = !r || r.kind === 'error' || canCorrect
       const inline = r?.kind === 'inline' || (isMark && eq)
       // 标记（? / ⚠）没有尾部等号时放在块右侧中线；放不下同样换到下方
       const anchorEq = inline ? eq : isMark ? { box: { ...block.box, maxX: block.box.maxX + 10 - h * 0.3 }, midY: (block.box.minY + block.box.maxY) / 2 } : null
-      const fontSize = Math.round(Math.min(96, Math.max(18, h * 0.95)))
+      const fontSize = Math.round(Math.min(96, Math.max(18, blockHeight * 0.95)))
       const measured = answerWidths.get(block.key)
       const width = !r ? FAIL_MARK_WIDTH : r.kind === 'error' ? MARK_WIDTH : (measured ?? estimateAnswerWidth(plainOf(r.text || r.latex), anchorEq ? fontSize : Math.round(fontSize * 0.75), r.alt))
-      const a = fitAnswer(block, anchorEq, h, { answerWidth: width, viewWidth: viewW })
-      items.push({ key: block.key, block, res, failed, x: a.x, y: a.y, fontSize: a.fontSize, placement: a.placement, maxWidth: a.maxWidth })
+      const a = fitAnswer(block, anchorEq, blockHeight, { answerWidth: width, viewWidth: viewW, alignRight: Boolean(column) && !isMark })
+      const penWidth = blockStrokes.reduce((sum, stroke) => sum + stroke.width, 0) / Math.max(1, blockStrokes.length)
+      const fontWeight = Math.max(400, Math.min(600, Math.round((penWidth / blockHeight) * 3000 / 100) * 100 + 300))
+      items.push({ key: block.key, block, res, failed, x: a.x, y: a.y, fontSize: a.fontSize, fontWeight, canCorrect, placement: a.placement, maxWidth: a.maxWidth })
     }
     return items
   }, [version, viewW, answerWidths])
@@ -722,21 +732,31 @@ export function MathNotesPage() {
     })
   }, [])
 
-  const editingBlock = editing ? (resultsRef.current.get(editing) ?? null) : null
+  const editingBlock = editing ? (resultsRef.current.get(editing) ?? (manualFallback?.key === editing ? manualFallback : null)) : null
+
+  const openManual = (key: string) => {
+    setManualFallback({ key, recognized: '', result: { kind: 'error', latex: '', text: '', message: '未能识别，请直接输入算式' } })
+    setEditing(key)
+  }
 
   const submitEdit = async (latex: string) => {
     const key = editing
     const engine = engineRef.current
-    const current = key ? resultsRef.current.get(key) : null
+    const original = key ? resultsRef.current.get(key) : undefined
+    const current = original ?? (manualFallback?.key === key ? manualFallback : undefined)
     if (!key || !engine || !current) return
+    const editingPage = pageRef.current?.id
     setEditBusy(true)
     try {
       // 画布上写了尾部等号、但编辑时把「=」删了：补回去，答案仍写在等号后
       const block = clusterStrokes(strokesRef.current).find((b) => b.key === key)
       const h = estimateCharHeight(strokesRef.current)
       const eq = block ? detectTrailingEquals(strokesRef.current.filter((s) => block.strokeIds.includes(s.id)), h) : null
-      const input = eq && !/=\s*$/.test(latex) ? `${latex}=` : latex
+      const column = block ? columnRows(strokesRef.current.filter((s) => block.strokeIds.includes(s.id)), h) : null
+      const input = manualExpression(latex, Boolean(eq || column))
       const result = await engine.compute(key, input)
+      if (pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== original) return
+      getQueue().retry(key)
       resultsRef.current.set(key, { ...current, edited: latex, result })
       bump()
       markEdited('user')
@@ -753,13 +773,17 @@ export function MathNotesPage() {
     const engine = engineRef.current
     const current = key ? resultsRef.current.get(key) : null
     if (!key || !engine || !current) return
+    const editingPage = pageRef.current?.id
     setEditBusy(true)
     try {
       const result = await engine.compute(key, current.recognized)
+      if (pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== current) return
       resultsRef.current.set(key, { key, recognized: current.recognized, result })
       bump()
       markEdited('user')
       setEditing(null)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '计算失败')
     } finally {
       setEditBusy(false)
     }
@@ -916,6 +940,7 @@ export function MathNotesPage() {
               showLatex={showLatex}
               onOpen={() => setEditing(it.key)}
               onRetry={() => retryBlock(it.key)}
+              onManual={() => openManual(it.key)}
               onMeasure={onMeasure}
             />
           ))}
@@ -1043,12 +1068,14 @@ export function OverlayAnswer({
   showLatex,
   onOpen,
   onRetry,
+  onManual,
   onMeasure,
 }: {
   item: OverlayItem
   showLatex: boolean
   onOpen: () => void
   onRetry: () => void
+  onManual?: () => void
   onMeasure: (key: string, width: number) => void
 }) {
   const { res, block } = item
@@ -1074,33 +1101,28 @@ export function OverlayAnswer({
     ) : null
 
   if (!r) {
-    // 识别推理失败：在算式位置给出失败标记，点击重试该块
+    // 失败后可重试，也可以绕过识别直接输入算式。
     return (
-      <button
-        type="button"
-        onClick={onRetry}
-        title={`识别失败：${item.failed ?? ''}（点击重试）`}
-        aria-label={`识别失败：${item.failed ?? ''}，点击重试`}
-        data-testid="mathnotes-recognize-failed"
-        className="absolute pointer-events-auto cursor-pointer whitespace-nowrap rounded-full border px-2 py-0.5 text-[12px] font-medium bg-surface/90 shadow-sm text-danger border-danger/60"
-        style={{ left: item.x, top: item.y, transform: 'translateY(-50%)', width: FAIL_MARK_WIDTH }}
-      >
-        ⚠ 识别失败 · 重试
-      </button>
+      <div className="absolute pointer-events-auto flex items-center gap-1 rounded-full border border-danger/60 bg-surface/95 px-2 py-1 shadow-sm text-[12px] text-danger whitespace-nowrap"
+        style={{ left: item.x, top: item.y, transform: 'translateY(-50%)', maxWidth: item.maxWidth }}>
+        <button type="button" onClick={onRetry} title={`识别失败：${item.failed ?? ''}（点击重试）`}
+          aria-label={`识别失败：${item.failed ?? ''}，点击重试`} data-testid="mathnotes-recognize-failed">⚠ 重试</button>
+        {onManual && <button type="button" onClick={onManual} aria-label="手动输入算式" className="rounded-full px-1.5 text-on-surface">手动输入</button>}
+      </div>
     )
   }
 
-  if (r.kind === 'none') return latexChip
+  if (r.kind === 'none' && !item.canCorrect) return latexChip
 
-  if (r.kind === 'error') {
+  if (r.kind === 'error' || (r.kind === 'none' && item.canCorrect)) {
     return (
       <>
         {latexChip}
         <button
           type="button"
           onClick={onOpen}
-          title={r.message}
-          aria-label={`没算出来：${r.message ?? ''}，点击修改`}
+          title={r.message ?? '点击修改识别内容'}
+          aria-label={r.kind === 'none' ? '未算出结果，点击修改识别内容' : `没算出来：${r.message ?? ''}，点击修改`}
           className="absolute pointer-events-auto cursor-pointer grid place-items-center rounded-full border-2 font-bold"
           style={{
             left: item.x,
@@ -1136,8 +1158,9 @@ export function OverlayAnswer({
           top: inline ? item.y : item.y - item.fontSize / 2,
           transform: inline ? 'translateY(-50%)' : undefined,
           maxWidth: item.maxWidth,
-          color: ANSWER_COLOR,
+          color: 'var(--on-surface)',
           fontSize: item.fontSize,
+          fontWeight: item.fontWeight,
           fontFamily: HAND_FONT,
         }}
       >

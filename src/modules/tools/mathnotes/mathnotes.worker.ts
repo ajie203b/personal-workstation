@@ -10,6 +10,7 @@ import { getOnnxRunner, type InlineOnnxRunner } from '@/lib/onnx'
 import { Pix2TextMfrRecognizer } from './pix2textMfr'
 import { rasterizeStrokes } from './preprocess'
 import { computeLatex } from './compute'
+import { recognizeInk } from './recognitionMath'
 import type { ModelSourceConfig } from './recognizer'
 import type { WorkerIn, WorkerOut } from './workerProtocol'
 
@@ -41,8 +42,8 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
       }
       if (msg.type === 'recognize') {
         await recognizer.load((p) => post({ type: 'progress', id: msg.id, ratio: p.ratio, file: p.file }))
-        const image = rasterizeStrokes(msg.strokes, msg.charHeight)
-        const out = await recognizer.recognize(image)
+        const out = await recognizeInk(msg.strokes, msg.charHeight, (strokes) =>
+          recognizer.recognize(rasterizeStrokes(strokes, msg.charHeight)))
         const result = computeLatex(out.latex)
         post({ type: 'recognized', id: msg.id, key: msg.key, latex: out.latex, confidence: out.confidence, ms: out.ms, result })
         return

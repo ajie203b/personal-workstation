@@ -5,12 +5,9 @@ import { Button } from '@/shared/ui/Button'
 import { MathView } from './MathView'
 import type { BlockResult } from './types'
 
-type MathfieldEl = HTMLElement & { value: string; focus(): void }
 
 /**
- * 识别结果纠错：MathLive 可视化编辑 LaTeX，确认后重新计算。
- * MathLive 按需加载（约 800KB），只在第一次打开纠错框时下载进内存；
- * 字体用 mathlive/fonts.css 经 Vite 打包（不走它默认的相对目录 / CDN），提示音关闭。
+ * 识别结果纠错：使用系统输入法直接编辑识别文本，避免加载额外的大型公式编辑器。
  */
 export function MathEditorDialog({
   open,
@@ -27,71 +24,42 @@ export function MathEditorDialog({
   onSubmit: (latex: string) => void
   onReset: () => void
 }) {
-  const hostRef = useRef<HTMLDivElement>(null)
-  const fieldRef = useRef<MathfieldEl | null>(null)
-  const [ready, setReady] = useState(false)
-  const [loadError, setLoadError] = useState('')
-  const [fallback, setFallback] = useState('')
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const initial = block ? (block.edited ?? block.recognized) : ''
-
   useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setLoadError('')
-    setFallback(initial)
-    void (async () => {
-      try {
-        const [{ MathfieldElement }] = await Promise.all([import('mathlive'), import('mathlive/fonts.css')])
-        MathfieldElement.fontsDirectory = null
-        MathfieldElement.soundsDirectory = null
-        if (cancelled || !hostRef.current) return
-        const mf = new MathfieldElement() as unknown as MathfieldEl
-        mf.value = initial
-        mf.setAttribute('math-virtual-keyboard-policy', 'auto')
-        mf.className = 'block w-full min-h-[56px] rounded-[12px] border border-outline bg-surface-2 px-3 py-2 text-[20px] outline-none'
-        hostRef.current.replaceChildren(mf)
-        fieldRef.current = mf
-        setReady(true)
-        requestAnimationFrame(() => mf.focus())
-      } catch (e) {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : '编辑器加载失败')
-      }
-    })()
-    return () => {
-      cancelled = true
-      setReady(false)
-      fieldRef.current = null
-      hostRef.current?.replaceChildren()
-    }
-    // initial 只在打开时读一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open) setValue(initial)
   }, [open, block?.key])
 
-  const submit = () => {
-    const latex = fieldRef.current ? fieldRef.current.value : fallback
-    onSubmit(latex.trim())
+  const submit = () => onSubmit(value.trim())
+  const insert = (symbol: string) => {
+    const field = inputRef.current
+    if (!field) return
+    const start = field.selectionStart
+    const end = field.selectionEnd
+    setValue(value.slice(0, start) + symbol + value.slice(end))
+    requestAnimationFrame(() => {
+      field.focus()
+      field.setSelectionRange(start + symbol.length, start + symbol.length)
+    })
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="修改识别结果" description="改好后点「重新计算」，答案会更新到画布上" widthClass="w-[min(560px,94vw)]">
       <div className="flex flex-col gap-3">
-        <div ref={hostRef} className={ready ? '' : 'hidden'} />
-        {!ready && !loadError && (
-          <div className="flex items-center gap-2 text-[12.5px] text-on-surface-2 h-14">
-            <Loader2 size={14} className="animate-spin" /> 加载公式编辑器…
-          </div>
-        )}
-        {loadError && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[12px] text-danger">{loadError}，可直接改 LaTeX：</p>
-            <textarea
-              value={fallback}
-              onChange={(e) => setFallback(e.target.value)}
-              rows={3}
-              className="w-full rounded-[12px] border border-outline bg-surface-2 px-3 py-2 font-mono text-[13px] outline-none focus:border-primary/60"
-            />
-          </div>
-        )}
+        <label className="flex flex-col gap-1.5 text-[13px] text-on-surface-2">
+          识别结果（可直接修改数字和运算符）
+          <textarea ref={inputRef} autoFocus value={value} onChange={(e) => setValue(e.target.value)} rows={3}
+            aria-label="识别结果" className="w-full rounded-[12px] border border-outline bg-surface-2 px-3 py-2 text-[16px] text-on-surface outline-none focus:border-primary/60" />
+        </label>
+        <div className="flex flex-wrap gap-1.5" aria-label="常用运算符">
+          {['+', '−', '×', '÷', '=', '(', ')'].map(symbol => (
+            <button key={symbol} type="button" aria-label={`插入${symbol}`} onPointerDown={e => e.preventDefault()} onClick={() => insert(symbol)}
+              className="h-9 min-w-10 px-3 rounded-[10px] bg-surface-2 text-on-surface hover:bg-surface-3">{symbol}</button>
+          ))}
+        </div>
+        <p className="text-[12px] text-on-surface-2">支持直接输入算式，也可以编辑 LaTeX。</p>
+        {value.trim() && <div className="rounded-[10px] bg-surface-2 px-3 py-2 text-on-surface" aria-label="公式预览"><MathView latex={value} /></div>}
         {block && (
           <div className="rounded-[12px] bg-surface-2 px-3 py-2 text-[12px] text-on-surface-2 flex flex-col gap-1">
             <span>
@@ -117,7 +85,7 @@ export function MathEditorDialog({
           <Button variant="outline" className="h-9 px-4" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button variant="primary" className="h-9 px-4" onClick={submit} disabled={busy || (!ready && !loadError)}>
+          <Button variant="primary" className="h-9 px-4" onClick={submit} disabled={busy || !value.trim()}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : null} 重新计算
           </Button>
         </div>

@@ -39,9 +39,9 @@ describe('OverlayAnswer：推理失败显示标记并可重试（回归）', () 
     )
     const btn = el.querySelector<HTMLButtonElement>('[data-testid="mathnotes-recognize-failed"]')!
     expect(btn).not.toBeNull()
-    expect(btn.textContent).toContain('识别失败')
+    expect(btn.textContent).toContain('重试')
     expect(btn.title).toContain('onnx 推理崩了')
-    expect(btn.style.left).toBe('222px')
+    expect(btn.parentElement?.style.left).toBe('222px')
     act(() => btn.click())
     expect(onRetry).toHaveBeenCalledTimes(1)
     expect(onOpen).not.toHaveBeenCalled()
@@ -73,4 +73,22 @@ describe('OverlayAnswer：推理失败显示标记并可重试（回归）', () 
     expect(btn.style.maxWidth).toBe('300px')
     expect(onMeasure).toHaveBeenCalledWith('k1', expect.any(Number))
   })
+})
+
+
+it('有等号但未算出结果时提供纠错入口', () => {
+  const onOpen = vi.fn()
+  const el = render(<OverlayAnswer item={{ key: 'k1', block, res: { key: 'k1', recognized: '12+34', result: {kind: 'none', latex: '', text: ''} }, x: 200, y: 40, fontSize: 38, placement: 'inline', canCorrect: true }} showLatex={false} onOpen={onOpen} onRetry={() => {}} onMeasure={() => {}} />)
+  const btn = el.querySelector<HTMLButtonElement>('button[aria-label="未算出结果，点击修改识别内容"]')!
+  expect(btn).not.toBeNull()
+  act(() => btn.click())
+  expect(onOpen).toHaveBeenCalledOnce()
+})
+
+
+it('识别失败时可以手动输入算式', () => {
+  const manual = vi.fn()
+  const el = render(<OverlayAnswer item={{ key: 'k1', block, res: null, failed: '失败', x: 100, y: 40, fontSize: 38, placement: 'inline' }} showLatex={false} onOpen={() => {}} onRetry={() => {}} onManual={manual} onMeasure={() => {}} />)
+  act(() => el.querySelector<HTMLButtonElement>('button[aria-label="手动输入算式"]')!.click())
+  expect(manual).toHaveBeenCalledOnce()
 })

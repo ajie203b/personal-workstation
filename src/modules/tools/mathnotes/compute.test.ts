@@ -140,3 +140,19 @@ describe('验算：复数等式同时比较实部与虚部（回归）', () => {
     expect(complexNearlyEqual([NaN, 0], [NaN, 0])).toBe(false)
   })
 })
+
+
+it('仅在数字算式上下文纠正常见字符，保留未知数', () => {
+  expect(computeLatex('1O+2=').text).toBe('12')
+  expect(computeLatex('8−3=').text).toBe('5')
+  expect(normalizeLatex('O+x=1')).toBe('O+x=1')
+})
+
+
+it('加减乘除竖式分行结果都能计算', () => {
+  for (const [rows, answer] of [[['12', '+3'], '15'], [['12', '-3'], '9'], [['12', '\\times3'], '36'], [['12', '\\div3'], '4']] as const) {
+    const flat = flattenColumnArithmetic([...rows])
+    expect(flat).not.toBeNull()
+    expect(computeLatex(`${flat}=`).text).toBe(answer)
+  }
+})

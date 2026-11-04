@@ -143,6 +143,11 @@ export function flattenColumnArithmetic(rows: string[]): string | null {
 
 export function normalizeLatex(raw: string): string {
   let s = raw.trim()
+  // 仅在纯数字四则表达式中，把紧邻数字的 O 纠正为 0；含变量的表达式保持原样。
+  if (/^[\dO\s.+\-*/=×÷]+$/.test(s) && /\d/.test(s)) {
+    s = s.replace(/(?<=\d)O|O(?=\d)/g, '0')
+  }
+  s = s.replace(/−|﹣/g, '-').replace(/＋/g, '+').replace(/／/g, '/')
   // 排版空白
   s = s.replace(/\\(?:!|,|;|:|quad|qquad|enspace|thinspace)/g, ' ').replace(/\\ /g, ' ')
   s = s.replace(/\\displaystyle|\\textstyle/g, '')
