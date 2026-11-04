@@ -1,5 +1,11 @@
 # 更新记录
 
+## v3.6.8 · 2026年11月4日
+
+- fix: improve handwritten calculation recognition and correction
+
+安卓版本码为 83。
+
 ## v3.6.7 · 2026年11月3日
 
 - fix: preserve math notes across page switches and sync conflicts
