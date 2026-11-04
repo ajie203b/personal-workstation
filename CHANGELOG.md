@@ -1,5 +1,11 @@
 # 更新记录
 
+## v3.6.9 · 2026年11月4日
+
+- feat: extend handwritten math notes with graphs and units
+
+安卓版本码为 84。
+
 ## v3.6.8 · 2026年11月4日
 
 - fix: improve handwritten calculation recognition and correction
