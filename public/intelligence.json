@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-04T13:00:16.642Z",
+  "generatedAt": "2026-11-05T13:13:36.683Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
@@ -104,6 +104,10 @@
       "score": 45.3
     },
     {
+      "name": "Claude Opus 5 (Max)",
+      "score": 44.2
+    },
+    {
       "name": "GPT-6 Sol (Max)",
       "score": 44.2
     },
@@ -118,10 +122,6 @@
     {
       "name": "Claude Fable 5.1 (Medium)",
       "score": 43.2
-    },
-    {
-      "name": "GPT-6.1 Terra (High)",
-      "score": 42.4
     }
   ]
 }
