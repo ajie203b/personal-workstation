@@ -183,7 +183,6 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             if (!pointers.current.size) gesture.current = null
             else if (gesture.current) gesture.current.pinch = true
           }} onPointerCancel={e => { pointers.current.delete(e.pointerId); if (!pointers.current.size) gesture.current = null; drag.current = null }}>
-          <defs><clipPath id="function-plot-clip"><rect width="400" height="400" /></clipPath></defs>
           {!is3d && <>
             {Array.from({ length: 9 }, (_, i) => (i + 1) * 40).map(n => <g key={n} stroke="var(--outline)" strokeWidth="0.6" opacity="0.6"><path d={`M${n} 0V400 M0 ${n}H400`} /></g>)}
             <path d={`M${200 - centerX / range * 200} 0V400 M0 ${200 + centerY / range * 200}H400`} stroke="var(--on-surface-2)" strokeWidth="1.2" />
@@ -192,13 +191,13 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             const a = project3d(0,0,0,yaw,pitch), b = project3d(x as number,y as number,z as number,yaw,pitch)
             return <g key={label} stroke="var(--on-surface-2)" fill="var(--on-surface-2)"><path d={`M${a[0]} ${a[1]}L${b[0]} ${b[1]}`} /><text x={b[0]} y={b[1]} fontSize="12" stroke="none">{label}</text></g>
           })}
-          <g clipPath="url(#function-plot-clip)">{curves.map((curve, index) => {
+          <svg x="0" y="0" width="400" height="400" viewBox="0 0 400 400" overflow="hidden" data-plot-curves="">{curves.map((curve, index) => {
             if (hidden.has(index)) return null
             const paths = curve.kind === 'explicit' ? plotPaths(curve.values, range, centerY)
               : curve.kind === 'implicit' ? curve.segments.map(([x1, y1, x2, y2]) => `M${x1.toFixed(2)} ${y1.toFixed(2)}L${x2.toFixed(2)} ${y2.toFixed(2)}`)
               : curve.kind === 'parametric' ? parametricPaths(curve.points, range, centerX, centerY) : curve.kind === 'parametric3d' ? parametric3dPaths(curve.points, range, yaw, pitch) : surfacePaths(curve.values, range, yaw, pitch)
             return <g key={index} fill="none" stroke={colors[index % colors.length]} strokeWidth={curve.kind === 'surface' ? 1.2 : 2.5} strokeLinejoin="round" strokeLinecap="round">{paths.map((d, i) => <path key={i} d={d} />)}</g>
-          })}</g>
+          })}</svg>
           {!is3d && intersections.points.map((point, i) => <g key={`${point.first}-${point.second}-${i}`} aria-label={`交点 ${i + 1}，坐标 ${formatCoord(point.x)}，${formatCoord(point.y)}`}>
             <title>{`交点 ${i + 1}：(${formatCoord(point.x)}, ${formatCoord(point.y)})`}</title>
             <circle cx={point.screenX} cy={point.screenY} r="5" fill="var(--surface)" stroke="var(--on-surface)" strokeWidth="2" />

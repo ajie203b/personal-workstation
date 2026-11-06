@@ -86,7 +86,7 @@ export function AppShell() {
     <div className="h-full flex bg-canvas">
       <RouteProgress />
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={cn('flex-1 flex flex-col min-w-0', !immersive && 'md:pt-[env(safe-area-inset-top,0px)]')}>
         {!immersive && <TopBar title={title} />}
         <main
           id="main-scroll"

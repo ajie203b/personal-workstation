@@ -6,6 +6,7 @@ import { fmtDue } from '@/lib/date'
 import { repeatLabel } from '@/lib/repeat'
 import { PRIORITY_VAR, type Tier } from '@/db/db'
 import { cn } from '@/lib/cn'
+import { useUi } from '@/stores/ui'
 
 interface Props {
   defaultTier?: Tier
@@ -20,6 +21,9 @@ interface Props {
  */
 export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeholder }: Props) {
   const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const toast = useUi(s => s.toast)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -32,37 +36,45 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
   const chips = value.trim() ? parseSummary(parsed) : []
   const hasContent = value.trim().length > 0
 
-  const submit = () => {
-    if (!hasContent) return
+  const submit = async () => {
+    if (!hasContent || savingRef.current) return
+    savingRef.current = true
+    setSaving(true)
     const p = parsed
     let tier = inferTier(p, defaultTier)
     // 今日页语境：无日期的随手记也进「今日」
     if (todayContext && !p.due && !p.repeat && defaultTier === 'today') tier = 'today'
-    void addTask({
-      title: p.title,
-      tier,
-      priority: p.priority,
-      // 没写截止就是无穷远：清单归属由 tier 表达，不硬塞一个「今天」当截止
-      due: p.due,
-      dueTime: p.dueTime,
-      startAt: p.startAt,
-      tags: p.tags,
-      repeat: p.repeat,
-      repeatDays: p.repeatDays,
-      repeatMonthDay: p.repeatMonthDay,
-      repeatCount: p.repeatCount,
-      repeatTimes: p.repeatTimes,
-      estimateMinutes: p.estimateMinutes,
-    })
-    setValue('')
-    inputRef.current?.focus()
+    try {
+      await addTask({
+        title: p.title,
+        tier,
+        priority: p.priority,
+        // 没写截止就是无穷远：清单归属由 tier 表达，不硬塞一个「今天」当截止
+        due: p.due,
+        dueTime: p.dueTime,
+        startAt: p.startAt,
+        tags: p.tags,
+        repeat: p.repeat,
+        repeatDays: p.repeatDays,
+        repeatMonthDay: p.repeatMonthDay,
+        repeatCount: p.repeatCount,
+        repeatTimes: p.repeatTimes,
+        estimateMinutes: p.estimateMinutes,
+      })
+      setValue(current => current === value ? '' : current)
+    } catch {
+      toast('任务保存失败，请重试')
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
   }
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        submit()
+        void submit()
       }}
       className="card card-hover px-4 py-3 focus-within:border-primary/50"
     >
@@ -76,7 +88,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
             // 显式处理 Enter（比依赖表单隐式提交更可靠），跳过输入法合成态
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
-              submit()
+              void submit()
               return
             }
             // ↓ 交棒给下方列表的键盘流
@@ -91,7 +103,9 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
           placeholder={placeholder ?? '添加任务…（明天14:00 交报告 P1 #工作）'}
           className="flex-1 min-w-0 bg-transparent outline-none text-[15px] placeholder:text-on-surface-2/70"
         />
-        <kbd className="kbd hidden md:inline-block">↵</kbd>
+        <button type="submit" disabled={!hasContent || saving} className="shrink-0 rounded-lg bg-primary-action px-3 py-2 text-sm text-on-primary-action disabled:opacity-45">
+          {saving ? '添加中' : '添加'}
+        </button>
       </div>
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 mt-2.5">

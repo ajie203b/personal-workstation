@@ -85,6 +85,17 @@ export default function App() {
     void maybeAutoSync()
     return () => dispose?.()
   }, [navigate])
+  useEffect(() => {
+    const check = () => { if (document.visibilityState === 'visible') void maybeAutoSync() }
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('online', check)
+    const timer = window.setInterval(check, 10 * 60 * 1000)
+    return () => {
+      document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('online', check)
+      window.clearInterval(timer)
+    }
+  }, [])
   // 小组件内的原生添加/完成先落在本地队列，启动和回前台时并进 IndexedDB
   useEffect(() => {
     let dispose: (() => void) | undefined

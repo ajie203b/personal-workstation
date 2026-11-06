@@ -80,6 +80,23 @@ beforeEach(async () => {
   await setWebdavConfig({ url: BASE, username: 'u', password: 'p', auto: false })
 })
 
+it('首次同步遇到另一设备同时创建云端文件时重新合并双方任务', async () => {
+  const dav = fakeDav()
+  let first = true
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === SYNC_URL && init?.method === 'PUT' && first) {
+      first = false
+      dav.files.set(SYNC_URL, JSON.stringify({ app: 'personal-workstation', version: 4, tasks: [task('remote')], settings: [], docs: [], positions: [], annotations: [], bookmarks: [], focusSessions: [], folders: [], tombstones: [], blobMeta: [] }))
+      if (new Headers(init.headers).get('If-None-Match') === '*') return new Response('', { status: 412 })
+    }
+    return dav.fetchImpl(input, init)
+  })
+  await db.tasks.put(task('local'))
+  await syncNow()
+  expect((await db.tasks.toArray()).map(t => t.id).sort()).toEqual(['local', 'remote'])
+  expect(dav.lastSyncJson()?.tasks.map(t => t.id).sort()).toEqual(['local', 'remote'])
+})
+
 it('WebDAV 合并额度记录并把结果写回本机及云端', async () => {
   const legacy = { id: 'legacy', name: '旧记录' }
   const local = { id: 'local', name: '本机', updatedAt: 3 }

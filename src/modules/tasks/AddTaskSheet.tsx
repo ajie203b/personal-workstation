@@ -90,28 +90,32 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       ? Math.min(99, Math.round(countRaw as number))
       : undefined
     const startAt = effectiveStart ? new Date(effectiveStart.length === 10 ? `${effectiveStart}T00:00` : effectiveStart).getTime() : undefined
+    let saved = false
     try {
-      await runSave(() => addTask({
-        title: p.title,
-        tier,
-        priority: p.priority,
-        due,
-        dueTime,
-        startAt,
-        tags: p.tags,
-        repeat: effectiveRepeat,
-        repeatDays: keepsDetectedDays ? parsed.repeatDays : undefined,
-        repeatMonthDay: keepsDetectedDays ? parsed.repeatMonthDay : undefined,
-        repeatCount,
-        repeatTimes: times.length > 1 ? times : undefined,
-        estimateMinutes: p.estimateMinutes,
-      }))
+      await runSave(async () => {
+        await addTask({
+          title: p.title,
+          tier,
+          priority: p.priority,
+          due,
+          dueTime,
+          startAt,
+          tags: p.tags,
+          repeat: effectiveRepeat,
+          repeatDays: keepsDetectedDays ? parsed.repeatDays : undefined,
+          repeatMonthDay: keepsDetectedDays ? parsed.repeatMonthDay : undefined,
+          repeatCount,
+          repeatTimes: times.length > 1 ? times : undefined,
+          estimateMinutes: p.estimateMinutes,
+        })
+        saved = true
+      })
     } catch {
       /* 失败态由按钮呈现，这里不制造未处理的 Promise 拒绝 */
       return
     }
     // 成功打勾亮完再收场；中途被关掉就别抢用户的操作
-    if (open) onOpenChange(false)
+    if (saved && open) onOpenChange(false)
   }
 
   return (

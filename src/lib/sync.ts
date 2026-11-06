@@ -488,7 +488,7 @@ async function performSync(): Promise<SyncReport> {
   //    内容以落库后的本地状态为准：同步期间的新改动不需要等下一轮才上去。
   const pushed = await readLocalPayload()
   pushed.blobMeta = merged.payload.blobMeta
-  await putText(cfg, syncUrl, JSON.stringify(pushed), got?.etag)
+  await putText(cfg, syncUrl, JSON.stringify(pushed), got?.etag, !got)
 
   // 4) 笔记独立文件：失败只记原因，不让主同步失败
   let mathNotes: SyncReport['mathNotes']
@@ -580,12 +580,16 @@ export async function testWebdav(cfg: WebdavConfig): Promise<{ ok: boolean; mess
 }
 
 /** 启动钩子：开启自动同步且距上次超过 10 分钟时静默跑一次 */
+let autoSyncRunning = false
 export async function maybeAutoSync(): Promise<void> {
+  if (autoSyncRunning) return
+  autoSyncRunning = true
   try {
     const cfg = await getWebdavConfig()
     if (!cfg?.auto || !cfg.url) return
     const last = await getLastSyncAt()
     if (last && Date.now() - last < AUTO_MIN_INTERVAL) return
     await syncNow()
-  } catch { /* 静默失败：离线/口令变更时不打扰 */ }
+  } catch { /* 失败详情由 syncNow 记录，可在设置里查看 */ }
+  finally { autoSyncRunning = false }
 }

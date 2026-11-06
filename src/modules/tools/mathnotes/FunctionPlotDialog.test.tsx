@@ -43,7 +43,7 @@ it('三维参数曲线提供范围输入和可操作的旋转视角', async () =
   await act(async () => root.render(<FunctionPlotDialog open initial="(cos(t),sin(t),t)" onOpenChange={() => {}} plot={plot} />))
   expect(document.querySelector('input[aria-label="参数起点"]')).not.toBeNull()
   expect(document.querySelector('input[aria-label="参数终点"]')).not.toBeNull()
-  const curve = document.querySelector<SVGPathElement>('g[clip-path] g path')!
+  const curve = document.querySelector<SVGPathElement>('[data-plot-curves] g path')!
   const before = curve.getAttribute('d')
   await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="向右旋转"]')!.click())
   expect(curve.getAttribute('d')).not.toBe(before)
