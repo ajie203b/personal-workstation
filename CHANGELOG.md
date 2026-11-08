@@ -1,5 +1,18 @@
 # 更新记录
 
+## v3.6.11 · 2026年11月8日
+
+- feat: edit Explorer markdown in place with independent windows
+- data: 姣忔棩鏇存柊妯″瀷鏅鸿兘鎺掑悕
+- feat: integrate local Markdown with document reading tools
+- fix: reset local folder state and retry packaging downloads
+- feat: add local Markdown folder reader and file associations
+- data: 姣忔棩鏇存柊妯″瀷鏅鸿兘鎺掑悕
+- data: 姣忔棩鏇存柊瀹樻柟妯″瀷鍥捐〃
+- data: 姣忔棩鏇存柊妯″瀷鏅鸿兘鎺掑悕
+
+安卓版本码为 86。
+
 ## v3.6.10 · 2026年11月6日
 
 - 改善平板顶部安全区域，减少内容被系统状态栏遮挡。
