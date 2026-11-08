@@ -11,7 +11,6 @@ import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
 import { toggleDone } from '@/db/tasks'
 import { MORPH_NAME, morphClose } from '@/lib/viewTransition'
 import { isFutureTask } from '@/lib/date'
-import { useDocTabs } from '@/stores/tabs'
 import { READER_PANEL_LIMITS, useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { readDocumentText } from '@/lib/readDocumentText'
@@ -28,7 +27,7 @@ import { DEFAULT_SETTINGS, useReadingPosition } from './reader/useReadingPositio
 import { useReaderLayout } from './reader/useReaderLayout'
 import { useDocAnnotations } from './reader/useDocAnnotations'
 import { HL_COLORS, type Selection } from './reader/types'
-import { IconBtn, PanelHead, PanelSplitter, RightContent, TabBar, TocContent } from './reader/ReaderPanels'
+import { IconBtn, PanelHead, PanelSplitter, RightContent, TocContent } from './reader/ReaderPanels'
 import { ReaderSettingsPanel } from './reader/ReaderSettingsPanel'
 import { AnnotationTaskDialog } from './reader/AnnotationTaskDialog'
 
@@ -167,12 +166,6 @@ export function DocReaderPage() {
     restoredShown.current = true
     toast('已回到上次阅读位置')
   }, [toast])
-
-  // 多标签（M2.5）：打开的文档登记进标签栏
-  const openTab = useDocTabs((s) => s.open)
-  useEffect(() => {
-    if (doc) openTab(doc.id, doc.title)
-  }, [doc?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const {
     create: createAnnotation, remove: removeAnnotation, recolor, comment,
@@ -369,9 +362,6 @@ export function DocReaderPage() {
         <IconBtn label="目录与高亮" className="lg:hidden" active={mobilePanel === 'toc'} onClick={() => setMobilePanel('toc')}><List size={18} /></IconBtn>
         <IconBtn label="批注与反链" className="xl:hidden" active={mobilePanel === 'anns'} onClick={() => setMobilePanel('anns')}><MessageSquareText size={18} /></IconBtn>
       </header>
-
-      {/* 多标签栏（M2.5）：打开过多个文档时显示 */}
-      <TabBar docId={docId} onJump={(id) => navigate(`/docs/${id}`)} />
 
       {/* 三栏工作区 */}
       <div

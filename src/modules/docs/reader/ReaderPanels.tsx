@@ -7,7 +7,6 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { Annotation, Doc, Task } from '@/db/db'
 import { db } from '@/db/db'
-import { useDocTabs } from '@/stores/tabs'
 import { cn } from '@/lib/cn'
 import { fmtListDate } from '@/lib/date'
 import type { TocItem } from '../PdfReader'
@@ -18,46 +17,6 @@ import { annotationColorClass, HL_COLORS } from './types'
  * 阅读器侧栏与小组件（从 DocReaderPage 抽出，纯展示、无业务状态）。
  * 目录 / 高亮 / 书签 / 批注 / 反链都在这里，页面只管把数据与回调传进来。
  */
-
-/** 多标签栏：关一个自动切邻居；仅剩一个时不显示 */
-export function TabBar({ docId, onJump }: { docId?: string; onJump: (id: string) => void }) {
-  const tabs = useDocTabs((s) => s.tabs)
-  const closeTab = useDocTabs((s) => s.close)
-  if (tabs.length < 2) return null
-  return (
-    <div className="shrink-0 flex items-stretch gap-1 px-2 pt-1.5 overflow-x-auto border-b border-outline/60 bg-surface">
-      {tabs.map((t) => {
-        const active = t.id === docId
-        return (
-          <div
-            key={t.id}
-            className={cn(
-              'group flex items-center gap-1.5 pl-3 pr-1.5 h-9 rounded-t-[10px] cursor-pointer select-none shrink-0 max-w-[180px] transition-colors',
-              active ? 'bg-surface-2 text-on-surface' : 'text-on-surface-2 hover:bg-surface-3/70',
-            )}
-            onClick={() => onJump(t.id)}
-          >
-            <span className={cn('text-[12px] truncate', active && 'font-medium')}>{t.title}</span>
-            <button
-              aria-label={`关闭标签 ${t.title}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                const neighbor = closeTab(t.id)
-                if (t.id === docId) {
-                  if (neighbor) onJump(neighbor)
-                  else window.location.hash = '#/docs'
-                }
-              }}
-              className="grid place-items-center w-5 h-5 rounded-md opacity-40 group-hover:opacity-100 hover:bg-danger/10 hover:text-danger cursor-pointer"
-            >
-              <X size={11} />
-            </button>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 export function IconBtn({
   children, label, onClick, className = '', active = false, ...rest

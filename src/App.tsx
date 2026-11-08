@@ -22,7 +22,7 @@ import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
 import { initTaskWidgetActions, syncTaskWidget } from '@/lib/taskWidget'
 import { AppUpdateHost } from '@/shared/AppUpdate'
-import { LocalMarkdownHost } from '@/modules/docs/LocalMarkdownHost'
+import { isMainWindow } from '@/lib/native'
 
 // 重资源页面按路由分包：PDF/Office/EPUB 渲染库、TipTap 编辑器只在进入文档模块时加载
 const DocsPage = lazy(() => import('@/modules/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
@@ -75,7 +75,9 @@ function GlobalAddSheet() {
 export default function App() {
   const navigate = useNavigate()
   // 桌面快捷方式 / 通知点击 / 小组件勾选 / 冷启动深链（原生壳内才有）
+  // 独立文档窗口不跑这些全局副作用，避免和主窗口重复同步、抢深链
   useEffect(() => {
+    if (!isMainWindow()) return
     let dispose: (() => void) | undefined
     void initAppActions(
       (route) => navigate(route),
@@ -88,6 +90,7 @@ export default function App() {
     return () => dispose?.()
   }, [navigate])
   useEffect(() => {
+    if (!isMainWindow()) return
     const check = () => { if (document.visibilityState === 'visible') void maybeAutoSync() }
     document.addEventListener('visibilitychange', check)
     window.addEventListener('online', check)
@@ -127,7 +130,6 @@ export default function App() {
 
   return (
     <>
-      <LocalMarkdownHost />
       <GlobalHotkeys />
       <Suspense fallback={RouteLoader}>
         <Routes>
@@ -167,8 +169,8 @@ export default function App() {
       <Spotlight />
       <ToastHost />
       <KeyboardShortcutsDialog />
-      {/* 应用内更新：仅安卓 App / 桌面版，网页版不渲染 */}
-      <AppUpdateHost />
+      {/* 应用内更新：仅安卓 App / 桌面主窗口，网页版和独立文档窗口不渲染 */}
+      {isMainWindow() && <AppUpdateHost />}
     </>
   )
 }

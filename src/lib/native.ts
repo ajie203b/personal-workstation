@@ -10,6 +10,13 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
+/** 是否 Tauri 主窗口：资源管理器开出的独立文档窗口不跑同步、深链等全局副作用 */
+export function isMainWindow(): boolean {
+  if (!isTauri()) return true
+  const label = (window as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } }).__TAURI_INTERNALS__?.metadata?.currentWindow?.label
+  return !label || label === 'main'
+}
+
 /**
  * 安卓返回键：非首页时后退一步，首页时退出应用。
  * 必须在原生壳内调用（@capacitor/app 的监听会接管系统返回键默认行为）。

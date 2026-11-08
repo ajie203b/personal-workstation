@@ -39,8 +39,9 @@ export function DocsPage() {
     for (const d of docs) if (d.folderId) m[d.folderId] = (m[d.folderId] ?? 0) + 1
     return m
   }, [docs])
+  const uncategorizedCount = useMemo(() => docs.filter((d) => !d.folderId).length, [docs])
   const docsInView = useMemo(
-    () => (activeFolder ? docs.filter((d) => d.folderId === activeFolder) : docs),
+    () => (activeFolder ? docs.filter((d) => d.folderId === activeFolder) : docs.filter((d) => !d.folderId)),
     [docs, activeFolder],
   )
   const [folderDialog, setFolderDialog] = useState<{ mode: 'create' } | { mode: 'move'; doc: Doc } | null>(null)
@@ -144,7 +145,7 @@ export function DocsPage() {
   }, [results, textHits, docsInView])
 
 
-  /** 当前筛选的文件夹；null = 全部 */
+  /** 当前筛选的文件夹；null = 未分类 */
   function setFolderParam(id: string | null) {
     setParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -274,7 +275,7 @@ export function DocsPage() {
         <FolderTree
           folders={folders}
           counts={folderCounts}
-          total={docs.length}
+          total={uncategorizedCount}
           active={activeFolder}
           onPick={setFolderParam}
           onCreate={() => { setFolderName(''); setFolderDialog({ mode: 'create' }) }}
@@ -285,7 +286,7 @@ export function DocsPage() {
           {/* 手机 / 平板：顶部横向标签 */}
           <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
             <FolderChip active={!activeFolder} onClick={() => setFolderParam(null)}>
-              全部 <span className="opacity-60">{docs.length}</span>
+              未分类 <span className="opacity-60">{uncategorizedCount}</span>
             </FolderChip>
             {folders.map((f) => (
               <FolderChip key={f.id} active={activeFolder === f.id} onClick={() => setFolderParam(f.id)}>
@@ -325,6 +326,12 @@ export function DocsPage() {
           icon={IconDocs}
           title="这个文件夹还是空的"
           hint="用右上角「⋯」菜单导入，文件会自动归入当前文件夹。"
+        />
+      ) : docsInView.length === 0 && docs.length > 0 && pending.length === 0 ? (
+        <EmptyState
+          icon={IconDocs}
+          title="没有未分类的文档"
+          hint="放进文件夹的文档只在对应文件夹里显示。可以从文件夹移出文档，或导入新文件。"
         />
       ) : docs.length === 0 && pending.length === 0 ? (
         <EmptyState
@@ -400,11 +407,11 @@ export function DocsPage() {
               onClick={() => {
                 const d = folderDialog.doc
                 setFolderDialog(null)
-                void setDocFolder(d.id, undefined).then(() => toast('已移出文件夹'))
+                void setDocFolder(d.id, undefined).then(() => toast('已移回未分类'))
               }}
               className="h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-left text-[13px] hover:border-primary/50 cursor-pointer shrink-0"
             >
-              不移入文件夹
+              未分类
             </button>
             {folders.map((f) => (
               <button
@@ -667,7 +674,7 @@ function FolderTree({
   return (
     <aside className="hidden lg:flex flex-col gap-0.5 w-44 shrink-0 sticky top-2">
       <p className="text-[11px] font-medium text-on-surface-2 tracking-wide px-2 mb-1">文件夹</p>
-      <TreeItem active={!active} onClick={() => onPick(null)} icon={FileText} label="全部文档" count={total} />
+      <TreeItem active={!active} onClick={() => onPick(null)} icon={FileText} label="未分类文档" count={total} />
       {folders.map((f) => (
         <TreeItem key={f.id} active={active === f.id} onClick={() => onPick(f.id)} icon={FolderInput} label={f.name} count={counts[f.id] ?? 0} />
       ))}
