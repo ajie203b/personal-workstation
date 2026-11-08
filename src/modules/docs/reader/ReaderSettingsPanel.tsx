@@ -6,7 +6,8 @@ import { Segmented } from '@/shared/ui/Segmented'
 import { Stepper } from './ReaderPanels'
 
 interface Props {
-  doc: Doc
+  doc: Pick<Doc, 'kind'>
+  placement?: 'top' | 'center'
   settings: DocSettings
   updateSettings: (patch: Partial<DocSettings>, persist?: boolean) => void
   onClose: () => void
@@ -19,7 +20,7 @@ interface Props {
  * 正文宽度是「拖动预览、松手落库」：Range 的每次 input 都写 IndexedDB 会卡，
  * 所以拖动中只 setState 预览（PDF 连预览都不做，重排一次 canvas 太贵），松手才持久化。
  */
-export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, onResetLayout }: Props) {
+export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, onResetLayout, placement = 'top' }: Props) {
   const isPdf = doc.kind === 'pdf'
   const [widthDraft, setWidthDraft] = useState(settings.widthPct)
   const [draggingWidth, setDraggingWidth] = useState(false)
@@ -93,7 +94,7 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
           document.querySelector<HTMLElement>('[aria-controls="reader-settings"]')?.focus()
         }}
         className="pop z-50 w-[min(300px,calc(100vw-24px))] p-4 flex flex-col gap-3.5 fixed max-h-[calc(100dvh-90px)] overflow-y-auto"
-        style={{ right: 12, top: 'calc(env(safe-area-inset-top, 0px) + 60px)' }}
+        style={placement === 'center' ? { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' } : { right: 12, top: 'calc(env(safe-area-inset-top, 0px) + 60px)' }}
       >
         <div className="flex items-center justify-between">
           <Dialog.Title className="text-[14px] font-semibold">排版设置</Dialog.Title>

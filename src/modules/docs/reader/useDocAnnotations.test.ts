@@ -28,6 +28,22 @@ afterEach(async () => {
 })
 
 describe('creating a task from a reading annotation', () => {
+  it('首次给本地文件批注时关联文档，再创建可回到原文的任务', async () => {
+    const doc: Doc = { id: 'local-md', hash: 'snapshot', title: '本地文章', kind: 'md', size: 1, addedAt: 1 }
+    const resolveDoc = vi.fn(async () => doc)
+    let actions: ReturnType<typeof useDocAnnotations> | undefined
+    function Harness() {
+      actions = useDocAnnotations({ doc: undefined, resolveDoc, selection: { kind: 'md', text: '摘录内容', blockIdx: 2, popover: { left: 100, y: 100, below: false } }, clearSelection: vi.fn(), toast: vi.fn(), onExported: vi.fn() })
+      return null
+    }
+    act(() => root.render(createElement(Harness)))
+    await act(async () => actions!.create('yellow', true))
+    expect(resolveDoc).toHaveBeenCalledOnce()
+    expect((await db.annotations.toArray())[0]).toMatchObject({ docHash: 'snapshot', text: '摘录内容' })
+    act(() => actions!.task.setTitle('处理摘录'))
+    await act(async () => actions!.task.submit())
+    expect((await db.tasks.toArray())[0]).toMatchObject({ title: '处理摘录', docRef: { docId: 'local-md', label: '本地文章' } })
+  })
   it('persists the EPUB chapter locator and full excerpt on the created task', async () => {
     const doc: Doc = {
       id: 'epub-document', hash: 'epub-content', kind: 'epub', title: '阅读材料', size: 1, addedAt: 1,

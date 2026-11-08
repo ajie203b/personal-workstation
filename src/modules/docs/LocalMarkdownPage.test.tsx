@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
+import 'fake-indexeddb/auto'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { LocalFolder } from '@/lib/localMarkdown'
 
-const { read, list } = vi.hoisted(() => ({ read: vi.fn(), list: vi.fn() }))
+const { read, list, pick } = vi.hoisted(() => ({ read: vi.fn(), list: vi.fn(), pick: vi.fn() }))
 vi.mock('@/lib/native', () => ({ isTauri: () => true }))
 vi.mock('@/shared/theme', () => ({ useThemeEffect: () => {} }))
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ setTitle: async () => {} }) }))
-vi.mock('@/lib/localMarkdown', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/localMarkdown')>(), localMarkdown: { read, list } }))
+vi.mock('@/lib/localMarkdown', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/localMarkdown')>(), localMarkdown: { read, list, pick } }))
 import { LocalMarkdownPage } from './LocalMarkdownPage'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -28,12 +29,20 @@ it('本地阅读页展示同目录文件、切换文章并生成标题目录', a
   const root = createRoot(host)
   cleanup = () => { act(() => root.unmount()); host.remove() }
   await act(async () => root.render(<MemoryRouter initialEntries={['/local-markdown?file=D%3A%2Fnotes%2Fa.md']}><LocalMarkdownPage /></MemoryRouter>))
-  expect(host.querySelector('article h1')?.textContent).toBe('第一篇')
-  expect(host.querySelector('article script')).toBeNull()
+  expect(host.querySelector('.md-body h1')?.textContent).toBe('第一篇')
+  expect(host.querySelector('.md-body script')).toBeNull()
   const outline = [...host.querySelectorAll<HTMLButtonElement>('[role=tab]')].find(b => b.textContent === '目录')!
   await act(async () => outline.click())
   expect(host.querySelector('[role=tabpanel]')?.textContent).toContain('二级标题')
-  await act(async () => host.querySelector<HTMLAnchorElement>('article a')!.click())
+  await act(async () => host.querySelector<HTMLAnchorElement>('.md-body a')!.click())
   expect(read).toHaveBeenLastCalledWith('D:/notes/中文 b.md')
-  expect(host.querySelector('article h1')?.textContent).toBe('第二篇')
+  expect(host.querySelector('.md-body h1')?.textContent).toBe('第二篇')
+  // Explicit refresh checks the document as well as the directory and reports success.
+  read.mockResolvedValue({ path: 'D:/notes/中文 b.md', version: '2', markdown: '# 刷新后的正文' })
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="刷新文档"]')!.click())
+  expect(host.querySelector('.md-body h1')?.textContent).toBe('刷新后的正文')
+  expect(host.querySelector('[aria-label="刷新文档"]')?.getAttribute('data-state')).toBe('success')
+  pick.mockResolvedValue(null)
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="打开本地文件夹"]')!.click())
+  expect(pick).toHaveBeenCalledWith(true)
 })

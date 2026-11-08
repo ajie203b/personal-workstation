@@ -8,6 +8,7 @@ import { type HlColor, type Selection } from './types'
 
 interface Options {
   doc: Doc | undefined
+  resolveDoc?: () => Promise<Doc>
   selection: Selection | null
   /** 加完高亮后清掉浮条与浏览器选区（页面持有，因为选区状态也驱动浮条渲染） */
   clearSelection: () => void
@@ -23,7 +24,7 @@ interface Options {
  * 这里只处理数据与动作，不含任何布局；页面的浮条与侧栏都调同一组方法，
  * 免得「侧栏能改色、浮条不能」这类两套逻辑走偏。
  */
-export function useDocAnnotations({ doc, selection, clearSelection, toast, onExported }: Options) {
+export function useDocAnnotations({ doc, resolveDoc, selection, clearSelection, toast, onExported }: Options) {
   const [taskSeed, setTaskSeed] = useState<{ ann: Annotation; doc: Doc } | null>(null)
   const [taskTitle, setTaskTitle] = useState('')
   const [taskNotes, setTaskNotes] = useState('')
@@ -38,19 +39,21 @@ export function useDocAnnotations({ doc, selection, clearSelection, toast, onExp
 
   const create = useCallback(
     async (color: HlColor, withTask = false) => {
-      if (!doc || !selection) return
-      const base = doc.kind === 'pdf'
-        ? { docHash: doc.hash, page: (selection as Extract<Selection, { kind: 'pdf' }>).page, rects: (selection as Extract<Selection, { kind: 'pdf' }>).rects, text: selection.text, color }
-        : doc.kind === 'md'
-          ? { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'md' }>).blockIdx, textAnchors: (selection as Extract<Selection, { kind: 'md' }>).textAnchors, text: selection.text, color }
-          : { docHash: doc.hash, blockIdx: (selection as Extract<Selection, { kind: 'flow' }>).segIdx, textAnchors: (selection as Extract<Selection, { kind: 'flow' }>).textAnchors, text: selection.text, color }
+      if (!selection) return
+      const target = resolveDoc ? await resolveDoc() : doc
+      if (!target) return
+      const base = target.kind === 'pdf'
+        ? { docHash: target.hash, page: (selection as Extract<Selection, { kind: 'pdf' }>).page, rects: (selection as Extract<Selection, { kind: 'pdf' }>).rects, text: selection.text, color }
+        : target.kind === 'md'
+          ? { docHash: target.hash, blockIdx: (selection as Extract<Selection, { kind: 'md' }>).blockIdx, textAnchors: (selection as Extract<Selection, { kind: 'md' }>).textAnchors, text: selection.text, color }
+          : { docHash: target.hash, blockIdx: (selection as Extract<Selection, { kind: 'flow' }>).segIdx, textAnchors: (selection as Extract<Selection, { kind: 'flow' }>).textAnchors, text: selection.text, color }
       const ann = await addAnnotation(base)
-      if (withTask) setTaskSeed({ ann, doc })
+      if (withTask) setTaskSeed({ ann, doc: target })
       else toast('已添加高亮')
       clearSelection()
       window.getSelection()?.removeAllRanges()
     },
-    [doc, selection, toast, clearSelection],
+    [doc, resolveDoc, selection, toast, clearSelection],
   )
 
   const remove = useCallback((id: string) => void deleteAnnotation(id), [])

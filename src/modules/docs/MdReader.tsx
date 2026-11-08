@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
@@ -27,6 +27,8 @@ export interface MdSelectionInfo {
 }
 
 interface Props {
+  onLink?: (href: string) => void
+  renderImage?: (src: string | undefined, alt: string | undefined) => ReactNode
   hash: string
   md: string
   settings: DocSettings
@@ -64,7 +66,7 @@ export function parseMdBlocks(md: string): { headings: { level: number; text: st
 
 /** MD 阅读器：块锚点渲染 + 沉浸排版 + 划词高亮 */
 export function MdReader({
-  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange,
+  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange, onLink, renderImage,
 }: Props) {
   const source = useMemo(() => normalizeMarkdown(md), [md])
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -292,7 +294,16 @@ export function MdReader({
         className="reader-prose mx-auto py-8 md:py-12 min-w-0"
       >
         <div ref={bodyRef} className="md-body" onMouseUp={onMouseUp}>
-          <ReactMarkdown
+          <MarkdownContent source={source} onLink={onLink} renderImage={renderImage} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Keep parsing and DOM stable while typography, selection and toolbar state change. */
+const MarkdownContent = memo(function MarkdownContent({ source, onLink, renderImage }: Pick<Props, 'onLink' | 'renderImage'> & { source: string }) {
+  return <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkHighlight, remarkMath]}
             rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeReaderStyles, [rehypeKatex, { trust: false, strict: false, maxSize: 20, maxExpand: 1000 }]]}
             urlTransform={transformDocUrl}
@@ -307,20 +318,16 @@ export function MdReader({
                   return <mark className={`hl-${href.slice(3)}`}>{children}</mark>
                 }
                 return (
-                  <a href={href} rel="noreferrer noopener" onClick={(e) => { handleDocLink(e, href) }} {...rest}>
+                  <a href={href} rel="noreferrer noopener" onClick={(e) => { if (onLink && href) { e.preventDefault(); onLink(href) } else handleDocLink(e, href) }} {...rest}>
                     {children}
                   </a>
                 )
               },
-              img: ({ src, alt, ...rest }) => (
+              img: ({ src, alt, ...rest }) => renderImage ? renderImage(src, alt) : (
                 <img src={src} alt={alt ?? ''} loading="lazy" className="rounded-[10px] border border-outline/50" {...rest} />
               ),
             }}
           >
             {source}
           </ReactMarkdown>
-        </div>
-      </div>
-    </div>
-  )
-}
+})

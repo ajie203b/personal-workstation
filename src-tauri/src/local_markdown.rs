@@ -71,7 +71,9 @@ fn list(state: &LocalMarkdownState, directory: &Path) -> Result<Folder, String> 
 #[tauri::command]
 pub async fn local_markdown_pick(app: tauri::AppHandle, folder: bool) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let dialog = app.dialog().file();
+        let mut dialog = app.dialog().file().set_title(if folder { "打开 Markdown 文件夹" } else { "打开 Markdown 文件" });
+        if let Some(window) = app.get_webview_window("main") { dialog = dialog.set_parent(&window); }
+        if let Ok(directory) = root(&app.state::<LocalMarkdownState>()) { dialog = dialog.set_directory(directory); }
         let selection = if folder { dialog.blocking_pick_folder() } else { dialog.add_filter("Markdown", &["md", "markdown"]).blocking_pick_file() };
         let Some(selection) = selection else { return Ok(None) };
         let path = selection.into_path().map_err(|_| "无法打开此路径")?;

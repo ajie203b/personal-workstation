@@ -323,7 +323,7 @@ const SNAPSHOT_HEAD = { app: 'personal-workstation' as const, version: 4 as cons
 
 /** 只属于本机的设置：WebDAV 口令、同步/备份时间戳、通知权限状态 */
 // mathNotesSyncEpoch：本机的笔记清空纪元，只描述这台设备，跟着备份 / 同步走到别处会误判「对方清空过」
-const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastSyncError', 'lastAutoBackupAt', 'notifyEnabled', 'mathNotesSyncEpoch', 'mathNotesSyncBaseline', 'lastMathNotesSyncError'])
+const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastSyncError', 'lastAutoBackupAt', 'notifyEnabled', 'mathNotesSyncEpoch', 'mathNotesSyncBaseline', 'lastMathNotesSyncError', 'localMarkdownLinks'])
 
 /**
  * 一次读出所有表（手动导出与自动快照共用）。

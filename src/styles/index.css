@@ -1260,7 +1260,3 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 @keyframes stats-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .stats-view-transition { animation: stats-view-in 220ms ease-out backwards; }
 @media (prefers-reduced-motion: reduce) { .stats-view-transition { animation: none; } }
-.local-markdown-body { max-width: 1080px; line-height: 1.85; --md-ink: var(--on-surface); --md-ink-2: var(--on-surface-2); --md-rule: var(--outline); --md-quote: var(--surface-2); --md-code-bg: var(--surface-2); }
-.local-markdown-body :is(h1,h2,h3,h4,h5,h6) { scroll-margin-top: 24px; }
-.local-markdown-body h1 { margin-bottom: 0.8em; }
-.local-markdown-body pre { overflow-x: auto; }

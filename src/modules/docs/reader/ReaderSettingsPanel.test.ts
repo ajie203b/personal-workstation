@@ -14,7 +14,7 @@ it('opens settings outside the clipped header and provides an explicit close con
   const onClose = vi.fn()
   try {
     act(() => root.render(createElement(ReaderSettingsPanel, {
-      doc: { id: 'd', hash: 'h', title: '测试', kind: 'docx', size: 1, addedAt: 1, updatedAt: 1 },
+      doc: { kind: 'docx' },
       settings: { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 72 },
       updateSettings: vi.fn(), onClose, onResetLayout: vi.fn(),
     })))

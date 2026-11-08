@@ -30,6 +30,7 @@ import { useDocAnnotations } from './reader/useDocAnnotations'
 import { HL_COLORS, type Selection } from './reader/types'
 import { IconBtn, PanelHead, PanelSplitter, RightContent, TabBar, TocContent } from './reader/ReaderPanels'
 import { ReaderSettingsPanel } from './reader/ReaderSettingsPanel'
+import { AnnotationTaskDialog } from './reader/AnnotationTaskDialog'
 
 /**
  * 阅读器页面：只负责「把三种阅读器、三栏布局、各种弹层组装起来」。
@@ -626,45 +627,7 @@ export function DocReaderPage() {
         </aside>
       </div>
 
-      {/* 批注 → 任务弹窗：勾选内容进笔记区，标题自己输入 */}
-      <Dialog
-        open={task.seed != null}
-        onOpenChange={(v) => !v && task.close()}
-        title="从批注创建任务"
-        description="勾选内容已放入任务笔记；任务标题自己起。"
-      >
-        <div className="flex flex-col gap-3">
-          <label className="block">
-            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">任务标题</span>
-            <input
-              autoFocus
-              value={task.title}
-              onChange={(e) => task.setTitle(e.target.value)}
-              placeholder="输入任务标题…"
-              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/60"
-            />
-          </label>
-          <label className="block">
-            <span className="block text-[12px] font-medium text-on-surface-2 mb-1">笔记内容（已预填勾选内容，可改）</span>
-            <textarea
-              value={task.notes}
-              onChange={(e) => task.setNotes(e.target.value)}
-              rows={4}
-              className="w-full rounded-[10px] bg-surface-2 border border-outline px-3 py-2 text-[13px] outline-none focus:border-primary/60 resize-none leading-relaxed"
-            />
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button onClick={task.close}>取消</Button>
-            <Button
-              variant="primary"
-              disabled={!task.title.trim()}
-              onClick={() => void task.submit()}
-            >
-              创建任务
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      <AnnotationTaskDialog task={task} />
 
       {/* 读完提醒：把引用本文档的任务收尾 */}
       <Dialog
