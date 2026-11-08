@@ -27,6 +27,9 @@
   },
   "bundle": {
     "active": true,
+    "fileAssociations": [
+      { "ext": ["md", "markdown"], "name": "Markdown 文档", "description": "使用 Kairos 阅读 Markdown", "role": "Viewer" }
+    ],
     "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",

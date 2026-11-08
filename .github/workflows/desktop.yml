@@ -91,6 +91,12 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Test native file boundaries
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       # latest.json：tauri-plugin-updater 从 releases/latest/download/latest.json 读取
       - name: Generate latest.json
         if: startsWith(github.ref, 'refs/tags/v') && steps.updater.outputs.enabled == 'true'

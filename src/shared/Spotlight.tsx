@@ -70,6 +70,7 @@ export function Spotlight() {
   useEffect(() => {
     if (localStorage.getItem(DONE_KEY) === '1') return
     const t = window.setTimeout(() => {
+      if (window.location.hash.startsWith('#/local-markdown')) return
       // 引导要有确定的语境：先回今日页，目标控件才在场
       if (pathname !== '/today') navigate('/today', { replace: true })
       setStep(0)

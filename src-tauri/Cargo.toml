@@ -14,6 +14,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 # tauri.conf.json 里有 plugins 配置时，generate_context! 生成的代码要用 serde_json 解析它
 serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
 
 # 应用内更新只在桌面平台可用
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]

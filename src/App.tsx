@@ -22,11 +22,13 @@ import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
 import { initTaskWidgetActions, syncTaskWidget } from '@/lib/taskWidget'
 import { AppUpdateHost } from '@/shared/AppUpdate'
+import { LocalMarkdownHost } from '@/modules/docs/LocalMarkdownHost'
 
 // 重资源页面按路由分包：PDF/Office/EPUB 渲染库、TipTap 编辑器只在进入文档模块时加载
 const DocsPage = lazy(() => import('@/modules/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
 const DocReaderPage = lazy(() => import('@/modules/docs/DocReaderPage').then((m) => ({ default: m.DocReaderPage })))
 const MdEditorPage = lazy(() => import('@/modules/docs/MdEditorPage').then((m) => ({ default: m.MdEditorPage })))
+const LocalMarkdownPage = lazy(() => import('@/modules/docs/LocalMarkdownPage').then(m => ({ default: m.LocalMarkdownPage })))
 const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ default: m.StatsPage })))
 const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => ({ default: m.ReviewPage })))
@@ -125,9 +127,11 @@ export default function App() {
 
   return (
     <>
+      <LocalMarkdownHost />
       <GlobalHotkeys />
       <Suspense fallback={RouteLoader}>
         <Routes>
+          <Route path="local-markdown" element={<LocalMarkdownPage />} />
           <Route element={<AppShell />}>
             <Route index element={<Navigate to="/today" replace />} />
             <Route path="today" element={<TodayPage />} />
