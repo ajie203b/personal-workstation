@@ -2,14 +2,12 @@
 
 ## v3.6.11 · 2026年11月8日
 
-- feat: edit Explorer markdown in place with independent windows
-- data: 姣忔棩鏇存柊妯″瀷鏅鸿兘鎺掑悕
-- feat: integrate local Markdown with document reading tools
-- fix: reset local folder state and retry packaging downloads
-- feat: add local Markdown folder reader and file associations
-- data: 姣忔棩鏇存柊妯″瀷鏅鸿兘鎺掑悕
-- data: 姣忔棩鏇存柊瀹樻柟妯″瀷鍥捐〃
-- data: 姣忔棩鏇存柊妯″瀷鏅鸿兘鎺掑悕
+- Windows 支持从文件资源管理器打开 Markdown：每个文件独立窗口，互不影响，也不打断主窗口正在进行的工作。
+- 打开的本地文档可直接编辑原文件：停顿自动保存、Ctrl+S 立即保存，关闭窗口前先落盘；文件被外部修改时提示选择，不会静默覆盖。
+- 打开文档后右上角只保留刷新和阅读设置；可设为系统默认 Markdown 打开方式。
+- 文档工作站「全部文档」改为「未分类文档」，放进文件夹的文档只在对应文件夹显示。
+- 移除阅读器顶部的最近打开文档栏，减少误触。
+- data: 每日更新官方模型图表与模型智能排名
 
 安卓版本码为 86。
 
