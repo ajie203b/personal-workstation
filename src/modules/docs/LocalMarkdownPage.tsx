@@ -73,7 +73,11 @@ export function LocalMarkdownPage() {
 
   useEffect(() => {
     if (!isTauri()) return
-    if (!file) { if (initialFolder) void browse(initialFolder); return }
+    if (!file) {
+      setDoc(null); current.current = null; setLoading(false)
+      if (initialFolder) void browse(initialFolder)
+      return
+    }
     let alive = true
     setLoading(true); setError(''); setDoc(null); current.current = null
     void Promise.all([localMarkdown.read(file), localMarkdown.list(parentPath(file))]).then(([next, list]) => {

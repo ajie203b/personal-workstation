@@ -51,8 +51,9 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-          # 标签缓存相互不可见；只维护 main 缓存，避免每次发版保存一份无法复用的副本。
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # 标签构建复用 main 缓存；手动测试分支保留自己的缓存，便于失败后续跑。
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          cache-on-failure: true
 
       - name: Install
         run: npm install --no-audit --no-fund
@@ -84,12 +85,18 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ steps.updater.outputs.enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.updater.outputs.enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: |
-          if ('${{ steps.updater.outputs.enabled }}' -eq 'true') {
-            npx tauri build --config "$PWD/src-tauri/tauri.updater.conf.json"
-          } else {
-            npx tauri build
+          $buildArgs = @('tauri', 'build')
+          if ('${{ steps.updater.outputs.enabled }}' -eq 'true') { $buildArgs += @('--config', "$PWD/src-tauri/tauri.updater.conf.json") }
+          $buildLog = Join-Path $env:RUNNER_TEMP 'kairos-desktop-build.log'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & npx @buildArgs 2>&1 | Tee-Object -FilePath $buildLog
+            $code = $LASTEXITCODE
+            if ($code -eq 0) { break }
+            $output = Get-Content -LiteralPath $buildLog -Raw
+            if ($attempt -eq 3 -or $output -notmatch '(?i)http status: (429|502|503|504)|timed?\s*out|timeout|connection reset|unexpected EOF') { exit $code }
+            Write-Host "打包依赖下载暂时失败，重试 $attempt/3"
+            Start-Sleep -Seconds (4 * $attempt)
           }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test native file boundaries
         shell: pwsh
@@ -147,6 +154,7 @@ jobs:
         with:
           name: Kairos-windows
           path: |
+            src-tauri/target/release/kairos.exe
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.exe.sig
             src-tauri/target/release/bundle/nsis/latest.json
