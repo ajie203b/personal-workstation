@@ -245,20 +245,24 @@ mod tests {
     }
     #[test]
     fn grants_are_per_window_and_merge_nested() {
+        // starts_with 按路径组件比较：Windows 的盘符相对路径（C:/x）首组件是盘符前缀，
+        // 与根目录路径互不为前缀，测试必须用各平台的原生绝对路径（生产里全是 canonicalize 产物）
+        #[cfg(windows)]
+        let (a, b, wide) = (PathBuf::from("C:\\notes"), PathBuf::from("C:\\other"), PathBuf::from("C:\\"));
+        #[cfg(not(windows))]
+        let (a, b, wide) = (PathBuf::from("/notes"), PathBuf::from("/other"), PathBuf::from("/"));
         let state = LocalMarkdownState::default();
-        let a = PathBuf::from("C:/notes");
-        let b = PathBuf::from("C:/other");
         grant(&state, "md-a", a.clone()).unwrap();
         grant(&state, "md-b", b.clone()).unwrap();
         grant(&state, "md-a", a.join("sub")).unwrap();
         let map = state.roots.lock().unwrap();
         assert_eq!(map.get("md-a").unwrap(), &[a.clone()]);
         assert_eq!(map.get("md-b").unwrap(), &[b.clone()]);
-        assert!(covered(map.get("md-a").unwrap(), Path::new("C:/notes/sub/x.md")));
-        assert!(!covered(map.get("md-a").unwrap(), Path::new("C:/other/x.md")));
+        assert!(covered(map.get("md-a").unwrap(), &a.join("sub").join("x.md")));
+        assert!(!covered(map.get("md-a").unwrap(), &b.join("x.md")));
         drop(map);
-        grant(&state, "md-a", PathBuf::from("C:/")).unwrap();
-        assert_eq!(state.roots.lock().unwrap().get("md-a").unwrap(), &[PathBuf::from("C:/")]);
+        grant(&state, "md-a", wide.clone()).unwrap();
+        assert_eq!(state.roots.lock().unwrap().get("md-a").unwrap(), &[wide]);
     }
     #[test]
     fn file_urls_encode_reserved_bytes() {
