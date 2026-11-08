@@ -34,9 +34,9 @@ fn roots(state: &LocalMarkdownState, label: &str) -> Result<Vec<PathBuf>, String
 fn grant(state: &LocalMarkdownState, label: &str, directory: PathBuf) -> Result<(), String> {
     let mut map = state.roots.lock().map_err(|_| "文件夹状态不可用")?;
     let roots = map.entry(label.to_owned()).or_default();
-    // 新目录覆盖旧授权时合并，避免同一窗口重复堆积父子目录
-    roots.retain(|root| !directory.starts_with(root));
-    if !roots.iter().any(|root| root.starts_with(&directory)) { roots.push(directory); }
+    // 只保留最宽的授权：新目录里的旧授权被它取代，已被更宽授权覆盖的新目录不再追加
+    roots.retain(|root| !root.starts_with(&directory));
+    if !roots.iter().any(|root| directory.starts_with(root)) { roots.push(directory); }
     Ok(())
 }
 
