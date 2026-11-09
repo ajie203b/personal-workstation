@@ -20,6 +20,11 @@ import { LocalMarkdownPage } from './LocalMarkdownPage'
 win.onCloseRequested.mockImplementation(async (handler: NonNullable<typeof closeHandler.current>) => { closeHandler.current = handler; return () => { closeHandler.current = null } })
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+  matches: false, media: query, onchange: null,
+  addEventListener: () => {}, removeEventListener: () => {},
+  addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+})))
 let cleanup = () => {}
 afterEach(() => { cleanup(); closeHandler.current = null; vi.clearAllMocks() })
 
@@ -75,12 +80,18 @@ function typeDraft(host: HTMLElement, text: string) {
   textarea.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+// 编辑态默认富文本（无整篇 textarea）；保存/冲突用例切到源码模式驱动草稿
+async function enterSource(host: HTMLElement) {
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="切换源码模式"]')!.click())
+}
+
 it('编辑原文件：Ctrl+S 写回磁盘，完成后回到阅读视图', async () => {
   list.mockResolvedValue(notesFolder)
   read.mockResolvedValue({ path: 'D:/notes/a.md', version: '1', markdown: '# 原始正文' })
   write.mockImplementation(async (path: string, markdown: string) => ({ path, version: '2', markdown }))
   const host = await renderPage()
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="编辑文档"]')!.click())
+  await enterSource(host)
   expect(host.querySelector('textarea')?.value).toBe('# 原始正文')
   await act(async () => typeDraft(host, '# 修改后的正文'))
   await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true })) })
@@ -97,6 +108,7 @@ it('外部修改冲突时暂停保存，可覆盖保存我的修改', async () =
   write.mockImplementation(async (path: string, markdown: string) => ({ path, version: '3', markdown }))
   const host = await renderPage()
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="编辑文档"]')!.click())
+  await enterSource(host)
   await act(async () => typeDraft(host, '# 我的修改'))
   await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true })) })
   expect(host.textContent).toContain('文件已被其他程序修改')
@@ -112,6 +124,7 @@ it('编辑中直接关窗：先写回原文件再销毁窗口', async () => {
   write.mockImplementation(async (path: string, markdown: string) => ({ path, version: '2', markdown }))
   const host = await renderPage()
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="编辑文档"]')!.click())
+  await enterSource(host)
   await act(async () => typeDraft(host, '# 关窗前的修改'))
   const event = { preventDefault: vi.fn() }
   await act(async () => closeHandler.current!(event))
@@ -126,6 +139,7 @@ it('关窗时保存冲突：窗口留在原地显示冲突处理', async () => {
   write.mockRejectedValue('文件已被外部修改，请刷新后重试')
   const host = await renderPage()
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="编辑文档"]')!.click())
+  await enterSource(host)
   await act(async () => typeDraft(host, '# 未落盘的修改'))
   const event = { preventDefault: vi.fn() }
   await act(async () => closeHandler.current!(event))

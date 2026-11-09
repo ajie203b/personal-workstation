@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ArrowLeft, ArrowUp, Check, FileText, Folder, FolderOpen, ListTree, PanelLeftClose, PanelLeftOpen, PenLine, RefreshCw, Settings2 } from 'lucide-react'
+import { ArrowLeft, ArrowUp, Check, FileText, Folder, FolderOpen, ListTree, MessageSquareText, PanelLeftClose, PanelLeftOpen, PenLine, RefreshCw, Settings2 } from 'lucide-react'
 import { isTauri } from '@/lib/native'
 import { fileName, parentPath, localLink, localMarkdown, type LocalDocument, type LocalFolder } from '@/lib/localMarkdown'
 import { openExternal } from '@/lib/links'
@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
 import { useThemeEffect } from '@/shared/theme'
 import { LocalReadingPane } from './LocalReadingPane'
+import { LocalRichEditor } from './LocalRichEditor'
 import { parseMdBlocks } from './MdReader'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import type { JumpTarget } from './reader/useReadingPosition'
@@ -50,8 +51,10 @@ export function LocalMarkdownPage() {
   const [picking, setPicking] = useState(false)
   const [imageRefresh, setImageRefresh] = useState(0)
   const [settings, setSettings] = useState(false)
+  const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const scroll = useRef<HTMLDivElement>(null)
   const current = useRef<LocalDocument | null>(null)
+  const viewDir = useRef('')
   const pendingAnchor = useRef('')
   const toast = useUi(s => s.toast)
 
@@ -96,6 +99,7 @@ export function LocalMarkdownPage() {
 
   const startEditing = () => {
     if (!doc) return
+    setAnnotationsOpen(false)
     draftRef.current = doc.markdown
     setDraft(doc.markdown)
     updateSaveState('saved')
@@ -179,7 +183,7 @@ export function LocalMarkdownPage() {
     setParams({ file: path })
   }, [setParams, file, saveDraft])
   const browse = useCallback(async (path: string) => {
-    try { setFolder(await localMarkdown.list(path)); setError('') }
+    try { const next = await localMarkdown.list(path); viewDir.current = next.directory; setFolder(next); setError('') }
     catch (e) { setError(String(e)) }
   }, [])
   const pick = async (directory: boolean) => {
@@ -207,13 +211,19 @@ export function LocalMarkdownPage() {
     }
     let alive = true
     setLoading(true); setError(''); setDoc(null); current.current = null
-    void Promise.all([localMarkdown.read(file), localMarkdown.list(parentPath(file))]).then(([next, list]) => {
+    // 先列目录（原生侧据此把该文件夹授权给本窗口），再读文件，避免越界误判
+    void (async () => {
+      const list = await localMarkdown.list(parentPath(file))
+      const next = await localMarkdown.read(file)
+      return { next, list }
+    })().then(({ next, list }) => {
       if (!alive) return
       if (next) {
         current.current = next; setDoc(next)
         if (next.path !== file) setParams({ file: next.path }, { replace: true })
       }
       setFolder(list)
+      viewDir.current = list.directory
       scroll.current?.scrollTo({ top: 0 })
     }).catch(e => { if (alive) setError(String(e)) }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -233,7 +243,7 @@ export function LocalMarkdownPage() {
       finally { checking = false }
     }
     const timer = window.setInterval(() => void check(), 3000)
-    const focus = () => { void check(); void browse(parentPath(file)) }
+    const focus = () => { void check(); void browse(viewDir.current || parentPath(file)) }
     window.addEventListener('focus', focus)
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener('focus', focus) }
   }, [file, browse])
@@ -312,7 +322,11 @@ export function LocalMarkdownPage() {
         <Button size="sm" disabled={picking} aria-label="打开本地 Markdown 文件" onClick={() => void pick(false)}><FileText size={16} /><span className="hidden sm:inline">打开文件</span></Button>
         <Button size="sm" disabled={picking} aria-label="打开本地文件夹" onClick={() => void pick(true)}><FolderOpen size={16} /><span className="hidden sm:inline">打开文件夹</span></Button>
       </>}
+      {doc && !loading && (editing
+        ? <Button size="icon" variant="primary" title="完成编辑（Ctrl+S 立即保存）" aria-label="完成编辑" onClick={() => void finishEditing()}><Check size={16} /></Button>
+        : <Button size="icon" title="编辑原文件，修改直接写回磁盘" aria-label="编辑文档" onClick={startEditing}><PenLine size={16} /></Button>)}
       <Button size="icon" state={refresh.state} disabled={!file && !folder} title="刷新文档和文件夹" aria-label="刷新文档" onClick={() => void refreshDocument()}><RefreshCw size={16} /></Button>
+      {doc && !loading && !editing && <button className={cn(iconButton, annotationsOpen && 'bg-surface-3')} title="批注与评论" aria-label="批注与评论" aria-expanded={annotationsOpen} onClick={() => setAnnotationsOpen(v => !v)}><MessageSquareText size={17} /></button>}
       <button className={cn(iconButton, settings && 'bg-surface-3', editing && 'opacity-40 pointer-events-none')} title="阅读设置" aria-label="阅读设置" aria-controls="reader-settings" aria-expanded={settings} onClick={() => setSettings(v => !v)}><Settings2 size={17} /></button>
     </header>
     <div className="flex-1 min-h-0 flex relative">
@@ -339,18 +353,12 @@ export function LocalMarkdownPage() {
           <button className="rounded-lg border border-outline px-3 py-1.5 text-[12px] text-on-surface hover:bg-surface-2" onClick={() => void reloadExternal()}>重新加载外部版本</button>
           <button className="rounded-lg bg-primary-action px-3 py-1.5 text-[12px] text-on-primary-action" onClick={() => void saveDraft(true)}>覆盖保存我的修改</button>
         </div>}
-        {loading ? <p role="status" className="px-8 py-12 text-sm text-on-surface-2">正在读取文件…</p> : editing && doc ? <textarea
-          value={draft}
-          onChange={e => { draftRef.current = e.target.value; setDraft(e.target.value); updateSaveState('unsaved') }}
-          className="flex-1 min-h-0 w-full resize-none bg-surface px-6 md:px-12 py-8 font-mono text-[13.5px] leading-7 text-on-surface outline-none"
-          spellCheck={false}
-          autoFocus
-          aria-label="编辑 Markdown 原文"
-        /> : doc ? <LocalReadingPane key={doc.path} document={doc} onLink={openLink} renderImage={renderImage} jump={jump} settingsOpen={settings} onCloseSettings={() => setSettings(false)} /> : <div className="max-w-lg mx-auto px-8 py-24"><h1 className="text-2xl font-semibold">本地 Markdown</h1><p className="mt-3 text-sm leading-6 text-on-surface-2">打开一篇文章，或从文件夹开始。文件列表、标题目录和正文都在这里。</p><div className="flex gap-3 mt-6"><button className="rounded-lg bg-primary-action text-on-primary-action px-4 py-2 text-sm" onClick={() => void pick(false)}>打开文件</button><button className="rounded-lg border border-outline px-4 py-2 text-sm" onClick={() => void pick(true)}>打开文件夹</button></div></div>}
+        {loading ? <p role="status" className="px-8 py-12 text-sm text-on-surface-2">正在读取文件…</p> : editing && doc ? <LocalRichEditor
+          markdown={draft}
+          onChange={md => { draftRef.current = md; setDraft(md); updateSaveState('unsaved') }}
+          renderImage={renderImage}
+        /> : doc ? <LocalReadingPane key={doc.path} document={doc} onLink={openLink} renderImage={renderImage} jump={jump} settingsOpen={settings} onCloseSettings={() => setSettings(false)} annotationsOpen={annotationsOpen} onCloseAnnotations={() => setAnnotationsOpen(false)} onOpenAnnotations={() => setAnnotationsOpen(true)} /> : <div className="max-w-lg mx-auto px-8 py-24"><h1 className="text-2xl font-semibold">本地 Markdown</h1><p className="mt-3 text-sm leading-6 text-on-surface-2">打开一篇文章，或从文件夹开始。文件列表、标题目录和正文都在这里。</p><div className="flex gap-3 mt-6"><button className="rounded-lg bg-primary-action text-on-primary-action px-4 py-2 text-sm" onClick={() => void pick(false)}>打开文件</button><button className="rounded-lg border border-outline px-4 py-2 text-sm" onClick={() => void pick(true)}>打开文件夹</button></div></div>}
       </div>
-      {doc && !loading && (editing
-        ? <button className="absolute bottom-6 right-6 z-20 grid h-12 w-12 place-items-center rounded-full bg-primary-action text-on-primary-action shadow-lg hover:opacity-90" title="完成编辑（Ctrl+S 立即保存）" aria-label="完成编辑" onClick={() => void finishEditing()}><Check size={20} /></button>
-        : <button className="absolute bottom-6 right-6 z-20 grid h-12 w-12 place-items-center rounded-full bg-primary-action text-on-primary-action shadow-lg hover:opacity-90" title="编辑原文件，修改直接写回磁盘" aria-label="编辑文档" onClick={startEditing}><PenLine size={20} /></button>)}
     </div>
   </div>
 }

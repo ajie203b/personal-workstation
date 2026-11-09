@@ -3,7 +3,7 @@ import type { DocSettings } from '@/db/db'
 import { getPosition, saveDocSettings } from '@/db/docs'
 import { anchorOf } from './locator'
 
-export const DEFAULT_SETTINGS: DocSettings = { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 72 }
+export const DEFAULT_SETTINGS: DocSettings = { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 90 }
 
 export type InitialTarget =
   | { page: number; offsetRatio: number }

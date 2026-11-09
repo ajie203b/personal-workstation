@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, isValidElement, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
@@ -14,6 +14,7 @@ import type { Annotation, AnnotationTextAnchor, DocSettings } from '@/db/db'
 import { handleDocLink, transformDocUrl } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
 import { remarkHighlight } from './mdHighlight'
+import { MermaidBlock } from './MermaidBlock'
 import { normalizeMarkdown } from './markdownContent'
 import { markdownSchema, rehypeReaderStyles } from './markdownPlugins'
 import { collectTextAnchors, wrapText } from './reader/textAnchors'
@@ -62,6 +63,24 @@ export function parseMdBlocks(md: string): { headings: { level: number; text: st
     if (node.type === 'heading') headings.push({ level: node.depth, text: headingText(node).trim(), blockIdx })
   })
   return { headings, total: blocks.length }
+}
+
+/** 按 remark AST 切出顶层块原文（verbatim），并标记 TipTap 无法无损往返的复杂块。 */
+export function splitMdBlocks(md: string): { source: string; complex: boolean }[] {
+  const root = blockParser.parse(md)
+  const out: { source: string; complex: boolean }[] = []
+  const lossy = (node: RootContent): boolean => {
+    if (node.type === 'table' || node.type === 'math' || node.type === 'html') return true
+    if (node.type === 'code' && (node.lang ?? '').trim().toLowerCase() === 'mermaid') return true
+    if ('children' in node) return (node.children as RootContent[]).some(lossy)
+    return false
+  }
+  for (const node of root.children) {
+    const pos = node.position
+    if (!pos) continue
+    out.push({ source: md.slice(pos.start.offset ?? 0, pos.end.offset ?? md.length), complex: lossy(node) })
+  }
+  return out
 }
 
 /** MD 阅读器：块锚点渲染 + 沉浸排版 + 划词高亮 */
@@ -302,12 +321,24 @@ export function MdReader({
 }
 
 /** Keep parsing and DOM stable while typography, selection and toolbar state change. */
-const MarkdownContent = memo(function MarkdownContent({ source, onLink, renderImage }: Pick<Props, 'onLink' | 'renderImage'> & { source: string }) {
+export const MarkdownContent = memo(function MarkdownContent({ source, onLink, renderImage }: Pick<Props, 'onLink' | 'renderImage'> & { source: string }) {
   return <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkHighlight, remarkMath]}
             rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeReaderStyles, [rehypeKatex, { trust: false, strict: false, maxSize: 20, maxExpand: 1000 }]]}
             urlTransform={transformDocUrl}
             components={{
+              // ```mermaid 代码块画成图表；其余代码块保持原样
+              pre: ({ children }) => {
+                const child = Array.isArray(children) ? children.find(isValidElement) : children
+                if (isValidElement(child)) {
+                  const props = child.props as { className?: string; children?: ReactNode }
+                  if (typeof props.className === 'string' && /(?:^|\s)language-mermaid(?:\s|$)/.test(props.className)) {
+                    const text = Array.isArray(props.children) ? props.children.join('') : String(props.children ?? '')
+                    return <MermaidBlock chart={text.replace(/\n+$/, '')} />
+                  }
+                }
+                return <pre>{children}</pre>
+              },
               table: ({ node: _node, children, ...rest }) => (
                 <div className="md-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...rest}>{children}</table></div>
               ),

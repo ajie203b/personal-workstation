@@ -195,7 +195,7 @@ function finish(bytes: Uint8Array, contentType: string, finalUrl: string): Fetch
   // meta charset 只可能在前几 KB，用 latin1 扫（ASCII 兼容，不会截断多字节）
   const head = new TextDecoder('latin1').decode(bytes.subarray(0, 2048))
   return {
-    body: decodeBytes(bytes.buffer, contentType, head),
+    body: decodeBytes(bytes.buffer as ArrayBuffer, contentType, head),
     finalUrl,
     contentType,
   }

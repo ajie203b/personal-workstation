@@ -8,11 +8,12 @@ import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
 import { readDocumentText } from '@/lib/readDocumentText'
 import {
-  ArrowLeft, Bold, Code, Heading2, Heading3, Highlighter, ImagePlus, Italic, List, ListOrdered, ListPlus, Quote, Redo2, Save, Undo2,
+  ArrowLeft, Bold, Code, Heading2, Heading3, Highlighter, ImagePlus, Italic, List, ListOrdered, ListPlus, Quote, Redo2, Save, Share2, Undo2,
 } from 'lucide-react'
 import { db, type Doc } from '@/db/db'
 import { addTask } from '@/db/tasks'
 import { saveMarkdownDoc } from '@/db/docs'
+import { shareMarkdown } from '@/lib/shareDoc'
 import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { fileToDataUrl } from '@/lib/image'
@@ -233,6 +234,17 @@ export function MdEditorPage() {
         </span>
         <Button variant="primary" size="sm" disabled={saving} onClick={() => void save()}>
           <Save size={14} /> {saving ? '保存中' : '保存'}
+        </Button>
+        <Button
+          size="sm"
+          aria-label="分享 / 导出 Markdown"
+          onClick={() => {
+            const md = (editor?.storage as { markdown?: { getMarkdown: () => string } } | undefined)?.markdown?.getMarkdown() ?? ''
+            if (!md.trim()) { toast('内容为空'); return }
+            void shareMarkdown(title, md).then((msg) => { if (msg) toast(msg) }).catch(() => toast('分享失败，请重试'))
+          }}
+        >
+          <Share2 size={14} /> <span className="hidden sm:inline">分享</span>
         </Button>
       </header>
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   ArrowLeft, BookDown, BookmarkPlus, Copy, Crop, List, ListPlus, MessageSquareText,
-  MoreHorizontal, PanelLeft, PanelRight, PenLine, Settings2,
+  MoreHorizontal, PanelLeft, PanelRight, PenLine, Settings2, Share2,
 } from 'lucide-react'
 import type { Task } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
@@ -14,6 +14,7 @@ import { isFutureTask } from '@/lib/date'
 import { READER_PANEL_LIMITS, useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { readDocumentText } from '@/lib/readDocumentText'
+import { shareMarkdown } from '@/lib/shareDoc'
 import { Button } from '@/shared/ui/Button'
 import { Dialog, Sheet } from '@/shared/ui/Sheet'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem, MenuSeparator } from '@/shared/ui/Menu'
@@ -213,6 +214,11 @@ export function DocReaderPage() {
     void addBookmarkAt(doc, currentLocator).then(() => toast('已添加书签'))
   }, [doc, currentLocator, toast])
 
+  const shareDoc = useCallback(() => {
+    if (!doc || content?.kind !== 'md') { toast('文档还没载入完成'); return }
+    void shareMarkdown(doc.title, content.md).then((msg) => { if (msg) toast(msg) }).catch(() => toast('分享失败，请重试'))
+  }, [doc, content, toast])
+
   if (!doc) {
     return (
       <div className="h-full grid place-items-center text-center px-6">
@@ -295,6 +301,11 @@ export function DocReaderPage() {
                 <PenLine size={15} /> 继续写作
               </MenuItem>
             )}
+            {doc.kind === 'md' && (
+              <MenuItem onSelect={shareDoc}>
+                <Share2 size={15} /> 分享 / 导出
+              </MenuItem>
+            )}
             {doc.kind === 'pdf' && (
               <MenuItem active={shotMode} onSelect={() => setShotMode((v) => !v)}>
                 <Crop size={15} /> {shotMode ? '退出截图模式' : '区域截图批注'}
@@ -315,6 +326,11 @@ export function DocReaderPage() {
         {doc.kind === 'md' && (
           <IconBtn label="继续写作" className="hidden sm:grid" onClick={() => navigate(`/docs/edit/${doc.id}`)}>
             <PenLine size={18} />
+          </IconBtn>
+        )}
+        {doc.kind === 'md' && (
+          <IconBtn label="分享 / 导出 Markdown" className="hidden sm:grid" onClick={shareDoc}>
+            <Share2 size={18} />
           </IconBtn>
         )}
         {doc.kind === 'pdf' && (

@@ -123,19 +123,20 @@ fn version_of(path: &Path) -> Result<String, String> {
     Ok(format!("{}-{}", stamp, metadata.len()))
 }
 
-fn list(roots: &[PathBuf], directory: &Path) -> Result<Folder, String> {
-    let directory = scoped(roots, directory)?;
+fn list(directory: &Path) -> Result<Folder, String> {
+    let directory = fs::canonicalize(directory).map_err(|_| "文件已移动、删除或无法访问".to_string())?;
     let mut entries = Vec::new();
     for item in fs::read_dir(&directory).map_err(|_| "无法读取文件夹")? {
         let Ok(item) = item else { continue };
         let path = item.path();
-        let Ok(canonical) = scoped(roots, &path) else { continue };
+        let Ok(canonical) = fs::canonicalize(&path) else { continue };
         let is_dir = canonical.is_dir();
         if !is_dir && !is_markdown(&canonical) { continue; }
         entries.push(Entry { name: item.file_name().to_string_lossy().into_owned(), path: canonical.to_string_lossy().into_owned(), directory: is_dir });
     }
     entries.sort_by(|a, b| b.directory.cmp(&a.directory).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
-    let parent = directory.parent().filter(|p| covered(roots, p)).map(|p| p.to_string_lossy().into_owned());
+    // 目录浏览不要求已授权：列目录只返回名字；读、写、图片仍按授权范围校验
+    let parent = directory.parent().map(|p| p.to_string_lossy().into_owned());
     Ok(Folder { directory: directory.to_string_lossy().into_owned(), parent, entries })
 }
 
@@ -156,29 +157,37 @@ pub async fn local_markdown_pick(app: tauri::AppHandle, window: tauri::Window, f
 }
 
 #[tauri::command]
-pub async fn local_markdown_list(app: tauri::AppHandle, window: tauri::Window, directory: String) -> Result<Folder, String> {
+pub async fn local_markdown_list(window: tauri::Window, directory: String) -> Result<Folder, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let roots = roots(&app.state::<LocalMarkdownState>(), window.label())?;
-        list(&roots, Path::new(&directory))
+        let state = window.state::<LocalMarkdownState>();
+        let folder = list(Path::new(&directory))?;
+        // 显式浏览过的目录纳入本窗口授权，其中的文档才能打开阅读
+        grant(&state, window.label(), PathBuf::from(&folder.directory))?;
+        Ok(folder)
     }).await.map_err(|e| e.to_string())?
 }
 
+/// 读文件仍按本窗口授权范围校验；范围由用户浏览（list）逐步授予，越界链接直接拒绝。
 #[tauri::command]
 pub async fn local_markdown_read(app: tauri::AppHandle, window: tauri::Window, path: String, known_version: Option<String>) -> Result<Option<Document>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let roots = roots(&app.state::<LocalMarkdownState>(), window.label())?;
         let path = scoped(&roots, Path::new(&path))?;
-        if !is_markdown(&path) { return Err("只能阅读 Markdown 文件".into()); }
-        let mut file = fs::File::open(&path).map_err(|_| "无法读取文件")?;
-        let version = version_of(&path)?;
-        if known_version.as_ref() == Some(&version) { return Ok(None); }
-        const LIMIT: u64 = 8 * 1024 * 1024;
-        let mut data = Vec::new();
-        (&mut file).take(LIMIT + 1).read_to_end(&mut data).map_err(|_| "读取文件失败")?;
-        if data.len() as u64 > LIMIT { return Err("文件超过 8 MB，请通过文档库导入阅读".into()); }
-        let markdown = String::from_utf8(data).map_err(|_| "文件不是 UTF-8 编码，请另存为 UTF-8 后重试")?.trim_start_matches('\u{feff}').to_owned();
-        Ok(Some(Document { path: path.to_string_lossy().into_owned(), markdown, version }))
+        read_document(&path, known_version.as_deref())
     }).await.map_err(|e| e.to_string())?
+}
+
+fn read_document(path: &Path, known_version: Option<&str>) -> Result<Option<Document>, String> {
+    if !is_markdown(path) { return Err("只能阅读 Markdown 文件".into()); }
+    let mut file = fs::File::open(path).map_err(|_| "无法读取文件")?;
+    let version = version_of(path)?;
+    if known_version == Some(&version) { return Ok(None); }
+    const LIMIT: u64 = 8 * 1024 * 1024;
+    let mut data = Vec::new();
+    (&mut file).take(LIMIT + 1).read_to_end(&mut data).map_err(|_| "读取文件失败")?;
+    if data.len() as u64 > LIMIT { return Err("文件超过 8 MB，请通过文档库导入阅读".into()); }
+    let markdown = String::from_utf8(data).map_err(|_| "文件不是 UTF-8 编码，请另存为 UTF-8 后重试")?.trim_start_matches('\u{feff}').to_owned();
+    Ok(Some(Document { path: path.to_string_lossy().into_owned(), markdown, version }))
 }
 
 /// 写回原文件：expected_version 不符说明磁盘已被外部修改，拒绝覆盖，由前端决定刷新或强制保存。
@@ -242,6 +251,21 @@ mod tests {
         let roots = [root.clone()];
         assert!(scoped(&roots, &root.join("src")).is_ok());
         assert!(scoped(&roots, &root.join("..")).is_err());
+    }
+    #[test]
+    fn list_reports_parent_for_upward_navigation() {
+        let base = std::env::temp_dir().join(format!("kairos-md-list-{}-{}", std::process::id(), line!()));
+        let child = base.join("child");
+        fs::create_dir_all(&child).unwrap();
+        fs::write(child.join("a.md"), "# a").unwrap();
+        fs::write(child.join("b.txt"), "ignored").unwrap();
+        let folder = list(&child).unwrap();
+        // 上一级始终可用（直到文件系统根），不再被授权范围裁掉
+        assert_eq!(folder.parent.as_deref(), Some(fs::canonicalize(&base).unwrap().to_string_lossy().as_ref()));
+        assert_eq!(folder.entries.len(), 1);
+        assert_eq!(folder.entries[0].name, "a.md");
+        assert!(list(&base).unwrap().parent.is_some());
+        fs::remove_dir_all(&base).ok();
     }
     #[test]
     fn grants_are_per_window_and_merge_nested() {

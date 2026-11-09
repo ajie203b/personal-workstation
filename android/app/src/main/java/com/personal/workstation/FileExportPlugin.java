@@ -3,12 +3,15 @@ package com.personal.workstation;
 import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+
+import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -59,6 +62,42 @@ public class FileExportPlugin extends Plugin {
             return;
         }
         writeLegacy(call, fileName, mimeType, dataBase64);
+    }
+
+    /** 调起系统分享面板，把导出的文件发给其他应用（微信、QQ、邮件等）。 */
+    @PluginMethod
+    public void shareFile(PluginCall call) {
+        String dataBase64 = call.getString("dataBase64");
+        String fileName = call.getString("fileName");
+        String title = call.getString("title", "分享文档");
+        if (dataBase64 == null || dataBase64.isEmpty() || fileName == null || fileName.isEmpty()) {
+            call.reject("缺少分享内容或文件名");
+            return;
+        }
+        try {
+            File dir = new File(getContext().getCacheDir(), "shared");
+            if (!dir.exists() && !dir.mkdirs()) {
+                call.reject("无法创建分享缓存目录");
+                return;
+            }
+            File file = new File(dir, fileName);
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                out.write(Base64.decode(dataBase64, Base64.DEFAULT));
+            }
+            Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            // */* 让接收方按文件处理，兼容大多数 IM 与文件管理器；纯文本目标也能收到 .md 附件
+            intent.setType("*/*");
+            intent.putExtra(Intent.EXTRA_STREAM, uri);
+            intent.putExtra(Intent.EXTRA_TITLE, title);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(intent, title);
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("分享失败：" + e.getMessage(), e);
+        }
     }
 
     /** 优先打开实际保存目录；系统不支持时打开下载列表，保存结果不会丢失。 */

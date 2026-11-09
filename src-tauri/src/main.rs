@@ -2,6 +2,24 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod local_markdown;
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
+
+/// 导出文本到用户选择的位置（桌面「分享/导出」）：弹另存为对话框，取消返回 None。
+#[tauri::command]
+async fn save_text_file(app: tauri::AppHandle, window: tauri::Window, default_name: String, content: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let selection = app.dialog().file()
+            .set_title("导出 Markdown")
+            .set_file_name(&default_name)
+            .add_filter("Markdown", &["md"])
+            .set_parent(&window)
+            .blocking_save_file();
+        let Some(selection) = selection else { return Ok(None) };
+        let path = selection.into_path().map_err(|_| "无法保存到此路径")?;
+        std::fs::write(&path, content.as_bytes()).map_err(|_| "写入文件失败，可能被占用或设为只读")?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    }).await.map_err(|e| e.to_string())?
+}
 
 fn main() {
     tauri::Builder::default()
@@ -12,6 +30,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            save_text_file,
             local_markdown::local_markdown_pick,
             local_markdown::local_markdown_list,
             local_markdown::local_markdown_read,

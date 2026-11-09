@@ -227,7 +227,7 @@ export function PdfReader({
 
   // 正文宽度滑块同样作用于 PDF：100% 铺满画布，50% 收到一半；zoom 再在此之上倍乘。
   // 手机上不提供宽度设置，直接按屏宽适配；桌面保留按文档记忆的宽度。
-  const widthRatio = phoneLayout ? 1 : Math.min(1, Math.max(0.5, (settings.widthPct ?? 72) / 100))
+  const widthRatio = phoneLayout ? 1 : Math.min(1, Math.max(0.5, (settings.widthPct ?? 90) / 100))
   const fitW = Math.max(180, (containerW - 24) * widthRatio)
   const dispW = Math.max(180, Math.min(Math.round(fitW * zoom), 2600))
   // 页宽很大时按比例降低画布 DPR，避免 2600px 宽、dpr2 的 canvas 把手机内存和渲染拖垮

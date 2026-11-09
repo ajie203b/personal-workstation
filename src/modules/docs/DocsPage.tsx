@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { BookOpen, ChevronRight, FileText, FileType2, FolderInput, FolderOpen, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
+import { BookOpen, ChevronRight, FileText, FileType2, FolderInput, FolderOpen, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Search, Share2, Sparkles, Trash2 } from 'lucide-react'
 import { isTauri } from '@/lib/native'
 import { FileTypeIcon } from '@/shared/FileTypeIcon'
 import { IconDocs } from '@/shared/icons'
 import type { Doc, Folder } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
-import { deleteDoc, importDoc } from '@/db/docs'
+import { deleteDoc, getDocBlob, importDoc } from '@/db/docs'
+import { readDocumentText } from '@/lib/readDocumentText'
+import { shareMarkdown } from '@/lib/shareDoc'
 import { createFolder, deleteFolder, setDocFolder } from '@/db/folders'
 import { useDocsLive, useAllAnnotations } from '@/db/hooks'
 import { dueCards } from '@/lib/review'
@@ -370,6 +372,13 @@ export function DocsPage() {
                 }
                 onEdit={() => navigate(`/docs/edit/${d.id}`)}
                 onRead={() => openDoc({ docId: d.id })}
+                onShare={() => {
+                  void getDocBlob(d.hash).then(async (blob) => {
+                    if (!blob) { toast('文件本体没找到，可能被系统清理了'); return }
+                    const msg = await shareMarkdown(d.title, await readDocumentText(blob))
+                    if (msg) toast(msg)
+                  }).catch(() => toast('分享失败，请重试'))
+                }}
                 folderName={folders.find((f) => f.id === d.folderId)?.name}
                 onMove={() => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
                 onRequestConfirm={() => setPendingDelete(d)}
@@ -512,11 +521,12 @@ interface CardProps {
   onOpen: () => void
   onEdit: () => void
   onRead: () => void
+  onShare: () => void
   onRequestConfirm: () => void
 }
 
 /** 阅读是主动作，菜单集中承载次要操作，卡片高度随内容变化。 */
-function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead, onRequestConfirm }: CardProps) {
+function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead, onShare, onRequestConfirm }: CardProps) {
   return (
     <article id={`doc-${d.id}`} className="card card-hover group relative flex items-start overflow-hidden">
       <button type="button" onClick={onOpen} aria-label={`阅读 ${d.title}`} className="flex flex-1 min-w-0 items-start gap-3 p-4 pr-1 text-left cursor-pointer">
@@ -556,6 +566,7 @@ function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead,
         <MenuContent>
           <DropdownItem onSelect={onRead}><BookOpen size={16} aria-hidden />继续阅读</DropdownItem>
           {d.kind === 'md' && <DropdownItem onSelect={onEdit}><PenLine size={16} aria-hidden />继续写作</DropdownItem>}
+          {d.kind === 'md' && <DropdownItem onSelect={onShare}><Share2 size={16} aria-hidden />分享 / 导出</DropdownItem>}
           <DropdownItem onSelect={onMove}><FolderInput size={16} aria-hidden />移动到文件夹</DropdownItem>
           <MenuSeparator />
           <DropdownItem danger onSelect={onRequestConfirm}><Trash2 size={16} aria-hidden />删除文档…</DropdownItem>
