@@ -105,7 +105,8 @@ function Read-Release {
 
 # ---------- 预检 ----------
 if ($Resume -and -not $Publish) { throw '-Resume 需要与 -Publish 一起使用' }
-$env:JAVA_HOME = Join-Path $env:LOCALAPPDATA 'jdk-21'
+$bundledJdk = Join-Path $env:LOCALAPPDATA 'jdk-21'
+if (Test-Path -LiteralPath "$bundledJdk\bin\java.exe") { $env:JAVA_HOME = $bundledJdk }
 if (-not (Test-Path "$env:JAVA_HOME\bin\java.exe")) { throw "找不到 JDK：$env:JAVA_HOME" }
 $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
