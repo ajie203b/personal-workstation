@@ -49,7 +49,7 @@ export function TaskDetail() {
   const [showTime, setShowTime] = useState(false)
   const folders = useLiveQuery(() => db.folders.toArray(), [], [])
   const folderDocCount = useLiveQuery(
-    () => (task?.folderId ? db.docs.where('folderId').equals(task.folderId).count() : 0),
+    () => (task?.folderId ? db.docs.where('folderId').equals(task.folderId).filter(d => !d.deletedAt).count() : 0),
     [task?.folderId],
     0,
   )

@@ -38,7 +38,8 @@ export async function linkLocalMarkdown(path: string, markdown: string, create =
   const run = previous.catch(() => null).then(async () => {
     const map = (await db.settings.get(LOCAL_MARKDOWN_LINKS))?.value as Record<string, Link> | undefined
     const link = map?.[path]
-    const existing = link ? await db.docs.get(typeof link === 'string' ? link : link.id) : undefined
+    const linked = link ? await db.docs.get(typeof link === 'string' ? link : link.id) : undefined
+    const existing = linked?.deletedAt ? undefined : linked
     if (!existing && !create) return null
     const sourceHash = mdContentHash('local-source', markdown)
     if (existing && typeof link === 'object' && link.sourceHash === sourceHash) return existing

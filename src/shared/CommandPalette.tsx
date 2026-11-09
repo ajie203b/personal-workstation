@@ -48,7 +48,7 @@ export function CommandPalette() {
     [] as Task[],
   )
   const docs = useLiveQuery(
-    () => (open ? db.docs.toArray() : Promise.resolve([] as Doc[])),
+    () => (open ? db.docs.filter(d => !d.deletedAt).toArray() : Promise.resolve([] as Doc[])),
     [open],
     [] as Doc[],
   )

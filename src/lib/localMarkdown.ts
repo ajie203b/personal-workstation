@@ -16,13 +16,27 @@ export const localMarkdown = {
 export function fileName(path: string): string { return path.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) ?? path }
 export function parentPath(path: string): string { return path.replace(/[^\\/]+$/, '') }
 
-/** Relative URL decoding only; canonical scope validation is always performed by Rust. */
+/** Decode relative URLs and resolve Windows verbatim paths; Rust still validates canonical scope. */
 export function localLink(baseFile: string, href: string): { path: string; hash: string } | null {
   if (!href || href.startsWith('#') || /^[a-z][a-z\d+.-]*:/i.test(href) || /^[\\/]/.test(href)) return null
   const [file, hash = ''] = href.split('#', 2)
   try {
     const path = decodeURIComponent(file.split('?')[0])
     if (!path || path.includes('\0')) return null
-    return { path: parentPath(baseFile) + path, hash: decodeURIComponent(hash) }
+    let resolved = parentPath(baseFile) + path
+    // canonicalize on Windows returns a verbatim path: Win32 will not resolve
+    // forward slashes or dot segments after \\?\, so resolve them before IO.
+    if (baseFile.startsWith('\\\\?\\')) {
+      const parts = resolved.slice(4).replace(/\//g, '\\').split('\\')
+      const rootSize = parts[0] === 'UNC' ? 3 : 1
+      const clean = parts.slice(0, rootSize)
+      for (const part of parts.slice(rootSize)) {
+        if (!part || part === '.') continue
+        if (part === '..') { if (clean.length > rootSize) clean.pop() }
+        else clean.push(part)
+      }
+      resolved = '\\\\?\\' + clean.join('\\')
+    }
+    return { path: resolved, hash: decodeURIComponent(hash) }
   } catch { return null }
 }

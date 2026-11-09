@@ -78,7 +78,7 @@ export function FocusMiniBar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   // 已经在今日页就不用这条了（完整番茄钟就在页面上）
-  if (!state || pathname === '/today' || pathname.startsWith('/docs/') || pathname === '/review') return null
+  if (!state || pathname === '/today' || pathname.startsWith('/docs/')) return null
   const mm = Math.floor(state.left / 60)
   const ss = state.left % 60
   return (

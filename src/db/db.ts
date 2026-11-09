@@ -102,6 +102,8 @@ export const DOC_KIND_LABEL: Record<DocKind, string> = {
 /** 文档元信息；文件本体按 hash 存 blobs 表（重命名不丢进度） */
 export interface Doc {
   id: string
+  /** 回收站删除时间；保留正文与阅读记录，手动清空时才彻底删除。 */
+  deletedAt?: number
   hash: string
   title: string
   kind: DocKind

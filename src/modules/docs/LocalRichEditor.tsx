@@ -7,6 +7,7 @@ import { Markdown } from 'tiptap-markdown'
 import { Bold, Check, Code, Heading2, Heading3, Highlighter, Italic, List, ListOrdered, Quote, Redo2, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { MarkdownContent, splitMdBlocks } from './MdReader'
+import { MarkdownWordCount } from './MarkdownWordCount'
 import { HL_COLORS, HighlightMark, type HlColor } from './mdHighlight'
 
 const TOOL_BTN = 'grid place-items-center w-7 h-7 rounded-[8px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer'
@@ -161,5 +162,6 @@ export function LocalRichEditor({ markdown, onChange, renderImage }: {
         </div>
       </div>
     )}
+    <MarkdownWordCount markdown={markdown} />
   </div>
 }

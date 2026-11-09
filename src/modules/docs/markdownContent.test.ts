@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeMarkdown } from './markdownContent'
 
+it('preserves TeX row separators and literal formulas in unfinished code fences', () => {
+  const matrix = String.raw`$\begin{matrix}a\\b\end{matrix}$`
+  expect(normalizeMarkdown(matrix)).toBe(matrix)
+  const code = '```tex\n' + String.raw`\(x&lt;2\)`
+  expect(normalizeMarkdown(code)).toBe(code)
+})
+
 describe('Markdown table recovery', () => {
   it('recovers the pasted table whose pipes and cells are separate paragraphs', () => {
     const source = '|\n配置项\n\n|\n\n填什么\n\n|\n| --- | --- |\n|\n\n接口地址\n\n'

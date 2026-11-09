@@ -32,7 +32,10 @@ export async function importDoc(file: File): Promise<ImportResult> {
   const buf = await file.arrayBuffer()
   const hash = await hashBuffer(buf)
   const existing = await db.docs.where('hash').equals(hash).first()
-  if (existing) return { doc: existing, duplicated: true }
+  if (existing) {
+    if (existing.deletedAt) await restoreDoc(existing.id)
+    return { doc: (await db.docs.get(existing.id))!, duplicated: !existing.deletedAt }
+  }
 
   const { detectKind } = await import('@/lib/docTextIndex')
   const kind: DocKind = detectKind(file.name)
@@ -155,13 +158,39 @@ export async function saveMarkdownDoc(input: {
 }
 
 export async function deleteDoc(doc: Doc): Promise<void> {
+  await db.transaction('rw', db.docs, async () => {
+    const current = await db.docs.get(doc.id)
+    if (!current || current.deletedAt) return
+    const now = Math.max(Date.now(), (current.updatedAt ?? current.addedAt) + 1)
+    await db.docs.update(doc.id, { deletedAt: now, updatedAt: now })
+  })
+}
+
+export async function restoreDoc(id: string): Promise<void> {
+  await db.transaction('rw', [db.docs, db.folders], async () => {
+    const doc = await db.docs.get(id)
+    if (!doc?.deletedAt) return
+    const folderId = doc.folderId && await db.folders.get(doc.folderId) ? doc.folderId : undefined
+    await db.docs.update(id, { deletedAt: undefined, folderId, updatedAt: Math.max(Date.now(), (doc.updatedAt ?? doc.addedAt) + 1) })
+  })
+}
+
+export async function emptyDocTrash(): Promise<void> {
   await db.transaction('rw', [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText, db.tombstones], async () => {
+    for (const doc of await db.docs.filter(d => !!d.deletedAt).toArray()) await purgeDoc(doc.id)
+  })
+}
+
+export async function purgeDoc(id: string): Promise<void> {
+  await db.transaction('rw', [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText, db.tombstones], async () => {
+    const doc = await db.docs.get(id)
+    if (!doc?.deletedAt) return
     await db.docs.delete(doc.id)
     const otherRefs = await db.docs.where('hash').equals(doc.hash).count()
-    if (otherRefs === 0) {
-      await db.blobs.delete(doc.hash)
-      await db.docText.delete(doc.hash)
-    }
+    await markDeleted(doc.id)
+    if (otherRefs > 0) return
+    await db.blobs.delete(doc.hash)
+    await db.docText.delete(doc.hash)
     await db.positions.delete(doc.hash)
     const anns = await db.annotations.where('docHash').equals(doc.hash).toArray()
     await db.annotations.bulkDelete(anns.map((a) => a.id))

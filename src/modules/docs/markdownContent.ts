@@ -39,7 +39,7 @@ function readRow(lines: string[], start: number, limit: number, columns: number)
 
 /** Recover pasted pipe tables only when a matching GFM separator proves their shape. */
 export function normalizeMarkdown(markdown: string): string {
-  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
+  const lines = normalizeMath(markdown).replace(/\r\n?/g, '\n').split('\n')
   const output: string[] = []
   let fence: { char: string; length: number } | null = null
   let protectedUntil = 0
@@ -82,4 +82,19 @@ export function normalizeMarkdown(markdown: string): string {
     i = next - 1
   }
   return output.join('\n')
+}
+
+/** Accept TeX's common delimiters and escaped exports only inside math. */
+function normalizeMath(markdown: string): string {
+  // Consume fenced/inline code first so examples and literal HTML stay intact.
+  return markdown.replace(/(^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\2[^\n]*$|(?![\s\S])))|(`+)[\s\S]*?\3|\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$|(?<![\\$])\$([^$\n]+?)\$(?!\$)/gm,
+    (whole, fence, _marker, code, inline, display, dollarsDisplay, dollarsInline) => {
+      if (fence || code) return whole
+      let math = String(inline ?? display ?? dollarsDisplay ?? dollarsInline)
+        .replace(/&(?:amp;)*(lt|gt|amp|quot|apos|#39|#60|#62|#x3c|#x3e);/gi, (_match, entity: string) => ({ lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", '#39': "'", '#60': '<', '#62': '>', '#x3c': '<', '#x3e': '>' }[entity.toLowerCase()] ?? _match))
+      // Uniformly double-escaped exports have no single TeX commands. Genuine
+      // matrices use single \begin/\end and must retain their \\ row separators.
+      if (/\\\\(?:[a-zA-Z]{2,}|[{}])/.test(math) && !/(?<!\\)\\(?:[a-zA-Z]|[{}])/.test(math)) math = math.replace(/\\\\/g, '\\')
+      return display != null || dollarsDisplay != null ? `\n$$\n${math.trim()}\n$$\n` : `$${math}$`
+    })
 }

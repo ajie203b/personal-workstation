@@ -19,6 +19,7 @@ import { Button } from '@/shared/ui/Button'
 import { fileToDataUrl } from '@/lib/image'
 import { cn } from '@/lib/cn'
 import { HL_COLORS, HighlightMark, type HlColor } from './mdHighlight'
+import { MarkdownWordCount } from './MarkdownWordCount'
 
 const TOOLBAR_BTN = 'grid place-items-center w-8 h-8 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer'
 const TOOLBAR_ON = 'bg-primary-soft text-primary'
@@ -55,6 +56,7 @@ export function MdEditorPage() {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [contentSeed, setContentSeed] = useState<string | null>(null)
+  const [countMarkdown, setCountMarkdown] = useState('')
   const seedingRef = useRef(false)
   const saveRef = useRef<(() => Promise<void>) | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -69,7 +71,7 @@ export function MdEditorPage() {
     }
     void (async () => {
       const doc = await db.docs.get(docId)
-      if (!doc || doc.kind !== 'md') {
+      if (!doc || doc.deletedAt || doc.kind !== 'md') {
         toast('文档不存在或不是 Markdown')
         navigate('/docs')
         return
@@ -79,6 +81,7 @@ export function MdEditorPage() {
       setExisting(doc)
       setTitle(doc.title)
       setContentSeed(md)
+      setCountMarkdown(md)
       setReady(true)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,8 +101,11 @@ export function MdEditorPage() {
       }),
     ],
     content: '',
-    onUpdate: () => {
-      if (!seedingRef.current) setDirty(true)
+    onUpdate: ({ editor }) => {
+      if (!seedingRef.current) {
+        setDirty(true)
+        setCountMarkdown((editor.storage as { markdown?: { getMarkdown: () => string } }).markdown?.getMarkdown() ?? '')
+      }
     },
     editorProps: {
       attributes: {
@@ -338,6 +344,7 @@ export function MdEditorPage() {
           )}
         </div>
       </div>
+      <MarkdownWordCount markdown={countMarkdown} />
     </div>
   )
 }

@@ -166,6 +166,7 @@ export function validateSnapshot(raw: unknown): ValidatedSnapshot {
     num(p, r, 'addedAt', path)
     optNum(p, r, 'updatedAt', path)
     optNum(p, r, 'lastOpenedAt', path)
+    optNum(p, r, 'deletedAt', path)
   })
 
   checkRows(p, raw, 'annotations', (r, path) => {

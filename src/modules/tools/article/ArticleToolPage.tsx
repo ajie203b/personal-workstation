@@ -75,7 +75,7 @@ export function ArticleToolPage() {
     setPreviewHtml(sanitizeHtml(loc.html))
     setImageFailures(loc.failed)
     if (loc.failed.length) toast(`${loc.failed.length} 张图片下载失败，已保留原链接并标注`)
-    const dup = await db.docs.where('sourceUrl').equals(referer).first()
+    const dup = await db.docs.where('sourceUrl').equals(referer).filter(d => !d.deletedAt).first()
     setExisting(dup ?? null)
     if (dup) toast(`已存在《${dup.title}》，是否更新？`, { label: '更新', run: () => void doSave(true) })
   }

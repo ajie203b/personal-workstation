@@ -23,11 +23,11 @@ import { cn } from '@/lib/cn'
 const SELF_SCROLLING = /^\/(docs\/|tools\/math-notes$)/
 
 /**
- * 沉浸模式：阅读器 / 编辑器 / 高亮复习自己带工具栏，全局顶栏与底栏全部让位。
+ * 沉浸模式：阅读器 / 编辑器自己带工具栏，全局顶栏与底栏全部让位。
  * 手机上原来顶栏 56 + 阅读器工具栏 56 + 底栏 56 ≈ 170px 被三套壳吃掉，正文只剩一条缝。
  * 手写计算同理：画布要尽量大，手机上整屏都给它。
  */
-const IMMERSIVE = [/^\/docs\/.+/, /^\/review$/, /^\/tools\/math-notes$/]
+const IMMERSIVE = [/^\/docs\/.+/, /^\/tools\/math-notes$/]
 
 export function AppShell() {
   useThemeEffect()

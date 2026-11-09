@@ -40,7 +40,19 @@ final class TaskWidgetStore {
         prefs(context).edit().putString(key, array.toString()).apply();
     }
 
-    static void addPendingAdd(Context context, JSONObject task) {
+    static synchronized void updateSnapshot(Context context, String payload) {
+        prefs(context).edit().putString(KEY_PAYLOAD, payload).apply();
+    }
+
+    static synchronized void complete(Context context, String id) {
+        if (id == null || id.isEmpty()) return;
+        // JS may already have taken the add. Keep a check even when the add can
+        // be removed locally so the next batch also completes that captured task.
+        removePendingAdd(context, id);
+        addPendingCheck(context, id, System.currentTimeMillis());
+    }
+
+    static synchronized void addPendingAdd(Context context, JSONObject task) {
         String id = task.optString("id", "");
         if (id.isEmpty()) return;
         JSONArray adds = readArray(context, KEY_PENDING_ADDS);
@@ -52,7 +64,7 @@ final class TaskWidgetStore {
         writeArray(context, KEY_PENDING_ADDS, adds);
     }
 
-    static void removePendingAdd(Context context, String id) {
+    static synchronized void removePendingAdd(Context context, String id) {
         if (id == null || id.isEmpty()) return;
         JSONArray adds = readArray(context, KEY_PENDING_ADDS);
         JSONArray next = new JSONArray();
@@ -77,7 +89,7 @@ final class TaskWidgetStore {
      * 同一条任务只保留一次待同步勾选：小格子连点两下不应在 App 里完成两次。
      * 打卡任务的一次点击仍由 App 的 checkInTask 决定是 +1 还是归档。
      */
-    static void addPendingCheck(Context context, String id, long at) {
+    static synchronized void addPendingCheck(Context context, String id, long at) {
         if (id == null || id.isEmpty()) return;
         JSONArray checks = readArray(context, KEY_PENDING_CHECKS);
         for (int i = 0; i < checks.length(); i++) {
@@ -101,20 +113,39 @@ final class TaskWidgetStore {
         writeArray(context, KEY_PENDING_CHECKS, checks);
     }
 
-    /** 读取但不清理；App 应用成功后再 ack，避免崩溃时丢任务。 */
-    static JSONObject take(Context context) {
+    /** 读取但不清理；App 应用成功后再确认这一批，避免崩溃时丢任务。 */
+    static synchronized JSONObject take(Context context) {
         JSONObject out = new JSONObject();
         try {
             out.put("adds", readArray(context, KEY_PENDING_ADDS));
             out.put("checks", readArray(context, KEY_PENDING_CHECKS));
+            out.put("payload", prefs(context).getString(KEY_PAYLOAD, ""));
         } catch (JSONException ignored) { /* 两个数组一定放得进去 */ }
         return out;
     }
 
-    static void ack(Context context) {
+    static synchronized void ack(Context context, JSONObject processed, String payload) {
         prefs(context).edit()
-            .remove(KEY_PENDING_ADDS)
-            .remove(KEY_PENDING_CHECKS)
+            .putString(KEY_PAYLOAD, payload)
+            .putString(KEY_PENDING_ADDS, remaining(readArray(context, KEY_PENDING_ADDS), processed.optJSONArray("adds")).toString())
+            .putString(KEY_PENDING_CHECKS, remaining(readArray(context, KEY_PENDING_CHECKS), processed.optJSONArray("checks")).toString())
             .apply();
+    }
+
+    /** Only acknowledge the batch taken by JS; clicks arriving during the drain survive. */
+    private static JSONArray remaining(JSONArray queued, JSONArray processed) {
+        JSONArray out = new JSONArray();
+        for (int i = 0; i < queued.length(); i++) {
+            JSONObject item = queued.optJSONObject(i);
+            if (item == null) continue;
+            boolean matched = false;
+            for (int j = 0; processed != null && j < processed.length(); j++) {
+                JSONObject done = processed.optJSONObject(j);
+                if (done != null && item.optString("id").equals(done.optString("id"))
+                    && item.optLong("at", 0) == done.optLong("at", 0)) { matched = true; break; }
+            }
+            if (!matched) out.put(item);
+        }
+        return out;
     }
 }

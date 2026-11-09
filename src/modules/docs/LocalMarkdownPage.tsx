@@ -174,14 +174,20 @@ export function LocalMarkdownPage() {
   }, [saveDraft, toast])
 
   const goFile = useCallback(async (path: string, hash = '') => {
-    if (path === file) return
+    if (path === file) {
+      if (hash) {
+        const target = headings.find(h => 'b' + h.blockIdx === hash || slug(h.text) === hash)
+        if (target) setJump({ anchor: 'b' + target.blockIdx, ts: Date.now() })
+      }
+      return
+    }
     if (editingRef.current && !(await saveDraft())) return
     pendingAnchor.current = hash
     setJump(null)
     editingRef.current = false
     setEditing(false)
     setParams({ file: path })
-  }, [setParams, file, saveDraft])
+  }, [setParams, file, saveDraft, headings])
   const browse = useCallback(async (path: string) => {
     try { const next = await localMarkdown.list(path); viewDir.current = next.directory; setFolder(next); setError('') }
     catch (e) { setError(String(e)) }

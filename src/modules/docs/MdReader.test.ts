@@ -44,6 +44,17 @@ function renderAnnotation(text: string, md = '第一段用于复现的高亮文�
 }
 
 describe('Markdown reading highlights', () => {
+  it('renders TeX delimiters and entity-escaped math without corrupting code', () => {
+    renderAnnotation('', String.raw`答案：\(1&lt;a\\le 2\)。集合 $A=\\{x\\mid x^2-3x+2\\le0\\}$。
+
+\[\frac{a}{b}\]
+
+代码：\`\(x&lt;2\)\``.replaceAll('\\`', '`'))
+    expect(container.querySelectorAll('.katex')).toHaveLength(3)
+    expect(container.querySelector('.katex-error')).toBeNull()
+    expect(container.querySelector('mfrac')).not.toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe(String.raw`\(x&lt;2\)`)
+  })
   it('assigns TOC entries to actual rendered blocks after table recovery and adjacent headings', () => {
     const md = '# 标题\n正文\n\n|\n配置项\n|\n填什么\n|\n| --- | --- |\n|\n模型\n| 值 |\n\n## 后续'
     expect(parseMdBlocks(md)).toEqual({

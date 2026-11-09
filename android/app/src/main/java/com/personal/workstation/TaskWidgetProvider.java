@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -30,10 +29,11 @@ import java.util.Set;
  *
  * 数据由 TaskWidgetPlugin 从网页侧同步；本地待同步队列（TaskWidgetStore）叠加在快照上：
  * - 右上「+」：原生添加框，直接写入队列并刷新
- * - 勾选圈：原生透明撒花 Activity，立即完成并写队列
+ * - 勾选圈：私有广播立即完成并写队列，不启动 Activity
  * App 启动/回前台时通过 TaskWidgetPlugin 的 take/ack 把队列并进 IndexedDB。
  */
 public class TaskWidgetProvider extends AppWidgetProvider {
+
 
     /** 小米 Widget 展现刷新（曝光触发，见小米小部件技术规范 2） */
     private static final String MIUI_APPWIDGET_UPDATE = "miui.appwidget.action.APPWIDGET_UPDATE";
@@ -58,21 +58,24 @@ public class TaskWidgetProvider extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
-        for (int id : appWidgetIds) {
-            appWidgetManager.updateAppWidget(id, build(context, id));
-        }
+        refresh(context, appWidgetIds);
     }
 
     /** 用户在桌面/负一屏拉伸格子后立刻重排，不用等下一次任务变动 */
     @Override
     public void onAppWidgetOptionsChanged(Context context, AppWidgetManager appWidgetManager, int appWidgetId, Bundle newOptions) {
-        appWidgetManager.updateAppWidget(appWidgetId, build(context, appWidgetId));
+        refresh(context, new int[] {appWidgetId});
     }
 
     static void refreshAll(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         ComponentName name = new ComponentName(context, TaskWidgetProvider.class);
         int[] ids = manager.getAppWidgetIds(name);
+        refresh(context, ids);
+    }
+
+    private static synchronized void refresh(Context context, int[] ids) {
+        AppWidgetManager manager = AppWidgetManager.getInstance(context);
         for (int id : ids) manager.updateAppWidget(id, build(context, id));
     }
 
@@ -109,6 +112,15 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         );
     }
 
+    private static PendingIntent completeIntent(Context context, String taskId) {
+        Intent intent = new Intent(context, WidgetCompleteReceiver.class);
+        // Stable task identity instead of row identity: a stale launcher row must
+        // never complete the next task that happens to occupy the same row.
+        intent.setData(Uri.parse("kairos-widget://complete/" + Uri.encode(taskId)));
+        intent.putExtra("task_id", taskId);
+        return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
     private static RemoteViews build(Context context, int appWidgetId) {
         boolean compact = isCompact(context, appWidgetId);
         RemoteViews views = new RemoteViews(
@@ -133,9 +145,9 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         int[] checkIds = {R.id.widget_check_1, R.id.widget_check_2, R.id.widget_check_3, R.id.widget_check_4};
         int maxRows = compact ? 3 : 4;
 
-        SharedPreferences prefs = TaskWidgetStore.prefs(context);
-        String raw = prefs.getString(TaskWidgetStore.KEY_PAYLOAD, null);
-        boolean hasPendingAdds = TaskWidgetStore.readArray(context, TaskWidgetStore.KEY_PENDING_ADDS).length() > 0;
+        JSONObject snapshot = TaskWidgetStore.take(context);
+        String raw = snapshot.optString("payload", "");
+        boolean hasPendingAdds = snapshot.optJSONArray("adds").length() > 0;
 
         if ((raw == null || raw.isEmpty()) && !hasPendingAdds) {
             showHint(views, "打开应用后自动同步待办");
@@ -159,7 +171,7 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         }
 
         try {
-            JSONArray tasks = mergePending(context, payloadTasks);
+            JSONArray tasks = mergePending(snapshot, payloadTasks);
             int taskCount = tasks.length();
             int visible = 0;
             for (int i = 0; i < rowIds.length; i++) {
@@ -194,10 +206,10 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                                         base + 30 + i
                                     )
                             );
-                            // 勾选圈：透明 Activity 立刻完成 + 撒花，不打开 App
+                            // 勾选圈：私有广播直接完成，不启动阻塞桌面触摸的 Activity
                             views.setOnClickPendingIntent(
                                 checkIds[i],
-                                widgetActivityIntent(context, WidgetCompleteActivity.class, id, base + 10 + i)
+                                completeIntent(context, id)
                             );
                         }
                         views.setViewVisibility(rowIds[i], View.VISIBLE);
@@ -238,9 +250,9 @@ public class TaskWidgetProvider extends AppWidgetProvider {
      * - 待勾选任务：普通任务直接消失；打卡任务先 +1，打满才消失
      * 这里只改 RemoteViews 的显示，不写 IndexedDB；等 App 启动后由 take/ack 并入。
      */
-    private static JSONArray mergePending(Context context, JSONArray payloadTasks) throws JSONException {
-        JSONArray pendingAdds = TaskWidgetStore.readArray(context, TaskWidgetStore.KEY_PENDING_ADDS);
-        JSONArray pendingChecks = TaskWidgetStore.readArray(context, TaskWidgetStore.KEY_PENDING_CHECKS);
+    private static JSONArray mergePending(JSONObject snapshot, JSONArray payloadTasks) throws JSONException {
+        JSONArray pendingAdds = snapshot.optJSONArray("adds");
+        JSONArray pendingChecks = snapshot.optJSONArray("checks");
 
         List<JSONObject> merged = new ArrayList<>();
         Set<String> seen = new HashSet<>();

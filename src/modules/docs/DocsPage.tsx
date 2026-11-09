@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { BookOpen, ChevronRight, FileText, FileType2, FolderInput, FolderOpen, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Search, Share2, Sparkles, Trash2 } from 'lucide-react'
+import { BookOpen, ChevronRight, FileText, FileType2, FolderInput, FolderOpen, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Search, Share2, Trash2 } from 'lucide-react'
 import { isTauri } from '@/lib/native'
 import { FileTypeIcon } from '@/shared/FileTypeIcon'
 import { IconDocs } from '@/shared/icons'
@@ -10,9 +10,8 @@ import { deleteDoc, getDocBlob, importDoc } from '@/db/docs'
 import { readDocumentText } from '@/lib/readDocumentText'
 import { shareMarkdown } from '@/lib/shareDoc'
 import { createFolder, deleteFolder, setDocFolder } from '@/db/folders'
-import { useDocsLive, useAllAnnotations } from '@/db/hooks'
-import { dueCards } from '@/lib/review'
-import { fmtListDate, todayStr } from '@/lib/date'
+import { useDocsLive } from '@/db/hooks'
+import { fmtListDate } from '@/lib/date'
 import { DocCardSkeleton } from '@/shared/ui/Skeleton'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
@@ -26,6 +25,8 @@ import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 import { morphOpen } from '@/lib/viewTransition'
 import { formatBytes } from '@/lib/format'
+import { DocDragWorkspace, DocDragItem, useDocDropTarget, TRASH_FOLDER, UNFILED_FOLDER } from './DocDrag'
+import { DocTrash } from './DocTrash'
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
 export function DocsPage() {
@@ -35,6 +36,8 @@ export function DocsPage() {
   const [params, setParams] = useSearchParams()
   const [menuOpen, setMenuOpen] = useState(false)
   const activeFolder = params.get('folder')
+  const inTrash = activeFolder === TRASH_FOLDER
+  const trashCount = useLiveQuery(() => db.docs.filter(d => !!d.deletedAt).count(), [], 0)
   const folders = useLiveQuery(() => db.folders.toArray(), [], [] as Folder[])
   const folderCounts = useMemo(() => {
     const m: Record<string, number> = {}
@@ -187,7 +190,7 @@ export function DocsPage() {
           try {
             const r = await importDoc(file)
             // 在某个文件夹里导入 → 直接归入该夹
-            if (activeFolder && !r.duplicated) await setDocFolder(r.doc.id, activeFolder)
+            if (activeFolder && !inTrash && !r.duplicated) await setDocFolder(r.doc.id, activeFolder)
             if (r.duplicated) dup++
             else added++
           } catch {
@@ -210,6 +213,15 @@ export function DocsPage() {
   }
 
   return (
+    <DocDragWorkspace docs={docs} onDrop={async (doc, target) => {
+      try {
+        if (target === TRASH_FOLDER) { await deleteDoc(doc); toast('已移入回收站') }
+        else if (target === UNFILED_FOLDER || folders.some(f => f.id === target)) {
+          await setDocFolder(doc.id, target === UNFILED_FOLDER ? undefined : target)
+          toast(target === UNFILED_FOLDER ? '已移回未分类' : '已移动到文件夹')
+        }
+      } catch { toast('移动失败，请重试') }
+    }}>
     <div className="mx-auto w-full max-w-[1500px] px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 cascade">
       {/* 桌面：标题 + 搜索 / 写作 / 导入 一行放得下 */}
       <div className="hidden md:flex md:items-start gap-3">
@@ -225,7 +237,6 @@ export function DocsPage() {
             aria-label="搜索文档"
             className="h-9 w-52 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
           />
-          <ReviewButton />
           <Button size="sm" onClick={() => navigate('/docs/new')}>
             <PenLine size={15} /> 写文档
           </Button>
@@ -264,7 +275,6 @@ export function DocsPage() {
             <>
               <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
               <div className="pop absolute right-0 top-11 z-40 w-40 p-1.5 flex flex-col">
-                <MenuItem icon={Sparkles} onClick={() => { setMenuOpen(false); navigate('/review') }}>高亮复习</MenuItem>
                 <MenuItem icon={FolderPlus} onClick={() => { setMenuOpen(false); setFolderName(''); setFolderDialog({ mode: 'create' }) }}>新建文件夹</MenuItem>
               </div>
             </>
@@ -278,6 +288,7 @@ export function DocsPage() {
           folders={folders}
           counts={folderCounts}
           total={uncategorizedCount}
+          trashCount={trashCount}
           active={activeFolder}
           onPick={setFolderParam}
           onCreate={() => { setFolderName(''); setFolderDialog({ mode: 'create' }) }}
@@ -286,12 +297,13 @@ export function DocsPage() {
 
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* 手机 / 平板：顶部横向标签 */}
-          <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-            <FolderChip active={!activeFolder} onClick={() => setFolderParam(null)}>
+          <div className="lg:hidden flex items-start gap-2">
+          <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+            <FolderChip dropId={UNFILED_FOLDER} active={!activeFolder} onClick={() => setFolderParam(null)}>
               未分类 <span className="opacity-60">{uncategorizedCount}</span>
             </FolderChip>
             {folders.map((f) => (
-              <FolderChip key={f.id} active={activeFolder === f.id} onClick={() => setFolderParam(f.id)}>
+              <FolderChip key={f.id} dropId={f.id} active={activeFolder === f.id} onClick={() => setFolderParam(f.id)}>
                 {f.name} <span className="opacity-60">{folderCounts[f.id] ?? 0}</span>
               </FolderChip>
             ))}
@@ -302,7 +314,7 @@ export function DocsPage() {
             >
               <FolderPlus size={13} /> 新建文件夹
             </button>
-            {activeFolder && (
+            {activeFolder && !inTrash && (
               <button
                 type="button"
                 onClick={() => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)}
@@ -312,7 +324,10 @@ export function DocsPage() {
               </button>
             )}
           </div>
+          <FolderChip dropId={TRASH_FOLDER} active={inTrash} onClick={() => setFolderParam(TRASH_FOLDER)}><Trash2 size={13} />回收站 <span className="opacity-60">{trashCount}</span></FolderChip>
+          </div>
 
+      {inTrash ? <DocTrash /> : <>
       {pending.length > 0 && (
         <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
           {pending.map((p) => <ImportingCard key={p.id} name={p.name} at={p.at} />)}
@@ -358,8 +373,7 @@ export function DocsPage() {
             const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
             const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
             return (
-              <DocCard
-                key={d.id}
+              <DocDragItem key={d.id} doc={d}><DocCard
                 doc={d}
                 pct={pct}
                 hit={hit}
@@ -382,11 +396,12 @@ export function DocsPage() {
                 folderName={folders.find((f) => f.id === d.folderId)?.name}
                 onMove={() => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
                 onRequestConfirm={() => setPendingDelete(d)}
-              />
+              /></DocDragItem>
             )
           })}
         </div>
       )}
+      </>}
         </div>
       </div>
 
@@ -491,8 +506,8 @@ export function DocsPage() {
       <Dialog
         open={!!pendingDelete}
         onOpenChange={(v) => !v && setPendingDelete(null)}
-        title="删除文档？"
-        description={`「${pendingDelete?.title ?? ''}」及其批注、进度将被删除，文件本体不可恢复。`}
+        title="移入回收站？"
+        description={`「${pendingDelete?.title ?? ''}」会移入回收站，可以随时恢复正文、批注和阅读进度。`}
       >
         <div className="flex justify-end gap-2">
           <Button onClick={() => setPendingDelete(null)}>取消</Button>
@@ -501,7 +516,7 @@ export function DocsPage() {
             onClick={() => {
               const d = pendingDelete
               setPendingDelete(null)
-              if (d) void deleteDoc(d).then(() => toast('文档已删除'))
+              if (d) void deleteDoc(d).then(() => toast('已移入回收站')).catch(() => toast('删除失败，请重试'))
             }}
           >
             确认删除
@@ -509,6 +524,7 @@ export function DocsPage() {
         </div>
       </Dialog>
     </div>
+    </DocDragWorkspace>
   )
 }
 
@@ -559,7 +575,7 @@ function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead,
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button type="button" aria-label={`文档操作：${d.title}`} className="grid place-items-center w-9 h-9 rounded-[10px] m-2 ml-0 shrink-0 text-on-surface-2 hover:bg-surface-2 hover:text-on-surface cursor-pointer transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 data-[state=open]:opacity-100">
+          <button type="button" onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} aria-label={`文档操作：${d.title}`} className="grid place-items-center w-9 h-9 rounded-[10px] m-2 ml-0 shrink-0 text-on-surface-2 hover:bg-surface-2 hover:text-on-surface cursor-pointer transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 data-[state=open]:opacity-100">
             <MoreHorizontal size={20} strokeWidth={1.8} aria-hidden />
           </button>
         </DropdownMenuTrigger>
@@ -575,12 +591,16 @@ function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead,
     </article>
   )
 }
-function FolderChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function FolderChip({ active, onClick, children, dropId }: { active: boolean; onClick: () => void; children: React.ReactNode; dropId: string }) {
+  const { setNodeRef, isOver } = useDocDropTarget(dropId)
   return (
     <button
+      ref={setNodeRef}
+      data-doc-drop={dropId}
       type="button"
       onClick={onClick}
       className={cn(
+        isOver && 'ring-2 ring-primary bg-primary-soft',
         'shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-[12px] transition-colors cursor-pointer',
         active ? 'bg-primary-soft border-primary/40 text-primary font-medium' : 'bg-surface-2 border-outline text-on-surface-2 hover:text-on-surface',
       )}
@@ -595,37 +615,6 @@ function segLabel(kind: Doc['kind'], seg: number): string {
   if (kind === 'pptx') return `第${seg}片`
   if (kind === 'epub') return `第${seg}章`
   return `#${seg}`
-}
-
-/**
- * 高亮复习入口：常驻文档页顶部。
- * 原来只在今日页「有到期卡片」时才冒出来一张卡，入口等于没有 —— 现在固定在文档库工具条上。
- */
-function ReviewButton() {
-  const navigate = useNavigate()
-  const anns = useAllAnnotations()
-  const due = useMemo(() => dueCards(anns, todayStr()).length, [anns])
-  return (
-    <button
-      type="button"
-      onClick={() => navigate('/review')}
-      aria-label={due > 0 ? `高亮复习，${due} 张到期` : '高亮复习'}
-      title={due > 0 ? `${due} 张高亮到期` : '还没有到期的高亮'}
-      className={cn(
-        'relative h-9 px-3 rounded-[10px] border text-[13px] inline-flex items-center gap-1.5 transition-colors cursor-pointer',
-        due > 0
-          ? 'border-primary/40 bg-primary-soft text-primary'
-          : 'border-outline text-on-surface-2 hover:text-on-surface',
-      )}
-    >
-      <Sparkles size={15} /> 复习
-      {due > 0 && (
-        <span className="grid place-items-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-[10.5px] font-semibold tabular-nums">
-          {due > 99 ? '99+' : due}
-        </span>
-      )}
-    </button>
-  )
 }
 
 /**
@@ -672,11 +661,12 @@ function ImportingCard({ name, at }: { name: string; at: number }) {
 
 /** 桌面侧边文件夹树（手机用顶部横向标签） */
 function FolderTree({
-  folders, counts, total, active, onPick, onCreate, onDelete,
+  folders, counts, total, trashCount, active, onPick, onCreate, onDelete,
 }: {
   folders: Folder[]
   counts: Record<string, number>
   total: number
+  trashCount: number
   active: string | null
   onPick: (id: string | null) => void
   onCreate: () => void
@@ -685,10 +675,11 @@ function FolderTree({
   return (
     <aside className="hidden lg:flex flex-col gap-0.5 w-44 shrink-0 sticky top-2">
       <p className="text-[11px] font-medium text-on-surface-2 tracking-wide px-2 mb-1">文件夹</p>
-      <TreeItem active={!active} onClick={() => onPick(null)} icon={FileText} label="未分类文档" count={total} />
+      <TreeItem dropId={UNFILED_FOLDER} active={!active} onClick={() => onPick(null)} icon={FileText} label="未分类文档" count={total} />
       {folders.map((f) => (
-        <TreeItem key={f.id} active={active === f.id} onClick={() => onPick(f.id)} icon={FolderInput} label={f.name} count={counts[f.id] ?? 0} />
+        <TreeItem key={f.id} dropId={f.id} active={active === f.id} onClick={() => onPick(f.id)} icon={FolderInput} label={f.name} count={counts[f.id] ?? 0} />
       ))}
+      <TreeItem dropId={TRASH_FOLDER} active={active === TRASH_FOLDER} onClick={() => onPick(TRASH_FOLDER)} icon={Trash2} label="回收站" count={trashCount} />
       <button
         type="button"
         onClick={onCreate}
@@ -696,7 +687,7 @@ function FolderTree({
       >
         <FolderPlus size={14} /> 新建文件夹
       </button>
-      {active && (
+      {active && active !== TRASH_FOLDER && (
         <button
           type="button"
           onClick={onDelete}
@@ -709,12 +700,16 @@ function FolderTree({
   )
 }
 
-function TreeItem({ active, onClick, icon: Icon, label, count }: { active: boolean; onClick: () => void; icon: typeof FileText; label: string; count: number }) {
+function TreeItem({ active, onClick, icon: Icon, label, count, dropId }: { active: boolean; onClick: () => void; icon: typeof FileText; label: string; count: number; dropId: string }) {
+  const { setNodeRef, isOver } = useDocDropTarget(dropId)
   return (
     <button
+      ref={setNodeRef}
+      data-doc-drop={dropId}
       type="button"
       onClick={onClick}
       className={cn(
+        isOver && 'ring-2 ring-primary bg-primary-soft',
         'flex items-center gap-2 h-8 px-2 rounded-[8px] text-[13px] transition-colors cursor-pointer text-left',
         active ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
       )}

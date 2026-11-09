@@ -16,6 +16,7 @@ import { usePinch } from '@/lib/usePinch'
 import { remarkHighlight } from './mdHighlight'
 import { MermaidBlock } from './MermaidBlock'
 import { normalizeMarkdown } from './markdownContent'
+import { MarkdownWordCount } from './MarkdownWordCount'
 import { markdownSchema, rehypeReaderStyles } from './markdownPlugins'
 import { collectTextAnchors, wrapText } from './reader/textAnchors'
 
@@ -70,7 +71,7 @@ export function splitMdBlocks(md: string): { source: string; complex: boolean }[
   const root = blockParser.parse(md)
   const out: { source: string; complex: boolean }[] = []
   const lossy = (node: RootContent): boolean => {
-    if (node.type === 'table' || node.type === 'math' || node.type === 'html') return true
+    if (node.type === 'table' || node.type === 'math' || node.type === 'inlineMath' || node.type === 'html') return true
     if (node.type === 'code' && (node.lang ?? '').trim().toLowerCase() === 'mermaid') return true
     if ('children' in node) return (node.children as RootContent[]).some(lossy)
     return false
@@ -78,7 +79,8 @@ export function splitMdBlocks(md: string): { source: string; complex: boolean }[
   for (const node of root.children) {
     const pos = node.position
     if (!pos) continue
-    out.push({ source: md.slice(pos.start.offset ?? 0, pos.end.offset ?? md.length), complex: lossy(node) })
+    const source = md.slice(pos.start.offset ?? 0, pos.end.offset ?? md.length)
+    out.push({ source, complex: lossy(node) || /\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/.test(source) })
   }
   return out
 }
@@ -301,11 +303,12 @@ export function MdReader({
   }, [checkSelection])
 
   return (
+    <div className={`h-full min-h-0 flex flex-col theme-${settings.theme}`}>
     <div
       ref={scrollRef}
       onScroll={onScroll}
       style={{ touchAction: 'pan-x pan-y' }}
-      className={`h-full overflow-y-auto overscroll-contain theme-${settings.theme}`}
+      className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
       <div
         // 宽度完全交给滑块：100% 就是可用宽度，不再被固定 maxWidth 卡在 900px
@@ -316,6 +319,8 @@ export function MdReader({
           <MarkdownContent source={source} onLink={onLink} renderImage={renderImage} />
         </div>
       </div>
+    </div>
+    <MarkdownWordCount markdown={md} />
     </div>
   )
 }
@@ -359,6 +364,6 @@ export const MarkdownContent = memo(function MarkdownContent({ source, onLink, r
               ),
             }}
           >
-            {source}
+            {normalizeMarkdown(source)}
           </ReactMarkdown>
 })

@@ -24,6 +24,17 @@ it('marks table / display math as complex and slices them verbatim', () => {
   expect(blocks[3].source).toBe('$$\n\\frac{a}{b}\n$$')
 })
 
+it('previews TeX delimiters and keeps all math out of the lossy rich text editor', async () => {
+  const markdown = String.raw`行内 \(1&lt;a\\le2\)，以及 $x^2$。
+
+\[\frac{a}{b}\]`
+  expect(splitMdBlocks(markdown).every(b => b.complex)).toBe(true)
+  await act(async () => root.render(createElement(LocalRichEditor, { markdown, onChange: vi.fn() })))
+  expect(container.querySelectorAll('.katex')).toHaveLength(3)
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="切换源码模式"]')!.click())
+  expect(container.querySelector('textarea')!.value).toBe(markdown)
+})
+
 it('rich edit view previews the table and the source fallback stays verbatim', async () => {
   const onChange = vi.fn()
   await act(async () => root.render(createElement(LocalRichEditor, { markdown: MD, onChange })))

@@ -26,6 +26,13 @@ function payload(patch: Partial<SyncPayload> = {}): SyncPayload {
 }
 
 describe('mergePayloads', () => {
+  it('回收站与恢复按修改时间同步，旧副本不会让已删除的文档重现', () => {
+    const deleted = doc('d', { deletedAt: 2000, updatedAt: 2000 })
+    const trashed = mergePayloads(payload({ docs: [doc('d')] }), payload({ docs: [deleted] })).payload
+    expect(trashed.docs[0].deletedAt).toBe(2000)
+    const restored = { ...deleted, deletedAt: undefined, updatedAt: 3000 }
+    expect(mergePayloads(trashed, payload({ docs: [restored] })).payload.docs[0].deletedAt).toBeUndefined()
+  })
   it('没有远端时原样返回', () => {
     const local = payload({ tasks: [task('a')] })
     const r = mergePayloads(local, null)

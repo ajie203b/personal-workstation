@@ -57,6 +57,8 @@
                 android:resource="@xml/task_widget_info" />
         </receiver>
 
+        <receiver android:name=".WidgetCompleteReceiver" android:exported="false" />
+
         <!-- 小组件「+」：原生添加框，不开主界面 -->
         <activity
             android:name=".WidgetAddTaskActivity"

@@ -22,7 +22,6 @@ export const PAGE_TITLE: Record<string, string> = {
   '/today': '今日',
   '/tasks': '任务清单',
   '/stats': '统计',
-  '/review': '高亮复习',
   '/docs': '文档工作站',
   '/docs/new': '写文档',
   '/tools': '工具',

@@ -33,12 +33,7 @@ public class WidgetCompleteActivity extends Activity {
 
         String taskId = getIntent().getStringExtra("task_id");
         if (taskId != null && !taskId.isEmpty()) {
-            if (TaskWidgetStore.hasPendingAdd(this, taskId)) {
-                // 还没同步进 App 的新任务被勾掉：直接从待添加队列移除，不必再让 App 添加
-                TaskWidgetStore.removePendingAdd(this, taskId);
-            } else {
-                TaskWidgetStore.addPendingCheck(this, taskId, System.currentTimeMillis());
-            }
+            TaskWidgetStore.complete(this, taskId);
             TaskWidgetProvider.refreshAll(this);
         }
 

@@ -22,7 +22,7 @@ export async function renameFolder(id: string, name: string): Promise<void> {
 export async function deleteFolder(id: string): Promise<void> {
   await db.transaction('rw', [db.folders, db.docs, db.tasks, db.tombstones], async () => {
     const docs = await db.docs.where('folderId').equals(id).toArray()
-    for (const d of docs) await db.docs.update(d.id, { folderId: undefined })
+    for (const d of docs) await db.docs.update(d.id, { folderId: undefined, updatedAt: Date.now() })
     const tasks = await db.tasks.where('folderId').equals(id).toArray()
     for (const t of tasks) await db.tasks.update(t.id, { folderId: undefined, updatedAt: Date.now() })
     await db.folders.delete(id)
@@ -31,7 +31,7 @@ export async function deleteFolder(id: string): Promise<void> {
 }
 
 export async function setDocFolder(docId: string, folderId?: string): Promise<void> {
-  await db.docs.update(docId, { folderId })
+  await db.docs.update(docId, { folderId, updatedAt: Date.now() })
 }
 
 /** 任务关联文件夹：同一时间一个任务只挂一个夹；换夹时把旧夹的反向引用清掉 */

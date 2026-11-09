@@ -22,10 +22,7 @@ public class TaskWidgetPlugin extends Plugin {
     public void update(PluginCall call) {
         String payload = call.getString("payload");
         Context context = getContext();
-        TaskWidgetStore.prefs(context)
-            .edit()
-            .putString(TaskWidgetStore.KEY_PAYLOAD, payload == null ? "{}" : payload)
-            .apply();
+        TaskWidgetStore.updateSnapshot(context, payload == null ? "{}" : payload);
         TaskWidgetProvider.refreshAll(context);
         call.resolve();
     }
@@ -40,10 +37,13 @@ public class TaskWidgetPlugin extends Plugin {
         call.resolve(out);
     }
 
-    /** 网页侧已并入 IndexedDB，清空队列 */
+    /** 与本批确认一起替换快照；同步期间新来的操作继续保留。 */
     @PluginMethod
     public void ack(PluginCall call) {
-        TaskWidgetStore.ack(getContext());
+        String payload = call.getString("payload");
+        if (payload == null) { call.reject("Missing widget snapshot"); return; }
+        TaskWidgetStore.ack(getContext(), call.getData(), payload);
+        TaskWidgetProvider.refreshAll(getContext());
         call.resolve();
     }
 }

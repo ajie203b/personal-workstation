@@ -74,7 +74,7 @@ export function useDocsLive(): Doc[] | undefined {
   return useLiveQuery(
     async () => {
       const all = await db.docs.toArray()
-      return all.sort((a, b) => (b.lastOpenedAt ?? b.addedAt) - (a.lastOpenedAt ?? a.addedAt))
+      return all.filter(d => !d.deletedAt).sort((a, b) => (b.lastOpenedAt ?? b.addedAt) - (a.lastOpenedAt ?? a.addedAt))
     },
     [],
   )
@@ -82,7 +82,7 @@ export function useDocsLive(): Doc[] | undefined {
 
 export function useDoc(id: string | undefined): Doc | undefined {
   return useLiveQuery(
-    () => (id ? db.docs.get(id) : undefined),
+    async () => { const doc = id ? await db.docs.get(id) : undefined; return doc?.deletedAt ? undefined : doc },
     [id],
     undefined,
   )
@@ -97,11 +97,6 @@ export function useAnnotations(docHash: string | undefined): Annotation[] {
     [docHash],
     EMPTY_ANNS,
   )
-}
-
-/** 全部批注（复习队列 / 今日复习入口用） */
-export function useAllAnnotations(): Annotation[] {
-  return useLiveQuery(() => db.annotations.toArray(), [], EMPTY_ANNS)
 }
 
 /** 反向链接：引用了当前文档的任务（可逆查询，方案 2.2） */
@@ -121,7 +116,7 @@ export function useRecentDocs(limit = 3): Doc[] {
   return useLiveQuery(
     async () => {
       const all = await db.docs.orderBy('lastOpenedAt').reverse().toArray()
-      return all.filter((d) => d.lastOpenedAt).slice(0, limit)
+      return all.filter((d) => !d.deletedAt && d.lastOpenedAt).slice(0, limit)
     },
     [limit],
     EMPTY_DOCS,

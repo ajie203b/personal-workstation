@@ -31,7 +31,6 @@ const MdEditorPage = lazy(() => import('@/modules/docs/MdEditorPage').then((m) =
 const LocalMarkdownPage = lazy(() => import('@/modules/docs/LocalMarkdownPage').then(m => ({ default: m.LocalMarkdownPage })))
 const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ default: m.StatsPage })))
-const ReviewPage = lazy(() => import('@/modules/review/ReviewPage').then((m) => ({ default: m.ReviewPage })))
 const ToolsPage = lazy(() => import('@/modules/tools/ToolsPage').then((m) => ({ default: m.ToolsPage })))
 const FanqiePage = lazy(() => import('@/modules/tools/FanqiePage').then((m) => ({ default: m.FanqiePage })))
 const MediaParsePage = lazy(() => import('@/modules/tools/MediaParsePage').then((m) => ({ default: m.MediaParsePage })))
@@ -149,7 +148,7 @@ export default function App() {
             <Route path="tools/ocr" element={<OcrPage />} />
             <Route path="tools/math-notes" element={<MathNotesPage />} />
             <Route path="tools/njust-report" element={<NjustReportPage />} />
-            <Route path="review" element={<ReviewPage />} />
+            <Route path="review" element={<Navigate to="/docs" replace />} />
             <Route path="docs" element={<DocsPage />} />
             <Route path="docs/new" element={<MdEditorRoute />} />
             <Route path="docs/edit/:docId" element={<MdEditorRoute />} />
