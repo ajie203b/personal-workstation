@@ -1,5 +1,12 @@
 # 更新记录
 
+## v3.6.12 · 2026年11月9日
+
+- feat: unify Explorer documents with workstation reading tools
+- docs: record v3.6.11 release artifact
+
+安卓版本码为 87。
+
 ## v3.6.11 · 2026年11月8日
 
 - Windows 支持从文件资源管理器打开 Markdown：每个文件独立窗口，互不影响，也不打断主窗口正在进行的工作。
