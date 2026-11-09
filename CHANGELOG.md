@@ -2,8 +2,13 @@
 
 ## v3.6.12 · 2026年11月9日
 
-- feat: unify Explorer documents with workstation reading tools
-- docs: record v3.6.11 release artifact
+- 文档工作站编写的 Markdown 支持分享导出为 .md 文件，Windows 走系统保存对话框。
+- 资源管理器打开的文档与工作站阅读工具打通：可转任务、加批注评论，不再割裂。
+- 资源管理器文档的编辑态改为阅读式富文本视图：普通段落直接所见即所得编辑；表格、公式、Mermaid 图表与 HTML 按原样保留，逐块编辑源码，往返不丢内容。
+- 编辑按钮移到右上角刷新按钮左侧，减少阅读时的遮挡。
+- 本地文档浏览支持进入上级文件夹。
+- 阅读默认宽度调整为 90%。
+- 完整渲染 Mermaid 图表与数学公式（KaTeX）。
 
 安卓版本码为 87。
 
