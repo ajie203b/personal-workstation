@@ -1,8 +1,20 @@
 {
-  "generatedAt": "2026-11-09T13:56:07.407Z",
+  "generatedAt": "2026-11-10T13:29:26.549Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
+    {
+      "name": "Claude Fable 5.2 (Max)",
+      "score": 64.6
+    },
+    {
+      "name": "Claude Fable 5.2 (Xhigh)",
+      "score": 62.2
+    },
+    {
+      "name": "Claude Fable 5.2 (High)",
+      "score": 61.8
+    },
     {
       "name": "Gemini 4 Carbon (High)",
       "score": 60
@@ -24,6 +36,10 @@
       "score": 56.9
     },
     {
+      "name": "Claude Fable 5.2 (Medium)",
+      "score": 56.4
+    },
+    {
       "name": "GPT-6 Astra (Xhigh)",
       "score": 55.3
     },
@@ -42,6 +58,10 @@
     {
       "name": "Gemini 4 Carbon (Low)",
       "score": 54.2
+    },
+    {
+      "name": "Claude Fable 5.2 (Low)",
+      "score": 53.9
     },
     {
       "name": "GPT-6.1 Sol (Xhigh)",
@@ -102,26 +122,6 @@
     {
       "name": "GPT-6.1 Terra (Xhigh)",
       "score": 45.3
-    },
-    {
-      "name": "Claude Opus 5 (Max)",
-      "score": 44.2
-    },
-    {
-      "name": "GPT-6 Sol (Max)",
-      "score": 44.2
-    },
-    {
-      "name": "Muse Wonder (Max)",
-      "score": 43.6
-    },
-    {
-      "name": "GPT-6 Astra (Low)",
-      "score": 43.3
-    },
-    {
-      "name": "Claude Fable 5.1 (Medium)",
-      "score": 43.2
     }
   ]
 }
