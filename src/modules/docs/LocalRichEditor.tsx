@@ -1,167 +1,183 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { EditorContent, useEditor, type Editor } from '@tiptap/react'
-import { BubbleMenu } from '@tiptap/react/menus'
+import { useLayoutEffect, useRef, useState, type ReactNode, type MutableRefObject } from 'react'
+import { Node, type Editor, type JSONContent } from '@tiptap/core'
+import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from '@tiptap/react'
+import { DOMParser as ProseMirrorParser } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
-import { Bold, Check, Code, Heading2, Heading3, Highlighter, Italic, List, ListOrdered, Quote, Redo2, Undo2 } from 'lucide-react'
+import { Bold, Code, Highlighter, Italic, List, ListOrdered, Quote, Redo2, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { Button } from '@/shared/ui/Button'
+import { Dialog } from '@/shared/ui/Sheet'
 import { MarkdownContent, splitMdBlocks } from './MdReader'
 import { MarkdownWordCount } from './MarkdownWordCount'
-import { HL_COLORS, HighlightMark, type HlColor } from './mdHighlight'
+import { HighlightMark } from './mdHighlight'
+import { captureLocalPosition, restoreLocalPosition, type LocalScrollPosition } from './localScrollPosition'
 
-const TOOL_BTN = 'grid place-items-center w-7 h-7 rounded-[8px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer'
-const TOOL_ON = 'bg-primary-soft text-primary'
-const HL_LABEL: Record<HlColor, string> = { yellow: '黄色', green: '绿色', blue: '蓝色', red: '红色' }
+type RenderImage = (src: string | undefined, alt: string | undefined) => ReactNode
+type MarkdownStorage = { getMarkdown: () => string; parser: { parse: (markdown: string) => string } }
+const storage = (editor: Editor) => (editor.storage as unknown as { markdown: MarkdownStorage }).markdown
 
-const getMd = (editor: Editor | null) => (editor?.storage as { markdown?: { getMarkdown: () => string } } | undefined)?.markdown?.getMarkdown() ?? ''
-const join = (blocks: { source: string }[]) => blocks.map(b => b.source).join('\n\n')
+function MarkdownBlockView({ node, updateAttributes, extension }: NodeViewProps) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const source: string = node.attrs.source
+  const renderImage: RenderImage | undefined = extension.options.renderImage
+  const reference = /^ {0,3}\[[^\]]+\]:/.test(source)
+  return <NodeViewWrapper contentEditable={false} className="relative group">
+    {reference ? <p className="text-xs text-on-surface-2 break-all">{source}</p> : <MarkdownContent source={source + extension.options.getDefinitions()} onLink={() => {}} renderImage={renderImage} />}
+    <button type="button" aria-label="编辑块源码" className="absolute right-0 top-0 px-2 py-1 rounded border border-outline bg-surface text-xs text-on-surface-2" onClick={() => setDraft(source)}>编辑源码</button>
+    <Dialog open={draft !== null} onOpenChange={open => { if (!open) setDraft(null) }} title="编辑 Markdown 源码">
+      <textarea aria-label="Markdown 块源码" className="w-full min-h-36 border border-outline rounded p-2 font-mono text-sm" value={draft ?? ''} onChange={e => setDraft(e.target.value)} />
+      <div className="mt-3 flex justify-end gap-2">
+        <Button onClick={() => setDraft(null)}>取消</Button>
+        <Button variant="primary" onClick={() => { updateAttributes({ source: draft ?? '' }); setDraft(null) }}>应用</Button>
+      </div>
+    </Dialog>
+  </NodeViewWrapper>
+}
+
+const MarkdownBlock = Node.create<{ renderImage?: RenderImage; getDefinitions: () => string }>({
+  name: 'markdownBlock',
+  group: 'block',
+  atom: true,
+  addOptions: () => ({ getDefinitions: () => '' }),
+  addAttributes: () => ({ source: { default: '', parseHTML: el => el.getAttribute('data-markdown-source') ?? '', renderHTML: attrs => ({ 'data-markdown-source': attrs.source }) } }),
+  parseHTML: () => [{ tag: 'div[data-markdown-source]' }],
+  renderHTML: ({ HTMLAttributes }) => ['div', HTMLAttributes],
+  addNodeView: () => ReactNodeViewRenderer(MarkdownBlockView),
+  addStorage: () => ({
+    markdown: {
+      serialize: (state: { write: (value: string) => void; closeBlock: (node: unknown) => void }, node: { attrs: { source: string } }) => {
+        state.write(node.attrs.source)
+        state.closeBlock(node)
+      },
+    },
+  }),
+})
+
+function loadMarkdown(editor: Editor, markdown: string, definitions: MutableRefObject<string>) {
+  const blocks = splitMdBlocks(markdown)
+  definitions.current = blocks.filter(b => /^ {0,3}\[[^\]]+\]:/.test(b.source)).map(b => b.source).join('\n\n')
+  let prefix = 'KAIROSMARKDOWNBLOCK'
+  while (markdown.includes(prefix)) prefix += 'X'
+  const raw = new Map<string, string>()
+  const prepared = blocks.map(({ source, complex }, index) => {
+    if (!complex) return source
+    const key = prefix + index
+    raw.set(key, source)
+    return key
+  }).join('\n\n')
+  const template = document.createElement('template')
+  template.innerHTML = storage(editor).parser.parse(prepared)
+  const parsed = ProseMirrorParser.fromSchema(editor.schema).parse(template.content)
+  const content: JSONContent[] = []
+  parsed.forEach(node => {
+    const source = node.type.name === 'paragraph' ? raw.get(node.textContent) : undefined
+    content.push(source === undefined ? node.toJSON() : { type: MarkdownBlock.name, attrs: { source } })
+  })
+  editor.commands.setContent({ type: 'doc', content }, { emitUpdate: false })
+}
 
 function ToolBtn({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" aria-label={label} title={label} className={cn(TOOL_BTN, active && TOOL_ON)} onClick={onClick}>{children}</button>
+  return <button type="button" aria-label={label} title={label} aria-pressed={active}
+    className={cn('grid place-items-center w-8 h-8 shrink-0 rounded-lg text-on-surface-2 hover:bg-surface-3', active && 'bg-primary-soft text-primary')}
+    onClick={onClick}>{children}</button>
 }
 
-/** 单个普通块的富文本编辑：与写文档同款 TipTap，更新即回传 markdown。 */
-function BlockTipTap({ source, onUpdate, onDone }: { source: string; onUpdate: (md: string) => void; onDone: () => void }) {
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Image.configure({ inline: false, allowBase64: true }),
-      HighlightMark,
-      Markdown.configure({ html: false, breaks: true, transformPastedText: true, transformCopiedText: true }),
-    ],
-    content: source,
-    onUpdate: ({ editor }) => onUpdate(getMd(editor)),
-    editorProps: { attributes: { class: 'md-body outline-none min-h-[3rem] px-2 py-1', spellcheck: 'false' } },
-  })
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onDone() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onDone])
-
-  if (!editor) return null
-  return <div className="rounded-lg border border-primary/50 bg-surface shadow-sm">
-    <div className="flex items-center gap-0.5 px-2 py-1 border-b border-outline/60 overflow-x-auto">
-      <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={14} /></ToolBtn>
-      <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={14} /></ToolBtn>
-      <span className="w-px h-4 bg-outline mx-1" />
-      <ToolBtn label="二级标题" active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 size={14} /></ToolBtn>
-      <ToolBtn label="三级标题" active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 size={14} /></ToolBtn>
-      <ToolBtn label="加粗" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={14} /></ToolBtn>
-      <ToolBtn label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={14} /></ToolBtn>
-      <ToolBtn label="高亮（黄色）" active={editor.isActive('hl')} onClick={() => editor.chain().focus().toggleMark('hl', { color: 'yellow' }).run()}><Highlighter size={14} /></ToolBtn>
-      <span className="w-px h-4 bg-outline mx-1" />
-      <ToolBtn label="无序列表" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={14} /></ToolBtn>
-      <ToolBtn label="有序列表" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></ToolBtn>
-      <ToolBtn label="引用" active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={14} /></ToolBtn>
-      <ToolBtn label="代码块" active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={14} /></ToolBtn>
-      <button type="button" aria-label="完成块编辑" title="完成（Esc）" className="ml-auto inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[12px] text-primary hover:bg-primary-soft cursor-pointer" onClick={onDone}><Check size={14} />完成</button>
-    </div>
-    <BubbleMenu editor={editor} options={{ placement: 'top', offset: 8 }} shouldShow={({ state }) => state.selection.from !== state.selection.to && state.doc.textBetween(state.selection.from, state.selection.to, '\n').trim().length > 0}>
-      <div className="pop flex items-center gap-1 p-1.5">
-        {HL_COLORS.map(c => <button key={c} type="button" aria-label={`高亮：${HL_LABEL[c]}`} title={HL_LABEL[c]} onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().toggleMark('hl', { color: c }).run()} className={`w-6 h-6 rounded-full hl-${c} border border-outline/60 cursor-pointer`} />)}
-      </div>
-    </BubbleMenu>
-    <EditorContent editor={editor} />
-  </div>
-}
-
-/**
- * 资源管理器编辑态：默认阅读式富文本（块级），表格/公式/图表/HTML 以渲染预览呈现、
- * 仅通过块源码编辑，保证保存不丢内容；另提供整篇源码切换作为兜底。
- */
-export function LocalRichEditor({ markdown, onChange, renderImage }: {
+export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, initialPosition }: {
   markdown: string
   onChange: (md: string) => void
-  renderImage?: (src: string | undefined, alt: string | undefined) => ReactNode
+  renderImage?: RenderImage
+  scrollRef: MutableRefObject<HTMLElement | null>
+  initialPosition?: LocalScrollPosition
 }) {
   const [mode, setMode] = useState<'rich' | 'source'>('rich')
-  const [blocks, setBlocks] = useState(() => splitMdBlocks(markdown))
-  const blocksRef = useRef(blocks)
-  const [editingIndex, setEditingIndex] = useState<number | null>(null)
-  const [sourceIndex, setSourceIndex] = useState<number | null>(null)
+  const [fontSize, setFontSize] = useState(17)
+  const loaded = useRef<string>()
+  const editingPosition = useRef(initialPosition)
+  const imageRenderer = useRef(renderImage)
+  imageRenderer.current = renderImage
+  const definitionsRef = useRef('')
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({ link: { openOnClick: false } }),
+      Image.configure({ inline: true, allowBase64: true }),
+      HighlightMark,
+      MarkdownBlock.configure({ renderImage: (src, alt) => imageRenderer.current?.(src, alt) ?? <img src={src} alt={alt} />, getDefinitions: () => '\n\n' + definitionsRef.current }),
+      Markdown.configure({ html: false, breaks: false, transformPastedText: true, transformCopiedText: true }),
+    ],
+    content: '',
+    shouldRerenderOnTransaction: true,
+    onUpdate: ({ editor }) => {
+      const next = storage(editor).getMarkdown()
+      loaded.current = next
+      onChange(next)
+    },
+    editorProps: { attributes: { class: 'md-body outline-none min-h-[55vh]', spellcheck: 'false', 'aria-label': 'Markdown 编辑区' } },
+  })
 
-  const updateBlocks = useCallback((next: { source: string; complex: boolean }[]) => { blocksRef.current = next; setBlocks(next) }, [])
+  useLayoutEffect(() => {
+    if (!editor || mode !== 'rich' || loaded.current === markdown) return
+    let active = true
+    queueMicrotask(() => {
+      if (!active || editor.isDestroyed) return
+      loadMarkdown(editor, markdown, definitionsRef)
+      loaded.current = markdown
+    })
+    return () => { active = false }
+  }, [editor, markdown, mode])
 
-  // 外部 reload / 首次灌入：仅当与当前块拼接结果不同才重切，避免自身回传触发重建
-  useEffect(() => {
-    if (join(blocksRef.current) === markdown) return
-    updateBlocks(splitMdBlocks(markdown))
-    setEditingIndex(null)
-    setSourceIndex(null)
-  }, [markdown, updateBlocks])
+  useLayoutEffect(() => {
+    const position = editingPosition.current
+    if (!position || (mode === 'rich' && !editor)) return
+    const id = requestAnimationFrame(() => {
+      const view = scrollRef.current
+      if (view) restoreLocalPosition(view, position, mode === 'rich' ? view.querySelector('.tiptap') : null)
+      editingPosition.current = undefined
+    })
+    return () => cancelAnimationFrame(id)
+  }, [mode, editor, scrollRef])
 
-  const updateBlock = useCallback((i: number, source: string) => {
-    const next = blocksRef.current.map((b, idx) => idx === i ? { ...b, source } : b)
-    updateBlocks(next)
-    onChange(join(next))
-  }, [onChange, updateBlocks])
+  function toggleMode() {
+    const view = scrollRef.current
+    if (view) editingPosition.current = captureLocalPosition(view)
+    setMode(mode === 'rich' ? 'source' : 'rich')
+  }
 
   return <div className="flex-1 min-h-0 flex flex-col">
-    <div className="shrink-0 flex items-center gap-2 px-4 md:px-8 py-1.5 border-b border-outline/60">
-      <button
-        type="button"
-        aria-label="切换源码模式"
-        className="rounded-lg border border-outline px-2.5 py-1 text-[12px] text-on-surface-2 hover:bg-surface-2 cursor-pointer"
-        onClick={() => setMode(m => m === 'rich' ? 'source' : 'rich')}
-      >
-        {mode === 'rich' ? '源码' : '富文本'}
-      </button>
-      <span className="text-[11px] text-on-surface-2">{mode === 'rich' ? '点击段落富文本编辑；表格 / 公式 / 图表点「源码」修改，保存不丢内容' : '整篇 Markdown 源码'}</span>
+    <div className="shrink-0 flex flex-wrap items-center gap-1 px-3 py-1.5 border-b border-outline/60" role="toolbar" aria-label="文档编辑工具">
+      <Button size="sm" aria-label="切换源码模式" onClick={toggleMode}>{mode === 'rich' ? '源码' : '富文本'}</Button>
+      {mode === 'rich' && editor && <>
+        <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolBtn>
+        <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolBtn>
+        <select aria-label="标题级别" className="bg-surface border border-outline rounded-md px-1.5 h-8 text-sm"
+          value={[1, 2, 3, 4, 5, 6].find(level => editor.isActive('heading', { level })) ?? 0}
+          onChange={e => {
+            const level = Number(e.target.value) as 0 | 1 | 2 | 3 | 4 | 5 | 6
+            if (level) editor.chain().focus().setHeading({ level }).run()
+            else editor.chain().focus().setParagraph().run()
+          }}>
+          <option value={0}>正文</option>{[1, 2, 3, 4, 5, 6].map(level => <option key={level} value={level}>标题 {level}</option>)}
+        </select>
+        <ToolBtn label="加粗" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={15} /></ToolBtn>
+        <ToolBtn label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
+        <ToolBtn label="高亮" active={editor.isActive('hl')} onClick={() => editor.chain().focus().toggleMark('hl').run()}><Highlighter size={15} /></ToolBtn>
+        <ToolBtn label="无序列表" onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={15} /></ToolBtn>
+        <ToolBtn label="有序列表" onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>
+        <ToolBtn label="引用" onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={15} /></ToolBtn>
+        <ToolBtn label="代码块" onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={15} /></ToolBtn>
+      </>}
+      <label className="ml-auto flex items-center gap-1 text-xs text-on-surface-2">显示字号
+        <select aria-label="显示字号" className="bg-surface border border-outline rounded-md px-1.5 h-8" value={fontSize} onChange={e => setFontSize(Number(e.target.value))}>
+          {[14, 16, 17, 18, 20, 24, 28, 32].map(px => <option key={px}>{px}</option>)}
+        </select>
+      </label>
     </div>
-    {mode === 'source' ? (
-      <textarea
-        value={markdown}
-        onChange={e => onChange(e.target.value)}
-        className="flex-1 min-h-0 w-full resize-none bg-surface px-6 md:px-12 py-8 font-mono text-[13.5px] leading-7 text-on-surface outline-none"
-        spellCheck={false}
-        autoFocus
-        aria-label="编辑 Markdown 原文"
-      />
-    ) : (
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="reader-prose mx-auto py-8 min-w-0" style={{ ['--reader-width' as string]: '90%' }}>
-          <div className="md-body flex flex-col gap-2">
-            {blocks.map((b, i) => (
-              <div key={i} className="relative">
-                {editingIndex === i && !b.complex ? (
-                  <BlockTipTap source={b.source} onUpdate={md => updateBlock(i, md)} onDone={() => setEditingIndex(null)} />
-                ) : sourceIndex === i ? (
-                  <div className="rounded-lg border border-primary/50 bg-surface shadow-sm">
-                    <textarea
-                      value={b.source}
-                      onChange={e => updateBlock(i, e.target.value)}
-                      className="w-full resize-y bg-surface px-3 py-2 font-mono text-[12.5px] leading-6 text-on-surface outline-none rounded-t-lg"
-                      rows={Math.min(16, Math.max(3, b.source.split('\n').length + 1))}
-                      spellCheck={false}
-                      autoFocus
-                      aria-label="编辑块源码"
-                    />
-                    <div className="flex justify-end px-2 py-1 border-t border-outline/60">
-                      <button type="button" className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[12px] text-primary hover:bg-primary-soft cursor-pointer" onClick={() => setSourceIndex(null)}><Check size={14} />完成</button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      className="cursor-text rounded-lg px-2 py-1 hover:bg-surface-2/70 transition-colors"
-                      title={b.complex ? '点击编辑源码' : '点击富文本编辑'}
-                      onClick={() => b.complex ? setSourceIndex(i) : setEditingIndex(i)}
-                    >
-                      <MarkdownContent source={b.source} onLink={() => {}} renderImage={renderImage} />
-                    </div>
-                    {b.complex && <button type="button" aria-label="编辑块源码" className="absolute top-1 right-1 rounded-md border border-outline bg-surface px-1.5 py-0.5 text-[11px] text-on-surface-2 hover:bg-surface-2 cursor-pointer" onClick={() => setSourceIndex(i)}>源码</button>}
-                  </>
-                )}
-              </div>
-            ))}
-            {!blocks.length && <button type="button" className="self-start rounded-lg border border-outline px-3 py-1.5 text-[13px] text-on-surface-2 hover:bg-surface-2 cursor-pointer" onClick={() => { updateBlocks([{ source: '', complex: false }]); setEditingIndex(0) }}>开始书写</button>}
-          </div>
-        </div>
-      </div>
-    )}
+    {mode === 'source' ? <textarea ref={el => { scrollRef.current = el }} value={markdown} onChange={e => onChange(e.target.value)}
+      className="flex-1 min-h-0 w-full resize-none bg-surface px-6 md:px-12 py-8 font-mono leading-7 outline-none" style={{ fontSize }} spellCheck={false} aria-label="编辑 Markdown 原文" />
+      : <div ref={el => { scrollRef.current = el }} className="flex-1 min-h-0 overflow-y-auto">
+        <div className="reader-prose mx-auto py-8 min-w-0" style={{ ['--reader-width' as string]: '90%', fontSize }}><EditorContent editor={editor} /></div>
+      </div>}
     <MarkdownWordCount markdown={markdown} />
   </div>
 }

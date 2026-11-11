@@ -13,8 +13,18 @@ pub struct LocalMarkdownState {
     pub pending_focus: Mutex<Vec<String>>,
 }
 
-fn is_markdown(path: &Path) -> bool {
-    path.extension().and_then(|s| s.to_str()).map(|s| matches!(s.to_ascii_lowercase().as_str(), "md" | "markdown")).unwrap_or(false)
+const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt", "csv", "tsv", "json", "html", "htm"];
+const PREVIEW_EXTENSIONS: &[&str] = &["pdf", "docx", "pptx", "epub"];
+const TEXT_LIMIT: usize = 8 * 1024 * 1024;
+const PREVIEW_LIMIT: usize = 32 * 1024 * 1024;
+
+fn has_extension(path: &Path, extensions: &[&str]) -> bool {
+    path.extension().and_then(|ext| ext.to_str())
+        .is_some_and(|ext| extensions.iter().any(|allowed| ext.eq_ignore_ascii_case(allowed)))
+}
+
+fn is_document(path: &Path) -> bool {
+    has_extension(path, TEXT_EXTENSIONS) || has_extension(path, PREVIEW_EXTENSIONS)
 }
 
 fn covered(roots: &[PathBuf], path: &Path) -> bool {
@@ -69,9 +79,9 @@ pub fn open_files(app: &tauri::AppHandle, args: &[String], cwd: &Path, restore_m
     for arg in args.iter().skip(1) {
         let path = PathBuf::from(arg);
         let path = if path.is_absolute() { path } else { cwd.join(path) };
-        if !is_markdown(&path) { continue; }
+        if !is_document(&path) { continue; }
         let Ok(path) = fs::canonicalize(&path) else { continue };
-        if !path.is_file() { continue; }
+        if !path.is_file() || !is_document(&path) { continue; }
         let label = window_label(&path);
         if let Some(window) = app.get_webview_window(&label) {
             let _ = window.unminimize();
@@ -94,7 +104,7 @@ pub fn open_files(app: &tauri::AppHandle, args: &[String], cwd: &Path, restore_m
             pending.push(label);
         }
     }
-    if restore_main && !opened && !args.iter().skip(1).any(|arg| is_markdown(Path::new(arg))) {
+    if restore_main && !opened && !args.iter().skip(1).any(|arg| is_document(Path::new(arg))) {
         if let Some(main) = app.get_webview_window("main") {
             let _ = main.unminimize();
             let _ = main.set_focus();
@@ -115,7 +125,13 @@ pub struct Entry { name: String, path: String, directory: bool }
 pub struct Folder { directory: String, parent: Option<String>, entries: Vec<Entry> }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Document { path: String, markdown: String, version: String }
+pub struct Document {
+    path: String,
+    markdown: String,
+    version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base64: Option<String>,
+}
 
 fn version_of(path: &Path) -> Result<String, String> {
     let metadata = fs::metadata(path).map_err(|_| "无法读取文件信息")?;
@@ -131,7 +147,7 @@ fn list(directory: &Path) -> Result<Folder, String> {
         let path = item.path();
         let Ok(canonical) = fs::canonicalize(&path) else { continue };
         let is_dir = canonical.is_dir();
-        if !is_dir && !is_markdown(&canonical) { continue; }
+        if !is_dir && (!canonical.is_file() || !is_document(&canonical)) { continue; }
         entries.push(Entry { name: item.file_name().to_string_lossy().into_owned(), path: canonical.to_string_lossy().into_owned(), directory: is_dir });
     }
     entries.sort_by(|a, b| b.directory.cmp(&a.directory).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
@@ -143,13 +159,14 @@ fn list(directory: &Path) -> Result<Folder, String> {
 #[tauri::command]
 pub async fn local_markdown_pick(app: tauri::AppHandle, window: tauri::Window, folder: bool) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut dialog = app.dialog().file().set_title(if folder { "打开 Markdown 文件夹" } else { "打开 Markdown 文件" }).set_parent(&window);
+        let mut dialog = app.dialog().file().set_title(if folder { "打开本地文件夹" } else { "打开本地文档" }).set_parent(&window);
         if let Ok(roots) = roots(&app.state::<LocalMarkdownState>(), window.label()) { dialog = dialog.set_directory(&roots[0]); }
-        let selection = if folder { dialog.blocking_pick_folder() } else { dialog.add_filter("Markdown", &["md", "markdown"]).blocking_pick_file() };
+        let extensions = [TEXT_EXTENSIONS, PREVIEW_EXTENSIONS].concat();
+        let selection = if folder { dialog.blocking_pick_folder() } else { dialog.add_filter("支持的文档", &extensions).blocking_pick_file() };
         let Some(selection) = selection else { return Ok(None) };
         let path = selection.into_path().map_err(|_| "无法打开此路径")?;
         let path = fs::canonicalize(path).map_err(|_| "无法打开此路径")?;
-        if !folder && !is_markdown(&path) { return Err("请选择 Markdown 文件".into()); }
+        if !folder && (!path.is_file() || !is_document(&path)) { return Err("请选择支持的文档格式".into()); }
         let directory = if folder { path.clone() } else { path.parent().map(Path::to_path_buf).unwrap_or_else(|| path.clone()) };
         grant(&app.state::<LocalMarkdownState>(), window.label(), directory)?;
         Ok(Some(path.to_string_lossy().into_owned()))
@@ -177,30 +194,68 @@ pub async fn local_markdown_read(app: tauri::AppHandle, window: tauri::Window, p
     }).await.map_err(|e| e.to_string())?
 }
 
+fn read_bytes(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
+    let file = fs::File::open(path).map_err(|_| "无法读取文件")?;
+    let mut data = Vec::new();
+    file.take(limit as u64 + 1).read_to_end(&mut data).map_err(|_| "读取文件失败")?;
+    if data.len() > limit { return Err(format!("文件超过 {} MB，无法在本地文档窗口打开", limit / (1024 * 1024))); }
+    Ok(data)
+}
+
+fn decode_text(data: &[u8]) -> Result<String, String> {
+    if data.starts_with(&[0xff, 0xfe]) || data.starts_with(&[0xfe, 0xff]) {
+        let little_endian = data[0] == 0xff;
+        if data.len() % 2 != 0 { return Err("UTF-16 文件不完整".into()); }
+        let units = data[2..].chunks_exact(2).map(|pair| {
+            let bytes = [pair[0], pair[1]];
+            if little_endian { u16::from_le_bytes(bytes) } else { u16::from_be_bytes(bytes) }
+        }).collect::<Vec<_>>();
+        return String::from_utf16(&units).map_err(|_| "UTF-16 文件无法解码".into());
+    }
+    std::str::from_utf8(data.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(data))
+        .map(str::to_owned).map_err(|_| "请将文本文件另存为 UTF-8 或带 BOM 的 UTF-16".into())
+}
+
 fn read_document(path: &Path, known_version: Option<&str>) -> Result<Option<Document>, String> {
-    if !is_markdown(path) { return Err("只能阅读 Markdown 文件".into()); }
-    let mut file = fs::File::open(path).map_err(|_| "无法读取文件")?;
+    if !path.is_file() || !is_document(path) { return Err("不支持此文档格式".into()); }
     let version = version_of(path)?;
     if known_version == Some(&version) { return Ok(None); }
-    const LIMIT: u64 = 8 * 1024 * 1024;
-    let mut data = Vec::new();
-    (&mut file).take(LIMIT + 1).read_to_end(&mut data).map_err(|_| "读取文件失败")?;
-    if data.len() as u64 > LIMIT { return Err("文件超过 8 MB，请通过文档库导入阅读".into()); }
-    let markdown = String::from_utf8(data).map_err(|_| "文件不是 UTF-8 编码，请另存为 UTF-8 后重试")?.trim_start_matches('\u{feff}').to_owned();
-    Ok(Some(Document { path: path.to_string_lossy().into_owned(), markdown, version }))
+    let binary = has_extension(path, PREVIEW_EXTENSIONS);
+    let data = read_bytes(path, if binary { PREVIEW_LIMIT } else { TEXT_LIMIT })?;
+    let (markdown, base64) = if binary { (String::new(), Some(STANDARD.encode(data))) } else { (decode_text(&data)?, None) };
+    Ok(Some(Document { path: path.to_string_lossy().into_owned(), markdown, version, base64 }))
 }
 
 /// 写回原文件：expected_version 不符说明磁盘已被外部修改，拒绝覆盖，由前端决定刷新或强制保存。
 fn write_document(path: &Path, markdown: &str, expected_version: Option<&str>) -> Result<Document, String> {
-    if !is_markdown(path) { return Err("只能编辑 Markdown 文件".into()); }
-    const LIMIT: usize = 8 * 1024 * 1024;
-    if markdown.len() > LIMIT { return Err("内容超过 8 MB，无法保存".into()); }
+    if !has_extension(path, TEXT_EXTENSIONS) { return Err("此格式需要用其他应用编辑".into()); }
+    if markdown.len() > TEXT_LIMIT * 2 { return Err("内容超过 8 MB，无法保存".into()); }
     if let Some(expected) = expected_version {
         if version_of(path)? != expected { return Err("文件已被外部修改，请刷新后重试".into()); }
     }
-    fs::write(path, markdown.as_bytes()).map_err(|_| "无法写入文件，可能被其他程序占用或设为只读")?;
+    let original = read_bytes(path, TEXT_LIMIT)?;
+    let old_text = decode_text(&original)?;
+    let text = if old_text.contains("\r\n") && !old_text.replace("\r\n", "").contains('\n') {
+        markdown.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else { markdown.to_owned() };
+    let mut data = Vec::new();
+    if original.starts_with(&[0xff, 0xfe]) || original.starts_with(&[0xfe, 0xff]) {
+        let little_endian = original[0] == 0xff;
+        data.extend_from_slice(&original[..2]);
+        for unit in text.encode_utf16() {
+            data.extend_from_slice(&if little_endian { unit.to_le_bytes() } else { unit.to_be_bytes() });
+        }
+    } else {
+        if original.starts_with(&[0xef, 0xbb, 0xbf]) { data.extend_from_slice(&original[..3]); }
+        data.extend_from_slice(text.as_bytes());
+    }
+    if data.len() > TEXT_LIMIT { return Err("内容超过 8 MB，无法保存".into()); }
+    if let Some(expected) = expected_version {
+        if version_of(path)? != expected { return Err("文件已被外部修改，请刷新后重试".into()); }
+    }
+    fs::write(path, data).map_err(|_| "无法写入文件，可能被其他程序占用或设为只读")?;
     let version = version_of(path)?;
-    Ok(Document { path: path.to_string_lossy().into_owned(), markdown: markdown.to_owned(), version })
+    Ok(Document { path: path.to_string_lossy().into_owned(), markdown: markdown.to_owned(), version, base64: None })
 }
 
 #[tauri::command]
@@ -210,6 +265,46 @@ pub async fn local_markdown_write(app: tauri::AppHandle, window: tauri::Window, 
         let path = scoped(&roots, Path::new(&path))?;
         write_document(&path, &markdown, expected_version.as_deref())
     }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn local_document_open_with(window: tauri::Window, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = scoped(&roots(&window.state::<LocalMarkdownState>(), window.label())?, Path::new(&path))?;
+        if !path.is_file() || !has_extension(&path, PREVIEW_EXTENSIONS) { return Err("不支持用其他应用打开此文件".into()); }
+        #[cfg(windows)]
+        {
+            let (send, receive) = std::sync::mpsc::sync_channel(1);
+            let parent = window.clone();
+            window.run_on_main_thread(move || {
+                let _ = send.send(show_open_with(&parent, &path));
+            }).map_err(|e| e.to_string())?;
+            receive.recv().map_err(|_| "无法打开应用选择窗口".to_string())?
+        }
+        #[cfg(not(windows))]
+        { Err("请通过系统文件管理器选择编辑应用".into()) }
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[cfg(windows)]
+fn show_open_with(window: &tauri::Window, path: &Path) -> Result<(), String> {
+    use std::{ffi::c_void, os::windows::ffi::OsStrExt};
+
+    #[repr(C)]
+    struct OpenAsInfo { file: *const u16, class: *const u16, flags: u32 }
+
+    #[link(name = "shell32")]
+    extern "system" { fn SHOpenWithDialog(parent: *mut c_void, info: *const OpenAsInfo) -> i32; }
+
+    let path_str = path.to_string_lossy();
+    let display_path = if let Some(unc) = path_str.strip_prefix(r"\\?\UNC\") { format!(r"\\{}", unc) }
+        else { path_str.strip_prefix(r"\\?\").unwrap_or(&path_str).to_owned() };
+    let filename: Vec<u16> = std::ffi::OsStr::new(&display_path).encode_wide().chain([0]).collect();
+    let info = OpenAsInfo { file: filename.as_ptr(), class: std::ptr::null(), flags: 0x04 }; // OAIF_EXEC
+    let parent = window.hwnd().map_err(|e| e.to_string())?;
+    // The filename buffer remains valid throughout the system dialog call.
+    let result = unsafe { SHOpenWithDialog(parent.0 as *mut c_void, &info) };
+    if result >= 0 || result as u32 == 0x800704c7 { Ok(()) } else { Err("无法打开应用选择窗口".into()) }
 }
 
 #[tauri::command]
@@ -240,10 +335,12 @@ pub fn local_markdown_defaults() -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
-    fn accepts_markdown_extensions_only() {
-        assert!(is_markdown(Path::new("中文.MD")));
-        assert!(is_markdown(Path::new("readme.markdown")));
-        assert!(!is_markdown(Path::new("readme.md.exe")));
+    fn accepts_supported_document_extensions_only() {
+        assert!(is_document(Path::new("中文.MD")));
+        assert!(is_document(Path::new("readme.markdown")));
+        assert!(is_document(Path::new("报告.DOCX")));
+        assert!(is_document(Path::new("表格.csv")));
+        assert!(!is_document(Path::new("readme.md.exe")));
     }
     #[test]
     fn cannot_escape_granted_folder() {
@@ -258,7 +355,7 @@ mod tests {
         let child = base.join("child");
         fs::create_dir_all(&child).unwrap();
         fs::write(child.join("a.md"), "# a").unwrap();
-        fs::write(child.join("b.txt"), "ignored").unwrap();
+        fs::write(child.join("b.exe"), "ignored").unwrap();
         let folder = list(&child).unwrap();
         // 上一级始终可用（直到文件系统根），不再被授权范围裁掉
         assert_eq!(folder.parent.as_deref(), Some(fs::canonicalize(&base).unwrap().to_string_lossy().as_ref()));
@@ -309,7 +406,23 @@ mod tests {
         assert!(write_document(&file, "# mine", Some(&saved.version)).is_err());
         assert_eq!(fs::read_to_string(&file).unwrap(), "# external change");
         assert!(write_document(&file, "# mine", None).is_ok());
-        assert!(write_document(&dir.join("note.txt"), "x", None).is_err());
+        assert!(write_document(&dir.join("note.pdf"), "x", None).is_err());
+        fs::remove_dir_all(&dir).ok();
+    }
+    #[test]
+    fn text_write_preserves_utf16_bom_and_crlf() {
+        let dir = std::env::temp_dir().join(format!("kairos-local-text-{}-{}", std::process::id(), line!()));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("notes.txt");
+        let mut original = vec![0xff, 0xfe];
+        original.extend("原文\r\n".encode_utf16().flat_map(u16::to_le_bytes));
+        fs::write(&file, original).unwrap();
+        let opened = read_document(&file, None).unwrap().unwrap();
+        assert_eq!(opened.markdown, "原文\r\n");
+        write_document(&file, "修改\n正文", Some(&opened.version)).unwrap();
+        let saved = fs::read(&file).unwrap();
+        assert!(saved.starts_with(&[0xff, 0xfe]));
+        assert_eq!(decode_text(&saved).unwrap(), "修改\r\n正文");
         fs::remove_dir_all(&dir).ok();
     }
 }

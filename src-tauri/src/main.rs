@@ -36,6 +36,7 @@ fn main() {
             local_markdown::local_markdown_read,
             local_markdown::local_markdown_write,
             local_markdown::local_markdown_image,
+            local_markdown::local_document_open_with,
             local_markdown::local_markdown_defaults,
         ])
         // 前端的 WebDAV 请求走这里：由 Rust 发出，不受浏览器跨域限制（坚果云不给 CORS）

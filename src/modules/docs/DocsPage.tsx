@@ -237,6 +237,7 @@ export function DocsPage() {
             aria-label="搜索文档"
             className="h-9 w-52 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
           />
+          {isTauri() && <Button size="sm" onClick={() => navigate('/local-markdown')}><FolderOpen size={15} /> 本地文档</Button>}
           <Button size="sm" onClick={() => navigate('/docs/new')}>
             <PenLine size={15} /> 写文档
           </Button>
@@ -258,7 +259,7 @@ export function DocsPage() {
         <Button size="icon" className="shrink-0 w-9 h-9" aria-label="写文档" title="写文档" onClick={() => navigate('/docs/new')}>
           <PenLine size={18} />
         </Button>
-        {isTauri() && <Button size="icon" className="shrink-0 w-9 h-9" aria-label="本地 Markdown" title="打开本地 Markdown 文件夹" onClick={() => navigate('/local-markdown')}><FolderOpen size={18} /></Button>}
+        {isTauri() && <Button size="icon" className="shrink-0 w-9 h-9" aria-label="本地文档" title="打开本地文档" onClick={() => navigate('/local-markdown')}><FolderOpen size={18} /></Button>}
         <Button variant="primary" size="icon" className="shrink-0 w-9 h-9" aria-label="导入文档" title="导入文档" state={importState} onClick={() => fileRef.current?.click()}>
           <Import size={18} />
         </Button>

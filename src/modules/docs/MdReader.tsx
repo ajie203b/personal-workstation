@@ -15,7 +15,7 @@ import { handleDocLink, transformDocUrl } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
 import { remarkHighlight } from './mdHighlight'
 import { MermaidBlock } from './MermaidBlock'
-import { normalizeMarkdown } from './markdownContent'
+import { markdownTableRanges, normalizeMarkdown } from './markdownContent'
 import { MarkdownWordCount } from './MarkdownWordCount'
 import { markdownSchema, rehypeReaderStyles } from './markdownPlugins'
 import { collectTextAnchors, wrapText } from './reader/textAnchors'
@@ -68,17 +68,33 @@ export function parseMdBlocks(md: string): { headings: { level: number; text: st
 
 /** 按 remark AST 切出顶层块原文（verbatim），并标记 TipTap 无法无损往返的复杂块。 */
 export function splitMdBlocks(md: string): { source: string; complex: boolean }[] {
-  const root = blockParser.parse(md)
+  const blocks = blockParser.parse(md).children
+  const tables = markdownTableRanges(md)
+  let tableIndex = 0
   const out: { source: string; complex: boolean }[] = []
   const lossy = (node: RootContent): boolean => {
-    if (node.type === 'table' || node.type === 'math' || node.type === 'inlineMath' || node.type === 'html') return true
-    if (node.type === 'code' && (node.lang ?? '').trim().toLowerCase() === 'mermaid') return true
+    if (node.type === 'table' || node.type === 'math' || node.type === 'inlineMath' || node.type === 'html' || node.type === 'definition' || node.type === 'footnoteDefinition' || node.type === 'linkReference' || node.type === 'imageReference' || node.type === 'footnoteReference') return true
+    if (node.type === 'image' || (node.type === 'listItem' && 'checked' in node && node.checked != null)) return true
+    // The rich editor serializes code using three backticks. Keep longer
+    // fences intact when the sample itself contains a closing fence.
+    if (node.type === 'code' && ((node.lang ?? '').trim().toLowerCase() === 'mermaid' || /(?:^|\n) {0,3}`{3,}[ \t]*(?:\n|$)/.test(node.value))) return true
     if ('children' in node) return (node.children as RootContent[]).some(lossy)
     return false
   }
-  for (const node of root.children) {
+  for (let i = 0; i < blocks.length; i++) {
+    const node = blocks[i]
     const pos = node.position
     if (!pos) continue
+    while (tables[tableIndex] && tables[tableIndex].end < pos.start.line) tableIndex++
+    const table = tables[tableIndex]
+    if (table && table.start <= pos.end.line) {
+      let end = pos.end.offset
+      while (blocks[i + 1]?.position && blocks[i + 1].position!.start.line <= table.end) {
+        end = blocks[++i].position?.end.offset
+      }
+      out.push({ source: md.slice(pos.start.offset ?? 0, end ?? md.length), complex: true })
+      continue
+    }
     const source = md.slice(pos.start.offset ?? 0, pos.end.offset ?? md.length)
     out.push({ source, complex: lossy(node) || /\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/.test(source) })
   }

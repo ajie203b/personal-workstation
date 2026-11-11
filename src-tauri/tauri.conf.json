@@ -28,7 +28,9 @@
   "bundle": {
     "active": true,
     "fileAssociations": [
-      { "ext": ["md", "markdown"], "name": "Markdown 文档", "description": "使用 Kairos 阅读和编辑 Markdown", "role": "Editor" }
+      { "ext": ["md", "markdown"], "name": "Markdown 文档", "description": "使用 Kairos 阅读和编辑 Markdown", "role": "Editor" },
+      { "ext": ["txt", "csv", "tsv", "json", "html", "htm"], "name": "文本文件", "description": "使用 Kairos 预览和编辑本地文本", "role": "Editor" },
+      { "ext": ["pdf", "docx", "pptx", "epub"], "name": "可预览文档", "description": "使用 Kairos 预览文档", "role": "Viewer" }
     ],
     "targets": ["nsis"],
     "icon": [

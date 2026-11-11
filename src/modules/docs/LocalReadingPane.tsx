@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Copy, ListPlus, MessageSquareText } from 'lucide-react'
 import type { Doc } from '@/db/db'
@@ -17,11 +17,13 @@ import { PanelHead, RightContent } from './reader/ReaderPanels'
 import { ReaderSettingsPanel } from './reader/ReaderSettingsPanel'
 import { AnnotationTaskDialog } from './reader/AnnotationTaskDialog'
 
-export function LocalReadingPane({ document, onLink, renderImage, jump, settingsOpen, onCloseSettings, annotationsOpen, onCloseAnnotations, onOpenAnnotations }: {
+export function LocalReadingPane({ document, onLink, renderImage, jump, scrollRef, restorePosition, settingsOpen, onCloseSettings, annotationsOpen, onCloseAnnotations, onOpenAnnotations }: {
   document: LocalDocument
   onLink: (href: string) => void
   renderImage: (src: string | undefined, alt: string | undefined) => React.ReactNode
   jump: JumpTarget | null
+  scrollRef: React.RefObject<HTMLDivElement>
+  restorePosition: boolean
   settingsOpen: boolean
   onCloseSettings: () => void
   annotationsOpen: boolean
@@ -33,7 +35,6 @@ export function LocalReadingPane({ document, onLink, renderImage, jump, settings
   const [linked, setLinked] = useState<Doc>()
   const [selection, setSelection] = useState<Selection | null>(null)
   const [rightTab, setRightTab] = useState<'anns' | 'backlinks'>('anns')
-  const scrollRef = useRef<HTMLDivElement>(null)
   const localHash = useMemo(() => mdContentHash('local-position', document.path), [document.path])
   const annotations = useAnnotations(linked?.hash)
   const backlinks = useDocBacklinks(linked?.id)
@@ -54,7 +55,7 @@ export function LocalReadingPane({ document, onLink, renderImage, jump, settings
   const clearSelection = useCallback(() => setSelection(null), [])
   const onSelection = useCallback((selected: MdSelectionInfo | null) => setSelection(selected ? { ...selected, kind: 'md' } : null), [])
   const actions = useDocAnnotations({ doc: linked, resolveDoc, selection, clearSelection, toast, onExported: id => navigate(`/docs/${id}`) })
-  const initialTarget = reading.initialTarget && 'blockIdx' in reading.initialTarget ? reading.initialTarget : null
+  const initialTarget = !restorePosition && reading.initialTarget && 'blockIdx' in reading.initialTarget ? reading.initialTarget : null
   const restore = useCallback(() => {}, [])
   const closeSettings = onCloseSettings
   return <>

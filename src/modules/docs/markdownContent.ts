@@ -39,7 +39,18 @@ function readRow(lines: string[], start: number, limit: number, columns: number)
 
 /** Recover pasted pipe tables only when a matching GFM separator proves their shape. */
 export function normalizeMarkdown(markdown: string): string {
-  const lines = normalizeMath(markdown).replace(/\r\n?/g, '\n').split('\n')
+  return normalizeTables(normalizeMath(markdown))
+}
+
+/** Identify the original line ranges of tables, including pasted rows that span Markdown blocks. */
+export function markdownTableRanges(markdown: string): { start: number; end: number }[] {
+  const ranges: { start: number; end: number }[] = []
+  if (markdown.includes('|')) normalizeTables(markdown, (start, end) => ranges.push({ start, end }))
+  return ranges
+}
+
+function normalizeTables(markdown: string, onTable?: (start: number, end: number) => void): string {
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
   const output: string[] = []
   let fence: { char: string; length: number } | null = null
   let protectedUntil = 0
@@ -79,6 +90,7 @@ export function normalizeMarkdown(markdown: string): string {
       next = row.end
       if (row.suffix) { output.push('', row.suffix); break }
     }
+    onTable?.(headerStart + 1, next)
     i = next - 1
   }
   return output.join('\n')

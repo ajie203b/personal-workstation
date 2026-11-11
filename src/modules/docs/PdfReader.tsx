@@ -141,6 +141,8 @@ export interface TocItem {
 
 interface Props {
   hash: string
+  localBlob?: Blob
+  localScrollProgress?: number
   settings: DocSettings
   annotations: Annotation[]
   jump: { anchor: string; hl?: string; ts: number } | null
@@ -174,7 +176,7 @@ const PDF_OPTIONS = {
 
 /** PDF 阅读器：精确占位 + 窗口渲染 + 文本层划词 + 区域截图 + 暗色反色 */
 export function PdfReader({
-  hash, settings, annotations, jump, onSelection, shotMode, onShot, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onZoom,
+  hash, localBlob, localScrollProgress, settings, annotations, jump, onSelection, shotMode, onShot, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onZoom,
 }: Props) {
   const [data, setData] = useState<Blob | null>(null)
   const [numPages, setNumPages] = useState(0)
@@ -209,7 +211,7 @@ export function PdfReader({
 
   useEffect(() => {
     let alive = true
-    void getDocBlob(hash).then(async (blob) => {
+    void (localBlob ? Promise.resolve(localBlob) : getDocBlob(hash)).then(async (blob) => {
       if (!alive) return
       if (!blob) {
         // 文件本体不在（被系统清理 / 换了设备只同步了元信息）：给可重试的错误，别让细条一直停在 8%
@@ -223,7 +225,7 @@ export function PdfReader({
       if (alive) setData(buf)
     })
     return () => { alive = false }
-  }, [hash, reloadKey])
+  }, [hash, localBlob, reloadKey])
 
   // 正文宽度滑块同样作用于 PDF：100% 铺满画布，50% 收到一半；zoom 再在此之上倍乘。
   // 手机上不提供宽度设置，直接按屏宽适配；桌面保留按文档记忆的宽度。
@@ -372,7 +374,7 @@ export function PdfReader({
         // 后台再量全篇，真出现混合尺寸才补一次提交；抽样不一致时宁可等量完，保证首帧版面就是对的。
         const same = (a: number, b: number) => Math.abs(a - b) < 1e-3
         const allIdx = Array.from({ length: n }, (_, i) => i + 1)
-        const probe = [...new Set([1, n, Math.round(n * 0.25), Math.round(n * 0.5), Math.round(n * 0.75)])].sort((a, b) => a - b)
+        const probe = [...new Set([1, n, ...[0.25, 0.5, 0.75].map(fraction => Math.max(1, Math.round(n * fraction)))])].sort((a, b) => a - b)
         const prs = await Promise.all(probe.map(ratioOf))
         const commit = (rs: number[]) => {
           setNumPages(n)
@@ -469,16 +471,20 @@ export function PdfReader({
   // 首次挂载：恢复深度进度（与保存基准一致：视口上 1/3）
   // 用 layout effect：滚动必须在浏览器绘制这一帧之前落位，否则先闪一下首页再瞬移到上次阅读处
   useLayoutEffect(() => {
-    if (restoredRef.current || !initialTarget || !numPages || !ratios.length) return
+    if (restoredRef.current || (!initialTarget && localScrollProgress == null) || !numPages || !ratios.length) return
     const container = scrollRef.current
     if (!container) return
     layout()
-    const pageTop = offsets.current[initialTarget.page - 1] ?? 0
-    const h = pageH(initialTarget.page - 1)
-    container.scrollTop = Math.max(0, pageTop + initialTarget.offsetRatio * h - container.clientHeight * 0.3)
+    if (initialTarget) {
+      const pageTop = offsets.current[initialTarget.page - 1] ?? 0
+      const h = pageH(initialTarget.page - 1)
+      container.scrollTop = Math.max(0, pageTop + initialTarget.offsetRatio * h - container.clientHeight * 0.3)
+    } else {
+      container.scrollTop = (localScrollProgress ?? 0) * Math.max(0, container.scrollHeight - container.clientHeight)
+    }
     restoredRef.current = true
     onRestored()
-  }, [initialTarget, numPages, ratios, scrollRef, onRestored, layout, pageH])
+  }, [initialTarget, localScrollProgress, numPages, ratios, scrollRef, onRestored, layout, pageH])
 
   // 跳转（目录/批注/深链）
   useEffect(() => {

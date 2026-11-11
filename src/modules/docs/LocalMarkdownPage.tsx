@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ArrowLeft, ArrowUp, Check, FileText, Folder, FolderOpen, ListTree, MessageSquareText, PanelLeftClose, PanelLeftOpen, PenLine, RefreshCw, Settings2 } from 'lucide-react'
+import { ArrowLeft, ArrowUp, Check, ExternalLink, FileText, Folder, FolderOpen, ListTree, MessageSquareText, PanelLeftClose, PanelLeftOpen, PenLine, RefreshCw, Settings2 } from 'lucide-react'
 import { isTauri } from '@/lib/native'
-import { fileName, parentPath, localLink, localMarkdown, type LocalDocument, type LocalFolder } from '@/lib/localMarkdown'
+import { fileName, parentPath, localFileKind, localLink, localMarkdown, type LocalDocument, type LocalFolder } from '@/lib/localMarkdown'
 import { openExternal } from '@/lib/links'
 import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
 import { useThemeEffect } from '@/shared/theme'
 import { LocalReadingPane } from './LocalReadingPane'
 import { LocalRichEditor } from './LocalRichEditor'
+import { LocalFilePreview, LocalTextEditor } from './LocalFilePreview'
 import { parseMdBlocks } from './MdReader'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import type { JumpTarget } from './reader/useReadingPosition'
+import { captureLocalPosition, restoreLocalPosition, type LocalScrollPosition } from './localScrollPosition'
 
 const iconButton = 'grid h-9 w-9 shrink-0 place-items-center rounded-lg text-on-surface-2 hover:bg-surface-3 focus-visible:outline-primary'
 const slug = (text: string) => text.trim().toLowerCase().replace(/[^\w一-鿿]+/g, '-').replace(/^-|-$/g, '')
@@ -40,11 +42,13 @@ export function LocalMarkdownPage() {
   const initialFolder = params.get('folder') ?? ''
   const [folder, setFolder] = useState<LocalFolder | null>(null)
   const [doc, setDoc] = useState<LocalDocument | null>(null)
+  const kind = doc ? localFileKind(doc.path) : undefined
+  const editable = kind === 'md' || kind === 'text' || kind === 'html'
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [sideOpen, setSideOpen] = useState(true)
   const [tab, setTab] = useState<'files' | 'outline'>('files')
-  const headings = useMemo(() => doc ? parseMdBlocks(doc.markdown).headings : [], [doc?.markdown])
+  const headings = useMemo(() => kind === 'md' && doc ? parseMdBlocks(doc.markdown).headings : [], [kind, doc?.markdown])
   const [jump, setJump] = useState<JumpTarget | null>(null)
   const refresh = useAsyncButton()
   const refreshLock = useRef(false)
@@ -52,7 +56,11 @@ export function LocalMarkdownPage() {
   const [imageRefresh, setImageRefresh] = useState(0)
   const [settings, setSettings] = useState(false)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
-  const scroll = useRef<HTMLDivElement>(null)
+  const readerScroll = useRef<HTMLDivElement>(null)
+  const editorScroll = useRef<HTMLElement | null>(null)
+  const [trail, setTrail] = useState<{ params: URLSearchParams; position?: LocalScrollPosition }[]>([])
+  const [readerPosition, setReaderPosition] = useState<LocalScrollPosition>()
+  const editPosition = useRef<LocalScrollPosition>()
   const current = useRef<LocalDocument | null>(null)
   const viewDir = useRef('')
   const pendingAnchor = useRef('')
@@ -69,20 +77,35 @@ export function LocalMarkdownPage() {
   const saveStateRef = useRef<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
   const updateSaveState = useCallback((value: 'saved' | 'unsaved' | 'saving' | 'error') => { saveStateRef.current = value; setSaveState(value) }, [])
 
+  const capturePosition = useCallback(() => {
+    const view = editingRef.current ? editorScroll.current : readerScroll.current
+    return view ? captureLocalPosition(view, view.querySelector('.md-body')) : undefined
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!readerPosition || !doc || doc.path !== file || editing || loading) return
+    const frame = requestAnimationFrame(() => {
+      const view = readerScroll.current
+      if (view) restoreLocalPosition(view, readerPosition, view.querySelector('.md-body'))
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [readerPosition, doc?.path, file, editing, loading])
+
   const saveDraft = useCallback((force = false, target?: LocalDocument): Promise<boolean> => {
+    const original = target ?? current.current
+    const text = draftRef.current
     const run = saveChain.current.then(async () => {
-      // target：切换文件的瞬间 current 会被清空，调用方先把旧文档捕获进来
-      const cur = target ?? current.current
+      // 队列中的写入绑定到发起时的草稿与路径，版本则跟随同一文件前一次成功保存。
+      const cur = current.current?.path === original?.path ? current.current : original
       if (!cur) return false
-      const text = draftRef.current
-      if (text === cur.markdown) { updateSaveState('saved'); return true }
+      if (text === cur.markdown) { if (draftRef.current === text) updateSaveState('saved'); return draftRef.current === text }
       updateSaveState('saving')
       try {
         const next = await localMarkdown.write(cur.path, text, force ? undefined : cur.version)
         if (current.current?.path === next.path) { current.current = next; setDoc(next) }
         setConflict(false)
         updateSaveState(draftRef.current === text ? 'saved' : 'unsaved')
-        return true
+        return draftRef.current === text
       } catch (e) {
         const message = String(e)
         updateSaveState('error')
@@ -99,6 +122,7 @@ export function LocalMarkdownPage() {
 
   const startEditing = () => {
     if (!doc) return
+    editPosition.current = capturePosition()
     setAnnotationsOpen(false)
     draftRef.current = doc.markdown
     setDraft(doc.markdown)
@@ -108,14 +132,20 @@ export function LocalMarkdownPage() {
     setEditing(true)
   }
   const finishEditing = async () => {
-    if (await saveDraft()) { editingRef.current = false; setEditing(false) }
+    if (await saveDraft()) {
+      setReaderPosition(capturePosition())
+      setJump(null)
+      editingRef.current = false
+      setEditing(false)
+    }
   }
   const reloadExternal = async () => {
     const cur = current.current
     if (!cur) return
+    const draftAtStart = draftRef.current
     try {
       const next = await localMarkdown.read(cur.path)
-      if (!next) return
+      if (!next || current.current !== cur || draftRef.current !== draftAtStart) return
       current.current = next
       setDoc(next)
       draftRef.current = next.markdown
@@ -173,21 +203,28 @@ export function LocalMarkdownPage() {
     return () => { alive = false; unlisten?.() }
   }, [saveDraft, toast])
 
-  const goFile = useCallback(async (path: string, hash = '') => {
-    if (path === file) {
-      if (hash) {
-        const target = headings.find(h => 'b' + h.blockIdx === hash || slug(h.text) === hash)
-        if (target) setJump({ anchor: 'b' + target.blockIdx, ts: Date.now() })
-      }
+  const goToAnchor = useCallback((id: string) => {
+    if (kind === 'html') {
+      const anchors = readerScroll.current?.querySelectorAll('[id], a[name]') ?? []
+      Array.from(anchors).find(el => el.id === id || el.getAttribute('name') === id)?.scrollIntoView({ block: 'start' })
       return
     }
+    const target = headings.find(h => 'b' + h.blockIdx === id || slug(h.text) === id)
+    if (target) setJump({ anchor: 'b' + target.blockIdx, ts: Date.now() })
+  }, [kind, headings])
+
+  const goFile = useCallback(async (path: string, hash = '') => {
+    if (path === file) { if (hash) goToAnchor(hash); return }
     if (editingRef.current && !(await saveDraft())) return
+    const position = capturePosition()
+    setTrail(prev => [...prev, { params: new URLSearchParams(params), position }])
+    setReaderPosition(undefined)
     pendingAnchor.current = hash
     setJump(null)
     editingRef.current = false
     setEditing(false)
-    setParams({ file: path })
-  }, [setParams, file, saveDraft, headings])
+    setParams({ file: path }, { replace: true })
+  }, [setParams, file, saveDraft, goToAnchor, params, capturePosition])
   const browse = useCallback(async (path: string) => {
     try { const next = await localMarkdown.list(path); viewDir.current = next.directory; setFolder(next); setError('') }
     catch (e) { setError(String(e)) }
@@ -217,10 +254,10 @@ export function LocalMarkdownPage() {
     }
     let alive = true
     setLoading(true); setError(''); setDoc(null); current.current = null
-    // 先列目录（原生侧据此把该文件夹授权给本窗口），再读文件，避免越界误判
+    // 先验证文件在已选目录内，链接本身不能扩大读写范围。
     void (async () => {
-      const list = await localMarkdown.list(parentPath(file))
       const next = await localMarkdown.read(file)
+      const list = await localMarkdown.list(parentPath(next?.path ?? file))
       return { next, list }
     })().then(({ next, list }) => {
       if (!alive) return
@@ -230,7 +267,6 @@ export function LocalMarkdownPage() {
       }
       setFolder(list)
       viewDir.current = list.directory
-      scroll.current?.scrollTo({ top: 0 })
     }).catch(e => { if (alive) setError(String(e)) }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [file, initialFolder, browse, saveDraft, updateSaveState])
@@ -240,11 +276,12 @@ export function LocalMarkdownPage() {
     if (!file || !isTauri()) return
     let alive = true, checking = false
     const check = async () => {
-      if (checking || editingRef.current || document.visibilityState === 'hidden' || !current.current || current.current.path !== file) return
+      const observed = current.current
+      if (checking || editingRef.current || document.visibilityState === 'hidden' || observed?.path !== file) return
       checking = true
       try {
-        const next = await localMarkdown.read(file, current.current.version)
-        if (alive && next) { current.current = next; setDoc(next); setError('') }
+        const next = await localMarkdown.read(file, observed.version)
+        if (alive && next && !editingRef.current && current.current === observed) { current.current = next; setDoc(next); setError('') }
       } catch (e) { if (alive) setError(String(e)) }
       finally { checking = false }
     }
@@ -255,15 +292,17 @@ export function LocalMarkdownPage() {
   }, [file, browse])
 
   useEffect(() => {
-    if (!pendingAnchor.current || !doc || loading) return
-    const heading = headings.find(h => slug(h.text) === pendingAnchor.current)
-    if (heading) setJump({ anchor: 'b' + heading.blockIdx, ts: Date.now() })
+    if (!pendingAnchor.current || doc?.path !== file || loading) return
+    goToAnchor(pendingAnchor.current)
     pendingAnchor.current = ''
-  }, [doc, loading, headings])
+  }, [doc, file, loading, goToAnchor])
 
   const refreshDocument = async () => {
     if (refreshLock.current) return
     if (editingRef.current && !(await saveDraft())) return
+    const observed = current.current
+    const wasEditing = editingRef.current
+    const draftAtStart = draftRef.current
     refreshLock.current = true
     await refresh.run(async () => {
       try {
@@ -271,6 +310,7 @@ export function LocalMarkdownPage() {
           file ? localMarkdown.read(file) : Promise.resolve(null),
           folder ? localMarkdown.list(folder.directory) : Promise.resolve(null),
         ])
+        if (current.current !== observed || editingRef.current !== wasEditing || draftRef.current !== draftAtStart) return
         const changed = next && next.version !== current.current?.version
         if (next && changed) { current.current = next; setDoc(next) }
         if (next && editingRef.current) {
@@ -290,50 +330,58 @@ export function LocalMarkdownPage() {
   }
   const leavePage = async () => {
     if (editingRef.current && !(await saveDraft())) return
-    navigate('/docs')
+    const previous = trail.at(-1)
+    if (!previous) { navigate('/docs'); return }
+    editingRef.current = false
+    setEditing(false)
+    pendingAnchor.current = ''
+    setJump(null)
+    setReaderPosition(previous.position)
+    setTrail(prev => prev.slice(0, -1))
+    setParams(previous.params, { replace: true })
   }
 
   useEffect(() => {
     if (!isTauri()) return
-    const name = doc ? `${fileName(doc.path)} — Kairos` : '本地 Markdown — Kairos'
+    const name = doc ? `${fileName(doc.path)} — Kairos` : '本地文档 — Kairos'
     void import('@tauri-apps/api/window').then(m => m.getCurrentWindow().setTitle(name)).catch(() => undefined)
     return () => { void import('@tauri-apps/api/window').then(m => m.getCurrentWindow().setTitle('Kairos')).catch(() => undefined) }
   }, [doc?.path])
 
   const openLink = useCallback((href: string) => {
     if (href.startsWith('#')) {
-      let id: string
-      try { id = decodeURIComponent(href.slice(1)) } catch { return }
-      const target = headings.find(h => 'b' + h.blockIdx === id || slug(h.text) === id)
-      if (target) setJump({ anchor: 'b' + target.blockIdx, ts: Date.now() })
+      try { goToAnchor(decodeURIComponent(href.slice(1))) } catch { return }
       return
     }
     if (/^(https?:|mailto:|tel:)/i.test(href)) { openExternal(href); return }
     const link = localLink(file, href)
-    if (link && /\.(md|markdown)$/i.test(link.path)) void goFile(link.path, link.hash)
-    else toast('请选择同文件夹中的 Markdown 链接')
-  }, [headings, file, goFile, toast])
+    if (link && localFileKind(link.path)) void goFile(link.path, link.hash)
+    else toast('此链接的文件格式不受支持')
+  }, [file, goFile, goToAnchor, toast])
   const renderImage = useCallback((src: string | undefined, alt: string | undefined) => <LocalImage file={file} src={src} alt={alt} refresh={imageRefresh} />, [file, imageRefresh])
 
-  if (!isTauri()) return <div className="p-8 text-on-surface"><h1 className="text-xl font-semibold">本地 Markdown</h1><p className="mt-3 text-on-surface-2">请在 Windows 桌面版中打开本地文件夹。</p><button className="mt-5 text-primary" onClick={() => navigate('/docs')}>返回文档工作站</button></div>
+  const updateDraft = (text: string) => { draftRef.current = text; setDraft(text); updateSaveState('unsaved') }
+
+  if (!isTauri()) return <div className="p-8 text-on-surface"><h1 className="text-xl font-semibold">本地文档</h1><p className="mt-3 text-on-surface-2">请在 Windows 桌面版中打开本地文件夹。</p><button className="mt-5 text-primary" onClick={() => navigate('/docs')}>返回文档工作站</button></div>
   return <div className="local-markdown h-full min-h-0 flex flex-col bg-surface text-on-surface">
     <header className="h-12 shrink-0 flex items-center gap-1 border-b border-outline/70 px-2">
-      <button className={iconButton} title="返回文档工作站" aria-label="返回文档工作站" onClick={() => void leavePage()}><ArrowLeft size={17} /></button>
+      <button className={iconButton} title={trail.length ? '返回上一份文件' : '返回文档工作站'} aria-label={trail.length ? '返回上一份文件' : '返回文档工作站'} onClick={() => void leavePage()}><ArrowLeft size={17} /></button>
       <button className={iconButton} title={sideOpen ? '收起侧栏' : '展开侧栏'} aria-label={sideOpen ? '收起侧栏' : '展开侧栏'} onClick={() => setSideOpen(v => !v)}>{sideOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button>
       <span className="ml-1 flex-1 min-w-0 truncate text-[13px] text-on-surface-2" title={file || folder?.directory}>
-        {file ? fileName(file) : '本地 Markdown'}
+        {file ? fileName(file) : '本地文档'}
         {editing && <span className={cn('ml-2', saveState === 'error' ? 'text-danger' : saveState === 'saved' ? 'text-on-surface-2' : 'text-primary')}>{saveState === 'saving' ? '保存中…' : saveState === 'unsaved' ? '未保存' : saveState === 'error' ? '保存失败' : '已保存到原文件'}</span>}
       </span>
       {!file && <>
-        <Button size="sm" disabled={picking} aria-label="打开本地 Markdown 文件" onClick={() => void pick(false)}><FileText size={16} /><span className="hidden sm:inline">打开文件</span></Button>
+        <Button size="sm" disabled={picking} aria-label="打开本地文件" onClick={() => void pick(false)}><FileText size={16} /><span className="hidden sm:inline">打开文件</span></Button>
         <Button size="sm" disabled={picking} aria-label="打开本地文件夹" onClick={() => void pick(true)}><FolderOpen size={16} /><span className="hidden sm:inline">打开文件夹</span></Button>
       </>}
-      {doc && !loading && (editing
+      {doc && !loading && editable && (editing
         ? <Button size="icon" variant="primary" title="完成编辑（Ctrl+S 立即保存）" aria-label="完成编辑" onClick={() => void finishEditing()}><Check size={16} /></Button>
         : <Button size="icon" title="编辑原文件，修改直接写回磁盘" aria-label="编辑文档" onClick={startEditing}><PenLine size={16} /></Button>)}
+      {file && localFileKind(file) && !['md', 'text', 'html'].includes(localFileKind(file)!) && !loading && <Button size="sm" onClick={() => void localMarkdown.openWith(file).catch(e => toast(String(e)))}><ExternalLink size={15} />用其他应用编辑</Button>}
       <Button size="icon" state={refresh.state} disabled={!file && !folder} title="刷新文档和文件夹" aria-label="刷新文档" onClick={() => void refreshDocument()}><RefreshCw size={16} /></Button>
-      {doc && !loading && !editing && <button className={cn(iconButton, annotationsOpen && 'bg-surface-3')} title="批注与评论" aria-label="批注与评论" aria-expanded={annotationsOpen} onClick={() => setAnnotationsOpen(v => !v)}><MessageSquareText size={17} /></button>}
-      <button className={cn(iconButton, settings && 'bg-surface-3', editing && 'opacity-40 pointer-events-none')} title="阅读设置" aria-label="阅读设置" aria-controls="reader-settings" aria-expanded={settings} onClick={() => setSettings(v => !v)}><Settings2 size={17} /></button>
+      {kind === 'md' && !loading && !editing && <button className={cn(iconButton, annotationsOpen && 'bg-surface-3')} title="批注与评论" aria-label="批注与评论" aria-expanded={annotationsOpen} onClick={() => setAnnotationsOpen(v => !v)}><MessageSquareText size={17} /></button>}
+      {kind === 'md' && <button className={cn(iconButton, settings && 'bg-surface-3', editing && 'opacity-40')} disabled={editing} title="阅读设置" aria-label="阅读设置" aria-controls="reader-settings" aria-expanded={settings} onClick={() => setSettings(v => !v)}><Settings2 size={17} /></button>}
     </header>
     <div className="flex-1 min-h-0 flex relative">
       {sideOpen && <aside className="w-64 max-w-[82vw] shrink-0 flex flex-col border-r border-outline/70 bg-surface absolute inset-y-0 left-0 z-10 shadow-lg md:static md:shadow-none" aria-label="文档导航">
@@ -347,23 +395,25 @@ export function LocalMarkdownPage() {
             {folder?.entries.map(entry => <button key={entry.path} aria-current={entry.path === doc?.path ? 'page' : undefined} className={cn('flex w-full min-w-0 items-center gap-2 border-l-2 px-4 py-2 text-left text-[13px] hover:bg-surface-2', entry.path === doc?.path ? 'border-primary text-primary bg-primary-soft' : 'border-transparent')} onClick={() => entry.directory ? void browse(entry.path) : void goFile(entry.path)}>
               {entry.directory ? <Folder size={14} className="shrink-0 text-on-surface-2" /> : <FileText size={14} className="shrink-0 text-on-surface-2" />}<span className="truncate">{entry.name}</span>
             </button>)}
-            {folder && !folder.entries.length && <p className="px-4 py-3 text-xs text-on-surface-2">此目录没有 Markdown 文件</p>}
+            {folder && !folder.entries.length && <p className="px-4 py-3 text-xs text-on-surface-2">此目录没有支持的文档</p>}
           </> : headings.length ? headings.map(heading => <button key={heading.blockIdx} className="block w-full truncate py-2 pr-3 text-left text-[13px] text-on-surface-2 hover:bg-surface-2 hover:text-on-surface" style={{ paddingLeft: 16 + (heading.level - 1) * 12 }} onClick={() => { setJump({ anchor: 'b' + heading.blockIdx, ts: Date.now() }); if (window.innerWidth < 768) setSideOpen(false) }}>{heading.text}</button>) : <p className="px-4 py-3 text-xs text-on-surface-2">文章没有标题目录</p>}
         </div>
         <button className="shrink-0 border-t border-outline px-4 py-3 text-left text-xs text-on-surface-2 hover:text-primary" onClick={() => void localMarkdown.defaults().catch(e => toast(String(e)))}>默认应用设置</button>
       </aside>}
-      <div ref={scroll} className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
         {error && !conflict && <div role="alert" className="mx-6 mt-4 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
         {conflict && editing && <div role="alert" className="mx-6 mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger">
           <span className="flex-1 min-w-40">文件已被其他程序修改，自动保存已暂停。</span>
           <button className="rounded-lg border border-outline px-3 py-1.5 text-[12px] text-on-surface hover:bg-surface-2" onClick={() => void reloadExternal()}>重新加载外部版本</button>
           <button className="rounded-lg bg-primary-action px-3 py-1.5 text-[12px] text-on-primary-action" onClick={() => void saveDraft(true)}>覆盖保存我的修改</button>
         </div>}
-        {loading ? <p role="status" className="px-8 py-12 text-sm text-on-surface-2">正在读取文件…</p> : editing && doc ? <LocalRichEditor
-          markdown={draft}
-          onChange={md => { draftRef.current = md; setDraft(md); updateSaveState('unsaved') }}
-          renderImage={renderImage}
-        /> : doc ? <LocalReadingPane key={doc.path} document={doc} onLink={openLink} renderImage={renderImage} jump={jump} settingsOpen={settings} onCloseSettings={() => setSettings(false)} annotationsOpen={annotationsOpen} onCloseAnnotations={() => setAnnotationsOpen(false)} onOpenAnnotations={() => setAnnotationsOpen(true)} /> : <div className="max-w-lg mx-auto px-8 py-24"><h1 className="text-2xl font-semibold">本地 Markdown</h1><p className="mt-3 text-sm leading-6 text-on-surface-2">打开一篇文章，或从文件夹开始。文件列表、标题目录和正文都在这里。</p><div className="flex gap-3 mt-6"><button className="rounded-lg bg-primary-action text-on-primary-action px-4 py-2 text-sm" onClick={() => void pick(false)}>打开文件</button><button className="rounded-lg border border-outline px-4 py-2 text-sm" onClick={() => void pick(true)}>打开文件夹</button></div></div>}
+        {loading ? <p role="status" className="px-8 py-12 text-sm text-on-surface-2">正在读取文件…</p> : editing && doc ? (kind === 'md'
+          ? <LocalRichEditor markdown={draft} onChange={updateDraft} scrollRef={editorScroll} initialPosition={editPosition.current} renderImage={renderImage} />
+          : <LocalTextEditor text={draft} onChange={updateDraft} scrollRef={editorScroll} position={editPosition.current} />
+        ) : doc ? (kind === 'md'
+          ? <LocalReadingPane key={doc.path} document={doc} onLink={openLink} renderImage={renderImage} jump={jump} scrollRef={readerScroll} restorePosition={!!readerPosition} settingsOpen={settings} onCloseSettings={() => setSettings(false)} annotationsOpen={annotationsOpen} onCloseAnnotations={() => setAnnotationsOpen(false)} onOpenAnnotations={() => setAnnotationsOpen(true)} />
+          : <LocalFilePreview key={`${doc.path}:${doc.version}`} doc={doc} scrollRef={readerScroll} onLink={openLink} position={readerPosition} />
+        ) : <div className="max-w-lg mx-auto px-8 py-24"><h1 className="text-2xl font-semibold">本地文档</h1><p className="mt-3 text-sm leading-6 text-on-surface-2">打开文件或文件夹。支持 Markdown、文本、HTML、PDF、DOCX、PPTX 和 EPUB。</p><div className="flex gap-3 mt-6"><button className="rounded-lg bg-primary-action text-on-primary-action px-4 py-2 text-sm" onClick={() => void pick(false)}>打开文件</button><button className="rounded-lg border border-outline px-4 py-2 text-sm" onClick={() => void pick(true)}>打开文件夹</button></div></div>}
       </div>
     </div>
   </div>

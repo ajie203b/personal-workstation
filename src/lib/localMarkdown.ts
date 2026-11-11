@@ -2,7 +2,20 @@ import { invoke } from '@tauri-apps/api/core'
 
 export interface LocalEntry { name: string; path: string; directory: boolean }
 export interface LocalFolder { directory: string; parent: string | null; entries: LocalEntry[] }
-export interface LocalDocument { path: string; markdown: string; version: string }
+export interface LocalDocument { path: string; markdown: string; version: string; base64?: string }
+
+export function localFileKind(path: string) {
+  switch (/\.([^./\\]+)$/.exec(path)?.[1].toLowerCase()) {
+    case 'md': case 'markdown': return 'md'
+    case 'txt': case 'csv': case 'tsv': case 'json': return 'text'
+    case 'html': case 'htm': return 'html'
+    case 'pdf': return 'pdf'
+    case 'docx': return 'docx'
+    case 'pptx': return 'pptx'
+    case 'epub': return 'epub'
+    default: return undefined
+  }
+}
 
 export const localMarkdown = {
   pick: (folder: boolean) => invoke<string | null>('local_markdown_pick', { folder }),
@@ -10,6 +23,7 @@ export const localMarkdown = {
   read: (path: string, knownVersion?: string) => invoke<LocalDocument | null>('local_markdown_read', { path, knownVersion }),
   write: (path: string, markdown: string, expectedVersion?: string) => invoke<LocalDocument>('local_markdown_write', { path, markdown, expectedVersion }),
   image: (path: string) => invoke<string>('local_markdown_image', { path }),
+  openWith: (path: string) => invoke<void>('local_document_open_with', { path }),
   defaults: () => invoke<void>('local_markdown_defaults'),
 }
 

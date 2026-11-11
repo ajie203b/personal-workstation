@@ -48,6 +48,9 @@ it('本地阅读页展示同目录文件、切换文章并生成标题目录', a
   await act(async () => host.querySelector<HTMLAnchorElement>('.md-body a')!.click())
   expect(read).toHaveBeenLastCalledWith('D:/notes/中文 b.md')
   expect(host.querySelector('.md-body h1')?.textContent).toBe('第二篇')
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="返回上一份文件"]')!.click())
+  expect(host.querySelector('.md-body h1')?.textContent).toBe('第一篇')
+  await act(async () => host.querySelector<HTMLAnchorElement>('.md-body a')!.click())
   // Explicit refresh checks the document as well as the directory and reports success.
   read.mockResolvedValue({ path: 'D:/notes/中文 b.md', version: '2', markdown: '# 刷新后的正文' })
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="刷新文档"]')!.click())
@@ -118,6 +121,25 @@ it('外部修改冲突时暂停保存，可覆盖保存我的修改', async () =
   await act(async () => force.click())
   expect(write).toHaveBeenLastCalledWith('D:/notes/a.md', '# 我的修改', undefined)
   expect(host.textContent).not.toContain('文件已被其他程序修改')
+})
+
+it('进入编辑时，正在进行的文件刷新不会悄悄更换草稿的保存版本', async () => {
+  list.mockResolvedValue(notesFolder)
+  const original = { path: 'D:/notes/a.md', version: '1', markdown: '# 原始正文' }
+  let resolveExternal!: (value: typeof original) => void
+  const external = new Promise<typeof original>(resolve => { resolveExternal = resolve })
+  read.mockImplementation((_path: string, knownVersion?: string) => knownVersion ? external : Promise.resolve(original))
+  write.mockRejectedValue('文件已被外部修改，请刷新后重试')
+  const host = await renderPage()
+  await act(async () => { window.dispatchEvent(new Event('focus')) })
+  expect(read).toHaveBeenCalledWith(original.path, '1')
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="编辑文档"]')!.click())
+  await act(async () => resolveExternal({ ...original, version: '2', markdown: '# 外部修改' }))
+  await enterSource(host)
+  await act(async () => typeDraft(host, '# 我的修改'))
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true })) })
+  expect(write).toHaveBeenCalledWith(original.path, '# 我的修改', '1')
+  expect(host.textContent).toContain('文件已被其他程序修改')
 })
 
 it('编辑中直接关窗：先写回原文件再销毁窗口', async () => {
