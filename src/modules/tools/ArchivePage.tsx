@@ -37,6 +37,7 @@ function DesktopArchiveBrowser({ close, downloads, onError, onStart }: {
   const [showLink, setShowLink] = useState(false)
   const [link, setLink] = useState('')
   const [linkError, setLinkError] = useState('')
+  const [browserError, setBrowserError] = useState('')
   const [starting, setStarting] = useState(false)
 
   useEffect(() => {
@@ -69,7 +70,14 @@ function DesktopArchiveBrowser({ close, downloads, onError, onStart }: {
   }, [close, onError])
 
   const action = (command: 'back' | 'home' | 'reload') => {
-    void controlDesktopArchive(command).catch((error) => onError(errorText(error, '浏览器操作失败')))
+    setBrowserError('')
+    if (command === 'back' && showLink) {
+      setShowLink(false)
+      return
+    }
+    void controlDesktopArchive(command).then((result) => {
+      if (result === 'exit') close()
+    }).catch((error) => setBrowserError(errorText(error, '浏览器操作失败')))
   }
 
   async function startLinkDownload() {
@@ -90,7 +98,7 @@ function DesktopArchiveBrowser({ close, downloads, onError, onStart }: {
     <div role="dialog" aria-modal="true" aria-label="安娜的档案浏览器"
       className="fixed inset-0 z-[100] flex flex-col bg-surface">
       <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-1 border-b border-outline px-2 sm:px-4">
-        <Button size="icon" title="上一页" aria-label="上一页" onClick={() => action('back')}><ArrowLeft size={18} /></Button>
+        <Button size="icon" title="返回上一页，首页返回工具" aria-label="返回" onClick={() => action('back')}><ArrowLeft size={18} /></Button>
         <Button size="icon" title="首页" aria-label="首页" onClick={() => action('home')}><Home size={17} /></Button>
         <Button size="icon" title="刷新" aria-label="刷新" onClick={() => action('reload')}><RotateCw size={17} /></Button>
         <span className="hidden font-semibold sm:inline">安娜的档案</span>
@@ -120,8 +128,8 @@ function DesktopArchiveBrowser({ close, downloads, onError, onStart }: {
           {linkError && <p role="alert" className="mt-1.5 text-xs text-danger">{linkError}</p>}
         </form>
       )}
-      {downloads.error ? (
-        <p role="alert" className="shrink-0 border-b border-outline px-4 py-2 text-xs text-danger">{downloads.error}</p>
+      {browserError || downloads.error ? (
+        <p role="alert" className="shrink-0 border-b border-outline px-4 py-2 text-xs text-danger">{browserError || downloads.error}</p>
       ) : transferText(downloads) && (
         <p role="status" className="shrink-0 border-b border-outline px-4 py-2 text-xs text-on-surface-2">{transferText(downloads)}</p>
       )}

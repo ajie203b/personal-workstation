@@ -29,11 +29,11 @@ type BrowserAction = 'show' | 'resize' | 'hide' | 'back' | 'reload' | 'home'
 type Bounds = Pick<DOMRect, 'x' | 'y' | 'width' | 'height'>
 
 // Serializing native layout changes prevents a late show from covering another route.
-let browserOperation: Promise<void> = Promise.resolve()
+let browserOperation: Promise<unknown> = Promise.resolve()
 
-export function controlDesktopArchive(action: BrowserAction, rect?: Bounds): Promise<void> {
+export function controlDesktopArchive(action: BrowserAction, rect?: Bounds): Promise<'ok' | 'exit'> {
   const bounds = rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-  const next = browserOperation.then(() => invoke<void>('archive_browser', { action, bounds }))
+  const next = browserOperation.then(() => invoke<'ok' | 'exit'>('archive_browser', { action, bounds }))
   browserOperation = next.catch(() => {})
   return next
 }

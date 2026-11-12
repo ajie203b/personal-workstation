@@ -22,6 +22,62 @@ const MAX_BYTES: u64 = 150 * 1024 * 1024;
 pub struct ArchiveState(Mutex<Transfers>);
 
 #[derive(Default)]
+pub struct ArchiveHistory(Mutex<PageHistory>);
+
+#[derive(Default)]
+struct PageHistory {
+    pages: Vec<Url>,
+    on_partner_site: bool,
+}
+
+impl PageHistory {
+    fn record(&mut self, url: &Url) {
+        if !browser_url(url) { return; }
+        if !matches!(url.domain(), Some("annas-archive.gd" | "annas-archive.gl" | "annas-archive.pk")) {
+            self.on_partner_site = true;
+            return;
+        }
+        if url.path().starts_with("/cdn-cgi/") || url.path().starts_with("/dyn/") { return; }
+
+        self.on_partner_site = false;
+        let mut page = url.clone();
+        page.set_fragment(None);
+        let params: Vec<_> = url.query_pairs().filter(|(key, _)| {
+            !key.starts_with("__ddg") && !key.starts_with("__cf_chl") && !key.starts_with("cf_chl_")
+        }).collect();
+        if params.len() != url.query_pairs().count() {
+            page.set_query(None);
+            if !params.is_empty() { page.query_pairs_mut().extend_pairs(params); }
+        }
+        let repeated = self.pages.last().is_some_and(|last| {
+            last.origin() == page.origin() && last.path() == page.path()
+                && last.query_pairs().eq(page.query_pairs())
+        });
+        if !repeated {
+            self.pages.push(page);
+            if self.pages.len() > 64 { self.pages.remove(0); }
+        }
+    }
+
+    fn back(&mut self) -> Option<Url> {
+        if std::mem::take(&mut self.on_partner_site) { return self.pages.last().cloned(); }
+        let current = self.pages.pop()?;
+        self.pages.last().cloned().or_else(|| {
+            let mut parts = current.path_segments()?;
+            if parts.next()? != "slow_download" { return None; }
+            let id = parts.next()?;
+            if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) { return None; }
+            current.join(&format!("/md5/{id}")).ok()
+        })
+    }
+}
+
+pub fn record_page(webview: &Webview, url: &Url) {
+    let history = webview.state::<ArchiveHistory>();
+    if let Ok(mut history) = history.0.lock() { history.record(url); }
+}
+
+#[derive(Default)]
 struct Transfers {
     active: Option<Transfer>,
     direct: Option<Progress>,
@@ -66,6 +122,10 @@ pub struct Bounds {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BrowserAction { Show, Resize, Hide, Back, Reload, Home }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BrowserOutcome { Ok, Exit }
 
 fn browser_url(url: &Url) -> bool {
     url.scheme() == "https" && url.username().is_empty() && url.password().is_none()
@@ -306,7 +366,7 @@ fn ready_book(root: &Path, id: &str) -> Option<(Download, PathBuf)> {
 }
 
 #[tauri::command]
-pub async fn archive_browser(app: AppHandle, action: BrowserAction, bounds: Option<Bounds>) -> Result<(), String> {
+pub async fn archive_browser(app: AppHandle, action: BrowserAction, bounds: Option<Bounds>) -> Result<BrowserOutcome, String> {
     let child = app.get_webview(VIEW);
     if matches!(action, BrowserAction::Show | BrowserAction::Resize) {
         let b = bounds.ok_or("浏览区域无效")?;
@@ -337,16 +397,27 @@ pub async fn archive_browser(app: AppHandle, action: BrowserAction, bounds: Opti
                 .on_download(download_event);
             window.add_child(builder, position, size).map_err(|_| "无法启动内嵌浏览器，请检查 WebView2 是否正常")?;
         }
-        return Ok(());
+        return Ok(BrowserOutcome::Ok);
     }
-    let Some(child) = child else { return Ok(()) };
+    let Some(child) = child else {
+        return Ok(if matches!(action, BrowserAction::Back) { BrowserOutcome::Exit } else { BrowserOutcome::Ok });
+    };
+    let history = app.state::<ArchiveHistory>();
     match action {
         BrowserAction::Hide => child.hide(),
-        BrowserAction::Back => child.eval("history.back()"),
+        BrowserAction::Back => {
+            let previous = history.0.lock().map_err(|_| "无法读取浏览历史")?.back();
+            let Some(previous) = previous else { return Ok(BrowserOutcome::Exit); };
+            child.navigate(previous)
+        }
         BrowserAction::Reload => child.reload(),
-        BrowserAction::Home => child.navigate(HOME.parse::<Url>().unwrap()),
+        BrowserAction::Home => {
+            *history.0.lock().map_err(|_| "无法读取浏览历史")? = PageHistory::default();
+            child.navigate(HOME.parse::<Url>().unwrap())
+        }
         BrowserAction::Show | BrowserAction::Resize => unreachable!(),
-    }.map_err(|_| "浏览器操作失败".into())
+    }.map_err(|_| "浏览器操作失败")?;
+    Ok(BrowserOutcome::Ok)
 }
 
 #[tauri::command]
@@ -388,6 +459,35 @@ pub async fn archive_download_remove(app: AppHandle, id: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archive_back_skips_verification_reloads_and_partner_redirects() {
+        let home = Url::parse(HOME).unwrap();
+        let search = home.join("search?q=Jane%20Austen&ext=epub").unwrap();
+        let book = home.join("md5/51d2b22ca12a8b470b51f543298b34c9").unwrap();
+        let slow = home.join("slow_download/51d2b22ca12a8b470b51f543298b34c9/0/7").unwrap();
+        let mut history = PageHistory::default();
+        for page in [&home, &search, &home.join("search?q=Jane+Austen&ext=epub&__ddg_token=check").unwrap(),
+            &book, &slow, &slow.join("?__cf_chl_tk=check").unwrap(), &home.join("cdn-cgi/challenge-platform/check").unwrap(),
+            &Url::parse("https://partner.example.org/first").unwrap(), &Url::parse("https://cdn.example.org/error").unwrap()] {
+            history.record(page);
+        }
+        for expected in [&slow, &book, &search, &home] {
+            assert_eq!(history.back().as_ref(), Some(expected));
+            history.record(expected);
+        }
+        assert!(history.back().is_none());
+    }
+
+    #[test]
+    fn archive_back_from_direct_slow_page_returns_to_book_details() {
+        let mut history = PageHistory::default();
+        history.record(&Url::parse("https://annas-archive.gd/slow_download/51d2b22ca12a8b470b51f543298b34c9/0/7").unwrap());
+        let book = history.back().unwrap();
+        assert_eq!(book.path(), "/md5/51d2b22ca12a8b470b51f543298b34c9");
+        history.record(&book);
+        assert!(history.back().is_none());
+    }
 
     #[test]
     fn archive_navigation_excludes_local_and_non_https_origins() {

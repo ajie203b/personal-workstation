@@ -26,6 +26,7 @@ fn main() {
     tauri::Builder::default()
         .manage(local_markdown::LocalMarkdownState::default())
         .manage(archive::ArchiveState::default())
+        .manage(archive::ArchiveHistory::default())
         // 资源管理器再开文件：各开独立文档窗口，不打断主窗口正在进行的工作
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             local_markdown::open_files(app, &args, std::path::Path::new(&cwd), true);
@@ -54,6 +55,12 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         // 冷启动带文件时主窗口在 setup 之后才创建，会盖住文档窗口；等它加载完再把文档窗口置顶
         .on_page_load(|window, payload| {
+            if window.label() == "archive-browser" {
+                if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                    archive::record_page(window, payload.url());
+                }
+                return;
+            }
             if window.label() != "main" || !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) { return; }
             let state = window.state::<local_markdown::LocalMarkdownState>();
             if let Ok(mut ready) = state.main_ready.lock() { *ready = true; }
