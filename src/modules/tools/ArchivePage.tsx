@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router'
-import { ArrowLeft, Download, Home, RotateCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, ClipboardPaste, Download, Home, RotateCw, Trash2 } from 'lucide-react'
 import { IconToolNovel } from '@/shared/icons'
 import { Button } from '@/shared/ui/Button'
 import { importDoc } from '@/db/docs'
 import { isNative, isTauri } from '@/lib/native'
 import { useUi } from '@/stores/ui'
 import {
-  controlDesktopArchive, listArchiveDownloads, openAndroidArchive, readArchiveDownload,
+  controlDesktopArchive, downloadArchiveLink, listArchiveDownloads, openAndroidArchive, readArchiveDownload,
   removeArchiveDownload, type ArchiveBook, type ArchiveDownloads,
 } from '@/lib/archiveBrowser'
 
@@ -17,12 +17,27 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
 
-function DesktopArchiveBrowser({ close, downloads, onError }: {
+function transferText({ downloading, progress, items }: ArchiveDownloads): string {
+  if (progress) {
+    if (progress.received === 0) return '正在连接下载服务器…'
+    const size = `${(progress.received / 1048576).toFixed(1)} MB`
+    return progress.total ? `正在下载 ${Math.floor(progress.received / progress.total * 100)}%` : `已下载 ${size}`
+  }
+  if (downloading) return '正在下载电子书…'
+  return items.length ? '电子书已下载，可以导入阅读' : ''
+}
+
+function DesktopArchiveBrowser({ close, downloads, onError, onStart }: {
   close: () => void
   downloads: ArchiveDownloads
   onError: (message: string) => void
+  onStart: () => void
 }) {
   const pane = useRef<HTMLDivElement>(null)
+  const [showLink, setShowLink] = useState(false)
+  const [link, setLink] = useState('')
+  const [linkError, setLinkError] = useState('')
+  const [starting, setStarting] = useState(false)
 
   useEffect(() => {
     const node = pane.current
@@ -57,6 +72,20 @@ function DesktopArchiveBrowser({ close, downloads, onError }: {
     void controlDesktopArchive(command).catch((error) => onError(errorText(error, '浏览器操作失败')))
   }
 
+  async function startLinkDownload() {
+    setLinkError('')
+    setStarting(true)
+    try {
+      await downloadArchiveLink(link)
+      onStart()
+      setShowLink(false)
+    } catch (error) {
+      setLinkError(errorText(error, '无法开始下载'))
+    } finally {
+      setStarting(false)
+    }
+  }
+
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label="安娜的档案浏览器"
       className="fixed inset-0 z-[100] flex flex-col bg-surface">
@@ -65,13 +94,37 @@ function DesktopArchiveBrowser({ close, downloads, onError }: {
         <Button size="icon" title="首页" aria-label="首页" onClick={() => action('home')}><Home size={17} /></Button>
         <Button size="icon" title="刷新" aria-label="刷新" onClick={() => action('reload')}><RotateCw size={17} /></Button>
         <span className="hidden font-semibold sm:inline">安娜的档案</span>
-        <span role="status" className="ml-auto min-w-0 truncate px-2 text-xs text-on-surface-2">
-          {downloads.error || (downloads.downloading ? '正在下载…' : '')}
-        </span>
+        <Button variant="outline" size="sm" className="ml-auto shrink-0" aria-expanded={showLink}
+          onClick={() => { setLinkError(''); setShowLink((open) => !open) }}>
+          <ClipboardPaste size={16} /> 粘贴链接下载
+        </Button>
         <Button variant="outline" size="sm" className="shrink-0" onClick={close}>
           <Download size={16} /> 下载列表{downloads.items.length > 0 ? ` (${downloads.items.length})` : ''}
         </Button>
       </header>
+      {showLink && (
+        <form className="shrink-0 border-b border-outline px-3 py-2 sm:px-4" onSubmit={(event) => {
+          event.preventDefault()
+          void startLinkDownload()
+        }}>
+          <label htmlFor="archive-download-link" className="text-xs text-on-surface-2">
+            网页显示「已复制」后，在这里按 Ctrl+V，再点「开始下载」。
+          </label>
+          <div className="mt-1.5 flex items-center gap-2">
+            <input id="archive-download-link" type="text" inputMode="url" autoFocus autoComplete="off" spellCheck={false}
+              aria-label="电子书下载地址" value={link} onChange={(event) => setLink(event.target.value)}
+              placeholder="粘贴 EPUB 或 PDF 下载地址" className="h-9 min-w-0 flex-1 rounded-[10px] border border-outline bg-surface px-3 text-sm" />
+            <Button type="submit" size="sm" variant="primary" className="shrink-0" disabled={!link.trim() || downloads.downloading}
+              state={starting ? 'loading' : 'idle'}>开始下载</Button>
+          </div>
+          {linkError && <p role="alert" className="mt-1.5 text-xs text-danger">{linkError}</p>}
+        </form>
+      )}
+      {downloads.error ? (
+        <p role="alert" className="shrink-0 border-b border-outline px-4 py-2 text-xs text-danger">{downloads.error}</p>
+      ) : transferText(downloads) && (
+        <p role="status" className="shrink-0 border-b border-outline px-4 py-2 text-xs text-on-surface-2">{transferText(downloads)}</p>
+      )}
       <div ref={pane} className="flex min-h-0 flex-1 items-center justify-center text-sm text-on-surface-2">正在打开网页…</div>
     </div>, document.body,
   )
@@ -89,6 +142,11 @@ export function ArchivePage() {
   const [busy, setBusy] = useState<string>()
   const [revision, setRevision] = useState(0)
   const closeDesktop = useRef(() => setDesktopOpen(false)).current
+  const startDesktopDownload = () => {
+    setError('')
+    setDownloads((current) => ({ ...current, downloading: true, progress: { received: 0, total: null }, error: null }))
+    setRevision((value) => value + 1)
+  }
 
   useEffect(() => {
     if (!supported) return
@@ -155,7 +213,9 @@ export function ArchivePage() {
       {supported ? (
         <>
           <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
-            <p className="text-sm text-on-surface-2">在网页上选好版本，完成免费通道的等待后点击下载。</p>
+            <p className="text-sm text-on-surface-2">{desktop
+              ? '网页只提供复制地址时，请使用浏览器顶部的「粘贴链接下载」。'
+              : '在网页上选好版本，完成免费通道的等待后点击下载。'}</p>
             <Button variant="primary" state={androidOpen ? 'loading' : 'idle'} onClick={() => void openBrowser()}>
               打开站点
             </Button>
@@ -163,7 +223,7 @@ export function ArchivePage() {
           <section className="card p-4" aria-labelledby="archive-downloads-title">
             <h2 id="archive-downloads-title" className="text-sm font-semibold">下载列表</h2>
             {(error || downloads.error) && <p role="alert" className="mt-2 text-sm text-danger">{error || downloads.error}</p>}
-            {downloads.downloading && <p role="status" className="mt-2 text-sm text-on-surface-2">正在下载电子书…</p>}
+            {downloads.downloading && <p role="status" className="mt-2 text-sm text-on-surface-2">{transferText(downloads)}</p>}
             {downloads.items.length === 0 && !downloads.downloading && (
               <p className="mt-2 text-sm text-on-surface-2">下载完成的电子书会显示在这里。</p>
             )}
@@ -183,7 +243,7 @@ export function ArchivePage() {
           </section>
         </>
       ) : <p className="card p-4 text-sm text-on-surface-2">请在 Windows 或安卓的 Kairos 应用里使用此工具。</p>}
-      {desktopOpen && <DesktopArchiveBrowser close={closeDesktop} downloads={downloads} onError={setError} />}
+      {desktopOpen && <DesktopArchiveBrowser close={closeDesktop} downloads={downloads} onError={setError} onStart={startDesktopDownload} />}
     </div>
   )
 }

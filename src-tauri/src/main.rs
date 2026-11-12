@@ -44,6 +44,7 @@ fn main() {
             archive::archive_downloads,
             archive::archive_download_read,
             archive::archive_download_remove,
+            archive::archive_download_link,
         ])
         // 前端的 WebDAV 请求走这里：由 Rust 发出，不受浏览器跨域限制（坚果云不给 CORS）
         .plugin(tauri_plugin_http::init())

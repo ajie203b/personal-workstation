@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::Read,
+    io::{BufWriter, Read, Write},
+    net::{IpAddr, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tauri_plugin_http::reqwest::{self, redirect::Policy};
 use tauri::{
     ipc::Response,
     webview::{DownloadEvent, NewWindowResponse, WebviewBuilder},
@@ -22,7 +24,14 @@ pub struct ArchiveState(Mutex<Transfers>);
 #[derive(Default)]
 struct Transfers {
     active: Option<Transfer>,
-    error: Option<&'static str>,
+    direct: Option<Progress>,
+    error: Option<String>,
+}
+
+#[derive(Clone, Serialize, Default)]
+struct Progress {
+    received: u64,
+    total: Option<u64>,
 }
 
 struct Transfer {
@@ -42,7 +51,8 @@ struct Download {
 pub struct Downloads {
     items: Vec<Download>,
     downloading: bool,
-    error: Option<&'static str>,
+    progress: Option<Progress>,
+    error: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -64,6 +74,44 @@ fn browser_url(url: &Url) -> bool {
             host.contains('.') && !host.ends_with(".localhost")
                 && !host.ends_with(".local") && !host.ends_with(".internal")
         })
+}
+
+fn public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => !matches!(ip.octets(),
+            [0 | 10 | 127 | 224..=255, ..] | [100, 64..=127, ..] | [169, 254, ..]
+            | [172, 16..=31, ..] | [192, 0, 0 | 2, _] | [192, 168, ..]
+            | [198, 18 | 19, ..] | [198, 51, 100, _] | [203, 0, 113, _]),
+        IpAddr::V6(ip) => matches!(ip.segments(), [0x2000..=0x3fff, ..])
+            && !matches!(ip.segments(), [0x2001, 0..=0x01ff | 0x0db8, ..] | [0x2002, ..] | [0x3fff, ..]),
+    }
+}
+
+fn direct_url(url: &Url) -> bool {
+    if !url.username().is_empty() || url.password().is_some() { return false; }
+    let literal = url.host_str().and_then(|host| host.trim_matches(['[', ']']).parse::<IpAddr>().ok());
+    match url.scheme() {
+        "http" => literal.is_some_and(public_ip),
+        "https" => literal.map_or_else(|| browser_url(url), public_ip),
+        _ => false,
+    }
+}
+
+fn direct_filename(url: &Url) -> Option<String> {
+    let leaf = url.path_segments()?.next_back()?;
+    let name = percent_encoding::percent_decode_str(leaf).decode_utf8().ok()?.into_owned();
+    book_extension(&name)?;
+    (!name.contains(['/', '\\'])).then_some(name)
+}
+
+fn navigation_allowed(app: &AppHandle, url: &Url) -> bool {
+    if browser_url(url) || matches!(url.as_str(), "about:blank" | "about:srcdoc") { return true; }
+    if url.scheme() == "http" {
+        if let Ok(mut transfers) = app.state::<ArchiveState>().0.lock() {
+            transfers.error = Some("这个网页链接使用 HTTP，请复制下载地址，再点「粘贴链接下载」".into());
+        }
+    }
+    false
 }
 
 fn archive_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -96,16 +144,16 @@ fn download_event(webview: Webview, event: DownloadEvent<'_>) -> bool {
     let Ok(mut transfers) = state.0.lock() else { return false };
     match event {
         DownloadEvent::Requested { url, destination } => {
-            if transfers.active.is_some() {
-                transfers.error = Some("请等当前电子书下载完成后再试");
+            if transfers.active.is_some() || transfers.direct.is_some() {
+                transfers.error = Some("请等当前电子书下载完成后再试".into());
                 return false;
             }
             if !browser_url(&url) {
-                transfers.error = Some("该下载地址无法在 Kairos 内打开");
+                transfers.error = Some("这个下载链接需要复制后使用「粘贴链接下载」".into());
                 return false;
             }
             let Ok(root) = archive_root(webview.app_handle()) else {
-                transfers.error = Some("无法打开电子书下载目录");
+                transfers.error = Some("无法打开电子书下载目录".into());
                 return false;
             };
             match start_download(&root, url, destination) {
@@ -115,7 +163,7 @@ fn download_event(webview: Webview, event: DownloadEvent<'_>) -> bool {
                     transfers.error = None;
                     true
                 }
-                Err(error) => { transfers.error = Some(error); false }
+                Err(error) => { transfers.error = Some(error.into()); false }
             }
         }
         DownloadEvent::Finished { url, path, success, .. } => {
@@ -132,18 +180,115 @@ fn download_event(webview: Webview, event: DownloadEvent<'_>) -> bool {
                 Ok(meta) if success && meta.len() > 0 && fs::rename(&task.temp, &task.ready).is_ok() => None,
                 _ => Some("下载未完成，请回到网页重试"),
             };
-            transfers.error = error;
-            if error.is_some() {
-                let _ = fs::remove_file(&task.temp);
-                if let Some(dir) = task.temp.parent() {
-                    let _ = fs::remove_file(dir.join("name.txt"));
-                    let _ = fs::remove_dir(dir);
-                }
-            }
+            transfers.error = error.map(str::to_owned);
+            if error.is_some() { remove_partial(&task); }
             true
         }
         _ => true,
     }
+}
+
+fn remove_partial(task: &Transfer) {
+    let _ = fs::remove_file(&task.temp);
+    if let Some(dir) = task.temp.parent() {
+        let _ = fs::remove_file(dir.join("name.txt"));
+        let _ = fs::remove_dir(dir);
+    }
+}
+
+async fn request_direct(url: Url) -> Result<reqwest::Response, String> {
+    let origin = url.origin();
+    let mut client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(12))
+        .timeout(Duration::from_secs(300))
+        .referer(false)
+        .redirect(Policy::custom(move |attempt| {
+            if attempt.previous().len() <= 4 && attempt.url().origin() == origin { attempt.follow() }
+            else { attempt.stop() }
+        }));
+    if let Some(domain) = url.domain() {
+        let domain = domain.to_owned();
+        let host = domain.clone();
+        let port = url.port_or_known_default().ok_or("下载地址缺少端口")?;
+        let addresses = tauri::async_runtime::spawn_blocking(move || {
+            (host.as_str(), port).to_socket_addrs().map(|ips| ips.collect::<Vec<_>>())
+        }).await.map_err(|_| "无法解析下载服务器")?.map_err(|_| "无法解析下载服务器")?;
+        if addresses.is_empty() || addresses.iter().any(|address| !public_ip(address.ip())) {
+            return Err("下载地址必须指向公网服务器".into());
+        }
+        client = client.resolve_to_addrs(&domain, &addresses);
+    }
+    let response = client.build().map_err(|_| "无法启动下载")?.get(url).send().await.map_err(|error| {
+        if error.is_timeout() { "连接下载服务器超时，可换一个慢速服务器" }
+        else { "无法连接下载服务器，可换一个慢速服务器" }
+    })?;
+    if !response.status().is_success() {
+        let code = response.status().as_u16();
+        let message = match code {
+            401 | 403 | 404 | 410 => "请回到网页重新复制最新的下载地址",
+            429 => "服务器限流，请稍后重试",
+            300..=399 => "服务器要求跳转，请回到网页获取新的下载地址",
+            _ => "可换一个慢速服务器",
+        };
+        return Err(format!("下载失败（HTTP {code}），{message}"));
+    }
+    Ok(response)
+}
+
+async fn save_direct(app: &AppHandle, url: Url, name: String) -> Result<(), String> {
+    let mut response = request_direct(url.clone()).await?;
+    let total = response.content_length();
+    if total.is_some_and(|size| size > MAX_BYTES) { return Err("文件超过 150 MB，无法导入".into()); }
+    let root = archive_root(app)?;
+    let task = start_download(&root, url, Path::new(&name))?;
+    let state = app.state::<ArchiveState>();
+    let result = async {
+        let mut file = BufWriter::new(fs::File::create(&task.temp).map_err(|_| "无法创建下载文件")?);
+        let mut received = 0u64;
+        let mut header = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| "下载中断，请重新复制链接后重试")? {
+            received += chunk.len() as u64;
+            if received > MAX_BYTES { return Err("文件超过 150 MB，无法导入"); }
+            let take = chunk.len().min(1024 - header.len());
+            header.extend_from_slice(&chunk[..take]);
+            file.write_all(&chunk).map_err(|_| "无法写入下载文件")?;
+            if let Ok(mut transfers) = state.0.lock() {
+                transfers.direct = Some(Progress { received, total });
+            }
+        }
+        let valid = if book_extension(&name) == Some("pdf") {
+            header.windows(5).any(|prefix| prefix == b"%PDF-")
+        } else { header.starts_with(b"PK\x03\x04") };
+        if !valid { return Err("服务器返回的内容不是电子书，请换一个下载地址"); }
+        file.flush().map_err(|_| "无法保存下载文件")?;
+        drop(file);
+        fs::rename(&task.temp, &task.ready).map_err(|_| "无法保存下载文件")
+    }.await;
+    if result.is_err() { remove_partial(&task); }
+    result.map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub async fn archive_download_link(app: AppHandle, link: String) -> Result<(), String> {
+    if link.len() > 16384 { return Err("下载地址过长，请重新复制".into()); }
+    let url = Url::parse(link.trim()).map_err(|_| "请粘贴完整的电子书下载地址")?;
+    if !direct_url(&url) { return Err("请使用 HTTPS 地址或指向公网 IP 的 HTTP 地址".into()); }
+    let name = direct_filename(&url).ok_or("请粘贴网页复制的 EPUB 或 PDF 直链")?;
+    {
+        let state = app.state::<ArchiveState>();
+        let mut transfers = state.0.lock().map_err(|_| "无法读取下载状态")?;
+        if transfers.active.is_some() || transfers.direct.is_some() { return Err("请等当前电子书下载完成后再试".into()); }
+        transfers.direct = Some(Progress::default());
+        transfers.error = None;
+    }
+    tauri::async_runtime::spawn(async move {
+        let result = save_direct(&app, url, name).await;
+        if let Ok(mut transfers) = app.state::<ArchiveState>().0.lock() {
+            transfers.direct = None;
+            transfers.error = result.err();
+        }
+    });
+    Ok(())
 }
 
 fn ready_book(root: &Path, id: &str) -> Option<(Download, PathBuf)> {
@@ -176,12 +321,13 @@ pub async fn archive_browser(app: AppHandle, action: BrowserAction, bounds: Opti
             let window = app.get_window("main").ok_or("主窗口未打开")?;
             let profile = app.path().app_local_data_dir().map_err(|_| "无法定位浏览器目录")?.join("archive-browser");
             let popup_app = app.clone();
+            let navigation_app = app.clone();
             let builder = WebviewBuilder::new(VIEW, WebviewUrl::External(HOME.parse::<Url>().unwrap()))
                 .data_directory(profile)
                 .devtools(false)
-                .on_navigation(|url| browser_url(url) || url.as_str() == "about:blank" || url.as_str() == "about:srcdoc")
+                .on_navigation(move |url| navigation_allowed(&navigation_app, url))
                 .on_new_window(move |url, _| {
-                    if browser_url(&url) {
+                    if navigation_allowed(&popup_app, &url) && browser_url(&url) {
                         if let Some(child) = popup_app.get_webview(VIEW) {
                             tauri::async_runtime::spawn(async move { let _ = child.navigate(url); });
                         }
@@ -213,7 +359,7 @@ pub async fn archive_downloads(app: AppHandle) -> Result<Downloads, String> {
     items.sort_unstable_by(|a, b| b.id.cmp(&a.id));
     let state = app.state::<ArchiveState>();
     let transfers = state.0.lock().map_err(|_| "无法读取下载状态")?;
-    Ok(Downloads { items, downloading: transfers.active.is_some(), error: transfers.error })
+    Ok(Downloads { items, downloading: transfers.active.is_some() || transfers.direct.is_some(), progress: transfers.direct.clone(), error: transfers.error.clone() })
 }
 
 #[tauri::command]
@@ -251,6 +397,24 @@ mod tests {
         for url in ["http://example.org/", "https://tauri.localhost/", "https://tauri.localhost./",
             "https://127.0.0.1/", "https://[::1]/", "file:///C:/secret.pdf", "https://user@example.org/"] {
             assert!(!browser_url(&Url::parse(url).unwrap()));
+        }
+    }
+
+    #[test]
+    fn pasted_downloads_accept_public_ip_links_without_widening_browser_navigation() {
+        let link = Url::parse("http://1.1.1.1:6060/signed/%E7%94%B5%E5%AD%90%E4%B9%A6.epub?token=example").unwrap();
+        assert!(direct_url(&link));
+        assert_eq!(direct_filename(&link).as_deref(), Some("电子书.epub"));
+        assert!(!browser_url(&link));
+        assert!(direct_url(&Url::parse("https://www.gutenberg.org/book.pdf").unwrap()));
+
+        for text in ["http://192.168.1.1/book.pdf", "http://100.64.0.1/book.pdf", "http://127.0.0.1/book.pdf",
+            "http://localhost/book.pdf", "http://example.org/book.pdf", "http://[::ffff:127.0.0.1]/book.pdf",
+            "https://tauri.localhost/book.pdf", "https://user@example.org/book.pdf", "https://169.254.169.254/book.pdf"] {
+            assert!(!direct_url(&Url::parse(text).unwrap()), "{text}");
+        }
+        for text in ["https://example.org/page?file=book.pdf", "https://example.org/encoded%2Fbook.pdf", "https://example.org/file.exe"] {
+            assert!(direct_filename(&Url::parse(text).unwrap()).is_none(), "{text}");
         }
     }
 

@@ -6,6 +6,7 @@
     "allow-archive-browser",
     "allow-archive-downloads",
     "allow-archive-download-read",
+    "allow-archive-download-link",
     "allow-archive-download-remove"
   ]
 }

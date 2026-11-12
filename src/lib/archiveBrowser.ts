@@ -11,6 +11,7 @@ export interface ArchiveBook {
 export interface ArchiveDownloads {
   items: ArchiveBook[]
   downloading: boolean
+  progress?: { received: number; total: number | null } | null
   error?: string | null
 }
 
@@ -39,6 +40,10 @@ export function controlDesktopArchive(action: BrowserAction, rect?: Bounds): Pro
 
 export function listArchiveDownloads(): Promise<ArchiveDownloads> {
   return isTauri() ? invoke('archive_downloads') : android.list()
+}
+
+export function downloadArchiveLink(link: string): Promise<void> {
+  return invoke('archive_download_link', { link })
 }
 
 export function removeArchiveDownload(id: string): Promise<void> {
