@@ -1,6 +1,7 @@
 // 发布版不弹黑色控制台窗口
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod local_markdown;
+mod archive;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
@@ -24,6 +25,7 @@ async fn save_text_file(app: tauri::AppHandle, window: tauri::Window, default_na
 fn main() {
     tauri::Builder::default()
         .manage(local_markdown::LocalMarkdownState::default())
+        .manage(archive::ArchiveState::default())
         // 资源管理器再开文件：各开独立文档窗口，不打断主窗口正在进行的工作
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             local_markdown::open_files(app, &args, std::path::Path::new(&cwd), true);
@@ -38,6 +40,10 @@ fn main() {
             local_markdown::local_markdown_image,
             local_markdown::local_document_open_with,
             local_markdown::local_markdown_defaults,
+            archive::archive_browser,
+            archive::archive_downloads,
+            archive::archive_download_read,
+            archive::archive_download_remove,
         ])
         // 前端的 WebDAV 请求走这里：由 Rust 发出，不受浏览器跨域限制（坚果云不给 CORS）
         .plugin(tauri_plugin_http::init())
