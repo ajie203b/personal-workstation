@@ -17,6 +17,7 @@ const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 const LOCAL_PROXY = 'http://127.0.0.1:8787/?url='
 const BING_SEARCH = 'https://cn.bing.com/search'
+const FANQIE_SITE = 'https://fanqienovel.com'
 const SEARCH_TIMEOUT = 5_000
 
 export type FqwebErrorCode =
@@ -157,6 +158,7 @@ function payload(raw: unknown): Record<string, unknown> {
   const outer = obj(obj(raw)?.data)
   if (!outer) throw new FqwebError('BAD_DATA', '接口没有返回 data')
   const code = outer.code
+  if (String(code) === '429') throw new FqwebError('RATE_LIMITED', '书源请求过多，请稍后重试')
   if (code != null && String(code) !== '0' && String(code) !== '200') {
     throw new FqwebError('BAD_DATA', str(outer.message) || `接口 code=${String(code)}`)
   }
@@ -340,19 +342,10 @@ export function parseFqwebSearch(raw: unknown): FanqieSearchItem[] {
 }
 
 function decodeXml(s: string): string {
-  return s
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(Number.parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number.parseInt(d, 10)))
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
+  return decodeHtmlEntities(s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1'))
 }
 
-function stripBingTitle(s: string): string {
+function stripIndexedTitle(s: string): string {
   return s
     .replace(/\s*[_|-]\s*番茄小说.*$/i, '')
     .replace(/\s*[-_]\s*fanqienovel.*$/i, '')
@@ -360,21 +353,25 @@ function stripBingTitle(s: string): string {
     .trim()
 }
 
-export function parseBingRss(xml: string): Array<{ bookId: string; title: string }> {
-  const out: Array<{ bookId: string; title: string }> = []
+function parseBingLinks(xml: string, page: 'page' | 'author-page'): Array<{ id: string; title: string }> {
+  const out: Array<{ id: string; title: string }> = []
   const seen = new Set<string>()
-  const itemRe = /<item>([\s\S]*?)<\/item>/gi
-  for (let m = itemRe.exec(xml); m; m = itemRe.exec(xml)) {
+  const target = new RegExp(`https?://(?:www\\.)?fanqienovel\\.com/${page}/(\\d{6,20})(?!\\d)`, 'i')
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
     const block = m[1]
-    const title = stripBingTitle(decodeXml(/<title>([\s\S]*?)<\/title>/i.exec(block)?.[1] ?? ''))
+    const title = decodeXml(/<title>([\s\S]*?)<\/title>/i.exec(block)?.[1] ?? '')
     const link = decodeXml(/<link>([\s\S]*?)<\/link>/i.exec(block)?.[1] ?? '')
     const desc = decodeXml(/<description>([\s\S]*?)<\/description>/i.exec(block)?.[1] ?? '')
-    const hit = /(?:fanqienovel\.com)\/page\/(\d{6,20})/i.exec(`${link} ${desc} ${block}`)
+    const hit = target.exec(`${link} ${desc} ${block}`)
     if (!hit || seen.has(hit[1])) continue
     seen.add(hit[1])
-    out.push({ bookId: hit[1], title: title || `番茄小说 ${hit[1]}` })
+    out.push({ id: hit[1], title })
   }
   return out
+}
+
+export function parseBingRss(xml: string): Array<{ bookId: string; title: string }> {
+  return parseBingLinks(xml, 'page').map(({ id, title }) => ({ bookId: id, title: stripIndexedTitle(title) || `番茄小说 ${id}` }))
 }
 
 export function fanqieWebSearchUrl(query: string): string {
@@ -383,17 +380,52 @@ export function fanqieWebSearchUrl(query: string): string {
   return url.toString()
 }
 
-async function searchBing(query: string): Promise<FanqieSearchItem[]> {
-  const url = new URL(fanqieWebSearchUrl(query))
+async function fetchBingRss(url: URL): Promise<string> {
   url.searchParams.set('format', 'rss')
   const target = isNative() || isTauri() ? url.href : LOCAL_PROXY + encodeURIComponent(url.href)
   const xml = await fetchText(target, SEARCH_TIMEOUT, 'application/rss+xml, application/xml, text/xml, */*')
   if (!/<rss[\s>]/i.test(xml)) throw new FqwebError('BAD_DATA', '网页索引暂时不可用')
-  return parseBingRss(xml)
+  return xml
+}
+
+async function searchBing(query: string): Promise<FanqieSearchItem[]> {
+  return parseBingRss(await fetchBingRss(new URL(fanqieWebSearchUrl(query))))
+}
+
+const titleText = (html: string) => decodeHtmlEntities(html.replace(/<[^>]*>/g, '')).trim()
+
+async function searchSoBooks(query: string): Promise<FanqieSearchItem[]> {
+  const url = new URL('https://www.so.com/s')
+  url.searchParams.set('q', `site:fanqienovel.com ${query}`)
+  const html = await fetchText(url.href, SEARCH_TIMEOUT, 'text/html')
+  const links = html.matchAll(/<a\b[^>]*\bdata-mdurl=["']https?:\/\/(?:www\.)?fanqienovel\.com\/page\/(\d{6,20})(?:[/?#][^"']*)?["'][^>]*>([\s\S]*?)<\/a>/gi)
+  const items = Array.from(links, ([, bookId, title]) => ({ bookId, title: stripIndexedTitle(titleText(title)) }))
+  return rankFanqieSearchItems(query, items, true)
+}
+
+async function searchAuthorBooks(query: string): Promise<FanqieSearchItem[]> {
+  const firstTerm = query.split(/\s+/, 1)[0]
+  const authorKey = compact(firstTerm)
+  if (authorKey.length < 2) return []
+  const url = new URL(BING_SEARCH)
+  url.searchParams.set('q', `site:fanqienovel.com/author-page ${firstTerm}`)
+  const xml = await fetchBingRss(url)
+  const authors = parseBingLinks(xml, 'author-page').map(({ id, title }) => ({
+    id, name: stripIndexedTitle(title.split(/\s*[_｜|]\s*代表作/u, 1)[0]),
+  }))
+  const match = authors.find(({ name }) => compact(name) === authorKey)
+    ?? authors.find(({ name }) => compact(name).startsWith(authorKey))
+  if (!match) return []
+  const html = await fetchText(`${FANQIE_SITE}/author-page/${match.id}`, SEARCH_TIMEOUT, 'text/html')
+  const cards = html.matchAll(/<h2\b[^>]*>\s*<a\b[^>]*\bhref=["']\/page\/(\d{6,20})["'][^>]*>([\s\S]*?)<\/a>\s*<\/h2>/gi)
+  const items = Array.from(cards, ([, bookId, title]) => ({
+    bookId, title: decodeFanqieText(titleText(title)), author: match.name,
+  }))
+  return rankFanqieSearchItems(query, items, true)
 }
 
 async function searchFqweb(query: string): Promise<FanqieSearchItem[]> {
-  return fqwebRequest('/search', { query, page: 1 }, SEARCH_TIMEOUT, (raw) => {
+  return fqwebRequest('/search', { query, page: 1 }, 2_500, (raw) => {
     const items = parseFqwebSearch(raw)
     if (!items.length) {
       // 接口出错时可能仍返回 HTTP 200。确认确实有结果列表（包括空列表）。
@@ -410,11 +442,11 @@ async function searchFqweb(query: string): Promise<FanqieSearchItem[]> {
 
 const compact = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 
-function rankSearchItems(query: string, items: FanqieSearchItem[]): FanqieSearchItem[] {
+function searchScore(query: string): (item: FanqieSearchItem) => number {
   const key = compact(query)
   const terms = query.split(/\s+/).map(compact).filter(Boolean)
-  if (!key) return items
-  const score = (item: FanqieSearchItem) => {
+  return (item) => {
+    if (!key || !item.title) return 0
     const title = compact(item.title)
     const author = compact(item.author ?? '')
     if (title === key) return 5
@@ -423,21 +455,52 @@ function rankSearchItems(query: string, items: FanqieSearchItem[]): FanqieSearch
     if (terms.every((term) => title.includes(term) || author.includes(term))) return 2
     return 0
   }
-  return items.map((item) => ({ item, score: score(item) })).sort((a, b) => b.score - a.score).map(({ item }) => item)
+}
+
+export function rankFanqieSearchItems(query: string, items: FanqieSearchItem[], onlyMatches = false): FanqieSearchItem[] {
+  const score = searchScore(query)
+  const ranked = items.map((item) => ({ item, score: score(item) }))
+  return (onlyMatches ? ranked.filter((entry) => entry.score > 0) : ranked)
+    .sort((a, b) => b.score - a.score).map(({ item }) => item)
 }
 
 const searchCache = new Map<string, { at: number; items: FanqieSearchItem[] }>()
 const SEARCH_TTL = 10 * 60_000
 
-/** 合并两个来源，保留书源元数据，并把更接近书名或作者的候选排在前面。 */
-export async function searchFanqieBooks(query: string): Promise<FanqieSearchItem[]> {
+/** 常用来源漏掉书名或作者时，再查询补充索引和番茄作者页。 */
+export async function searchFanqieBooks(
+  query: string,
+  onResults?: (items: FanqieSearchItem[]) => void,
+): Promise<FanqieSearchItem[]> {
   const keyword = query.normalize('NFKC').trim().replace(/^《(.*)》$/u, '$1').trim().replace(/\s+/g, ' ')
   if (!keyword) return []
   const key = keyword.toLowerCase()
   const cached = searchCache.get(key)
   if (cached && Date.now() - cached.at < SEARCH_TTL) return cached.items
 
-  const sources = await Promise.allSettled([searchFqweb(keyword), searchBing(keyword)])
+  const score = searchScore(keyword)
+  const preview = new Map<string, FanqieSearchItem>()
+  const collect = (requests: Promise<FanqieSearchItem[]>[]) => Promise.allSettled(requests.map(async (request) => {
+    const found = await request
+    if (onResults && found.some((item) => score(item) > 0)) {
+      for (const item of found) {
+        if (!preview.has(item.bookId)) preview.set(item.bookId, item)
+      }
+      onResults(rankFanqieSearchItems(keyword, [...preview.values()], true))
+    }
+    return found
+  }))
+  const nativeSearch = isNative() || isTauri()
+  const shortQuery = nativeSearch && compact(keyword).length === 2
+  const primary = [searchFqweb(keyword), searchBing(keyword)]
+  if (shortQuery) primary.push(searchSoBooks(keyword))
+  const sources = await collect(primary)
+  const hasMatch = sources.some((source) => source.status === 'fulfilled' && source.value.some((item) => score(item) > 0))
+  if (!hasMatch && nativeSearch) {
+    const fallback = [searchAuthorBooks(keyword)]
+    if (!shortQuery) fallback.unshift(searchSoBooks(keyword))
+    sources.push(...await collect(fallback))
+  }
   if (sources.every((source) => source.status === 'rejected')) {
     const limited = sources.find((source) => source.status === 'rejected' && source.reason instanceof FqwebError && source.reason.code === 'RATE_LIMITED')
     if (limited?.status === 'rejected') throw limited.reason
@@ -450,7 +513,7 @@ export async function searchFanqieBooks(query: string): Promise<FanqieSearchItem
       if (!byId.has(item.bookId)) byId.set(item.bookId, item)
     }
   }
-  const items = rankSearchItems(keyword, [...byId.values()])
-  if (items.length) searchCache.set(key, { at: Date.now(), items })
+  const items = rankFanqieSearchItems(keyword, [...byId.values()])
+  if (items.some((item) => score(item) > 0)) searchCache.set(key, { at: Date.now(), items })
   return items
 }

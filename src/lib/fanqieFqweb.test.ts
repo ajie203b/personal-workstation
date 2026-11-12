@@ -229,6 +229,59 @@ describe('Fanqie requests', () => {
     await expect(searchFanqieBooks('戏神')).resolves.toMatchObject([{ title: '我不是戏神' }])
   })
 
+  it('finds new books from the secondary index for a short title missed by both existing sources', async () => {
+    platform.windows = true
+    let releaseBookSource!: (res: Response) => void
+    const pendingBookSource = new Promise<Response>((resolve) => { releaseBookSource = resolve })
+    tauriFetch.mockImplementation(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'cn.bing.com') return new Response('<rss><channel /></rss>')
+      if (url.hostname === 'www.so.com') {
+        expect(url.searchParams.get('q')).toBe('site:fanqienovel.com 通神')
+        return new Response(`<h3><a data-mdurl="https://fanqienovel.com/page/7187268490762390540"><em>通神</em>完整版在线免费阅读_番茄小说官网</a></h3>
+          <h3><a data-mdurl="https://fanqienovel.com/page/7136985579417242658">通神界域完整版在线免费阅读_番茄小说官网</a></h3>
+          <h3><a data-mdurl="https://other.test/page/123456">通神</a></h3>`)
+      }
+      return pendingBookSource
+    })
+    const { searchFanqieBooks } = await import('./fanqieFqweb')
+    const onResults = vi.fn()
+    const result = searchFanqieBooks('通神', onResults)
+    const expected = [
+      { bookId: '7187268490762390540', title: '通神' },
+      { bookId: '7136985579417242658', title: '通神界域' },
+    ]
+    try {
+      await vi.waitFor(() => expect(onResults).toHaveBeenCalledWith(expected))
+    } finally {
+      releaseBookSource(Response.json({ data: { code: '0', data: { list: [] } } }))
+    }
+    await expect(result).resolves.toEqual(expected)
+  })
+
+  it('looks up an author’s book cards when the book index has no author match', async () => {
+    platform.windows = true
+    tauriFetch.mockImplementation(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'cn.bing.com') {
+        const author = url.searchParams.get('q')?.includes('/author-page')
+        return new Response(`<rss><channel>${author ? `<item>
+          <title>三九音域_代表作我不是戏神_番茄小说官网</title>
+          <link>https://fanqienovel.com/author-page/104957777655</link>
+        </item>` : ''}</channel></rss>`)
+      }
+      if (url.hostname === 'www.so.com') return new Response('<html></html>')
+      if (url.pathname === '/author-page/104957777655') {
+        return new Response('<h2 class="title"><a href="/page/7276384138653862966">戏</a></h2><a href="/page/123456">其他链接</a>')
+      }
+      return Response.json({ data: { code: '0', data: { list: [] } } })
+    })
+    const { searchFanqieBooks } = await import('./fanqieFqweb')
+    await expect(searchFanqieBooks('三九音域')).resolves.toEqual([
+      { bookId: '7276384138653862966', title: '我不是戏神', author: '三九音域' },
+    ])
+  })
+
   it('falls back after invalid chapter data and reuses the working node on Android', async () => {
     platform.android = true
     androidGet.mockImplementation(async ({ url }: { url: string }) => ({
@@ -249,6 +302,14 @@ describe('Fanqie requests', () => {
   it('stops chapter requests at a rate limit', async () => {
     platform.android = true
     androidGet.mockResolvedValue({ status: 429 })
+    const { fetchFanqieChapterContent } = await import('./fanqieFqweb')
+    await expect(fetchFanqieChapterContent('111')).rejects.toMatchObject({ code: 'RATE_LIMITED' })
+    expect(androidGet).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops chapter requests when the source wraps a rate limit in HTTP 200', async () => {
+    platform.android = true
+    androidGet.mockResolvedValue({ status: 200, data: { data: { code: '429', message: 'Too many requests' } } })
     const { fetchFanqieChapterContent } = await import('./fanqieFqweb')
     await expect(fetchFanqieChapterContent('111')).rejects.toMatchObject({ code: 'RATE_LIMITED' })
     expect(androidGet).toHaveBeenCalledTimes(1)

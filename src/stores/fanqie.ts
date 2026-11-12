@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { FanqieBook } from '@/db/db'
 import type { FanqieBookInfo, FanqieChapterMeta } from '@/lib/fanqie'
 import { FqwebError, fetchFanqieChapterContent } from '@/lib/fanqieFqweb'
+import { isTauri } from '@/lib/native'
 import {
   countFanqieChapters,
   getDownloadedItemIds,
@@ -11,9 +12,9 @@ import {
 } from '@/db/fanqie'
 import { useUi } from './ui'
 
-const CONCURRENCY = 2
-const DELAY_MIN = 260
-const DELAY_MAX = 520
+const DESKTOP_CONCURRENCY = 4
+const OTHER_CONCURRENCY = 2
+const REQUEST_GAP_MS = 160
 const SAVE_EVERY = 5
 /** 正文接口连续失败这么多次就停，避免对公共节点死循环重试 */
 const MAX_FAILURE_STREAK = 4
@@ -68,6 +69,15 @@ async function runPool(token: number): Promise<void> {
   let cursor = 0
   let fatal = ''
   let lastError = ''
+  let nextRequestSlot = Promise.resolve()
+
+  const shouldStop = () => paused || token !== runToken || Boolean(fatal)
+  // 所有工作线程共用请求间隔。慢请求可以并行，快请求也不会集中发出。
+  const waitForRequestSlot = () => {
+    const slot = nextRequestSlot.then(() => !shouldStop())
+    nextRequestSlot = slot.then((ready) => ready ? sleep(REQUEST_GAP_MS) : undefined)
+    return slot
+  }
 
   useFanqie.setState((s) => ({
     job: s.job
@@ -97,14 +107,14 @@ async function runPool(token: number): Promise<void> {
 
   const worker = async () => {
     while (cursor < pending.length) {
-      if (paused || token !== runToken || fatal) return
+      if (shouldStop()) return
       const meta = pending[cursor++]
-      patchJob({ current: meta.title })
 
       let content: string | null = null
       let lastErr: unknown = null
       for (let attempt = 0; attempt < 2; attempt++) {
-        if (paused || token !== runToken || fatal) return
+        if (!(await waitForRequestSlot()) || shouldStop()) return
+        patchJob({ current: meta.title })
         try {
           const data = await fetchFanqieChapterContent(meta.itemId)
           const visible = data.content.replace(/\s/g, '').length
@@ -122,7 +132,7 @@ async function runPool(token: number): Promise<void> {
           failureStreak = 0
           break
         } catch (e) {
-          if (paused || token !== runToken || fatal) return
+          if (shouldStop()) return
           if (e instanceof FqwebError && e.code === 'RATE_LIMITED') {
             fatal = '书源请求过多，已暂停下载，稍后可继续'
             return
@@ -158,11 +168,11 @@ async function runPool(token: number): Promise<void> {
         lastError = e instanceof Error ? e.message : '写入本地书架失败'
         patchJob({ failed, error: lastError })
       }
-      await sleep(DELAY_MIN + Math.random() * (DELAY_MAX - DELAY_MIN))
     }
   }
 
-  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()))
+  const concurrency = isTauri() ? DESKTOP_CONCURRENCY : OTHER_CONCURRENCY
+  await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, () => worker()))
   const current = token === runToken
   // 即使这一轮已被暂停/替换，也把实际章节数落一次；错误只在当前轮写
   await flush(current ? (fatal || lastError) : '')

@@ -29,6 +29,7 @@ import {
   fanqieWebSearchUrl,
   fetchFanqieBookById,
   fetchFanqieBookByRef,
+  rankFanqieSearchItems,
   searchFanqieBooks,
   type FanqieSearchItem,
 } from '@/lib/fanqieFqweb'
@@ -60,6 +61,15 @@ export function FanqiePage() {
   const [confirmDelete, setConfirmDelete] = useState<FanqieBook | null>(null)
 
   const library = useLiveQuery(() => listFanqieBooks(), []) ?? []
+  const shelfMatches = useMemo(() => {
+    const keyword = query.trim()
+    if (keyword.length < 2 || parseFanqieRef(keyword)) return []
+    const onlineIds = new Set(results?.map(({ bookId }) => bookId))
+    const items = library.filter(({ id }) => !onlineIds.has(id)).map(({ id, title, author, cover, status }) => ({
+      bookId: id, title, author, cover, status,
+    }))
+    return rankFanqieSearchItems(keyword, items, true).slice(0, 4)
+  }, [library, query, results])
   const downloadedIds = useLiveQuery(
     () => (book ? getDownloadedItemIds(book.bookId) : Promise.resolve(new Set<string>())),
     [book?.bookId],
@@ -134,7 +144,7 @@ export function FanqiePage() {
 
     setSearching(true)
     try {
-      const items = await searchFanqieBooks(q)
+      const items = await searchFanqieBooks(q, setResults)
       setResults(items)
     } catch (e) {
       setError(searchErrorMessage(e))
@@ -289,6 +299,26 @@ export function FanqiePage() {
         </div>
       )}
 
+      {!book && !busy && shelfMatches.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="px-1 text-[13.5px] font-semibold">书架中的匹配</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {shelfMatches.map((item) => (
+              <SearchResultCard key={item.bookId} item={item} onClick={() => {
+                const entry = library.find(({ id }) => id === item.bookId)
+                if (entry) openLibraryBook(entry)
+              }} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {searching && !loadingBook && !book && (
+        <p role="status" className="px-1 text-[12.5px] text-on-surface-2">
+          {results?.length ? '正在查找更多书籍…' : '正在查找书籍…'}
+        </p>
+      )}
+
       {!book && results && results.length > 0 && (
         <section className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between px-1">
@@ -305,7 +335,7 @@ export function FanqiePage() {
 
       {!book && results && results.length === 0 && (
         <div className="card">
-          <EmptyState compact icon={Search} title="暂未搜到相关书籍" hint="可以换一段书名或作者名再试。" />
+          <EmptyState compact icon={Search} title="在线书源暂未搜到相关书籍" hint="可以换一段书名，或用作者名查找作品。" />
         </div>
       )}
 
