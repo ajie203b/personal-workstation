@@ -70,6 +70,13 @@ describe('parseFanqieRef', () => {
     expect(parseFanqieRef('https://example.com/page/123456789')).toBeNull()
     expect(parseFanqieRef('123')).toBeNull()
   })
+
+  it('recognizes app book links and official topic links', () => {
+    expect(parseFanqieRef('https://fanqienovel.com/book/7223376026305301556')).toEqual({ kind: 'book', id: '7223376026305301556' })
+    for (const path of ['keyword', 'traffic-aggregation']) {
+      expect(parseFanqieRef(`分享链接 https://fanqienovel.com/${path}/7344197651094702089?foo=1`)).toEqual({ kind: 'topic', id: '7344197651094702089' })
+    }
+  })
 })
 
 describe('extractInitialState', () => {

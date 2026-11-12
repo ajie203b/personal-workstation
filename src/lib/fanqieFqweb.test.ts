@@ -282,6 +282,45 @@ describe('Fanqie requests', () => {
     ])
   })
 
+  it('resolves a different app title through the official topic and keeps the alias when results share a book ID', async () => {
+    platform.windows = true
+    const bookId = '7223376026305301556'
+    const topicId = '7344197651094702089'
+    tauriFetch.mockImplementation(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'cn.bing.com') {
+        const query = url.searchParams.get('q') ?? ''
+        if (!query.includes('/keyword')) return new Response('<rss><channel /></rss>')
+        expect(query).toBe('site:fanqienovel.com/keyword 开局一只猴 一个挂')
+        return new Response(`<rss><channel><item><title>御兽:开局一只猴，一个挂-番茄小说</title>
+          <link>https://fanqienovel.com/keyword/${topicId}</link></item></channel></rss>`)
+      }
+      if (url.hostname === 'www.so.com') return new Response('<html></html>')
+      if (url.pathname === `/keyword/${topicId}`) {
+        return new Response(`<title>御兽:开局一只猴，一个挂-番茄小说</title>
+          <a href="/page/111111">另一本书</a>
+          <div class="book-detail card"><h2>作品详情</h2><div class="book-info">
+          <a href="https://fanqienovel.com/page/${bookId}" class="book-title"><h3>御兽：我有一个简化系统</h3></a>
+          <div class="author">甜蜜蜜的橙子<!-- --> </div></div></div>`)
+      }
+      return Response.json({ data: { code: '0', data: { list: [
+        { book_id: bookId, book_name: '御兽：我有一个简化系统', author: '甜蜜蜜的橙子' },
+      ] } } })
+    })
+    const { searchFanqieBooks } = await import('./fanqieFqweb')
+    await expect(searchFanqieBooks('御兽：开局一只猴，一个挂')).resolves.toMatchObject([
+      { bookId, title: '御兽：我有一个简化系统', author: '甜蜜蜜的橙子', aliases: ['御兽:开局一只猴，一个挂'] },
+    ])
+  })
+
+  it('does not mistake a topic’s unrelated recommendations for the book', async () => {
+    platform.windows = true
+    tauriFetch.mockResolvedValue(new Response('<title>热门书单-番茄小说</title><a href="/page/7223376026305301556">推荐作品</a>'))
+    const { fetchFanqieBookByRef } = await import('./fanqieFqweb')
+    await expect(fetchFanqieBookByRef({ kind: 'topic', id: '7344197651094702089' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect(tauriFetch).toHaveBeenCalledTimes(1)
+  })
+
   it('falls back after invalid chapter data and reuses the working node on Android', async () => {
     platform.android = true
     androidGet.mockImplementation(async ({ url }: { url: string }) => ({

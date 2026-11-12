@@ -3,7 +3,7 @@ import { fmtListDate } from './date'
 
 /** 番茄书籍/章节链接或 ID 的解析结果；auto = 只有数字，先按书 ID 试，失败再按章节 ID 试 */
 export interface FanqieRef {
-  kind: 'book' | 'chapter' | 'auto'
+  kind: 'book' | 'chapter' | 'topic' | 'auto'
   id: string
 }
 
@@ -61,14 +61,16 @@ export class FanqieParseError extends Error {
   }
 }
 
-/** 支持：书籍页链接、章节页链接、分享文本里的链接、book_id=…、纯数字 ID */
+/** 支持书籍、章节、官方话题链接，以及分享文本里的链接和数字 ID。 */
 export function parseFanqieRef(input: string): FanqieRef | null {
   const text = input.trim()
   if (!text) return null
   const reader = text.match(/(?:fanqienovel\.com|fqnovel\.com)\/reader\/(\d{6,20})/i)
   if (reader) return { kind: 'chapter', id: reader[1] }
-  const page = text.match(/(?:fanqienovel\.com|fqnovel\.com)\/page\/(\d{6,20})/i)
+  const page = text.match(/(?:fanqienovel\.com|fqnovel\.com)\/(?:page|book)\/(\d{6,20})/i)
   if (page) return { kind: 'book', id: page[1] }
+  const topic = text.match(/(?:fanqienovel\.com)\/(?:keyword|traffic-aggregation)\/(\d{6,20})/i)
+  if (topic) return { kind: 'topic', id: topic[1] }
   const query = text.match(/(?:book_id|bookId|bookid|item_id|itemId)=(\d{6,20})/i)
   if (query) return { kind: 'auto', id: query[1] }
   const raw = text.match(/^(\d{6,20})$/)

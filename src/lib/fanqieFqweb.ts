@@ -39,6 +39,7 @@ export class FqwebError extends Error {
 export interface FanqieSearchItem {
   bookId: string
   title: string
+  aliases?: string[]
   author?: string
   cover?: string
   abstract?: string
@@ -283,6 +284,11 @@ export async function fetchFanqieChapterContent(itemId: string): Promise<FqwebCh
 /** 把章节链接解析成书籍：先查章节的 novel_data.book_id，再拉目录 */
 export async function fetchFanqieBookByRef(ref: FanqieRef): Promise<FanqieBookInfo> {
   if (ref.kind === 'book') return fetchFanqieBookById(ref.id)
+  if (ref.kind === 'topic') {
+    const item = await fetchTopicBook(ref.id)
+    if (!item) throw new FqwebError('NOT_FOUND', '这个番茄话题没有关联一部明确的作品')
+    return fetchFanqieBookById(item.bookId)
+  }
   if (ref.kind === 'chapter') {
     const content = await fetchFanqieChapterContent(ref.id)
     if (!content.bookId) throw new FqwebError('BAD_DATA', '章节里没有所属书籍 ID')
@@ -353,7 +359,7 @@ function stripIndexedTitle(s: string): string {
     .trim()
 }
 
-function parseBingLinks(xml: string, page: 'page' | 'author-page'): Array<{ id: string; title: string }> {
+function parseBingLinks(xml: string, page: 'page' | 'author-page' | 'keyword'): Array<{ id: string; title: string }> {
   const out: Array<{ id: string; title: string }> = []
   const seen = new Set<string>()
   const target = new RegExp(`https?://(?:www\\.)?fanqienovel\\.com/${page}/(\\d{6,20})(?!\\d)`, 'i')
@@ -393,6 +399,54 @@ async function searchBing(query: string): Promise<FanqieSearchItem[]> {
 }
 
 const titleText = (html: string) => decodeHtmlEntities(html.replace(/<[^>]*>/g, '')).trim()
+
+function topicTitle(title: string): string {
+  return titleText(title).replace(/\s*[-_｜|]\s*番茄小说(?:官网)?\s*$/u, '').replace(/\s*相关帖子\s*$/u, '').trim()
+}
+
+function topicMatch(query: string, title: string): number {
+  const key = compact(query)
+  const alias = compact(title)
+  if (key && key === alias) return 2
+  return key.length >= 4 && alias.includes(key) ? 1 : 0
+}
+
+async function fetchTopicBook(id: string): Promise<FanqieSearchItem | null> {
+  if (!/^\d{6,20}$/.test(id)) return null
+  const url = `${FANQIE_SITE}/keyword/${id}`
+  const html = await fetchText(url, SEARCH_TIMEOUT, 'text/html')
+  const alias = topicTitle(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? '')
+  const detail = /<div\b[^>]*\bclass=["'][^"']*\bbook-detail\b[^"']*["'][^>]*>/i.exec(html)
+  if (!detail) return null
+  // 话题页的「作品详情」有明确关联的书。帖子和推荐列表里的链接不是该别名的依据。
+  const card = html.slice(detail.index, detail.index + 12_000)
+  const book = /<a\b(?=[^>]*\bclass=["'][^"']*\bbook-title\b[^"']*["'])[^>]*\bhref=["'](?:https:\/\/(?:www\.)?fanqienovel\.com)?\/page\/(\d{6,20})(?:[/?#][^"']*)?["'][^>]*>\s*<h3\b[^>]*>([\s\S]*?)<\/h3>/i.exec(card)
+  if (!book) return null
+  const title = decodeFanqieText(titleText(book[2]))
+  if (!title) return null
+  const author = /<div\b[^>]*\bclass=["']author["'][^>]*>([\s\S]*?)<\/div>/i.exec(card.slice(book.index + book[0].length))?.[1]
+  return {
+    bookId: book[1], title, author: author ? decodeFanqieText(titleText(author)).replace(/\s*[/／]\s*著$/u, '') : undefined,
+    aliases: alias && compact(alias) !== compact(title) ? [alias] : undefined,
+  }
+}
+
+async function searchTopicBooks(query: string): Promise<FanqieSearchItem[]> {
+  if (compact(query).length < 4) return []
+  const terms = query.replace(/^[^:：]{1,12}[:：]/u, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  if (!terms) return []
+  const url = new URL(BING_SEARCH)
+  url.searchParams.set('q', `site:fanqienovel.com/keyword ${terms}`)
+  const hits = parseBingLinks(await fetchBingRss(url), 'keyword')
+  const candidates = hits.map(({ id, title }) => ({ id, match: topicMatch(query, topicTitle(title)) }))
+    .filter(({ match }) => match > 0).sort((a, b) => b.match - a.match).slice(0, 2)
+  const books = await Promise.allSettled(candidates.map(({ id }) => fetchTopicBook(id)))
+  return books.flatMap((book) => {
+    if (book.status !== 'fulfilled' || !book.value) return []
+    const item = book.value
+    return [item.title, ...(item.aliases ?? [])].some((title) => topicMatch(query, title) > 0) ? [item] : []
+  })
+}
 
 async function searchSoBooks(query: string): Promise<FanqieSearchItem[]> {
   const url = new URL('https://www.so.com/s')
@@ -447,12 +501,12 @@ function searchScore(query: string): (item: FanqieSearchItem) => number {
   const terms = query.split(/\s+/).map(compact).filter(Boolean)
   return (item) => {
     if (!key || !item.title) return 0
-    const title = compact(item.title)
+    const titles = [item.title, ...(item.aliases ?? [])].map(compact)
     const author = compact(item.author ?? '')
-    if (title === key) return 5
-    if (author === key || title.startsWith(key)) return 4
-    if (title.includes(key) || author.includes(key)) return 3
-    if (terms.every((term) => title.includes(term) || author.includes(term))) return 2
+    if (titles.includes(key)) return 5
+    if (author === key || titles.some((title) => title.startsWith(key))) return 4
+    if (author.includes(key) || titles.some((title) => title.includes(key))) return 3
+    if (terms.every((term) => author.includes(term) || titles.some((title) => title.includes(term)))) return 2
     return 0
   }
 }
@@ -466,6 +520,17 @@ export function rankFanqieSearchItems(query: string, items: FanqieSearchItem[], 
 
 const searchCache = new Map<string, { at: number; items: FanqieSearchItem[] }>()
 const SEARCH_TTL = 10 * 60_000
+
+function mergeSearchItem(items: Map<string, FanqieSearchItem>, item: FanqieSearchItem) {
+  const previous = items.get(item.bookId)
+  if (!previous) items.set(item.bookId, item)
+  else if (item.aliases?.length) {
+    items.set(item.bookId, {
+      ...previous, title: item.title, author: item.author ?? previous.author,
+      aliases: [...new Set([...(previous.aliases ?? []), ...item.aliases])],
+    })
+  }
+}
 
 /** 常用来源漏掉书名或作者时，再查询补充索引和番茄作者页。 */
 export async function searchFanqieBooks(
@@ -483,9 +548,7 @@ export async function searchFanqieBooks(
   const collect = (requests: Promise<FanqieSearchItem[]>[]) => Promise.allSettled(requests.map(async (request) => {
     const found = await request
     if (onResults && found.some((item) => score(item) > 0)) {
-      for (const item of found) {
-        if (!preview.has(item.bookId)) preview.set(item.bookId, item)
-      }
+      for (const item of found) mergeSearchItem(preview, item)
       onResults(rankFanqieSearchItems(keyword, [...preview.values()], true))
     }
     return found
@@ -495,10 +558,15 @@ export async function searchFanqieBooks(
   const primary = [searchFqweb(keyword), searchBing(keyword)]
   if (shortQuery) primary.push(searchSoBooks(keyword))
   const sources = await collect(primary)
-  const hasMatch = sources.some((source) => source.status === 'fulfilled' && source.value.some((item) => score(item) > 0))
-  if (!hasMatch && nativeSearch) {
-    const fallback = [searchAuthorBooks(keyword)]
-    if (!shortQuery) fallback.unshift(searchSoBooks(keyword))
+  const primaryResults = sources.flatMap((source) => source.status === 'fulfilled' ? source.value : [])
+  const hasMatch = primaryResults.some((item) => score(item) > 0)
+  const hasExact = primaryResults.some((item) => score(item) === 5)
+  if (nativeSearch && (!hasMatch || (keyword.includes(':') && !hasExact))) {
+    const fallback = [searchTopicBooks(keyword)]
+    if (!hasMatch) {
+      fallback.push(searchAuthorBooks(keyword))
+      if (!shortQuery) fallback.unshift(searchSoBooks(keyword))
+    }
     sources.push(...await collect(fallback))
   }
   if (sources.every((source) => source.status === 'rejected')) {
@@ -509,9 +577,7 @@ export async function searchFanqieBooks(
   const byId = new Map<string, FanqieSearchItem>()
   for (const source of sources) {
     if (source.status !== 'fulfilled') continue
-    for (const item of source.value) {
-      if (!byId.has(item.bookId)) byId.set(item.bookId, item)
-    }
+    for (const item of source.value) mergeSearchItem(byId, item)
   }
   const items = rankFanqieSearchItems(keyword, [...byId.values()])
   if (items.some((item) => score(item) > 0)) searchCache.set(key, { at: Date.now(), items })

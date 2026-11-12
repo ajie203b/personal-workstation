@@ -288,7 +288,7 @@ export function FanqiePage() {
           </Button>
         </div>
         <p id="fq-search-hint" className="text-[11.5px] text-on-surface-2 mt-2 leading-relaxed">
-          支持部分书名、作者，也可粘贴番茄书籍或章节链接、纯数字 ID。
+          支持部分书名、别名和作者，也可粘贴番茄链接或纯数字 ID。
         </p>
       </form>
 
@@ -617,6 +617,7 @@ function SearchResultCard({ item, onClick }: { item: FanqieSearchItem; onClick: 
           <StatusPill status={item.status} />
         </div>
         <p className="text-[11.5px] text-on-surface-2 mt-0.5 truncate">{item.author || '佚名'}</p>
+        {item.aliases?.length ? <p className="text-[11px] text-on-surface-2 mt-1 break-words">又名 {item.aliases.join('、')}</p> : null}
         <p className="text-[11px] text-on-surface-2 mt-1 tabular-nums">{meta || '点击查看详情'}</p>
         {item.abstract && <p className="text-[11px] text-on-surface-2 mt-1 line-clamp-2 leading-relaxed">{item.abstract}</p>}
       </div>
