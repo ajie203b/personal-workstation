@@ -1,13 +1,13 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { isNative } from './native'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { isNative, isTauri } from './native'
 import type { FanqieBookInfo, FanqieChapterMeta, FanqieRef } from './fanqie'
 import { chapterHtmlToText, decodeHtmlEntities } from './fanqie'
 import { decodeFanqieText, hasUnknownFanqieGlyphs } from './fanqieFont'
 
 /**
  * 正文/目录来自公开的 FQWeb 节点（番茄 App 协议服务）。
- * 它不需要登录，info/catalog/content 都带 CORS；搜索结果接口在公共节点上经常报错，
- * 所以搜索先试 FQWeb /search，失败再用 Bing RSS 找 fanqienovel.com/page 的书籍 ID。
+ * 公共节点可用性会变化。搜索同时参考 FQWeb 和 Bing 对番茄书籍页面的索引。
  */
 const FQWEB_BASES = [
   'https://fq-book.nat.netsite.cc:8043',
@@ -16,14 +16,15 @@ const FQWEB_BASES = [
 const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 const LOCAL_PROXY = 'http://127.0.0.1:8787/?url='
-const BING_RSS = 'https://cn.bing.com/search?format=rss&q='
+const BING_SEARCH = 'https://cn.bing.com/search'
+const SEARCH_TIMEOUT = 5_000
 
 export type FqwebErrorCode =
   | 'UNAVAILABLE'
   | 'BAD_DATA'
   | 'EMPTY'
   | 'NOT_FOUND'
-  | 'SEARCH_NEEDS_PROXY'
+  | 'RATE_LIMITED'
 
 export class FqwebError extends Error {
   code: FqwebErrorCode
@@ -65,20 +66,9 @@ function buildUrl(base: string, path: string, params?: Record<string, string | n
   return url.toString()
 }
 
-async function webFetchText(url: string, timeoutMs: number, accept: string): Promise<string> {
-  const ctrl = new AbortController()
-  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: accept },
-      cache: 'no-store',
-      signal: ctrl.signal,
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.text()
-  } finally {
-    window.clearTimeout(timer)
-  }
+function checkStatus(status: number) {
+  if (status === 429) throw new FqwebError('RATE_LIMITED', '书源请求过多，请稍后重试')
+  if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
 }
 
 async function nativeFetchText(url: string, timeoutMs: number, accept: string): Promise<string> {
@@ -86,54 +76,61 @@ async function nativeFetchText(url: string, timeoutMs: number, accept: string): 
     url,
     headers: { 'User-Agent': DESKTOP_UA, Accept: accept },
     responseType: 'text',
-    connectTimeout: 15_000,
+    connectTimeout: Math.min(timeoutMs, 5_000),
     readTimeout: timeoutMs,
   })
-  if (res.status >= 400) throw new Error(`HTTP ${res.status}`)
+  checkStatus(res.status)
   return typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '')
 }
 
 async function fetchText(url: string, timeoutMs: number, accept = 'application/json, text/plain, */*') {
-  return isNative()
-    ? nativeFetchText(url, timeoutMs, accept)
-    : webFetchText(url, timeoutMs, accept)
+  if (isNative()) return nativeFetchText(url, timeoutMs, accept)
+  const headers = { Accept: accept }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const signal = controller.signal
+    const res = isTauri()
+      ? await tauriFetch(url, { headers, signal, connectTimeout: Math.min(timeoutMs, 5_000) })
+      : await fetch(url, { headers, signal, cache: 'no-store' })
+    checkStatus(res.status)
+    return await res.text()
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
-/** 依次试“直连端口”和“Cloudflare 前置域名”；两个地址都挂了才算不可用 */
-async function fqwebFetchText(
+let chapterBase = FQWEB_BASES[0]
+
+async function fqwebRequest<T>(
   path: string,
-  params?: Record<string, string | number>,
-  timeoutMs = 25_000,
-): Promise<string> {
-  let last: unknown
-  for (const base of FQWEB_BASES) {
-    const url = buildUrl(base, path, params)
+  params: Record<string, string | number>,
+  timeoutMs: number,
+  parse: (raw: unknown) => T,
+): Promise<T> {
+  const preferred = path === '/content' ? chapterBase : FQWEB_BASES[0]
+  const bases = [preferred, ...FQWEB_BASES.filter((base) => base !== preferred)]
+  let dataError: FqwebError | undefined
+  for (const base of bases) {
     try {
-      const text = await fetchText(url, timeoutMs)
-      if (!text.trim()) throw new Error('空响应')
-      return text
+      const text = await fetchText(buildUrl(base, path, params), timeoutMs)
+      let raw: unknown
+      try {
+        raw = JSON.parse(text)
+      } catch {
+        throw new FqwebError('BAD_DATA', '书源返回的不是有效 JSON')
+      }
+      const result = parse(raw)
+      if (path === '/content' && base !== preferred) chapterBase = base
+      return result
     } catch (e) {
-      last = e
-      await sleep(500)
+      if (e instanceof FqwebError) {
+        if (e.code === 'RATE_LIMITED') throw e
+        if (!dataError || e.code === 'NOT_FOUND') dataError = e
+      }
     }
   }
-  throw new FqwebError(
-    'UNAVAILABLE',
-    `正文接口暂时连不上${last instanceof Error ? `（${last.message}）` : ''}`,
-  )
-}
-
-async function fqwebJson<T>(
-  path: string,
-  params?: Record<string, string | number>,
-  timeoutMs = 25_000,
-): Promise<T> {
-  const text = await fqwebFetchText(path, params, timeoutMs)
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    throw new FqwebError('BAD_DATA', '正文接口返回的不是 JSON')
-  }
+  throw dataError ?? new FqwebError('UNAVAILABLE', '书源暂时连不上')
 }
 
 function obj(v: unknown): Record<string, unknown> | null {
@@ -154,8 +151,6 @@ function msFromSeconds(v: unknown): number | undefined {
   if (!n) return undefined
   return n > 10_000_000_000 ? n : n * 1000
 }
-
-const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
 
 /** FQWeb 统一外壳：{ data: { code:"0", data: {...}, message } } */
 function payload(raw: unknown): Record<string, unknown> {
@@ -220,16 +215,6 @@ function chapterFromRaw(raw: unknown, index: number): FanqieChapterMeta | null {
   }
 }
 
-/** /info：搜索结果/详情页用，不返回目录 */
-export function parseFqwebInfo(raw: unknown): FanqieBookInfo {
-  return bookFromRaw(payload(raw))
-}
-
-export async function fetchFanqieBookInfo(bookId: string): Promise<FanqieBookInfo> {
-  const json = await fqwebJson<unknown>('/info', { book_id: bookId }, 24_000)
-  return parseFqwebInfo(json)
-}
-
 /** /catalog：一次拿书信息 + 全目录（约 1MB） */
 export function parseFqwebCatalog(raw: unknown): FanqieBookInfo {
   const inner = payload(raw)
@@ -253,8 +238,7 @@ export function parseFqwebCatalog(raw: unknown): FanqieBookInfo {
 }
 
 export async function fetchFanqieBookById(bookId: string): Promise<FanqieBookInfo> {
-  const json = await fqwebJson<unknown>('/catalog', { book_id: bookId }, 45_000)
-  return parseFqwebCatalog(json)
+  return fqwebRequest('/catalog', { book_id: bookId }, 30_000, parseFqwebCatalog)
 }
 
 function cleanContent(raw: string, title: string): string {
@@ -291,8 +275,7 @@ export function parseFqwebContent(raw: unknown): FqwebChapterContent {
 }
 
 export async function fetchFanqieChapterContent(itemId: string): Promise<FqwebChapterContent> {
-  const json = await fqwebJson<unknown>('/content', { item_id: itemId }, 22_000)
-  return parseFqwebContent(json)
+  return fqwebRequest('/content', { item_id: itemId }, 12_000, parseFqwebContent)
 }
 
 /** 把章节链接解析成书籍：先查章节的 novel_data.book_id，再拉目录 */
@@ -306,7 +289,8 @@ export async function fetchFanqieBookByRef(ref: FanqieRef): Promise<FanqieBookIn
   // 纯数字：先当书 ID 试目录，失败再当章节 ID
   try {
     return await fetchFanqieBookById(ref.id)
-  } catch {
+  } catch (e) {
+    if (e instanceof FqwebError && e.code === 'RATE_LIMITED') throw e
     const content = await fetchFanqieChapterContent(ref.id)
     if (!content.bookId) throw new FqwebError('BAD_DATA', '章节里没有所属书籍 ID')
     return fetchFanqieBookById(content.bookId)
@@ -355,21 +339,6 @@ export function parseFqwebSearch(raw: unknown): FanqieSearchItem[] {
   return extractSearchItems(raw)
 }
 
-let fqwebSearchBrokenUntil = 0
-
-async function searchFqweb(query: string): Promise<FanqieSearchItem[]> {
-  if (Date.now() < fqwebSearchBrokenUntil) throw new FqwebError('BAD_DATA', 'FQWeb 搜索暂不可用')
-  try {
-    const json = await fqwebJson<unknown>('/search', { query, page: 1 }, 6_000)
-    const items = parseFqwebSearch(json)
-    if (!items.length) throw new FqwebError('EMPTY', 'FQWeb 搜索没有结果')
-    return items
-  } catch (e) {
-    fqwebSearchBrokenUntil = Date.now() + 5 * 60_000
-    throw e
-  }
-}
-
 function decodeXml(s: string): string {
   return s
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
@@ -408,91 +377,80 @@ export function parseBingRss(xml: string): Array<{ bookId: string; title: string
   return out
 }
 
-async function fetchBingRss(query: string): Promise<string> {
-  const url = BING_RSS + encodeURIComponent(`site:fanqienovel.com/page ${query}`)
-  const accept = 'application/rss+xml, application/xml, text/xml, */*'
-  if (isNative()) return nativeFetchText(url, 20_000, accept)
-  // Bing 不返回 CORS 头，网页版只能走本机代理；下载正文不需要代理
-  try {
-    return await webFetchText(LOCAL_PROXY + encodeURIComponent(url), 20_000, accept)
-  } catch {
-    throw new FqwebError(
-      'SEARCH_NEEDS_PROXY',
-      '网页版搜索需要本机代理：先运行 node scripts/fanqie-proxy.mjs（安卓 App 不需要）',
-    )
-  }
+export function fanqieWebSearchUrl(query: string): string {
+  const url = new URL(BING_SEARCH)
+  url.searchParams.set('q', `site:fanqienovel.com/page ${query}`)
+  return url.toString()
 }
 
 async function searchBing(query: string): Promise<FanqieSearchItem[]> {
-  let xml = ''
-  try {
-    xml = await fetchBingRss(query)
-  } catch (e) {
-    if (e instanceof FqwebError) throw e
-    throw new FqwebError('UNAVAILABLE', '搜索服务暂时不可用')
-  }
-  let hits = parseBingRss(xml)
-  // 站点限定没命中时放宽一次（有些书名只在普通结果里出现）
-  if (!hits.length) {
-    const url = BING_RSS + encodeURIComponent(`site:fanqienovel.com ${query}`)
-    try {
-      const retry = isNative()
-        ? await nativeFetchText(url, 20_000, 'application/rss+xml, text/xml, */*')
-        : await webFetchText(LOCAL_PROXY + encodeURIComponent(url), 20_000, 'application/rss+xml, text/xml, */*')
-      hits = parseBingRss(retry)
-    } catch {
-      /* 保持空结果 */
-    }
-  }
-  if (!hits.length) throw new FqwebError('NOT_FOUND', '没搜到这本书')
+  const url = new URL(fanqieWebSearchUrl(query))
+  url.searchParams.set('format', 'rss')
+  const target = isNative() || isTauri() ? url.href : LOCAL_PROXY + encodeURIComponent(url.href)
+  const xml = await fetchText(target, SEARCH_TIMEOUT, 'application/rss+xml, application/xml, text/xml, */*')
+  if (!/<rss[\s>]/i.test(xml)) throw new FqwebError('BAD_DATA', '网页索引暂时不可用')
+  return parseBingRss(xml)
+}
 
-  const top = hits.slice(0, 4)
-  const enriched = await Promise.all(
-    top.map(async (hit) => {
-      try {
-        const info = await fetchFanqieBookInfo(hit.bookId)
-        return {
-          bookId: hit.bookId,
-          title: info.title,
-          author: info.author,
-          cover: info.cover,
-          abstract: info.abstract,
-          status: info.status,
-          wordCount: info.wordCount,
-          chapterCount: info.chapterCount,
-        } satisfies FanqieSearchItem
-      } catch {
-        return { bookId: hit.bookId, title: hit.title } satisfies FanqieSearchItem
+async function searchFqweb(query: string): Promise<FanqieSearchItem[]> {
+  return fqwebRequest('/search', { query, page: 1 }, SEARCH_TIMEOUT, (raw) => {
+    const items = parseFqwebSearch(raw)
+    if (!items.length) {
+      // 接口出错时可能仍返回 HTTP 200。确认确实有结果列表（包括空列表）。
+      const outer = obj(obj(raw)?.data)
+      const code = outer?.code
+      const hasData = obj(outer?.data) !== null || Array.isArray(outer?.data)
+      if (!hasData || (code != null && !['0', '200'].includes(String(code)))) {
+        throw new FqwebError('BAD_DATA', '书源搜索暂时不可用')
       }
-    }),
-  )
-  // 保留 Bing 里其余候选，避免前 4 个取不到信息就看不到书
-  const rest = hits.slice(4).map((h) => ({ bookId: h.bookId, title: h.title }))
-  return [...enriched, ...rest]
+    }
+    return items
+  })
+}
+
+const compact = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+
+function rankSearchItems(query: string, items: FanqieSearchItem[]): FanqieSearchItem[] {
+  const key = compact(query)
+  const terms = query.split(/\s+/).map(compact).filter(Boolean)
+  if (!key) return items
+  const score = (item: FanqieSearchItem) => {
+    const title = compact(item.title)
+    const author = compact(item.author ?? '')
+    if (title === key) return 5
+    if (author === key || title.startsWith(key)) return 4
+    if (title.includes(key) || author.includes(key)) return 3
+    if (terms.every((term) => title.includes(term) || author.includes(term))) return 2
+    return 0
+  }
+  return items.map((item) => ({ item, score: score(item) })).sort((a, b) => b.score - a.score).map(({ item }) => item)
 }
 
 const searchCache = new Map<string, { at: number; items: FanqieSearchItem[] }>()
 const SEARCH_TTL = 10 * 60_000
 
-/** 搜书名：FQWeb 搜索（当前公共节点常报错）→ Bing RSS → 用 FQWeb /info 补全 */
+/** 合并两个来源，保留书源元数据，并把更接近书名或作者的候选排在前面。 */
 export async function searchFanqieBooks(query: string): Promise<FanqieSearchItem[]> {
-  const key = query.trim().toLowerCase()
+  const keyword = query.normalize('NFKC').trim().replace(/^《(.*)》$/u, '$1').trim().replace(/\s+/g, ' ')
+  if (!keyword) return []
+  const key = keyword.toLowerCase()
   const cached = searchCache.get(key)
   if (cached && Date.now() - cached.at < SEARCH_TTL) return cached.items
 
-  let items: FanqieSearchItem[] = []
-  // FQWeb 的 /search 在公共节点上经常报错，而且网页端 CORS 头是 null；
-  // 网页直接走 Bing，安卓上才先试一下 FQWeb（它不受 CORS 限制）。
-  if (isNative()) {
-    try {
-      items = await searchFqweb(query)
-    } catch {
-      items = await searchBing(query)
-    }
-  } else {
-    items = await searchBing(query)
+  const sources = await Promise.allSettled([searchFqweb(keyword), searchBing(keyword)])
+  if (sources.every((source) => source.status === 'rejected')) {
+    const limited = sources.find((source) => source.status === 'rejected' && source.reason instanceof FqwebError && source.reason.code === 'RATE_LIMITED')
+    if (limited?.status === 'rejected') throw limited.reason
+    throw new FqwebError('UNAVAILABLE', '在线搜索暂时不可用')
   }
-  if (!items.length) throw new FqwebError('NOT_FOUND', '没搜到这本书')
-  searchCache.set(key, { at: Date.now(), items })
+  const byId = new Map<string, FanqieSearchItem>()
+  for (const source of sources) {
+    if (source.status !== 'fulfilled') continue
+    for (const item of source.value) {
+      if (!byId.has(item.bookId)) byId.set(item.bookId, item)
+    }
+  }
+  const items = rankSearchItems(keyword, [...byId.values()])
+  if (items.length) searchCache.set(key, { at: Date.now(), items })
   return items
 }

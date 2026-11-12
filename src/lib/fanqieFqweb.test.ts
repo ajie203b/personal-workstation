@@ -1,12 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   FqwebError,
   parseBingRss,
   parseFqwebCatalog,
   parseFqwebContent,
-  parseFqwebInfo,
   parseFqwebSearch,
 } from './fanqieFqweb'
+
+const { platform, tauriFetch, androidGet } = vi.hoisted(() => ({
+  platform: { android: false, windows: false },
+  tauriFetch: vi.fn(),
+  androidGet: vi.fn(),
+}))
+vi.mock('./native', () => ({ isNative: () => platform.android, isTauri: () => platform.windows }))
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: tauriFetch }))
+vi.mock('@capacitor/core', () => ({ CapacitorHttp: { get: androidGet } }))
 
 const bookInfo = {
   book_id: '7276384138653862966',
@@ -71,7 +79,7 @@ describe('parseFqwebCatalog', () => {
 
   it('throws on an error payload', () => {
     expect(() => parseFqwebCatalog({ data: { code: '500', data: {}, message: 'bad' } })).toThrow(FqwebError)
-    expect(() => parseFqwebInfo({ data: 'stack trace' })).toThrow(FqwebError)
+    expect(() => parseFqwebCatalog({ data: 'stack trace' })).toThrow(FqwebError)
   })
 })
 
@@ -170,5 +178,79 @@ describe('parseBingRss', () => {
       <description>原文 https://fanqienovel.com/page/1234567890123456789 阅读</description>
     </item></channel></rss>`
     expect(parseBingRss(xml)).toEqual([{ bookId: '1234567890123456789', title: '测试' }])
+  })
+})
+
+describe('Fanqie requests', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.resetAllMocks()
+    platform.android = false
+    platform.windows = false
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('uses native HTTP in Windows and ranks partial matches across both sources', async () => {
+    platform.windows = true
+    const webFetch = vi.fn(() => { throw new Error('Unexpected browser request') })
+    vi.stubGlobal('fetch', webFetch)
+    tauriFetch.mockImplementation(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'cn.bing.com') {
+        return new Response(`<rss><channel>
+          <item><title>通神者：一斩苍穹</title><link>https://fanqienovel.com/page/123456</link></item>
+          <item><title>重复</title><link>https://fanqienovel.com/page/234567</link></item>
+        </channel></rss>`)
+      }
+      expect(url.searchParams.get('query')).toBe('通神者')
+      return Response.json({ data: { code: '0', data: { list: [
+        { book_id: '345678', book_name: '同类书' },
+        { book_id: '234567', book_name: '通神者', author: '作者' },
+      ] } } })
+    })
+    const { searchFanqieBooks } = await import('./fanqieFqweb')
+    const hits = await searchFanqieBooks('《通神者》')
+    expect(hits.map(({ bookId }) => bookId)).toEqual(['234567', '123456', '345678'])
+    expect(hits[0].author).toBe('作者')
+    expect(tauriFetch).toHaveBeenCalledTimes(2)
+    expect(webFetch).not.toHaveBeenCalled()
+  })
+
+  it('continues looking up other keywords after a valid empty result in the browser', async () => {
+    const fetch = vi.fn(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === '127.0.0.1') throw new Error('No local proxy')
+      const list = url.searchParams.get('query') === '戏神' ? [bookInfo] : []
+      return Response.json({ data: { code: '0', data: { list } } })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const { searchFanqieBooks } = await import('./fanqieFqweb')
+    await expect(searchFanqieBooks('生僻词')).resolves.toEqual([])
+    await expect(searchFanqieBooks('戏神')).resolves.toMatchObject([{ title: '我不是戏神' }])
+  })
+
+  it('falls back after invalid chapter data and reuses the working node on Android', async () => {
+    platform.android = true
+    androidGet.mockImplementation(async ({ url }: { url: string }) => ({
+      status: 200,
+      data: new URL(url).hostname === 'fq-book.nat.netsite.cc'
+        ? { data: 'upstream exception' }
+        : { data: { code: '0', data: { content: '正文内容' } } },
+    }))
+    const { fetchFanqieChapterContent } = await import('./fanqieFqweb')
+    await expect(fetchFanqieChapterContent('111')).resolves.toMatchObject({ content: '正文内容' })
+    await expect(fetchFanqieChapterContent('222')).resolves.toMatchObject({ content: '正文内容' })
+    expect(androidGet.mock.calls.map(([request]) => new URL(request.url).hostname)).toEqual([
+      'fq-book.nat.netsite.cc', 'fq-book.netsite.cc', 'fq-book.netsite.cc',
+    ])
+    expect(androidGet.mock.calls[0][0]).toMatchObject({ connectTimeout: 5000, readTimeout: 12000 })
+  })
+
+  it('stops chapter requests at a rate limit', async () => {
+    platform.android = true
+    androidGet.mockResolvedValue({ status: 429 })
+    const { fetchFanqieChapterContent } = await import('./fanqieFqweb')
+    await expect(fetchFanqieChapterContent('111')).rejects.toMatchObject({ code: 'RATE_LIMITED' })
+    expect(androidGet).toHaveBeenCalledTimes(1)
   })
 })

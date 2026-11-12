@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { FanqieBook } from '@/db/db'
 import type { FanqieBookInfo, FanqieChapterMeta } from '@/lib/fanqie'
-import { fetchFanqieChapterContent } from '@/lib/fanqieFqweb'
+import { FqwebError, fetchFanqieChapterContent } from '@/lib/fanqieFqweb'
 import {
   countFanqieChapters,
   getDownloadedItemIds,
@@ -16,7 +16,7 @@ const DELAY_MIN = 260
 const DELAY_MAX = 520
 const SAVE_EVERY = 5
 /** 正文接口连续失败这么多次就停，避免对公共节点死循环重试 */
-const MAX_FAILURE_STREAK = 8
+const MAX_FAILURE_STREAK = 4
 
 export type FanqiePhase = 'idle' | 'running' | 'paused' | 'done' | 'error'
 
@@ -47,7 +47,7 @@ let activeRun: Promise<void> | null = null
 let paused = false
 let runToken = 0
 
-const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function patchJob(patch: Partial<FanqieJob>) {
   useFanqie.setState((s) => (s.job ? { job: { ...s.job, ...patch } } : s))
@@ -57,6 +57,7 @@ async function runPool(token: number): Promise<void> {
   const book = activeBook
   if (!book) return
   const downloaded = await getDownloadedItemIds(book.id)
+  if (paused || token !== runToken) return
   const pending = activeChapters.filter((ch) => !downloaded.has(ch.itemId))
   let savedThisRun = 0
   let done = 0
@@ -102,7 +103,7 @@ async function runPool(token: number): Promise<void> {
 
       let content: string | null = null
       let lastErr: unknown = null
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         if (paused || token !== runToken || fatal) return
         try {
           const data = await fetchFanqieChapterContent(meta.itemId)
@@ -121,13 +122,18 @@ async function runPool(token: number): Promise<void> {
           failureStreak = 0
           break
         } catch (e) {
+          if (paused || token !== runToken || fatal) return
+          if (e instanceof FqwebError && e.code === 'RATE_LIMITED') {
+            fatal = '书源请求过多，已暂停下载，稍后可继续'
+            return
+          }
           lastErr = e
           failureStreak++
           if (failureStreak >= MAX_FAILURE_STREAK) {
             fatal = '正文接口连续失败，已停止；稍后重试即可续传'
             return
           }
-          if (attempt < 2) await sleep(1_500 * (attempt + 1))
+          if (attempt === 0) await sleep(1_000)
         }
       }
 
@@ -160,7 +166,7 @@ async function runPool(token: number): Promise<void> {
   const current = token === runToken
   // 即使这一轮已被暂停/替换，也把实际章节数落一次；错误只在当前轮写
   await flush(current ? (fatal || lastError) : '')
-  if (!current) return
+  if (token !== runToken) return
 
   if (fatal) {
     runToken++
@@ -193,14 +199,19 @@ export const useFanqie = create<FanqieState>((set, get) => ({
     paused = true
     runToken += 2
     const token = runToken
+    await activeRun?.catch(() => undefined)
+    if (token !== runToken) return
     let book: FanqieBook
     try {
       book = await saveFanqieBook(info)
     } catch (e) {
-      paused = false
-      set({ job: null })
+      if (token === runToken) {
+        paused = false
+        set({ job: null })
+      }
       throw e
     }
+    if (token !== runToken) return
     activeBook = book
     activeChapters = chapters
     paused = false
@@ -242,6 +253,8 @@ export const useFanqie = create<FanqieState>((set, get) => ({
     paused = false
     const token = ++runToken
     set((s) => (s.job ? { job: { ...s.job, phase: 'running', error: undefined } } : s))
+    await activeRun?.catch(() => undefined)
+    if (paused || token !== runToken) return
     activeRun = runPool(token).catch((e) => {
       if (token === runToken) {
         paused = false
@@ -256,9 +269,9 @@ export const useFanqie = create<FanqieState>((set, get) => ({
 
   clear: () => {
     if (get().job?.phase === 'running') return
+    runToken++
     activeBook = null
     activeChapters = []
-    activeRun = null
     set({ job: null })
   },
 }))

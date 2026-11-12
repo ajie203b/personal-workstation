@@ -26,6 +26,7 @@ import type { FanqieBook } from '@/db/db'
 import { formatDate, formatWordCount, parseFanqieRef, type FanqieBookInfo } from '@/lib/fanqie'
 import {
   FqwebError,
+  fanqieWebSearchUrl,
   fetchFanqieBookById,
   fetchFanqieBookByRef,
   searchFanqieBooks,
@@ -34,16 +35,8 @@ import {
 import { buildFanqieEpub, buildFanqieTxt, importFanqieToDocs, sanitizeFilename, saveBlob } from '@/lib/fanqieExport'
 import { openSavedAction } from '@/lib/saveFile'
 import { openExternal } from '@/lib/links'
-import { isNative } from '@/lib/native'
 import { cn } from '@/lib/cn'
 
-/**
- * 番茄小说下载器（v2.2）
- *
- * 用户只需要搜书名（或贴番茄链接）→ 选书 → 下载；没有接口地址、Cookie、代理等设置。
- * 正文/目录走公开 FQWeb 节点（不登录也能拿全本，含锁定章），搜索优先 FQWeb，
- * 公共节点搜索报错时用 Bing RSS 找 fanqienovel.com/page 的书籍 ID。
- */
 export function FanqiePage() {
   const navigate = useNavigate()
   const toast = useUi((s) => s.toast)
@@ -54,6 +47,7 @@ export function FanqiePage() {
   const clearJob = useFanqie((s) => s.clear)
 
   const [query, setQuery] = useState('')
+  const [searchedKeyword, setSearchedKeyword] = useState('')
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<FanqieSearchItem[] | null>(null)
   const [book, setBook] = useState<FanqieBookInfo | null>(null)
@@ -93,6 +87,7 @@ export function FanqiePage() {
   const runningOther = job?.phase === 'running' && book && job.bookId !== book.bookId
   const processed = job ? job.done + job.failed + job.skipped : 0
   const busy = searching || loadingBook
+  const webSearchUrl = searchedKeyword ? fanqieWebSearchUrl(searchedKeyword) : ''
 
   const scrollTop = () => document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -124,6 +119,7 @@ export function FanqiePage() {
     setResults(null)
     setBook(null)
     const ref = parseFanqieRef(q)
+    setSearchedKeyword(ref ? '' : q)
     if (ref) {
       setLoadingBook(true)
       try {
@@ -140,7 +136,6 @@ export function FanqiePage() {
     try {
       const items = await searchFanqieBooks(q)
       setResults(items)
-      if (items.length === 1) await openBook(items[0].bookId)
     } catch (e) {
       setError(searchErrorMessage(e))
     } finally {
@@ -167,6 +162,7 @@ export function FanqiePage() {
 
   const openLibraryBook = (b: FanqieBook) => {
     setResults(null)
+    setSearchedKeyword('')
     setQuery(b.title)
     setError('')
     applyBook(libraryToInfo(b))
@@ -271,7 +267,8 @@ export function FanqiePage() {
               id="fq-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="例如：我不是戏神 / 三九音域"
+              placeholder="例如：戏神、三九音域、番茄书籍链接"
+              aria-describedby="fq-search-hint"
               enterKeyHint="search"
               className="w-full h-10 pl-9 pr-3 rounded-[10px] bg-surface border border-outline text-[13.5px] outline-none focus:border-primary/60 placeholder:text-on-surface-2/70"
             />
@@ -280,16 +277,15 @@ export function FanqiePage() {
             搜索
           </Button>
         </div>
-        <p className="text-[11.5px] text-on-surface-2 mt-2 leading-relaxed">
-          建议输入完整书名；也可以直接粘贴番茄书籍 / 章节链接或纯数字 ID。
-          {!isNative() && ' 网页版搜索需要先运行 node scripts/fanqie-proxy.mjs；下载正文不需要代理。'}
+        <p id="fq-search-hint" className="text-[11.5px] text-on-surface-2 mt-2 leading-relaxed">
+          支持部分书名、作者，也可粘贴番茄书籍或章节链接、纯数字 ID。
         </p>
       </form>
 
       {error && (
         <div className="card p-3.5 flex items-start gap-2.5 border-danger/25">
           <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" />
-          <p className="text-[12.5px] leading-relaxed">{error}</p>
+          <p role="alert" className="text-[12.5px] leading-relaxed">{error}</p>
         </div>
       )}
 
@@ -309,18 +305,22 @@ export function FanqiePage() {
 
       {!book && results && results.length === 0 && (
         <div className="card">
-          <EmptyState compact icon={Search} title="没搜到这本书" hint="换个书名或作者试试，也可以直接粘贴书籍链接或 ID。" />
+          <EmptyState compact icon={Search} title="暂未搜到相关书籍" hint="可以换一段书名或作者名再试。" />
         </div>
       )}
 
-      {!book && !results && !error && !busy && (
-        <div className="card">
-          <EmptyState
-            compact
-            icon={Search}
-            title="搜一本番茄小说"
-            hint="输入书名或作者，选中后可以按全部 / 前 20 章 / 自定义范围下载。正文不登录也能下。"
-          />
+      {!book && !busy && webSearchUrl && (results || error) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+          <a
+            href={webSearchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => { e.preventDefault(); openExternal(webSearchUrl) }}
+            className="inline-flex items-center gap-1.5 text-[12.5px] text-primary hover:underline"
+          >
+            <ExternalLink size={14} aria-hidden /> 去浏览器找书
+          </a>
+          <p className="text-[11.5px] text-on-surface-2">找到后，将番茄书籍详情页链接粘贴到搜索框。</p>
         </div>
       )}
 
@@ -333,7 +333,7 @@ export function FanqiePage() {
 
       {book && (
         <>
-          {results && results.length > 1 && (
+          {results && results.length > 0 && (
             <button
               type="button"
               onClick={backToResults}
@@ -515,12 +515,10 @@ function libraryToInfo(b: FanqieBook): FanqieBookInfo {
 function searchErrorMessage(e: unknown): string {
   if (e instanceof FqwebError) {
     switch (e.code) {
-      case 'SEARCH_NEEDS_PROXY':
-        return e.message
       case 'NOT_FOUND':
         return '没搜到这本书，换个书名或作者试试。'
       case 'UNAVAILABLE':
-        return '接口暂时连不上，稍后再试。'
+        return '在线服务暂时连不上，请稍后再试。'
       default:
         return e.message
     }
@@ -698,9 +696,9 @@ function ProgressCard({
             <Pause size={13} /> 暂停
           </Button>
         )}
-        {job.phase === 'paused' && (
+        {(job.phase === 'paused' || job.phase === 'error') && (
           <Button size="sm" variant="outline" onClick={onResume}>
-            <Play size={13} /> 继续
+            <Play size={13} /> {job.phase === 'error' ? '重试未完成章节' : '继续'}
           </Button>
         )}
         {!running && (
