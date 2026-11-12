@@ -56,9 +56,7 @@ fn main() {
         // 冷启动带文件时主窗口在 setup 之后才创建，会盖住文档窗口；等它加载完再把文档窗口置顶
         .on_page_load(|window, payload| {
             if window.label() == "archive-browser" {
-                if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
-                    archive::record_page(window, payload.url());
-                }
+                archive::record_page(window, payload.url());
                 return;
             }
             if window.label() != "main" || !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) { return; }

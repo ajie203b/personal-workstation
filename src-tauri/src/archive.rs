@@ -74,7 +74,8 @@ impl PageHistory {
 
 pub fn record_page(webview: &Webview, url: &Url) {
     let history = webview.state::<ArchiveHistory>();
-    if let Ok(mut history) = history.0.lock() { history.record(url); }
+    let Ok(mut pages) = history.0.lock() else { return; };
+    pages.record(url);
 }
 
 #[derive(Default)]

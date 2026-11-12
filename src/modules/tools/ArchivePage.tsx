@@ -98,7 +98,7 @@ function DesktopArchiveBrowser({ close, downloads, onError, onStart }: {
     <div role="dialog" aria-modal="true" aria-label="安娜的档案浏览器"
       className="fixed inset-0 z-[100] flex flex-col bg-surface">
       <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-1 border-b border-outline px-2 sm:px-4">
-        <Button size="icon" title="返回上一页，首页返回工具" aria-label="返回" onClick={() => action('back')}><ArrowLeft size={18} /></Button>
+        <Button size="icon" title="返回上一页或工具" aria-label="返回" onClick={() => action('back')}><ArrowLeft size={18} /></Button>
         <Button size="icon" title="首页" aria-label="首页" onClick={() => action('home')}><Home size={17} /></Button>
         <Button size="icon" title="刷新" aria-label="刷新" onClick={() => action('reload')}><RotateCw size={17} /></Button>
         <span className="hidden font-semibold sm:inline">安娜的档案</span>
