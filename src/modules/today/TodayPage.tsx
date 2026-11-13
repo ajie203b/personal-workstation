@@ -62,7 +62,10 @@ export function TodayPage() {
     return () => window.removeEventListener('ws:focus-quickadd', open)
   }, [openAddSheet])
 
-  const date = useMemo(() => new Date(), [today])
+  const date = useMemo(() => {
+    void today
+    return new Date()
+  }, [today])
 
   useEffect(() => () => cancelAnimationFrame(jumpRaf.current), [])
 

@@ -24,8 +24,11 @@ function apply() {
   root.classList.toggle('no-motion', !motion)
   setTimeout(() => root.classList.remove('theme-transition'), 300)
   // 同步 meta theme-color
-  const meta = document.querySelector('meta[name="theme-color"]:not([media])')
-  if (meta) meta.setAttribute('content', getComputedStyle(root).getPropertyValue('--canvas').trim())
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) {
+    const canvas = getComputedStyle(root).getPropertyValue('--canvas').trim() || (dark ? '#181C24' : '#F6F7F9')
+    meta.setAttribute('content', canvas)
+  }
 }
 
 /**

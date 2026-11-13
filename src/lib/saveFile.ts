@@ -1,10 +1,17 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { bytesToBase64 } from './http'
 
 interface FileExportPlugin {
   saveToDownloads(options: {
     dataBase64: string
     fileName: string
     mimeType: string
+  }): Promise<{ path: string; uri: string }>
+  downloadToDownloads(options: {
+    url: string
+    fileName: string
+    mimeType: string
+    headers?: Record<string, string>
   }): Promise<{ path: string; uri: string }>
   openSavedLocation(): Promise<{ location: 'folder' | 'downloads' | 'unavailable' }>
 }
@@ -13,13 +20,27 @@ const FileExport = registerPlugin<FileExportPlugin>('FileExport')
 
 /** Blob → base64（裸内容，不带 data: 前缀）。分块转，全本 TXT 几 MB 也不会撑爆单次入参 */
 export async function blobToBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  let binary = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(binary)
+  return bytesToBase64(new Uint8Array(await blob.arrayBuffer()))
+}
+
+async function resolveSavedDisplayPath(fallback: string): Promise<string> {
+  try {
+    const opened = await FileExport.openSavedLocation()
+    if (opened?.location === 'folder') return '文件管理器'
+    if (opened?.location === 'downloads') return '文件管理器的下载目录'
+  } catch { /* 文件已保存，打开失败时仍返回实际路径 */ }
+  return fallback
+}
+
+/** 安卓壳：由原生 OkHttp 流式下载直写「下载/个人工作站」，避免大文件过桥占内存 */
+export async function downloadUrlToDownloads(
+  url: string,
+  filename: string,
+  headers?: Record<string, string>,
+  mimeType = 'application/octet-stream',
+): Promise<string> {
+  const res = await FileExport.downloadToDownloads({ url, fileName: filename, mimeType, headers })
+  return resolveSavedDisplayPath(res.path || `下载/个人工作站/${filename}`)
 }
 
 /**
@@ -37,12 +58,7 @@ export async function saveBlob(blob: Blob, filename: string): Promise<string> {
       fileName: filename,
       mimeType: blob.type || 'application/octet-stream',
     })
-    try {
-      const opened = await FileExport.openSavedLocation()
-      if (opened?.location === 'folder') return '文件管理器'
-      if (opened?.location === 'downloads') return '文件管理器的下载目录'
-    } catch { /* 文件已保存，打开失败时仍返回实际路径 */ }
-    return res.path || `下载/个人工作站/${filename}`
+    return resolveSavedDisplayPath(res.path || `下载/个人工作站/${filename}`)
   }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

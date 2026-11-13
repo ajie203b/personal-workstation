@@ -1,5 +1,4 @@
-import { ComputeEngine } from '@cortex-js/compute-engine'
-import { computeLatex, normalizeLatex } from './compute'
+import { computeLatex, getComputeEngine, normalizeLatex } from './compute'
 import type { ComputeResult } from './types'
 import { computeUnits } from './units'
 
@@ -8,7 +7,7 @@ export interface PageEvaluation { variables: Record<string, number>; results: Re
 
 /** 按页面阅读顺序计算；声明只作用于之后的表达式，避免未来的赋值改变前文含义。 */
 export function evaluatePage(entries: PageEntry[]): PageEvaluation {
-  const ce = new ComputeEngine()
+  const ce = getComputeEngine()
   const variables: Record<string, number> = {}
   const invalidVariables = new Set<string>()
   const results: Record<string, ComputeResult> = {}

@@ -1,7 +1,7 @@
-import { CapacitorHttp } from '@capacitor/core'
+import { BROWSER_UA, httpBytes, httpJson, httpText } from './http'
 import { isNative } from './native'
 import { sanitizeFilename } from './fanqieExport'
-import { saveBlob } from './saveFile'
+import { downloadUrlToDownloads, saveBlob } from './saveFile'
 
 /**
  * 无水印解析（抖音 / B站）。
@@ -37,59 +37,22 @@ export interface ParsedMedia {
   note?: string
 }
 
-/* ---------------- HTTP（原生 CapacitorHttp / 网页 fetch） ---------------- */
+/* ---------------- HTTP（原生 CapacitorHttp / Tauri / 网页 fetch） ---------------- */
 
-const DESKTOP_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+const DESKTOP_UA = BROWSER_UA
 
 async function httpGetText(url: string, headers: Record<string, string>): Promise<{ body: string; finalUrl: string }> {
-  if (isNative()) {
-    const res = await CapacitorHttp.get({
-      url,
-      headers,
-      responseType: 'text',
-      connectTimeout: 15_000,
-      readTimeout: 30_000,
-    })
-    if (res.status >= 400) throw new Error(`HTTP ${res.status}`)
-    return { body: typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? ''), finalUrl: res.url || url }
-  }
-  const res = await fetch(url, { headers, redirect: 'follow' })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return { body: await res.text(), finalUrl: res.url || url }
+  const { body, finalUrl } = await httpText(url, { headers, timeoutMs: 30_000 })
+  return { body, finalUrl }
 }
 
 async function httpGetJson(url: string, headers: Record<string, string>): Promise<unknown> {
-  const { body } = await httpGetText(url, headers)
-  if (!body.trim()) throw new Error('空响应')
-  return JSON.parse(body)
+  return httpJson(url, { headers, timeoutMs: 30_000 })
 }
 
-/** 媒体二进制：原生走 CapacitorHttp（绕 CORS），网页走 fetch */
+/** 媒体二进制：原生走 CapacitorHttp / Tauri（绕 CORS），网页走 fetch */
 async function httpGetBlob(url: string, headers: Record<string, string>): Promise<Blob> {
-  if (isNative()) {
-    const res = await CapacitorHttp.get({
-      url,
-      headers,
-      responseType: 'arraybuffer',
-      connectTimeout: 15_000,
-      readTimeout: 120_000,
-    })
-    if (res.status >= 400) throw new Error(`HTTP ${res.status}`)
-    const data = res.data as string | ArrayBuffer
-    if (typeof data === 'string') return base64ToBlob(data)
-    return new Blob([data])
-  }
-  const res = await fetch(url, { headers })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.blob()
-}
-
-function base64ToBlob(b64: string): Blob {
-  // CapacitorHttp 对 arraybuffer 返回 base64；同 saveFile 的分块思路防大数组爆栈
-  const bin = atob(b64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const { bytes } = await httpBytes(url, { headers, timeoutMs: 120_000 })
   return new Blob([bytes])
 }
 
@@ -407,6 +370,10 @@ export async function downloadAsset(asset: ParsedAsset): Promise<string> {
     Referer: asset.url.includes('bilibili') || asset.url.includes('hdslb') || asset.url.includes('akamaized')
       ? 'https://www.bilibili.com/'
       : 'https://www.douyin.com/',
+  }
+  if (isNative()) {
+    const mimeType = asset.kind === 'video' ? 'video/mp4' : `image/${guessExt(asset.url).replace('jpg', 'jpeg')}`
+    return downloadUrlToDownloads(asset.url, asset.filename, headers, mimeType)
   }
   const blob = await httpGetBlob(asset.url, headers)
   return saveBlob(blob, asset.filename)

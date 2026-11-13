@@ -183,7 +183,7 @@ export function ArchivePage() {
     finally { setAndroidOpen(false); setRevision((value) => value + 1) }
   }
 
-  async function useDownload(book: ArchiveBook, remove = false) {
+  async function consumeDownload(book: ArchiveBook, remove = false) {
     setBusy(book.id)
     setError('')
     try {
@@ -241,9 +241,9 @@ export function ArchivePage() {
                   <li key={book.id} className="flex flex-wrap items-center gap-2 py-2">
                     <p className="min-w-[120px] flex-1 break-words text-sm">{book.name}</p>
                     <Button size="sm" variant="outline" state={busy === book.id ? 'loading' : 'idle'}
-                      disabled={busy != null} onClick={() => void useDownload(book)}>导入并阅读</Button>
+                      disabled={busy != null} onClick={() => void consumeDownload(book)}>导入并阅读</Button>
                     <Button size="icon" aria-label={`移除 ${book.name}`} title="移除下载文件" disabled={busy != null}
-                      onClick={() => void useDownload(book, true)}><Trash2 size={16} /></Button>
+                      onClick={() => void consumeDownload(book, true)}><Trash2 size={16} /></Button>
                   </li>
                 ))}
               </ul>

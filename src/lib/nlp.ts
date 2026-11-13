@@ -503,7 +503,7 @@ interface ClockResult {
 function resolveClock(h0: number, mm: number, period: string | undefined, nowMin: number, isRepeat: boolean): ClockResult {
   const passed = (h: number) => h * 60 + mm <= nowMin
   let hour = h0
-  let dayOffset = 0
+  let dayOffset: number
   let dayHint: 'today' | 'tomorrow' | undefined
   let crossDay = false
 

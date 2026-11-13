@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Coffee, RotateCcw, Target, Timer } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -19,6 +19,8 @@ import { Dialog } from '@/shared/ui/Sheet'
 type Phase = 'work' | 'break'
 
 const WORK_PRESETS = ['15', '25', '45', '60']
+const WORK_SEG_OPTIONS = WORK_PRESETS.map((m) => ({ value: m, label: `${m}分` }))
+const RING_CIRCUMFERENCE = 2 * Math.PI * 60
 const BREAK_MIN = 5
 const STORE_KEY = 'ws-focus-timer'
 const TASK_KEY = 'ws-focus-task'
@@ -72,15 +74,77 @@ function remainingOf(s: TimerStore, now: number): number {
   return Math.max(0, Math.min(total, Math.ceil((s.endsAt - now) / 1000)))
 }
 
+/**
+ * 圆形进度与倒计时数字独立子组件：
+ * 250ms 对齐时钟只在整秒变化时更新自身 state，不再触发 FocusTimer 顶层的任务过滤与排序重算。
+ */
+function CountdownDisplay({
+  store,
+  onExpire,
+}: {
+  store: TimerStore
+  onExpire: (endsAt: number) => void
+}) {
+  const [remaining, setRemaining] = useState(() => remainingOf(store, Date.now()))
+
+  useEffect(() => {
+    const sync = () => {
+      const next = remainingOf(store, Date.now())
+      setRemaining((prev) => (prev === next ? prev : next))
+      if (store.running && next <= 0) onExpire(store.endsAt)
+    }
+    sync()
+    if (!store.running) return
+    const id = setInterval(sync, 250)
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [store, onExpire])
+
+  const mm = String(Math.floor(remaining / 60)).padStart(2, '0')
+  const ss = String(remaining % 60).padStart(2, '0')
+  const total = storeSeconds(store)
+  const progress = total > 0 ? 1 - remaining / total : 0
+
+  return (
+    <div className="relative w-[140px] h-[140px]">
+      {/* 呼吸光晕：仅运行中显示，暂停即停（同屏只保留一个循环动画） */}
+      {store.running && (
+        <span
+          aria-hidden
+          className="focus-breathe absolute inset-1 rounded-full"
+          style={{
+            background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 24%, transparent) 0%, transparent 68%)',
+          }}
+        />
+      )}
+      <svg viewBox="0 0 140 140" className="relative w-full h-full -rotate-90">
+        <circle cx="70" cy="70" r="60" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
+        <circle
+          cx="70" cy="70" r="60" fill="none"
+          stroke="var(--primary)"
+          strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={`${progress * RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`}
+          style={{ transition: 'stroke-dasharray 1s linear' }}
+        />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center">
+        <span className="text-[28px] font-bold tabular-nums text-primary">
+          {mm}:{ss}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 /** 番茄钟：按墙上时钟计时（跨刷新/后台继续跑）+ 可选专注时长 + 会话落库（可绑定任务） */
 export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   const [store, setStore] = useState<TimerStore>(loadStore)
-  const [now, setNow] = useState(() => Date.now())
   const toast = useUi((s) => s.toast)
   // StrictMode 会把 effect 吊两次，落库靠这个 ref 兜住，只记一次
   const settledRef = useRef(0)
-
-  const remaining = remainingOf(store, now)
 
   // 必须用本地日期：toISOString() 是 UTC，北京时间 0–8 点会取到昨天，
   // 和落库用的 todayStr() 对不上，凌晨的专注会记到「今日」之外
@@ -95,7 +159,14 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   )
 
   const all = useAllTasks()
-  const candidates: Task[] = sortTasks(all.filter((t) => t.status !== 'done')).slice(0, 50)
+  const candidates: Task[] = useMemo(
+    () => sortTasks(all.filter((t) => t.status !== 'done')).slice(0, 50),
+    [all],
+  )
+  const taskOptions = useMemo(
+    () => [{ value: '', label: '不绑定任务' }, ...candidates.map((t) => ({ value: t.id, label: t.title }))],
+    [candidates],
+  )
   const [taskId, pickTask] = useFocusTaskId(initialTaskId)
   // 从任务详情点「开始专注」进来时，待选时的小框（值为任务 id）
   const [askTaskId, setAskTaskId] = useState<string | null>(null)
@@ -119,31 +190,20 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
     } catch { /* 忽略坏数据 */ }
   }, [initialTaskId])
 
-  // 250ms 对齐一次时钟：即使后台把 interval 节流到 1 分钟，回到前台也会立刻补算
-  useEffect(() => {
-    if (!store.running) return
-    const id = setInterval(() => setNow(Date.now()), 250)
-    const onVis = () => setNow(Date.now())
-    document.addEventListener('visibilitychange', onVis)
-    return () => {
-      clearInterval(id)
-      document.removeEventListener('visibilitychange', onVis)
-    }
-  }, [store.running])
-
   // 到期（含离开期间就已到期）：落库 → 进入下一阶段停住等用户，不自动续跑
-  useEffect(() => {
-    if (!store.running || remaining > 0 || settledRef.current === store.endsAt) return
-    settledRef.current = store.endsAt
-    const finishedWork = store.phase === 'work'
-    if (finishedWork) void addFocusSession(store.workMin, taskId || undefined)
-    toast(finishedWork ? `专注 ${store.workMin} 分钟完成，休息 ${BREAK_MIN} 分钟` : '休息结束，可以开始下一个番茄')
-    haptic('success')
+  const handleExpire = useCallback((endsAt: number) => {
+    if (settledRef.current === endsAt) return
+    settledRef.current = endsAt
     setStore((s) => {
+      if (!s.running || s.endsAt !== endsAt) return s
+      const finishedWork = s.phase === 'work'
+      if (finishedWork) void addFocusSession(s.workMin, taskId || undefined)
+      toast(finishedWork ? `专注 ${s.workMin} 分钟完成，休息 ${BREAK_MIN} 分钟` : '休息结束，可以开始下一个番茄')
+      haptic('success')
       const phase: Phase = s.phase === 'work' ? 'break' : 'work'
       return { ...s, phase, running: false, endsAt: 0, left: phaseSeconds(phase, s.workMin) }
     })
-  }, [store.running, store.phase, store.endsAt, store.workMin, remaining, taskId, toast])
+  }, [taskId, toast])
 
   const toggle = useCallback(() => {
     setStore((s) => {
@@ -168,12 +228,8 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
     setStore({ phase: 'work', running: true, endsAt: Date.now() + min * 60_000, left: min * 60, workMin: min })
   }, [])
 
-  const mm = String(Math.floor(remaining / 60)).padStart(2, '0')
-  const ss = String(remaining % 60).padStart(2, '0')
-  const total = storeSeconds(store)
-  const progress = total > 0 ? 1 - remaining / total : 0
-  const boundTask = all.find((t) => t.id === taskId)
-  const askTask = askTaskId ? all.find((t) => t.id === askTaskId) : undefined
+  const boundTask = useMemo(() => all.find((t) => t.id === taskId), [all, taskId])
+  const askTask = useMemo(() => (askTaskId ? all.find((t) => t.id === askTaskId) : undefined), [all, askTaskId])
 
   // 专注结束提醒：按 endsAt 排一条本地通知（锁屏/后台也能收到）；暂停、重置、结束时撤销
   useEffect(() => {
@@ -195,33 +251,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
       </div>
 
       {/* 圆形进度 + 时间 */}
-      <div className="relative w-[140px] h-[140px]">
-        {/* 呼吸光晕：仅运行中显示，暂停即停（同屏只保留一个循环动画） */}
-        {store.running && (
-          <span
-            aria-hidden
-            className="focus-breathe absolute inset-1 rounded-full"
-            style={{
-              background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 24%, transparent) 0%, transparent 68%)',
-            }}
-          />
-        )}
-        <svg viewBox="0 0 140 140" className="relative w-full h-full -rotate-90">
-          <circle cx="70" cy="70" r="60" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
-          <circle
-            cx="70" cy="70" r="60" fill="none"
-            stroke="var(--primary)"
-            strokeWidth="8" strokeLinecap="round"
-            strokeDasharray={`${progress * 2 * Math.PI * 60} ${2 * Math.PI * 60}`}
-            style={{ transition: 'stroke-dasharray 1s linear' }}
-          />
-        </svg>
-        <div className="absolute inset-0 grid place-items-center">
-          <span className="text-[28px] font-bold tabular-nums text-primary">
-            {mm}:{ss}
-          </span>
-        </div>
-      </div>
+      <CountdownDisplay store={store} onExpire={handleExpire} />
 
       {/* 专注时长：计时中不可改，改了会打断正在跑的这一个番茄 */}
       <div
@@ -231,7 +261,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
         <Segmented
           ariaLabel="专注时长"
           size="sm"
-          options={WORK_PRESETS.map((m) => ({ value: m, label: `${m}分` }))}
+          options={WORK_SEG_OPTIONS}
           value={String(store.workMin)}
           onChange={(v) => pickMinutes(Number(v))}
         />
@@ -272,10 +302,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
           ariaLabel="专注绑定任务"
           title="绑定任务"
           triggerClassName="flex-1 h-8 px-2 rounded-[8px] text-[12px]"
-          options={[
-            { value: '', label: '不绑定任务' },
-            ...candidates.map((t) => ({ value: t.id, label: t.title })),
-          ]}
+          options={taskOptions}
         />
       </div>
       {boundTask && (

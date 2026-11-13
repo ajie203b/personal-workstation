@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import { CalendarDays, Columns3, Grid2x2, List } from 'lucide-react'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
@@ -8,14 +8,17 @@ import { toggleTaskWithUndo } from './taskActions'
 import { useTasksUi } from '@/stores/tasks'
 import { QuickAdd } from './QuickAdd'
 import { TaskList } from './TaskList'
-import { BoardView } from './BoardView'
-import { CalendarView } from './CalendarView'
-import { QuadrantView } from './QuadrantView'
-import { LogbookView } from './LogbookView'
 import { Segmented } from '@/shared/ui/Segmented'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
+import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { fmtListDate, todayStr } from '@/lib/date'
 import { cn } from '@/lib/cn'
+
+// 重依赖视图按需分包：@dnd-kit 仅看板使用，列表视图首屏不下载
+const BoardView = lazy(() => import('./BoardView').then((m) => ({ default: m.BoardView })))
+const CalendarView = lazy(() => import('./CalendarView').then((m) => ({ default: m.CalendarView })))
+const QuadrantView = lazy(() => import('./QuadrantView').then((m) => ({ default: m.QuadrantView })))
+const LogbookView = lazy(() => import('./LogbookView').then((m) => ({ default: m.LogbookView })))
 
 type View = 'list' | 'board' | 'calendar' | 'quadrant'
 
@@ -156,22 +159,24 @@ export function TasksPage() {
       )}
 
       <div key={view} className="enter">
-        {isLogbook ? (
-          <LogbookView />
-        ) : view === 'board' ? (
-          <BoardView tasks={all} />
-        ) : view === 'calendar' ? (
-          <CalendarView tasks={all} onOpenTask={openTask} onToggleDone={completeTask} />
-        ) : view === 'quadrant' ? (
-          <QuadrantView tasks={all} onOpenTask={openTask} />
-        ) : (
-          <TaskList
-            scope={`tasks-${tier}`}
-            tasks={visible}
-            emptyTitle={emptyMap[tier].title}
-            emptyHint={emptyMap[tier].hint}
-          />
-        )}
+        <Suspense fallback={<PageSkeleton />}>
+          {isLogbook ? (
+            <LogbookView />
+          ) : view === 'board' ? (
+            <BoardView tasks={all} />
+          ) : view === 'calendar' ? (
+            <CalendarView tasks={all} onOpenTask={openTask} onToggleDone={completeTask} />
+          ) : view === 'quadrant' ? (
+            <QuadrantView tasks={all} onOpenTask={openTask} />
+          ) : (
+            <TaskList
+              scope={`tasks-${tier}`}
+              tasks={visible}
+              emptyTitle={emptyMap[tier].title}
+              emptyHint={emptyMap[tier].hint}
+            />
+          )}
+        </Suspense>
       </div>
 
       {!isLogbook && tier === 'today' && visible.length > 0 && (

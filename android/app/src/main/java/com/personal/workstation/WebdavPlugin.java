@@ -6,9 +6,12 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.Call;
+import okhttp3.Callback;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -59,16 +62,26 @@ public class WebdavPlugin extends Plugin {
             : null;
         rb.method(method.toUpperCase(), reqBody);
 
-        try (Response res = CLIENT.newCall(rb.build()).execute()) {
-            ResponseBody rbody = res.body();
-            JSObject out = new JSObject();
-            out.put("status", res.code());
-            out.put("data", rbody != null ? rbody.string() : "");
-            String etag = res.header("ETag");
-            if (etag != null) out.put("etag", etag);
-            call.resolve(out);
-        } catch (Exception e) {
-            call.reject("网络请求失败：" + e.getMessage());
-        }
+        CLIENT.newCall(rb.build()).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call c, IOException e) {
+                call.reject("网络请求失败：" + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call c, Response res) {
+                try (Response response = res) {
+                    ResponseBody rbody = response.body();
+                    JSObject out = new JSObject();
+                    out.put("status", response.code());
+                    out.put("data", rbody != null ? rbody.string() : "");
+                    String etag = response.header("ETag");
+                    if (etag != null) out.put("etag", etag);
+                    call.resolve(out);
+                } catch (Exception e) {
+                    call.reject("网络请求失败：" + e.getMessage());
+                }
+            }
+        });
     }
 }

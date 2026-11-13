@@ -1,6 +1,5 @@
-import { CapacitorHttp } from '@capacitor/core'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { isNative, isTauri } from './native'
+import { BROWSER_UA, LOCAL_PROXY, httpText } from './http'
 import type { FanqieBookInfo, FanqieChapterMeta, FanqieRef } from './fanqie'
 import { chapterHtmlToText, decodeHtmlEntities } from './fanqie'
 import { decodeFanqieText, hasUnknownFanqieGlyphs } from './fanqieFont'
@@ -13,9 +12,6 @@ const FQWEB_BASES = [
   'https://fq-book.nat.netsite.cc:8043',
   'https://fq-book.netsite.cc',
 ]
-const DESKTOP_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-const LOCAL_PROXY = 'http://127.0.0.1:8787/?url='
 const BING_SEARCH = 'https://cn.bing.com/search'
 const FANQIE_SITE = 'https://fanqienovel.com'
 const SEARCH_TIMEOUT = 5_000
@@ -73,33 +69,15 @@ function checkStatus(status: number) {
   if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
 }
 
-async function nativeFetchText(url: string, timeoutMs: number, accept: string): Promise<string> {
-  const res = await CapacitorHttp.get({
-    url,
-    headers: { 'User-Agent': DESKTOP_UA, Accept: accept },
-    responseType: 'text',
-    connectTimeout: Math.min(timeoutMs, 5_000),
-    readTimeout: timeoutMs,
-  })
-  checkStatus(res.status)
-  return typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '')
-}
-
 async function fetchText(url: string, timeoutMs: number, accept = 'application/json, text/plain, */*') {
-  if (isNative()) return nativeFetchText(url, timeoutMs, accept)
-  const headers = { Accept: accept }
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const signal = controller.signal
-    const res = isTauri()
-      ? await tauriFetch(url, { headers, signal, connectTimeout: Math.min(timeoutMs, 5_000) })
-      : await fetch(url, { headers, signal, cache: 'no-store' })
-    checkStatus(res.status)
-    return await res.text()
-  } finally {
-    clearTimeout(timer)
-  }
+  const headers: Record<string, string> = isNative() ? { 'User-Agent': BROWSER_UA, Accept: accept } : { Accept: accept }
+  const { body } = await httpText(url, {
+    headers,
+    timeoutMs,
+    connectTimeoutMs: Math.min(timeoutMs, 5_000),
+    onStatus: checkStatus,
+  })
+  return body
 }
 
 let chapterBase = FQWEB_BASES[0]

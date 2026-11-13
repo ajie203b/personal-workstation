@@ -78,13 +78,31 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           navigateFallback: 'index.html',
-          globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,bcmap,pfb,ttf}', '**/qpdf-*.wasm'],
-          // ONNX 模型与 ort / MediaPipe 的 wasm 体积大且按需用，不进预缓存；wasm 走运行时 CacheFirst
-          // 手写计算与绘图 Worker 内含 Compute Engine，按需缓存，之后离线可用
-          globIgnores: ['**/*.onnx', '**/ort-*.wasm', '**/mediapipe/**', '**/mathnotes.worker-*.js', '**/plot.worker-*.js'],
+          // 核心 PWA Shell 仅预缓存主应用及轻量路由 chunk + woff2 字体；
+          // 移除 KaTeX 冗余 .ttf、pdfjs cmap/标准字体、qpdf.wasm 与 Mermaid/Worker 重分包，避免首屏后台预下载十几 MB
+          globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
+          globIgnores: [
+            '**/*.onnx',
+            '**/ort*.wasm',
+            '**/ort.bundle.min-*.js',
+            '**/onnx.worker-*.js',
+            '**/mediapipe/**',
+            '**/pdfjs/**',
+            '**/qpdf*',
+            '**/mathnotes.worker-*.js',
+            '**/plot.worker-*.js',
+            '**/mermaid*',
+            '**/*Diagram-*.js',
+            '**/cynefin*',
+            '**/cytoscape*',
+            '**/cose-bilkent*',
+            '**/dagre*',
+            '**/swimlanes*',
+            '**/chunk-*.js',
+          ],
           runtimeCaching: [
             {
-              urlPattern: /(\/mediapipe\/.+|\/assets\/ort-wasm[^/]*\.wasm)$/,
+              urlPattern: /(\/mediapipe\/.+|\/assets\/(?:ort-wasm[^/]*\.wasm|ort\.bundle\.min-[^/]*\.js|onnx\.worker-[^/]*\.js))$/,
               handler: 'CacheFirst',
               options: { cacheName: 'ort-runtime', expiration: { maxEntries: 32 } },
             },
@@ -92,6 +110,11 @@ export default defineConfig(({ mode }) => {
               urlPattern: /\/assets\/(?:mathnotes|plot)\.worker-[^/]*\.js$/,
               handler: 'CacheFirst',
               options: { cacheName: 'mathnotes-runtime', expiration: { maxEntries: 4 } },
+            },
+            {
+              urlPattern: /\/(?:pdfjs\/.+|assets\/(?:qpdf-[^/]*\.wasm|(?:mermaid|cynefin|cytoscape|cose-bilkent|dagre|swimlanes|chunk-)[^/]*\.js|.*Diagram-[^/]*\.js))$/,
+              handler: 'CacheFirst',
+              options: { cacheName: 'heavy-assets-runtime', expiration: { maxEntries: 120 } },
             },
           ],
         },

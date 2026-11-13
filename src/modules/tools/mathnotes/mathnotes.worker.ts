@@ -1,16 +1,14 @@
 /// <reference lib="webworker" />
 /**
- * 手写计算 Worker：模型下载/加载、识别推理、Compute Engine 计算都关在这里，
- * 主线程只管画布手感。推理会话直接在本 Worker 内联创建（lib/onnx 的 InlineOnnxRunner），
- * 不再嵌套 Worker（Tauri 的 asset 协议不允许）。
+ * 手写识别 Worker（纯 ONNX 推理）：模型下载/加载、笔迹识别都关在这里，
+ * 主线程只管画布手感；符号计算与绘图统一收拢在 plot.worker.ts，避免双 Worker 重复打包 ComputeEngine。
  *
  * 所有请求串行执行：同一时刻只跑一个推理，避免两个块同时识别把手机内存顶满。
  */
 import { getOnnxRunner, type InlineOnnxRunner } from '@/lib/onnx'
 import { Pix2TextMfrRecognizer } from './pix2textMfr'
 import { rasterizeStrokes } from './preprocess'
-import { computeLatex } from './compute'
-import { computeRecognized, recognizeInk } from './recognitionMath'
+import { recognizeInk } from './inkRecognize'
 import type { ModelSourceConfig } from './recognizer'
 import type { WorkerIn, WorkerOut } from './workerProtocol'
 
@@ -44,12 +42,15 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
         await recognizer.load((p) => post({ type: 'progress', id: msg.id, ratio: p.ratio, file: p.file }))
         const out = await recognizeInk(msg.strokes, msg.charHeight, (strokes) =>
           recognizer.recognize(rasterizeStrokes(strokes, msg.charHeight)))
-        const result = computeRecognized(out)
-        post({ type: 'recognized', id: msg.id, key: msg.key, latex: out.latex, confidence: out.confidence, ms: out.ms, result })
-        return
-      }
-      if (msg.type === 'compute') {
-        post({ type: 'computed', id: msg.id, key: msg.key, result: computeLatex(msg.latex) })
+        post({
+          type: 'recognizedRaw',
+          id: msg.id,
+          key: msg.key,
+          latex: out.latex,
+          confidence: out.confidence,
+          ms: out.ms,
+          incompleteSystem: out.incompleteSystem,
+        })
       }
     } catch (err) {
       post({ type: 'error', id: msg.id, message: err instanceof Error ? err.message : String(err) })

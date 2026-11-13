@@ -144,7 +144,7 @@ export function disintegrate(source: HTMLElement | null | undefined, options: Di
   canvas.height = Math.round(rect.height * dpr)
   document.body.appendChild(canvas)
 
-  let maybeCtx: CanvasRenderingContext2D | null = null
+  let maybeCtx: CanvasRenderingContext2D | null
   try {
     maybeCtx = canvas.getContext('2d')
   } catch {

@@ -9,6 +9,7 @@ import { haptic } from '@/lib/haptics'
 import { ThemeButton } from './ThemeButton'
 import { useState } from 'react'
 import { BrandMark } from '@/shared/BrandMark'
+import { guardNavigation } from '@/lib/unsavedGuard'
 
 /**
  * 左侧导航：
@@ -30,7 +31,7 @@ export function Sidebar() {
   const all = useAllTasks()
   const counts = countByTier(all)
 
-  const onBrandClick = () => navigate('/today')
+  const onBrandClick = () => guardNavigation(() => navigate('/today'))
 
   return (
     <aside
@@ -116,7 +117,7 @@ export function Sidebar() {
           type="button"
           aria-label={pathname.startsWith('/settings') ? '返回' : '设置'}
           title={pathname.startsWith('/settings') ? '返回' : '设置'}
-          onClick={() => navigate(pathname.startsWith('/settings') ? '/today' : '/settings')}
+          onClick={() => guardNavigation(() => navigate(pathname.startsWith('/settings') ? '/today' : '/settings'))}
           className={cn(
             'grid place-items-center w-10 h-10 rounded-[10px] shrink-0 transition-colors cursor-pointer',
             pathname.startsWith('/settings') ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',

@@ -7,7 +7,6 @@ import { postponeTask, updateTask } from '@/db/tasks'
 import { createFolder, linkTaskFolder } from '@/db/folders'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { HabitTimesField } from './HabitTimesField'
-import { useAllTasks } from '@/db/hooks'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
 import { TimePicker } from '@/shared/ui/TimePicker'
@@ -34,11 +33,17 @@ function localDateTimeValue(ts?: number): string {
 const INPUT =
   'w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/70 transition-colors'
 
-/** 任务编辑：居中弹窗（点任务卡任意位置打开；确认修改后返回列表，完成/删除留在列表） */
+/** 任务编辑：仅在打开时挂载内容并按主键订阅单条任务，避免关闭状态订阅全表 */
 export function TaskDetail() {
-  const { detailId, openDetail } = useTasksUi()
+  const detailId = useTasksUi((s) => s.detailId)
+  if (!detailId) return null
+  return <TaskDetailContent key={detailId} detailId={detailId} />
+}
+
+function TaskDetailContent({ detailId }: { detailId: string }) {
+  const openDetail = useTasksUi((s) => s.openDetail)
   const toast = useUi((s) => s.toast)
-  const task = useAllTasks().find((t) => t.id === detailId) ?? null
+  const task = useLiveQuery(() => db.tasks.get(detailId), [detailId]) ?? null
   const [tagDraft, setTagDraft] = useState('')
   const [subDraft, setSubDraft] = useState('')
   const [focusMinutes, setFocusMinutes] = useState<number | null>(null)
@@ -57,6 +62,7 @@ export function TaskDetail() {
   const [titleDraft, setTitleDraft] = useState('')
   const [notesDraft, setNotesDraft] = useState('')
   const pendingRef = useRef<{ id: string; title: string; notes: string } | null>(null)
+  const initializedRef = useRef(false)
 
   const flushSave = useCallback(async () => {
     const p = pendingRef.current
@@ -66,27 +72,24 @@ export function TaskDetail() {
   }, [])
 
   useEffect(() => {
-    if (!detailId) void flushSave()
-  }, [detailId, flushSave])
-  useEffect(() => {
-    if (task) {
+    if (task && !initializedRef.current) {
+      initializedRef.current = true
       setTitleDraft(task.title)
       setNotesDraft(task.notes ?? '')
       setHabitTimes(task.repeatTimes?.length ? task.repeatTimes : task.dueTime ? [task.dueTime] : [])
       setHabitCount(task.repeatCount && task.repeatCount > 1 ? String(task.repeatCount) : '')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?.id])
+  }, [task])
 
   // 该任务的累计专注分钟（v1.3 专注绑定）
   useEffect(() => {
+    let cancelled = false
     setFocusMinutes(null)
-    if (!task) return
-    void db.focusSessions.where('taskId').equals(task.id).toArray().then((rows) => {
-      setFocusMinutes(rows.reduce((s, r) => s + r.minutes, 0))
+    void db.focusSessions.where('taskId').equals(detailId).toArray().then((rows) => {
+      if (!cancelled) setFocusMinutes(rows.reduce((s, r) => s + r.minutes, 0))
     })
-    // detailId 参与依赖：同一任务重新打开时也要重算累计专注时长
-  }, [task?.id, detailId])
+    return () => { cancelled = true }
+  }, [detailId])
 
   useEffect(() => {
     if (!task || task.id !== detailId) return

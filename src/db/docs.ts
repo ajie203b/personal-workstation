@@ -187,8 +187,10 @@ export async function purgeDoc(id: string): Promise<void> {
     if (!doc?.deletedAt) return
     await db.docs.delete(doc.id)
     const otherRefs = await db.docs.where('hash').equals(doc.hash).count()
-    await markDeleted(doc.id)
-    if (otherRefs > 0) return
+    if (otherRefs > 0) {
+      await markDeleted(doc.id)
+      return
+    }
     await db.blobs.delete(doc.hash)
     await db.docText.delete(doc.hash)
     await db.positions.delete(doc.hash)
@@ -285,4 +287,35 @@ export async function annotationToTask(ann: Annotation, doc: Doc, priority?: 0 |
   })
   await db.tasks.update(task.id, { docRef: { docId: doc.id, anchor: `${anchor}#${ann.id}`, label: doc.title } })
   return task.id
+}
+
+export async function updateDocMeta(
+  id: string,
+  patch: Partial<Pick<Doc, 'title' | 'starred' | 'readStatus' | 'tags' | 'meta'>>,
+): Promise<void> {
+  await db.transaction('rw', db.docs, async () => {
+    const current = await db.docs.get(id)
+    if (!current) return
+    const nextPatch: Partial<Doc> = { updatedAt: Math.max(Date.now(), (current.updatedAt ?? current.addedAt) + 1) }
+    if (patch.title !== undefined) {
+      const t = patch.title.trim()
+      if (t) nextPatch.title = t
+    }
+    if (patch.starred !== undefined) nextPatch.starred = patch.starred || undefined
+    if (patch.readStatus !== undefined) nextPatch.readStatus = patch.readStatus
+    if (patch.tags !== undefined) {
+      const clean = [...new Set(patch.tags.map((x) => x.trim()).filter(Boolean))]
+      nextPatch.tags = clean.length ? clean : undefined
+    }
+    if (patch.meta !== undefined) {
+      const cleaned = {
+        author: patch.meta.author?.trim() || undefined,
+        year: patch.meta.year?.trim() || undefined,
+        venue: patch.meta.venue?.trim() || undefined,
+        doi: patch.meta.doi?.trim() || undefined,
+      }
+      nextPatch.meta = Object.values(cleaned).some(Boolean) ? cleaned : undefined
+    }
+    await db.docs.update(id, nextPatch)
+  })
 }

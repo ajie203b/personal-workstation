@@ -58,7 +58,7 @@ export async function quoteAtLocator(doc: Doc, anchor: string): Promise<string |
   const m = anchor.match(/^([pbf])(\d+)$/)
   if (!m) return undefined
   const idx = Number(m[2])
-  let raw = ''
+  let raw: string
   if (m[1] === 'p') {
     raw = document.querySelector(`[data-page="${idx}"] .textLayer`)?.textContent ?? ''
     if (!raw.trim()) raw = (await db.docText.get(doc.hash))?.segments?.[idx - 1] ?? ''

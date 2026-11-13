@@ -16,7 +16,7 @@ export type WorkerIn =
 export type WorkerOut =
   | { type: 'progress'; id: number; ratio: number; file: string }
   | { type: 'loaded'; id: number; backend: string }
-  | { type: 'recognized'; id: number; key: string; latex: string; confidence: number; ms: number; result: ComputeResult }
+  | { type: 'recognizedRaw'; id: number; key: string; latex: string; confidence: number; ms: number; incompleteSystem?: boolean }
   | { type: 'computed'; id: number; key: string; result: ComputeResult }
   | { type: 'pageEvaluated'; id: number; evaluation: PageEvaluation }
   | { type: 'plotted'; id: number; curves: PlotCurve[] }

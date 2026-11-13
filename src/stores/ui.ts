@@ -1,6 +1,26 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import type { Tier } from '@/db/db'
+
+const safeStorage: StateStorage = {
+  getItem: (name) => {
+    try {
+      return typeof globalThis.localStorage !== 'undefined' ? globalThis.localStorage.getItem(name) : null
+    } catch {
+      return null
+    }
+  },
+  setItem: (name, value) => {
+    try {
+      if (typeof globalThis.localStorage !== 'undefined') globalThis.localStorage.setItem(name, value)
+    } catch { /* ignore in non-browser / private mode */ }
+  },
+  removeItem: (name) => {
+    try {
+      if (typeof globalThis.localStorage !== 'undefined') globalThis.localStorage.removeItem(name)
+    } catch { /* ignore */ }
+  },
+}
 
 export type Theme = 'light' | 'dark'
 /** 主题档位：跟随系统 / 固定浅色 / 固定深色 */
@@ -104,6 +124,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'ws-ui',
+      storage: createJSONStorage(() => safeStorage),
       partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, readerPanels: s.readerPanels }),
       // 旧版本 theme 曾允许 'system'，现在收敛进 themeMode 并保留合法值
       merge: (persisted, current) => {

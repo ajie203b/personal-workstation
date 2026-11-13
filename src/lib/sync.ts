@@ -1,10 +1,12 @@
 import { CapacitorHttp, registerPlugin } from '@capacitor/core'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import type { Table } from 'dexie'
 import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
 import { exportSnapshotParts } from '@/db/tasks'
 import { packMathNote, unpackMathNote, type PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
 import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
 import { isNative, isTauri } from './native'
+import { base64ToBytes, bytesToBase64 } from './http'
 import { mergePayloads, type SyncPayload } from './syncMerge'
 import { planReconcile } from './syncReconcile'
 import { buildMathNotesFile, mergeMathNotes, noteTombstones, parseMathNotesFile, MATH_NOTES_SYNC_FILE, type MathNotesSyncFile } from './mathNotesSyncMerge'
@@ -62,10 +64,7 @@ export async function getLastSyncAt(): Promise<number | null> {
 /* ---------------- 传输层 ---------------- */
 
 function base64Utf8(s: string): string {
-  const bytes = new TextEncoder().encode(s)
-  let bin = ''
-  for (const b of bytes) bin += String.fromCharCode(b)
-  return btoa(bin)
+  return bytesToBase64(new TextEncoder().encode(s))
 }
 
 function authHeader(cfg: WebdavConfig): string {
@@ -140,7 +139,6 @@ async function dav(
 
   if (isTauri()) {
     // 桌面版：请求由 Rust 发出，不吃跨域限制
-    const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
     let r: Response
     try {
       r = await tauriFetch(url, { method, headers, body, connectTimeout: 15000 })
@@ -193,19 +191,27 @@ async function ensureDirs(cfg: WebdavConfig, base: string): Promise<void> {
 
 /* ---------------- 文档本体 ---------------- */
 
+const BLOB_SYNC_CONCURRENCY = 4
+
 async function blobToBase64(blob: Blob): Promise<string> {
-  const buf = new Uint8Array(await blob.arrayBuffer())
-  let bin = ''
-  const CHUNK = 0x8000
-  for (let i = 0; i < buf.length; i += CHUNK) bin += String.fromCharCode(...buf.subarray(i, i + CHUNK))
-  return btoa(bin)
+  return bytesToBase64(new Uint8Array(await blob.arrayBuffer()))
 }
 
 function base64ToBlob(text: string, type: string): Blob {
-  const bin = atob(text.trim())
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return new Blob([bytes], { type: type || 'application/octet-stream' })
+  const bytes = base64ToBytes(text.trim())
+  return new Blob([bytes.buffer as ArrayBuffer], { type: type || 'application/octet-stream' })
+}
+
+async function runConcurrent<T>(items: readonly T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+  if (!items.length) return
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const idx = cursor++
+      await worker(items[idx])
+    }
+  })
+  await Promise.all(workers)
 }
 
 /* ---------------- 本地写入 ---------------- */
@@ -457,32 +463,36 @@ async function performSync(): Promise<SyncReport> {
   const localHashes = new Set((await db.blobs.toCollection().primaryKeys()) as string[])
   merged.payload.blobMeta = (merged.payload.blobMeta ?? []).filter((m) => localHashes.has(m.hash) || remoteHashes.has(m.hash))
 
-  // 1) 补下载：远端有、本地没有的文档本体
+  // 1) 补下载：远端有、本地没有的文档本体（限并发）
   let blobsDown = 0
-  for (const meta of merged.payload.blobMeta) {
-    if (localHashes.has(meta.hash) || !remoteHashes.has(meta.hash)) continue
+  const downTargets = merged.payload.blobMeta.filter((m, i, arr) =>
+    !localHashes.has(m.hash) && remoteHashes.has(m.hash) && arr.findIndex((x) => x.hash === m.hash) === i,
+  )
+  await runConcurrent(downTargets, BLOB_SYNC_CONCURRENCY, async (meta) => {
     const res = await getText(cfg, join(base, `blobs/${meta.hash}.b64`))
-    if (!res?.text) continue
+    if (!res?.text) return
     const blob = base64ToBlob(res.text, meta.type)
     await db.blobs.put({ hash: meta.hash, blob })
     localHashes.add(meta.hash)
     blobsDown++
     // 全文索引按需重建（不阻塞同步）
     void import('@/lib/docTextIndex').then(async ({ indexDoc }) => {
-      const docs = await db.docs.where('hash').equals(meta.hash).toArray()
-      for (const d of docs) if (!(await db.docText.get(meta.hash))) await indexDoc(d, blob)
+      const docs = await db.docText.get(meta.hash) ? [] : await db.docs.where('hash').equals(meta.hash).toArray()
+      for (const d of docs) await indexDoc(d, blob)
     })
-  }
+  })
 
-  // 2) 补上传：本地有、远端还没有的文档本体
+  // 2) 补上传：本地有、远端还没有的文档本体（限并发）
   let blobsUp = 0
-  for (const meta of merged.payload.blobMeta) {
-    if (!localHashes.has(meta.hash) || remoteHashes.has(meta.hash)) continue
+  const upTargets = merged.payload.blobMeta.filter((m, i, arr) =>
+    localHashes.has(m.hash) && !remoteHashes.has(m.hash) && arr.findIndex((x) => x.hash === m.hash) === i,
+  )
+  await runConcurrent(upTargets, BLOB_SYNC_CONCURRENCY, async (meta) => {
     const row = await db.blobs.get(meta.hash)
-    if (!row) continue
+    if (!row) return
     await putText(cfg, join(base, `blobs/${meta.hash}.b64`), await blobToBase64(row.blob))
     blobsUp++
-  }
+  })
 
   // 3) 推合并结果（带上 ETag 防覆盖别人的并发写入）。
   //    内容以落库后的本地状态为准：同步期间的新改动不需要等下一轮才上去。

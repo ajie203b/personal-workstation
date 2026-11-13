@@ -19,6 +19,7 @@ import { markdownTableRanges, normalizeMarkdown } from './markdownContent'
 import { MarkdownWordCount } from './MarkdownWordCount'
 import { markdownSchema, rehypeReaderStyles } from './markdownPlugins'
 import { collectTextAnchors, wrapText } from './reader/textAnchors'
+import { clearFindMarks, highlightDomMatches, normalizeQuery, setActiveFindMark } from './reader/docFind'
 
 export interface MdSelectionInfo {
   text: string
@@ -46,6 +47,9 @@ interface Props {
   initialTarget: { blockIdx: number; ratio: number } | null
   /** 双指缩放提交后的字号（px） */
   onFontSizeChange?: (px: number) => void
+  findQuery?: string
+  findActive?: number
+  onFindState?: (state: { total: number; searching: boolean }) => void
 }
 
 const blockParser = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
@@ -103,7 +107,7 @@ export function splitMdBlocks(md: string): { source: string; complex: boolean }[
 
 /** MD 阅读器：块锚点渲染 + 沉浸排版 + 划词高亮 */
 export function MdReader({
-  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange, onLink, renderImage,
+  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange, onLink, renderImage, findQuery = '', findActive = 0, onFindState,
 }: Props) {
   const source = useMemo(() => normalizeMarkdown(md), [md])
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -165,6 +169,7 @@ export function MdReader({
   useLayoutEffect(() => {
     const el = bodyRef.current
     if (!el) return
+    clearFindMarks(el)
     el.querySelectorAll('mark[data-ann]').forEach((m) => {
       const parent = m.parentNode
       if (parent) while (m.firstChild) parent.insertBefore(m.firstChild, m)
@@ -184,6 +189,41 @@ export function MdReader({
       }
     }
   }, [annotations, md])
+
+  const onFindStateRef = useRef(onFindState)
+  onFindStateRef.current = onFindState
+  const lastFindScrollRef = useRef<{ query: string; active: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    const roots = Array.from(el.children) as HTMLElement[]
+    const { total } = highlightDomMatches(roots, findQuery)
+    onFindStateRef.current?.({ total, searching: false })
+  }, [findQuery, annotations, md])
+
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    if (!normalizeQuery(findQuery)) {
+      lastFindScrollRef.current = null
+      setActiveFindMark(el, -1)
+      return
+    }
+    const hit = setActiveFindMark(el, findActive)
+    const prev = lastFindScrollRef.current
+    if (prev && prev.query === findQuery && prev.active === findActive) return
+    lastFindScrollRef.current = { query: findQuery, active: findActive }
+    const container = scrollRef.current
+    if (!hit || !container) return
+    const cRect = container.getBoundingClientRect()
+    const hRect = hit.getBoundingClientRect()
+    const relTop = hRect.top - cRect.top
+    if (relTop < 48 || relTop > container.clientHeight - 64) {
+      const top = container.scrollTop + relTop - container.clientHeight * 0.35
+      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }
+  }, [findQuery, findActive, annotations, md, scrollRef])
 
   // 批注闪烁
   useEffect(() => {

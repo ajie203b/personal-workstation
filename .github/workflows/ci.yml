@@ -39,6 +39,9 @@ jobs:
           rm -f package-lock.json
           npm install --no-audit --no-fund
 
+      - name: Lint
+        run: npm run lint
+
       - name: Type check
         run: npx tsc -b
 
@@ -49,6 +52,6 @@ jobs:
       - name: Script tests
         run: npm run test:scripts
 
-      # 构建放最后：它内部还会再跑一次 tsc，但那一步失败时前面的单测结果已经可见
+      # 构建放最后：前面的步骤已跑过 tsc，这里直接执行 vite build 避免重复类型检查
       - name: Build
-        run: npm run build
+        run: npx vite build

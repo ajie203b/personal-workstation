@@ -1,21 +1,19 @@
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router'
+import { liveQuery } from 'dexie'
 import { AppShell } from './app/AppShell'
 import { KeyboardShortcutsDialog } from '@/shared/KeyboardShortcuts'
-import { CommandPalette } from '@/shared/CommandPalette'
 import { ToastHost } from '@/shared/ui/Toast'
 import { GlobalHotkeys } from './GlobalHotkeys'
-import { TaskDetail } from '@/modules/tasks/TaskDetail'
 import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TodayPage } from '@/modules/today/TodayPage'
-import { TasksPage } from '@/modules/tasks/TasksPage'
-import { useAllTasks, useAllTasksLive } from '@/db/hooks'
+import { db } from '@/db/db'
 import { getNotifyEnabled, syncAllTaskNotifications } from '@/lib/notify'
-import { scrubSnapshotSecrets } from '@/lib/autoBackup'
 import { ShareInbound } from '@/shared/ShareInbound'
 import { Spotlight } from '@/shared/Spotlight'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { useUi } from '@/stores/ui'
+import { useTasksUi } from '@/stores/tasks'
 import { initAppActions } from '@/lib/appActions'
 import { completeById } from '@/modules/tasks/taskActions'
 import { pruneTombstones } from '@/lib/tombstones'
@@ -24,7 +22,10 @@ import { initTaskWidgetActions, syncTaskWidget } from '@/lib/taskWidget'
 import { AppUpdateHost } from '@/shared/AppUpdate'
 import { isMainWindow } from '@/lib/native'
 
-// 重资源页面按路由分包：PDF/Office/EPUB 渲染库、TipTap 编辑器只在进入文档模块时加载
+// 重资源页面按路由分包：任务多视图/文档渲染库/编辑器/工具页仅在访问对应页面或弹窗时加载
+const TasksPage = lazy(() => import('@/modules/tasks/TasksPage').then((m) => ({ default: m.TasksPage })))
+const TaskDetail = lazy(() => import('@/modules/tasks/TaskDetail').then((m) => ({ default: m.TaskDetail })))
+const CommandPalette = lazy(() => import('@/shared/CommandPalette').then((m) => ({ default: m.CommandPalette })))
 const DocsPage = lazy(() => import('@/modules/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
 const DocReaderPage = lazy(() => import('@/modules/docs/DocReaderPage').then((m) => ({ default: m.DocReaderPage })))
 const MdEditorPage = lazy(() => import('@/modules/docs/MdEditorPage').then((m) => ({ default: m.MdEditorPage })))
@@ -72,6 +73,54 @@ function GlobalAddSheet() {
   return <AddTaskSheet open={open} onOpenChange={(v) => { if (!v) close() }} defaultTier={tier} todayContext={todayContext} />
 }
 
+/**
+ * 无 UI 的任务同步桥接：通过 Dexie liveQuery 直接驱动桌面小组件与首次通知重排，
+ * 避免在 <App> 根组件订阅全表而在每次勾选/编辑任务时触发整棵路由树重渲染。
+ */
+function NativeSyncBridge() {
+  useEffect(() => {
+    let timer: number | undefined
+    let notificationSynced = false
+    const sub = liveQuery(() => db.tasks.orderBy('updatedAt').reverse().toArray()).subscribe({
+      next(rows) {
+        if (!notificationSynced) {
+          notificationSynced = true
+          void getNotifyEnabled().then((on) => {
+            if (on) void syncAllTaskNotifications(rows)
+          })
+        }
+        window.clearTimeout(timer)
+        timer = window.setTimeout(() => syncTaskWidget(rows), 400)
+      },
+    })
+    return () => {
+      window.clearTimeout(timer)
+      sub.unsubscribe()
+    }
+  }, [])
+  return null
+}
+
+function TaskDetailHost() {
+  const detailId = useTasksUi((s) => s.detailId)
+  if (!detailId) return null
+  return (
+    <Suspense fallback={null}>
+      <TaskDetail />
+    </Suspense>
+  )
+}
+
+function CommandPaletteHost() {
+  const open = useUi((s) => s.paletteOpen)
+  if (!open) return null
+  return (
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
+  )
+}
+
 export default function App() {
   const navigate = useNavigate()
   // 桌面快捷方式 / 通知点击 / 小组件勾选 / 冷启动深链（原生壳内才有）
@@ -107,29 +156,10 @@ export default function App() {
     void initTaskWidgetActions().then((d) => { dispose = d })
     return () => dispose?.()
   }, [])
-  const all = useAllTasks()
-  const allLive = useAllTasksLive()
-  const notificationSynced = useRef(false)
-  // 任务变化后 400ms 同步一次桌面/负一屏小组件（native 才有实际动作）
-  useEffect(() => {
-    const id = window.setTimeout(() => syncTaskWidget(all), 400)
-    return () => window.clearTimeout(id)
-  }, [all])
-  useEffect(() => {
-    // 等 IndexedDB 首次返回真实任务列表再重排：首帧空数组会把已排提醒全部撤销
-    if (notificationSynced.current || !allLive) return
-    notificationSynced.current = true
-    void getNotifyEnabled().then((on) => {
-      if (on) void syncAllTaskNotifications(allLive)
-    })
-  }, [allLive])
-  useEffect(() => {
-    // 老快照里可能还带着 AI 服务商的明文 Key，启动时顺手清一次（只摘那个字段）
-    void scrubSnapshotSecrets()
-  }, [])
 
   return (
     <>
+      <NativeSyncBridge />
       <GlobalHotkeys />
       <Suspense fallback={RouteLoader}>
         <Routes>
@@ -163,10 +193,10 @@ export default function App() {
           </Route>
         </Routes>
       </Suspense>
-      {/* 详情面板全局挂载：今日页/任务页的任务卡点击都可打开 */}
-      <TaskDetail />
+      {/* 详情面板按需加载：未打开任务详情时不挂载、不拉取全表/子分包 */}
+      <TaskDetailHost />
       <GlobalAddSheet />
-      <CommandPalette />
+      <CommandPaletteHost />
       <Spotlight />
       <ToastHost />
       <KeyboardShortcutsDialog />

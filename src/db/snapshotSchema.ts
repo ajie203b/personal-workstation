@@ -167,6 +167,20 @@ export function validateSnapshot(raw: unknown): ValidatedSnapshot {
     optNum(p, r, 'updatedAt', path)
     optNum(p, r, 'lastOpenedAt', path)
     optNum(p, r, 'deletedAt', path)
+    if (r.starred !== undefined && r.starred !== null && typeof r.starred !== 'boolean') {
+      p.add(`${path}.starred`, '应为布尔值')
+    }
+    oneOf(p, r, 'readStatus', new Set(['unread', 'reading', 'done']), path)
+    strArray(p, r, 'tags', path)
+    if (r.meta !== undefined && r.meta !== null) {
+      if (!isObj(r.meta)) p.add(`${path}.meta`, '应为对象')
+      else {
+        optStr(p, r.meta, 'author', `${path}.meta`)
+        optStr(p, r.meta, 'year', `${path}.meta`)
+        optStr(p, r.meta, 'venue', `${path}.meta`)
+        optStr(p, r.meta, 'doi', `${path}.meta`)
+      }
+    }
   })
 
   checkRows(p, raw, 'annotations', (r, path) => {
@@ -219,6 +233,8 @@ export function validateSnapshot(raw: unknown): ValidatedSnapshot {
   checkRows(p, raw, 'folders', (r, path) => {
     str(p, r, 'id', path)
     str(p, r, 'name', path)
+    optStr(p, r, 'parentId', path)
+    optStr(p, r, 'taskId', path)
     num(p, r, 'createdAt', path)
     num(p, r, 'updatedAt', path)
   })

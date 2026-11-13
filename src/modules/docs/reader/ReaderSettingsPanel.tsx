@@ -115,12 +115,41 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
           />
         </div>
         {isPdf ? (
-          <Stepper
-            label="缩放"
-            value={`${Math.round((settings.zoom ?? 1) * 100)}%`}
-            onMinus={() => updateSettings({ zoom: Math.max(0.5, Math.round(((settings.zoom ?? 1) - 0.1) * 10) / 10) })}
-            onPlus={() => updateSettings({ zoom: Math.min(3, Math.round(((settings.zoom ?? 1) + 0.1) * 10) / 10) })}
-          />
+          <>
+            <Stepper
+              label="缩放"
+              value={`${Math.round((settings.zoom ?? 1) * 100)}%`}
+              onMinus={() => updateSettings({ zoom: Math.max(0.5, Math.round(((settings.zoom ?? 1) - 0.1) * 10) / 10) })}
+              onPlus={() => updateSettings({ zoom: Math.min(3, Math.round(((settings.zoom ?? 1) + 0.1) * 10) / 10) })}
+            />
+            <div className="hidden md:block">
+              <p className="text-[12px] font-medium text-on-surface-2 mb-1.5 flex items-center justify-between">
+                <span>页面排版</span>
+                <span className="text-[10.5px] font-normal">宽屏 ≥960px 生效</span>
+              </p>
+              <Segmented
+                size="sm"
+                value={settings.pdfSpread ? 'spread' : 'single'}
+                onChange={(v) => updateSettings({ pdfSpread: v === 'spread' })}
+                options={[
+                  { value: 'single', label: '单页' },
+                  { value: 'spread', label: '双页' },
+                ]}
+              />
+            </div>
+            <div>
+              <p className="text-[12px] font-medium text-on-surface-2 mb-1.5">白边裁切</p>
+              <Segmented
+                size="sm"
+                value={settings.pdfTrimMargins ? 'trim' : 'normal'}
+                onChange={(v) => updateSettings({ pdfTrimMargins: v === 'trim' })}
+                options={[
+                  { value: 'normal', label: '标准边距' },
+                  { value: 'trim', label: '裁切白边' },
+                ]}
+              />
+            </div>
+          </>
         ) : (
           <>
             <Stepper label="字号" value={`${fontDraft}px`} onMinus={() => previewFont(fontDraft - 1)} onPlus={() => previewFont(fontDraft + 1)} />

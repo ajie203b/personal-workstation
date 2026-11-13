@@ -1,5 +1,45 @@
-import { ComputeEngine } from '@cortex-js/compute-engine'
-import { normalizeLatex } from './compute'
+import { compile } from '@cortex-js/compute-engine'
+import { getComputeEngine, normalizeLatex } from './compute'
+
+type BoxedExpr = NonNullable<ReturnType<ReturnType<typeof getComputeEngine>['parse']>>
+
+function extractReal(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  if (v && typeof v === 'object' && 're' in v) {
+    const { re, im } = v as { re: number; im?: number | null }
+    return Number.isFinite(re) && (im === 0 || im == null) ? re : null
+  }
+  return null
+}
+
+/** 优先用 ComputeEngine.compile 生成原生 JS 采样函数；不支持的符号表达式回退逐点 subs().N()。 */
+function compileEvaluator(expr: BoxedExpr): (vars: Record<string, number>) => number | null {
+  try {
+    const compiled = compile(expr)
+    if (compiled.success && compiled.run) {
+      const fn = compiled.run
+      return (vars) => {
+        try {
+          return extractReal(fn(vars))
+        } catch {
+          return null
+        }
+      }
+    }
+  } catch { /* 回退到符号求值 */ }
+  return (vars) => {
+    try {
+      const value = expr.subs(vars).N()
+      return Number.isFinite(value.re) && (value.im === 0 || value.im == null) ? value.re : null
+    } catch {
+      return null
+    }
+  }
+}
+
+function prepareExpression(text: string): string {
+  return normalizeLatex(text).replace(/(?<![a-zA-Z\\])(sin|cos|tan|sqrt|ln|log)(?=\s*\()/g, '\\$1')
+}
 
 /** 把常见的 y= / f(x)= 函数写法转换为表达式；不执行用户提供的代码。 */
 export function sampleFunction(input: string, min: number, max: number, count: number, variables: Record<string, number> = {}): (number | null)[] {
@@ -8,21 +48,17 @@ export function sampleFunction(input: string, min: number, max: number, count: n
   if (!text || text.length > 300) throw new Error('请输入不超过 300 个字符的函数')
   text = text.replace(/^\s*(?:y|f\s*\(\s*x\s*\))\s*=/i, '')
   if (text.includes('=')) throw new Error('请输入 y=f(x) 形式的函数')
-  text = normalizeLatex(text).replace(/(?<![a-zA-Z\\])(sin|cos|tan|sqrt|ln|log)(?=\s*\()/g, '\\$1')
-  const ce = new ComputeEngine()
+  text = prepareExpression(text)
+  const ce = getComputeEngine()
   const parsed = ce.parse(text)
   const expr = parsed?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x')))
   if (!expr || !expr.isValid || expr.unknowns.some(s => s !== 'x')) throw new Error('无法识别函数，请检查表达式，只支持变量 x')
+  const evaluate = compileEvaluator(expr)
   return Array.from({ length: count }, (_, i) => {
     const x = min + (max - min) * i / (count - 1)
-    try {
-      const value = expr.subs({ x }).N()
-      const y = value.re
-      return Number.isFinite(y) && (value.im === 0 || value.im == null) ? y : null
-    } catch { return null }
+    return evaluate({ x })
   })
 }
-
 
 export type PlotCurve =
   | { kind: 'explicit'; label: string; values: (number | null)[] }
@@ -35,10 +71,11 @@ export type PlotCurve =
 function sampleImplicit(text: string, min: number, max: number, count: number, variables: Record<string, number>, centerY = 0): PlotCurve {
   const parts = text.split('=')
   if (parts.length !== 2 || parts.some(p => !p.trim())) throw new Error('隐式方程需要一个等号，例如 x^2+y^2=25')
-  const convert = (s: string) => normalizeLatex(s).replace(/(?<![a-zA-Z\\])(sin|cos|tan|sqrt|ln|log)(?=\s*\()/g, '\\$1')
-  const ce = new ComputeEngine()
-  const expr = ce.parse(`(${convert(parts[0])})-(${convert(parts[1])})`)?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x' && name !== 'y')))
+  const ce = getComputeEngine()
+  const expr = ce.parse(`(${prepareExpression(parts[0])})-(${prepareExpression(parts[1])})`)
+    ?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x' && name !== 'y')))
   if (!expr || !expr.isValid || expr.unknowns.some(v => v !== 'x' && v !== 'y')) throw new Error('无法识别隐式方程，只支持变量 x 和 y')
+  const evaluate = compileEvaluator(expr)
   const n = Math.min(72, Math.max(32, count - 1))
   const grid: (number | null)[][] = []
   for (let row = 0; row <= n; row++) {
@@ -46,10 +83,7 @@ function sampleImplicit(text: string, min: number, max: number, count: number, v
     const line: (number | null)[] = []
     for (let col = 0; col <= n; col++) {
       const x = min + (max - min) * col / n
-      try {
-        const v = expr.subs({ x, y }).N()
-        line.push(Number.isFinite(v.re) && (v.im === 0 || v.im == null) ? v.re : null)
-      } catch { line.push(null) }
+      line.push(evaluate({ x, y }))
     }
     grid.push(line)
   }
@@ -87,21 +121,17 @@ function parametricParts(text: string): string[] | null {
   return parts
 }
 
-function prepareExpression(text: string) {
-  return normalizeLatex(text).replace(/(?<![a-zA-Z\\])(sin|cos|tan|sqrt|ln|log)(?=\s*\()/g, '\\$1')
-}
-
 function sampleParametric(label: string, parts: string[], count: number, tMin: number, tMax: number, variables: Record<string, number>): PlotCurve {
   if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMin >= tMax || Math.abs(tMin) > 1e6 || Math.abs(tMax) > 1e6) throw new Error('参数范围无效，请确保起点小于终点')
-  const ce = new ComputeEngine()
-  const expressions = parts.map(part => ce.parse(prepareExpression(part))?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 't'))))
+  const ce = getComputeEngine()
+  const subVars = Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 't'))
+  const expressions = parts.map(part => ce.parse(prepareExpression(part))?.subs(subVars))
   if (expressions.some(expr => !expr || !expr.isValid || expr.unknowns.some(v => v !== 't'))) throw new Error('参数方程只支持变量 t，例如 (cos(t), sin(t))')
+  const evaluators = expressions.map(expr => compileEvaluator(expr!))
   const points = Array.from({ length: count }, (_, i): number[] | null => {
     const t = tMin + (tMax - tMin) * i / (count - 1)
-    try {
-      const values = expressions.map(expr => expr!.subs({ t }).N())
-      return values.every(v => Number.isFinite(v.re) && (v.im === 0 || v.im == null)) ? values.map(v => v.re) : null
-    } catch { return null }
+    const values = evaluators.map(evaluate => evaluate({ t }))
+    return values.every((v): v is number => v != null) ? values : null
   })
   return parts.length === 3
     ? { kind: 'parametric3d', label, points: points as ([number, number, number] | null)[] }
@@ -111,8 +141,11 @@ function sampleParametric(label: string, parts: string[], count: number, tMin: n
 function sampleSurface(label: string, min: number, max: number, variables: Record<string, number>): PlotCurve {
   const source = label.replace(/^\s*z\s*=/i, '')
   if (!source.trim() || source.includes('=')) throw new Error('三维曲面请输入 z=f(x,y)')
-  const expr = new ComputeEngine().parse(prepareExpression(source))?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x' && name !== 'y')))
+  const expr = getComputeEngine()
+    .parse(prepareExpression(source))
+    ?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x' && name !== 'y')))
   if (!expr || !expr.isValid || expr.unknowns.some(v => v !== 'x' && v !== 'y')) throw new Error('三维曲面只支持变量 x 和 y')
+  const evaluate = compileEvaluator(expr)
   const n = 30
   const values: (number | null)[][] = []
   for (let row = 0; row <= n; row++) {
@@ -120,10 +153,7 @@ function sampleSurface(label: string, min: number, max: number, variables: Recor
     const line: (number | null)[] = []
     for (let col = 0; col <= n; col++) {
       const x = min + (max - min) * col / n
-      try {
-        const v = expr.subs({ x, y }).N()
-        line.push(Number.isFinite(v.re) && (v.im === 0 || v.im == null) ? v.re : null)
-      } catch { line.push(null) }
+      line.push(evaluate({ x, y }))
     }
     values.push(line)
   }

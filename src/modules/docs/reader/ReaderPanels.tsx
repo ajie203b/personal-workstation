@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
-  ArrowUpRight, Bookmark, ChevronLeft, ChevronRight, Highlighter, List,
-  LocateFixed, MessageSquareText, Plus, Trash2, X,
+  ArrowUpDown, ArrowUpRight, Bookmark, ChevronLeft, ChevronRight, Highlighter, List,
+  LocateFixed, MessageSquareText, Plus, ScanText, Search, Trash2, X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Annotation, Doc, Task } from '@/db/db'
@@ -145,7 +145,7 @@ export function Stepper({ label, value, onMinus, onPlus }: { label: string; valu
 /* ---------- 左栏内容 ---------- */
 
 export function TocContent({
-  doc, toc, mdHeadings, annotations, leftTab, currentLocator, onJump, onDeleteBookmark,
+  doc, toc, mdHeadings, annotations, leftTab, currentLocator, activeAnchor, onJump, onDeleteBookmark,
 }: {
   doc: Doc
   toc: TocItem[]
@@ -153,6 +153,7 @@ export function TocContent({
   annotations: Annotation[]
   leftTab: 'toc' | 'marks'
   currentLocator: string
+  activeAnchor?: string
   onJump: (anchor: string, hl?: string) => void
   onDeleteBookmark: (id: string) => void
 }) {
@@ -162,13 +163,18 @@ export function TocContent({
   // 当前章节 = 最后一个「已经到达」的目录项；还没滚动过时默认第一章，避免目录全灰
   const activeIndex = useMemo(() => {
     if (leftTab !== 'toc' || toc.length === 0) return -1
+    if (toc.some((t) => t.anchor)) {
+      if (!activeAnchor) return 0
+      const hit = toc.findIndex((t) => t.anchor === activeAnchor)
+      return hit >= 0 ? hit : 0
+    }
     if (!Number.isFinite(currentNum)) return 0
     let idx = 0
     for (let i = 0; i < toc.length; i++) {
       if (doc.kind === 'pdf' ? toc[i].page <= currentNum : toc[i].page - 1 <= currentNum) idx = i
     }
     return idx
-  }, [leftTab, doc.kind, toc, currentNum])
+  }, [leftTab, doc.kind, toc, currentNum, activeAnchor])
 
   return (
     <div className="flex-1 overflow-y-auto px-2 pb-4 min-h-0">
@@ -178,7 +184,7 @@ export function TocContent({
             <TocList
               items={toc}
               activeIndex={activeIndex}
-              anchor={(item) => `p${item.page}`}
+              anchor={(item) => item.anchor ?? `p${item.page}`}
               badge={(item) => String(item.page)}
               onJump={onJump}
             />
@@ -186,12 +192,12 @@ export function TocContent({
             <PanelEmpty icon={List} title="没有书签大纲" hint="这份 PDF 没有内置目录，可以用书签记位置。" />
           )
         ) : FLOW_KINDS.includes(doc.kind) ? (
-          toc.length > 1 ? (
+          toc.length > 1 || toc.some((t) => t.anchor) ? (
             <TocList
               items={toc}
               activeIndex={activeIndex}
-              anchor={(item) => `f${item.page - 1}`}
-              badge={(item) => String(item.page)}
+              anchor={(item) => item.anchor ?? `f${item.page - 1}`}
+              badge={(item) => (item.anchor ? '' : String(item.page))}
               onJump={onJump}
             />
           ) : (
@@ -264,7 +270,7 @@ function TocList({
         const active = i === activeIndex
         return (
           <button
-            key={`${item.page}-${i}`}
+            key={`${item.anchor ?? item.page}-${i}`}
             ref={active ? activeRef : undefined}
             type="button"
             onClick={() => onJump(anchor(item))}
@@ -383,8 +389,54 @@ function MdToc({
 
 /* ---------- 右栏内容 ---------- */
 
+export type AnnotationKindFilter = 'all' | 'highlight' | 'shot' | 'commented'
+export type AnnotationSortMode = 'position' | 'newest'
+
+function annotationPosScore(a: Annotation): number {
+  if (a.page != null) return a.page * 10000 + Math.round((a.rects?.[0]?.y ?? 0) * 1000)
+  if (a.blockIdx != null) return a.blockIdx * 10000 + (a.textAnchors?.[0]?.start ?? 0)
+  if (a.textAnchors?.[0]) return a.textAnchors[0].blockIdx * 10000 + a.textAnchors[0].start
+  return Number.MAX_SAFE_INTEGER
+}
+
+/** 批注侧栏筛选与排序（纯函数） */
+export function filterAndSortReaderAnnotations(
+  annotations: Annotation[],
+  opts: {
+    query?: string
+    color?: 'all' | Annotation['color']
+    kind?: AnnotationKindFilter
+    sortBy?: AnnotationSortMode
+  },
+): Annotation[] {
+  const q = (opts.query ?? '').trim().toLowerCase()
+  const color = opts.color ?? 'all'
+  const kind = opts.kind ?? 'all'
+  const sortBy = opts.sortBy ?? 'newest'
+
+  const filtered = annotations.filter((a) => {
+    if (color !== 'all' && a.color !== color) return false
+    if (kind === 'shot' && a.kind !== 'shot') return false
+    if (kind === 'highlight' && a.kind === 'shot') return false
+    if (kind === 'commented' && !a.comment?.trim()) return false
+    if (q) {
+      const hay = `${a.text}\n${a.comment ?? ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+
+  return [...filtered].sort((a, b) => {
+    if (sortBy === 'position') {
+      const diff = annotationPosScore(a) - annotationPosScore(b)
+      if (diff !== 0) return diff
+    }
+    return b.createdAt - a.createdAt
+  })
+}
+
 export function RightContent({
-  annotations, backlinks, rightTab, onJump, onToTask, onDelete, onRecolor, onComment, docId, anchorFor,
+  annotations, backlinks, rightTab, onJump, onToTask, onDelete, onRecolor, onComment, onOcr, ocrBusyId, docId, anchorFor, focusAnnId,
 }: {
   annotations: Annotation[]
   backlinks: Task[]
@@ -394,10 +446,36 @@ export function RightContent({
   onDelete: (id: string) => void
   onRecolor: (id: string, color: Annotation['color']) => void
   onComment: (id: string, comment?: string) => void
+  onOcr?: (ann: Annotation) => void
+  ocrBusyId?: string | null
   docId?: string
   anchorFor: (a: Annotation) => string
+  focusAnnId?: { id: string; ts: number } | null
 }) {
   const [editing, setEditing] = useState<string | null>(null)
+  const [commentDraft, setCommentDraft] = useState('')
+  const [query, setQuery] = useState('')
+  const [colorFilter, setColorFilter] = useState<'all' | Annotation['color']>('all')
+  const [kindFilter, setKindFilter] = useState<AnnotationKindFilter>('all')
+  const [sortBy, setSortBy] = useState<AnnotationSortMode>('position')
+
+  useEffect(() => {
+    if (!focusAnnId) return
+    const target = annotations.find((a) => a.id === focusAnnId.id)
+    if (!target) return
+    setEditing(target.id)
+    setCommentDraft(target.comment ?? '')
+  }, [focusAnnId, annotations])
+
+  const visible = useMemo(
+    () => filterAndSortReaderAnnotations(annotations, { query, color: colorFilter, kind: kindFilter, sortBy }),
+    [annotations, query, colorFilter, kindFilter, sortBy],
+  )
+
+  const commitComment = (id: string) => {
+    onComment(id, commentDraft.trim() || undefined)
+    setEditing(null)
+  }
 
   if (rightTab === 'backlinks') {
     return (
@@ -444,67 +522,188 @@ export function RightContent({
         <PanelEmpty icon={Highlighter} title="还没有批注" hint="划选正文 → 选颜色高亮 → 高亮可加评论、一键转任务。" />
       ) : (
         <div className="pt-2 flex flex-col gap-2">
-          <p className="text-[11px] text-on-surface-2 px-1.5 pb-0.5 tabular-nums">{annotations.length} 条批注</p>
-          {annotations.map((a) => (
-            <article key={a.id} className="group relative rounded-[12px] border border-outline bg-surface-2 overflow-hidden transition-colors hover:border-primary/30">
-              <span className={cn('absolute left-0 top-0 bottom-0 w-[3px]', annotationColorClass(a))} aria-hidden />
-              <div className="pl-3 pr-2.5 py-2.5">
-                {a.kind === 'shot' && a.img && (
+          {/* 批注筛选与排序 */}
+          <div className="flex flex-col gap-1.5 pb-1">
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1 min-w-0">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-2/70 pointer-events-none" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜批注/评论…"
+                  aria-label="搜索批注"
+                  className="w-full h-7 pl-7 pr-2 rounded-[8px] bg-surface-2 border border-outline text-[11.5px] outline-none focus:border-primary/60"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setSortBy((s) => (s === 'position' ? 'newest' : 'position'))}
+                title={sortBy === 'position' ? '当前按原文位置排序，点击切换为最新' : '当前按最新时间排序，点击切换为原文顺序'}
+                className="shrink-0 h-7 px-2 rounded-[8px] border border-outline bg-surface-2 text-[11px] text-on-surface-2 hover:text-on-surface inline-flex items-center gap-1 cursor-pointer"
+              >
+                <ArrowUpDown size={11} />
+                {sortBy === 'position' ? '页序' : '最新'}
+              </button>
+            </div>
+            <div className="flex items-center gap-1 flex-wrap px-0.5">
+              <button
+                type="button"
+                onClick={() => setColorFilter('all')}
+                className={cn(
+                  'h-5 px-1.5 rounded text-[10.5px] cursor-pointer transition-colors',
+                  colorFilter === 'all' ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3',
+                )}
+              >
+                全色
+              </button>
+              {HL_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`仅看${c}色`}
+                  onClick={() => setColorFilter((prev) => (prev === c ? 'all' : c))}
+                  className={cn(
+                    `w-3.5 h-3.5 rounded-full hl-${c} border cursor-pointer transition-transform`,
+                    colorFilter === c ? 'border-on-surface scale-115 ring-1 ring-on-surface' : 'border-outline/60 opacity-80 hover:opacity-100',
+                  )}
+                />
+              ))}
+              <span className="w-px h-3 bg-outline mx-0.5" />
+              {([
+                ['all', '全部'],
+                ['commented', '有评'],
+                ['shot', '截图'],
+              ] as const).map(([k, lbl]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setKindFilter((prev) => (prev === k && k !== 'all' ? 'all' : k))}
+                  className={cn(
+                    'h-5 px-1.5 rounded text-[10.5px] cursor-pointer transition-colors',
+                    kindFilter === k ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3',
+                  )}
+                >
+                  {lbl}
+                </button>
+              ))}
+              <span className="ml-auto text-[10.5px] text-on-surface-2 tabular-nums">
+                {visible.length === annotations.length ? `${annotations.length} 条` : `${visible.length}/${annotations.length}`}
+              </span>
+            </div>
+          </div>
+
+          {visible.length === 0 ? (
+            <p className="text-[12px] text-on-surface-2 text-center py-6">没有符合筛选条件的批注</p>
+          ) : (
+            visible.map((a) => (
+              <article key={a.id} className="group relative rounded-[12px] border border-outline bg-surface-2 overflow-hidden transition-colors hover:border-primary/30">
+                <span className={cn('absolute left-0 top-0 bottom-0 w-[3px]', annotationColorClass(a))} aria-hidden />
+                <div className="pl-3 pr-2.5 py-2.5">
+                  {a.kind === 'shot' && a.img && (
+                    <div className="mb-2">
+                      <button
+                        type="button"
+                        onClick={() => onJump(anchorFor(a), a.id)}
+                        className="block w-full cursor-zoom-in"
+                        aria-label="跳到截图所在页"
+                      >
+                        <img src={a.img} alt="区域截图" className="w-full rounded-[8px] border border-outline/70" />
+                      </button>
+                      {onOcr && (
+                        <button
+                          type="button"
+                          disabled={ocrBusyId === a.id}
+                          onClick={() => onOcr(a)}
+                          className="mt-1.5 h-6 px-2 rounded-md border border-outline/80 bg-surface text-[11px] text-primary hover:bg-primary-soft/50 disabled:opacity-50 inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <ScanText size={11} />
+                          {ocrBusyId === a.id ? 'OCR 识别中…' : a.text && a.text !== '区域截图' ? '重新识图' : 'OCR 识图取字'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => onJump(anchorFor(a), a.id)}
-                    className="block w-full mb-2 cursor-zoom-in"
-                    aria-label="跳到截图所在页"
+                    title="跳到原文位置"
+                    className="w-full text-left cursor-pointer"
                   >
-                    <img src={a.img} alt="区域截图" className="w-full rounded-[8px] border border-outline/70" />
+                    <span className="block text-[12.5px] leading-[1.6] text-on-surface line-clamp-4">{a.text}</span>
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onJump(anchorFor(a), a.id)}
-                  title="跳到原文位置"
-                  className="w-full text-left cursor-pointer"
-                >
-                  <span className="block text-[12.5px] leading-[1.6] text-on-surface line-clamp-4">{a.text}</span>
-                </button>
-                {a.comment && editing !== a.id && (
-                  <p className="mt-1.5 ml-0.5 pl-2 border-l-2 border-outline/70 text-[11.5px] leading-relaxed text-on-surface-2">{a.comment}</p>
-                )}
-                {editing === a.id ? (
-                  <textarea
-                    autoFocus
-                    defaultValue={a.comment ?? ''}
-                    rows={2}
-                    placeholder="写下评论…"
-                    onBlur={(e) => {
-                      onComment(a.id, e.target.value.trim() || undefined)
-                      setEditing(null)
-                    }}
-                    className="mt-1.5 w-full rounded-[8px] bg-surface-2 border border-outline px-2.5 py-1.5 text-[12.5px] outline-none focus:border-primary/60 resize-none"
-                  />
-                ) : null}
-                <div className="ann-actions mt-2 pt-1.5 border-t border-outline/60 flex items-center gap-0.5 -ml-1">
-                  {a.kind !== 'shot' && HL_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      aria-label={`改为${c}`}
-                      onClick={() => onRecolor(a.id, c)}
-                      className={`w-[18px] h-[18px] rounded-full hl-${c} border ${a.color === c ? 'border-on-surface' : 'border-outline/50'} cursor-pointer`}
-                    />
-                  ))}
-                  {a.kind !== 'shot' && <span className="w-px h-3.5 bg-outline mx-1" />}
-                  <MiniBtn label="评论" onClick={() => setEditing(editing === a.id ? null : a.id)}><MessageSquareText size={13} /></MiniBtn>
-                  <MiniBtn label="定位" onClick={() => onJump(anchorFor(a), a.id)}><LocateFixed size={13} /></MiniBtn>
-                  <MiniBtn label="转任务" onClick={() => onToTask(a)}><Plus size={13} /></MiniBtn>
-                  <MiniBtn label="删除" danger onClick={() => onDelete(a.id)}><Trash2 size={13} /></MiniBtn>
-                  <span className="ml-auto text-[10.5px] text-on-surface-2 pr-1 tabular-nums">
-                    {fmtListDate(a.createdAt)}
-                  </span>
+                  {a.comment && editing !== a.id && (
+                    <p className="mt-1.5 ml-0.5 pl-2 border-l-2 border-outline/70 text-[11.5px] leading-relaxed text-on-surface-2 whitespace-pre-wrap">{a.comment}</p>
+                  )}
+                  {editing === a.id ? (
+                    <div className="mt-1.5 flex flex-col gap-1.5">
+                      <textarea
+                        autoFocus
+                        value={commentDraft}
+                        onChange={(e) => setCommentDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                            e.preventDefault()
+                            commitComment(a.id)
+                          } else if (e.key === 'Escape') {
+                            setEditing(null)
+                          }
+                        }}
+                        rows={2}
+                        placeholder="写下想法（Ctrl+Enter 保存）…"
+                        className="w-full rounded-[8px] bg-surface border border-primary/50 px-2.5 py-1.5 text-[12px] outline-none resize-y"
+                      />
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditing(null)}
+                          className="h-6 px-2.5 rounded-[6px] text-[11px] text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => commitComment(a.id)}
+                          className="h-6 px-2.5 rounded-[6px] bg-primary text-on-primary text-[11px] font-medium cursor-pointer"
+                        >
+                          保存
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="ann-actions mt-2 pt-1.5 border-t border-outline/60 flex items-center gap-0.5 -ml-1">
+                    {a.kind !== 'shot' && HL_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-label={`改为${c}`}
+                        onClick={() => onRecolor(a.id, c)}
+                        className={`w-[18px] h-[18px] rounded-full hl-${c} border ${a.color === c ? 'border-on-surface' : 'border-outline/50'} cursor-pointer`}
+                      />
+                    ))}
+                    {a.kind !== 'shot' && <span className="w-px h-3.5 bg-outline mx-1" />}
+                    <MiniBtn
+                      label="评论"
+                      onClick={() => {
+                        if (editing === a.id) setEditing(null)
+                        else {
+                          setEditing(a.id)
+                          setCommentDraft(a.comment ?? '')
+                        }
+                      }}
+                    >
+                      <MessageSquareText size={13} />
+                    </MiniBtn>
+                    <MiniBtn label="定位" onClick={() => onJump(anchorFor(a), a.id)}><LocateFixed size={13} /></MiniBtn>
+                    <MiniBtn label="转任务" onClick={() => onToTask(a)}><Plus size={13} /></MiniBtn>
+                    <MiniBtn label="删除" danger onClick={() => onDelete(a.id)}><Trash2 size={13} /></MiniBtn>
+                    <span className="ml-auto text-[10.5px] text-on-surface-2 pr-1 tabular-nums">
+                      {a.page ? `p.${a.page} · ` : ''}{fmtListDate(a.createdAt)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            ))
+          )}
         </div>
       )}
     </div>

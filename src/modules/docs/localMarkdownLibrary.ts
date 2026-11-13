@@ -21,7 +21,7 @@ async function snapshotMarkdown(path: string, markdown: string): Promise<string>
       if (target && /\.(png|jpe?g|gif|webp|avif)$/i.test(target.path)) {
         try {
           const data = await localMarkdown.image(target.path)
-          edits.push({ start: node.position.start.offset!, end: node.position.end.offset!, text: `![${(node.alt ?? '').replace(/[\[\]\\]/g, '\\$&')}](${data})` })
+          edits.push({ start: node.position.start.offset!, end: node.position.end.offset!, text: `![${(node.alt ?? '').replace(/[[\]\\]/g, '\\$&')}](${data})` })
         } catch { /* Keep the original source if the file is missing or outside the chosen folder. */ }
       }
     }

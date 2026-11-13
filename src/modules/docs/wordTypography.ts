@@ -67,12 +67,22 @@ function normalizeEquation(math: Element): void {
 }
 
 /** Give continuous Word reading a consistent hierarchy without discarding authored color/shading. */
-export function normalizeWordTypography(root: HTMLElement): void {
+export function normalizeWordTypography(root: HTMLElement, headingStyles?: ReadonlyMap<string, number>): void {
   root.querySelectorAll('math').forEach(normalizeEquation)
   const paragraphs = Array.from(root.querySelectorAll<HTMLParagraphElement>('p'))
   for (const paragraph of paragraphs) {
-    const heading = paragraph.className.match(/(?:^|\s)docx_(?:heading|标题)_?([1-6])(?:\s|$)/i)
-    if (heading) paragraph.classList.add(`word-heading-${heading[1]}`)
+    let headingLevel: number | null = null
+    if (headingStyles?.size) {
+      for (const cls of Array.from(paragraph.classList)) {
+        const lvl = headingStyles.get(cls.toLowerCase())
+        if (lvl) { headingLevel = lvl; break }
+      }
+    }
+    if (!headingLevel) {
+      const heading = paragraph.className.match(/(?:^|\s)docx_(?:heading|标题)_?([1-6])(?:\s|$)/i)
+      if (heading) headingLevel = Number(heading[1])
+    }
+    if (headingLevel) paragraph.classList.add(`word-heading-${headingLevel}`)
     if (/(?:^|\s)docx_title(?:\s|$)/i.test(paragraph.className)) paragraph.classList.add('word-title')
     if (/(?:^|\s)docx_(?:caption|题注)(?:\s|$)/i.test(paragraph.className)) paragraph.classList.add('word-caption')
     const equations = Array.from(paragraph.querySelectorAll('math'))
@@ -80,7 +90,7 @@ export function normalizeWordTypography(root: HTMLElement): void {
     const outside = paragraph.cloneNode(true) as HTMLElement
     outside.querySelectorAll('math').forEach((element) => element.remove())
     const label = outside.textContent ?? ''
-    const numbered = /^[\s\u00a0]*[（(]\s*[\dA-Za-z]+(?:[.\-]\d+)*\s*[）)][\s\u00a0]*$/.test(label)
+    const numbered = /^[\s\u00a0]*[（(]\s*[\dA-Za-z]+(?:[.-]\d+)*\s*[）)][\s\u00a0]*$/.test(label)
     if (label.trim() && !numbered) continue
     paragraph.classList.add('word-equation-block')
     equations.forEach((equation) => equation.setAttribute('display', 'block'))

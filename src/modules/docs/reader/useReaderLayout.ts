@@ -86,7 +86,6 @@ export function useReaderLayout(docId: string | undefined, scrollRef: React.RefO
   useLayoutEffect(() => {
     applyPanelWidth('left', readerPanels.leftWidth)
     applyPanelWidth('right', readerPanels.rightWidth)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readerPanels.leftWidth, readerPanels.rightWidth, docId])
 
   const clampPanel = (side: 'left' | 'right', width: number) => {

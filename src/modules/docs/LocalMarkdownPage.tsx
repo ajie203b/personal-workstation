@@ -48,7 +48,8 @@ export function LocalMarkdownPage() {
   const [loading, setLoading] = useState(false)
   const [sideOpen, setSideOpen] = useState(true)
   const [tab, setTab] = useState<'files' | 'outline'>('files')
-  const headings = useMemo(() => kind === 'md' && doc ? parseMdBlocks(doc.markdown).headings : [], [kind, doc?.markdown])
+  const docMarkdown = doc?.markdown
+  const headings = useMemo(() => kind === 'md' && docMarkdown != null ? parseMdBlocks(docMarkdown).headings : [], [kind, docMarkdown])
   const [jump, setJump] = useState<JumpTarget | null>(null)
   const refresh = useAsyncButton()
   const refreshLock = useRef(false)
@@ -82,14 +83,15 @@ export function LocalMarkdownPage() {
     return view ? captureLocalPosition(view, view.querySelector('.md-body')) : undefined
   }, [])
 
+  const docPath = doc?.path
   useLayoutEffect(() => {
-    if (!readerPosition || !doc || doc.path !== file || editing || loading) return
+    if (!readerPosition || !docPath || docPath !== file || editing || loading) return
     const frame = requestAnimationFrame(() => {
       const view = readerScroll.current
       if (view) restoreLocalPosition(view, readerPosition, view.querySelector('.md-body'))
     })
     return () => cancelAnimationFrame(frame)
-  }, [readerPosition, doc?.path, file, editing, loading])
+  }, [readerPosition, docPath, file, editing, loading])
 
   const saveDraft = useCallback((force = false, target?: LocalDocument): Promise<boolean> => {
     const original = target ?? current.current
@@ -269,7 +271,7 @@ export function LocalMarkdownPage() {
       viewDir.current = list.directory
     }).catch(e => { if (alive) setError(String(e)) }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [file, initialFolder, browse, saveDraft, updateSaveState])
+  }, [file, initialFolder, browse, saveDraft, updateSaveState, setParams])
 
   // Compare metadata in native code; unchanged files return without loading their contents.
   useEffect(() => {
@@ -343,10 +345,10 @@ export function LocalMarkdownPage() {
 
   useEffect(() => {
     if (!isTauri()) return
-    const name = doc ? `${fileName(doc.path)} — Kairos` : '本地文档 — Kairos'
+    const name = docPath ? `${fileName(docPath)} — Kairos` : '本地文档 — Kairos'
     void import('@tauri-apps/api/window').then(m => m.getCurrentWindow().setTitle(name)).catch(() => undefined)
     return () => { void import('@tauri-apps/api/window').then(m => m.getCurrentWindow().setTitle('Kairos')).catch(() => undefined) }
-  }, [doc?.path])
+  }, [docPath])
 
   const openLink = useCallback((href: string) => {
     if (href.startsWith('#')) {

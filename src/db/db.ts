@@ -99,6 +99,15 @@ export const DOC_KIND_LABEL: Record<DocKind, string> = {
   txt: 'TXT',
 }
 
+export type DocReadStatus = 'unread' | 'reading' | 'done'
+
+export interface DocMeta {
+  author?: string
+  year?: string
+  venue?: string
+  doi?: string
+}
+
 /** 文档元信息；文件本体按 hash 存 blobs 表（重命名不丢进度） */
 export interface Doc {
   id: string
@@ -117,12 +126,22 @@ export interface Doc {
   folderId?: string
   /** 来源网址（v3.3 网页转文档）：同一链接再抓时提示更新而不是重复入库 */
   sourceUrl?: string
+  /** 星标收藏（Zotero P1） */
+  starred?: boolean
+  /** 阅读状态（Zotero P1） */
+  readStatus?: DocReadStatus
+  /** 多标签（Zotero P1） */
+  tags?: string[]
+  /** 文献元数据（Zotero P1） */
+  meta?: DocMeta
 }
 
 /** 文档文件夹（v2.1）：给长期任务收拢资料，任务与文件夹互相链接 */
 export interface Folder {
   id: string
   name: string
+  /** 上级文件夹 id，支持多级文献目录树 */
+  parentId?: string
   /** 关联的任务 id（一个文件夹对应一个长期任务；不设唯一约束，允许先建夹后关联） */
   taskId?: string
   createdAt: number
@@ -160,6 +179,10 @@ export interface DocSettings {
   widthPct: number // 正文栏宽占比 50~100
   /** PDF 页宽倍数（v2.1）：1 = 适配阅读区，加载/手势缩放都写这里，按文档记忆 */
   zoom?: number
+  /** PDF 宽屏双页视图 */
+  pdfSpread?: boolean
+  /** PDF 页边白边适度裁切 */
+  pdfTrimMargins?: boolean
 }
 
 /**
@@ -453,6 +476,11 @@ class WorkstationDB extends Dexie {
     // v10（手写计算）：数学笔记页——笔迹 + 识别结果（纯增表；进 JSON 备份 / 自动快照 / WebDAV 同步，笔迹紧凑编码）
     this.version(10).stores({
       mathNotes: 'id, updatedAt',
+    })
+    // v11（Zotero P1）：多级目录树 + 文档标签多值索引
+    this.version(11).stores({
+      docs: 'id, hash, kind, lastOpenedAt, folderId, sourceUrl, *tags',
+      folders: 'id, taskId, parentId, createdAt',
     })
   }
 }

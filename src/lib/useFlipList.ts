@@ -69,5 +69,5 @@ export function useFlipList<T extends HTMLElement>(
       )
       a.finished.then(() => a.cancel()).catch(() => {})
     }
-  }, [items])
+  }, [items, containerRef, skipNext])
 }

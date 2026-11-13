@@ -1,32 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { BookOpen, ChevronRight, FileText, FileType2, FolderInput, FolderOpen, FolderPlus, Import, MoreHorizontal, PenLine, Plus, Search, Share2, Trash2 } from 'lucide-react'
+import { FolderOpen, FolderPlus, Import, LayoutGrid, MoreHorizontal, PenLine, Plus, Search, Sparkles, Table2 } from 'lucide-react'
 import { isTauri } from '@/lib/native'
-import { FileTypeIcon } from '@/shared/FileTypeIcon'
 import { IconDocs } from '@/shared/icons'
-import type { Doc, Folder } from '@/db/db'
-import { DOC_KIND_LABEL } from '@/db/db'
-import { deleteDoc, getDocBlob, importDoc } from '@/db/docs'
+import { DOC_KIND_LABEL, type Annotation, type Doc, type DocKind, type DocReadStatus, type Folder } from '@/db/db'
+import { deleteDoc, getDocBlob, importDoc, updateDocMeta } from '@/db/docs'
 import { readDocumentText } from '@/lib/readDocumentText'
 import { shareMarkdown } from '@/lib/shareDoc'
 import { createFolder, deleteFolder, setDocFolder } from '@/db/folders'
 import { useDocsLive } from '@/db/hooks'
-import { fmtListDate } from '@/lib/date'
 import { DocCardSkeleton } from '@/shared/ui/Skeleton'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { useUi } from '@/stores/ui'
-import { cn } from '@/lib/cn'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
-import { Dialog } from '@/shared/ui/Sheet'
-import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem as DropdownItem, MenuSeparator } from '@/shared/ui/Menu'
 import { openDoc, openDocAtHit } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 import { morphOpen } from '@/lib/viewTransition'
-import { formatBytes } from '@/lib/format'
-import { DocDragWorkspace, DocDragItem, useDocDropTarget, TRASH_FOLDER, UNFILED_FOLDER } from './DocDrag'
+import { DocDragWorkspace, DocDragItem, TRASH_FOLDER, UNFILED_FOLDER } from './DocDrag'
 import { DocTrash } from './DocTrash'
+import { FolderStripMobile, FolderTree } from './DocsFolderNav'
+import { DocCard, ImportingCard } from './DocsCards'
+import { DocsTable } from './DocsTable'
+import { DocsDialogs, type FolderDialogState } from './DocsDialogs'
+import { AnnotationReviewDialog } from './AnnotationReviewDialog'
+import { formatCitation } from './citation'
+import { isAnnotationDue } from './reviewSm2'
+import {
+  ANNOTATED_VIEW,
+  RECENT_VIEW,
+  STARRED_VIEW,
+  filterAndSortDocs,
+  folderPathName,
+  type DocSortKey,
+} from './libraryModel'
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
 export function DocsPage() {
@@ -39,19 +47,44 @@ export function DocsPage() {
   const inTrash = activeFolder === TRASH_FOLDER
   const trashCount = useLiveQuery(() => db.docs.filter(d => !!d.deletedAt).count(), [], 0)
   const folders = useLiveQuery(() => db.folders.toArray(), [], [] as Folder[])
+  const allAnnotations = useLiveQuery(() => db.annotations.toArray(), [], [] as Annotation[])
+  const annCountByHash = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const a of allAnnotations) m[a.docHash] = (m[a.docHash] ?? 0) + 1
+    return m
+  }, [allAnnotations])
   const folderCounts = useMemo(() => {
     const m: Record<string, number> = {}
     for (const d of docs) if (d.folderId) m[d.folderId] = (m[d.folderId] ?? 0) + 1
     return m
   }, [docs])
   const uncategorizedCount = useMemo(() => docs.filter((d) => !d.folderId).length, [docs])
-  const docsInView = useMemo(
-    () => (activeFolder ? docs.filter((d) => d.folderId === activeFolder) : docs.filter((d) => !d.folderId)),
-    [docs, activeFolder],
-  )
-  const [folderDialog, setFolderDialog] = useState<{ mode: 'create' } | { mode: 'move'; doc: Doc } | null>(null)
+  const starredCount = useMemo(() => docs.filter((d) => !!d.starred).length, [docs])
+  const recentCount = useMemo(() => docs.filter((d) => !!d.lastOpenedAt).length, [docs])
+  const annotatedCount = useMemo(() => docs.filter((d) => (annCountByHash[d.hash] ?? 0) > 0).length, [docs, annCountByHash])
+  const allTags = useMemo(() => [...new Set(docs.flatMap((d) => d.tags ?? []))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [docs])
+  const dueReviewCount = useMemo(() => {
+    const hashes = new Set(docs.map((d) => d.hash))
+    return allAnnotations.filter((a) => hashes.has(a.docHash) && isAnnotationDue(a)).length
+  }, [docs, allAnnotations])
+
+  const [kindFilter, setKindFilter] = useState<DocKind | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<DocReadStatus | 'all'>('all')
+  const [tagFilter, setTagFilter] = useState('')
+  const [sortBy, setSortBy] = useState<DocSortKey>('recent')
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
+    try {
+      return localStorage.getItem('docs:viewMode') === 'table' ? 'table' : 'grid'
+    } catch {
+      return 'grid'
+    }
+  })
+  const [folderDialog, setFolderDialog] = useState<FolderDialogState>(null)
   const [folderName, setFolderName] = useState('')
+  const [folderParentId, setFolderParentId] = useState('')
   const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
+  const [metaDoc, setMetaDoc] = useState<Doc | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
   const toast = useUi((s) => s.toast)
   const [keyword, setKeyword] = useState('')
   // 搜索防抖：全文命中要扫所有 docText，逐字符触发会把主线程按住（文档库卡死的直接来源）
@@ -99,23 +132,12 @@ export function DocsPage() {
     }
   }, [])
 
-  // 搜索：标题命中 + 全文命中（含片段与分段号）
-  const results = useMemo(() => {
-    const kw = query.trim().toLowerCase()
-    if (!kw) return null
-    return docs.map((d) => {
-      const titleHit = d.title.toLowerCase().includes(kw)
-      return { doc: d, titleHit }
-    })
-  }, [docs, query])
-
   const textHits = useLiveQuery(async () => {
     const kw = query.trim().toLowerCase()
     if (!kw || kw.length < 2) return {}
     const rows = await db.docText.toArray()
     const map: Record<string, { count: number; snippet: string; seg?: number }> = {}
     for (const r of rows) {
-      // 小写副本按 indexedAt 缓存：全文搜索按 keyword 触发，逐字符整篇 toLowerCase 会让输入明显发涩
       let entry = lowerCache.current.get(r.hash)
       if (!entry || entry.at !== r.indexedAt) {
         entry = { at: r.indexedAt, lower: r.text.toLowerCase() }
@@ -124,11 +146,9 @@ export function DocsPage() {
       const lower = entry.lower
       const idx = lower.indexOf(kw)
       if (idx === -1) continue
-      // 统计命中次数（前 500 处封顶防长文卡顿）
       let count = 0
       let pos = idx
       while (pos !== -1 && count < 500) { count++; pos = lower.indexOf(kw, pos + kw.length) }
-      // 找命中所在分段（页/章/片）
       let seg: number | undefined
       if (r.segments?.length) {
         let acc = 0
@@ -144,13 +164,45 @@ export function DocsPage() {
     return map
   }, [query], {} as Record<string, { count: number; snippet: string; seg?: number }>)
 
-  const filtered = useMemo(() => {
-    if (!results) return null
-    return results.filter((r) => (r.titleHit || (textHits[r.doc.hash]?.count ?? 0) > 0) && docsInView.some((d) => d.id === r.doc.id))
-  }, [results, textHits, docsInView])
+  const visibleDocs = useMemo(
+    () => filterAndSortDocs({
+      docs,
+      view: activeFolder,
+      folders,
+      kindFilter,
+      statusFilter,
+      tagFilter,
+      annCountByHash,
+      progressMap,
+      sortBy,
+      query,
+      textHits,
+    }),
+    [docs, activeFolder, folders, kindFilter, statusFilter, tagFilter, annCountByHash, progressMap, sortBy, query, textHits],
+  )
 
+  const openCreateFolder = (parentId?: string) => {
+    setFolderName('')
+    setFolderParentId(parentId ?? (folders.some((f) => f.id === activeFolder) ? activeFolder ?? '' : ''))
+    setFolderDialog({ mode: 'create', parentId })
+  }
 
-  /** 当前筛选的文件夹；null = 未分类 */
+  const toggleStar = (doc: Doc) => {
+    void updateDocMeta(doc.id, { starred: !doc.starred })
+  }
+
+  const copyCitation = (doc: Doc, style: 'bibtex' | 'ris') => {
+    void navigator.clipboard.writeText(formatCitation(doc, style))
+      .then(() => toast(`已复制 ${style.toUpperCase()} 引文`))
+      .catch(() => toast('复制失败，请重试'))
+  }
+
+  const switchViewMode = (mode: 'grid' | 'table') => {
+    setViewMode(mode)
+    try { localStorage.setItem('docs:viewMode', mode) } catch { /* ignore */ }
+  }
+
+  /** 当前筛选的文件夹或智能视图；null = 全部文档 */
   function setFolderParam(id: string | null) {
     setParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -163,7 +215,7 @@ export function DocsPage() {
   async function doCreateFolder() {
     const name = folderName.trim()
     if (!name) return
-    const f = await createFolder(name)
+    const f = await createFolder(name, undefined, folderParentId || undefined)
     setFolderDialog(null)
     setFolderParam(f.id)
     toast(`已创建「${f.name}」`)
@@ -180,24 +232,23 @@ export function DocsPage() {
     let dup = 0
     let failed = 0
     const list = Array.from(files)
-    // 先把所有待导入文件摆上屏，再逐个处理 —— 用户能立刻看到「哪个文件在算」
     const jobs = list.map((f, i) => ({ id: `${Date.now()}-${i}`, name: f.name, at: Date.now() }))
     setPending(jobs)
+    const targetFolderId = activeFolder && folders.some((f) => f.id === activeFolder) ? activeFolder : undefined
     try {
       await runImport(async () => {
         for (const [i, file] of list.entries()) {
           const jobId = jobs[i].id
           try {
             const r = await importDoc(file)
-            // 在某个文件夹里导入 → 直接归入该夹
-            if (activeFolder && !inTrash && !r.duplicated) await setDocFolder(r.doc.id, activeFolder)
+            if (targetFolderId && !r.duplicated) await setDocFolder(r.doc.id, targetFolderId)
+            else if (activeFolder === STARRED_VIEW && !r.duplicated) await updateDocMeta(r.doc.id, { starred: true })
             if (r.duplicated) dup++
             else added++
           } catch {
             failed++
             toast(`「${file.name}」导入失败`)
           } finally {
-            // 这一个处理完就从「进行中」里摘掉，真正的文档卡片接管
             setPending((p) => p.filter((x) => x.id !== jobId))
           }
         }
@@ -211,6 +262,9 @@ export function DocsPage() {
       setPending([])
     }
   }
+
+  const hasFilters = kindFilter !== 'all' || statusFilter !== 'all' || !!tagFilter || !!query.trim()
+  const isUserFolder = folders.some((f) => f.id === activeFolder)
 
   return (
     <DocDragWorkspace docs={docs} onDrop={async (doc, target) => {
@@ -227,16 +281,22 @@ export function DocsPage() {
       <div className="hidden md:flex md:items-start gap-3">
         <div>
           <h1 className="text-[22px] font-bold leading-8">文档工作站</h1>
-          <p className="text-[13px] text-on-surface-2 mt-0.5">本地优先 · 按内容指纹去重 · 阅读进度自动记忆</p>
+          <p className="text-[13px] text-on-surface-2 mt-0.5">本地优先 · 文献分类与引文 · 划词截图与间隔复习</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <input
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="搜索标题或全文…"
+            placeholder="搜索标题、作者、标签或全文…"
             aria-label="搜索文档"
-            className="h-9 w-52 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+            className="h-9 w-56 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
           />
+          {allAnnotations.length > 0 && (
+            <Button size="sm" onClick={() => setReviewOpen(true)}>
+              <Sparkles size={14} /> 批注复习
+              {dueReviewCount > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-primary-soft text-primary text-[11px] tabular-nums">{dueReviewCount}</span>}
+            </Button>
+          )}
           {isTauri() && <Button size="sm" onClick={() => navigate('/local-markdown')}><FolderOpen size={15} /> 本地文档</Button>}
           <Button size="sm" onClick={() => navigate('/docs/new')}>
             <PenLine size={15} /> 写文档
@@ -252,7 +312,7 @@ export function DocsPage() {
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="搜索文档…"
+          placeholder="搜索标题、作者或全文…"
           aria-label="搜索文档"
           className="flex-1 min-w-0 h-9 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
         />
@@ -275,8 +335,13 @@ export function DocsPage() {
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-              <div className="pop absolute right-0 top-11 z-40 w-40 p-1.5 flex flex-col">
-                <MenuItem icon={FolderPlus} onClick={() => { setMenuOpen(false); setFolderName(''); setFolderDialog({ mode: 'create' }) }}>新建文件夹</MenuItem>
+              <div className="pop absolute right-0 top-11 z-40 w-44 p-1.5 flex flex-col">
+                <MobileMenuItem icon={FolderPlus} onClick={() => { setMenuOpen(false); openCreateFolder() }}>新建文件夹</MobileMenuItem>
+                {allAnnotations.length > 0 && (
+                  <MobileMenuItem icon={Sparkles} onClick={() => { setMenuOpen(false); setReviewOpen(true) }}>
+                    批注复习{dueReviewCount > 0 ? ` (${dueReviewCount})` : ''}
+                  </MobileMenuItem>
+                )}
               </div>
             </>
           )}
@@ -284,129 +349,238 @@ export function DocsPage() {
       </div>
 
       <div className="flex items-start gap-5">
-        {/* 桌面：文件夹变成左侧一列目录树；手机仍在顶部横滑 */}
         <FolderTree
           folders={folders}
           counts={folderCounts}
-          total={uncategorizedCount}
+          allCount={docs.length}
+          starredCount={starredCount}
+          recentCount={recentCount}
+          annotatedCount={annotatedCount}
+          uncategorizedCount={uncategorizedCount}
           trashCount={trashCount}
           active={activeFolder}
           onPick={setFolderParam}
-          onCreate={() => { setFolderName(''); setFolderDialog({ mode: 'create' }) }}
+          onCreate={(pid) => openCreateFolder(pid)}
           onDelete={() => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)}
         />
 
-        <div className="flex-1 min-w-0 flex flex-col gap-4">
-          {/* 手机 / 平板：顶部横向标签 */}
-          <div className="lg:hidden flex items-start gap-2">
-          <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-            <FolderChip dropId={UNFILED_FOLDER} active={!activeFolder} onClick={() => setFolderParam(null)}>
-              未分类 <span className="opacity-60">{uncategorizedCount}</span>
-            </FolderChip>
-            {folders.map((f) => (
-              <FolderChip key={f.id} dropId={f.id} active={activeFolder === f.id} onClick={() => setFolderParam(f.id)}>
-                {f.name} <span className="opacity-60">{folderCounts[f.id] ?? 0}</span>
-              </FolderChip>
-            ))}
-            <button
-              type="button"
-              onClick={() => { setFolderName(''); setFolderDialog({ mode: 'create' }) }}
-              className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-full border border-dashed border-outline text-[12px] text-on-surface-2 hover:text-on-surface hover:border-primary/50 transition-colors cursor-pointer"
-            >
-              <FolderPlus size={13} /> 新建文件夹
-            </button>
-            {activeFolder && !inTrash && (
-              <button
-                type="button"
-                onClick={() => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)}
-                className="shrink-0 h-8 px-2.5 rounded-full text-[12px] text-on-surface-2 hover:text-danger cursor-pointer"
+        <div className="flex-1 min-w-0 flex flex-col gap-3.5">
+          <FolderStripMobile
+            folders={folders}
+            counts={folderCounts}
+            allCount={docs.length}
+            starredCount={starredCount}
+            recentCount={recentCount}
+            annotatedCount={annotatedCount}
+            uncategorizedCount={uncategorizedCount}
+            trashCount={trashCount}
+            activeFolder={activeFolder}
+            inTrash={inTrash}
+            onPick={setFolderParam}
+            onCreate={(pid) => openCreateFolder(pid)}
+            onDelete={() => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)}
+          />
+
+          {inTrash ? <DocTrash /> : <>
+          {docs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-[12px]">
+              <select
+                aria-label="按格式筛选"
+                value={kindFilter}
+                onChange={(e) => setKindFilter(e.target.value as DocKind | 'all')}
+                className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
               >
-                删除文件夹
-              </button>
-            )}
-          </div>
-          <FolderChip dropId={TRASH_FOLDER} active={inTrash} onClick={() => setFolderParam(TRASH_FOLDER)}><Trash2 size={13} />回收站 <span className="opacity-60">{trashCount}</span></FolderChip>
-          </div>
+                <option value="all">全部格式</option>
+                {(Object.keys(DOC_KIND_LABEL) as DocKind[]).map((k) => (
+                  <option key={k} value={k}>{DOC_KIND_LABEL[k]}</option>
+                ))}
+              </select>
+              <select
+                aria-label="按阅读状态筛选"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as DocReadStatus | 'all')}
+                className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
+              >
+                <option value="all">全部状态</option>
+                <option value="unread">未读</option>
+                <option value="reading">在读</option>
+                <option value="done">已读</option>
+              </select>
+              {allTags.length > 0 && (
+                <select
+                  aria-label="按标签筛选"
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                  className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
+                >
+                  <option value="">全部标签</option>
+                  {allTags.map((t) => (
+                    <option key={t} value={t}>#{t}</option>
+                  ))}
+                </select>
+              )}
+              {hasFilters && (
+                <button
+                  type="button"
+                  onClick={() => { setKindFilter('all'); setStatusFilter('all'); setTagFilter(''); setKeyword('') }}
+                  className="h-8 px-2.5 rounded-[9px] text-primary hover:bg-primary-soft cursor-pointer"
+                >
+                  重置筛选
+                </button>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <select
+                  aria-label="排序方式"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as DocSortKey)}
+                  className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
+                >
+                  <option value="recent">最近打开</option>
+                  <option value="added">添加时间</option>
+                  <option value="title">标题 A-Z</option>
+                  <option value="progress">阅读进度</option>
+                  <option value="annotations">批注最多</option>
+                </select>
+                <div className="inline-flex rounded-[9px] border border-outline bg-surface-2 p-0.5" role="group" aria-label="视图切换">
+                  <button
+                    type="button"
+                    aria-label="卡片视图"
+                    title="卡片视图"
+                    onClick={() => switchViewMode('grid')}
+                    className={`grid place-items-center w-7 h-7 rounded-[7px] cursor-pointer ${viewMode === 'grid' ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:text-on-surface'}`}
+                  >
+                    <LayoutGrid size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="文献表格视图"
+                    title="文献表格视图"
+                    onClick={() => switchViewMode('table')}
+                    className={`grid place-items-center w-7 h-7 rounded-[7px] cursor-pointer ${viewMode === 'table' ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:text-on-surface'}`}
+                  >
+                    <Table2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
-      {inTrash ? <DocTrash /> : <>
-      {pending.length > 0 && (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
-          {pending.map((p) => <ImportingCard key={p.id} name={p.name} at={p.at} />)}
-        </div>
-      )}
+          {pending.length > 0 && (
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
+              {pending.map((p) => <ImportingCard key={p.id} name={p.name} at={p.at} />)}
+            </div>
+          )}
 
-      {docsLive === undefined ? (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
-          {Array.from({ length: 6 }).map((_, i) => <DocCardSkeleton key={i} />)}
-        </div>
-      ) : docsInView.length === 0 && activeFolder ? (
-        <EmptyState
-          icon={IconDocs}
-          title="这个文件夹还是空的"
-          hint="用右上角「⋯」菜单导入，文件会自动归入当前文件夹。"
-        />
-      ) : docsInView.length === 0 && docs.length > 0 && pending.length === 0 ? (
-        <EmptyState
-          icon={IconDocs}
-          title="没有未分类的文档"
-          hint="放进文件夹的文档只在对应文件夹里显示。可以从文件夹移出文档，或导入新文件。"
-        />
-      ) : docs.length === 0 && pending.length === 0 ? (
-        <EmptyState
-          icon={IconDocs}
-          title="文档库还是空的"
-          hint="导入 PDF / EPUB / Word / PPT / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
-        >
-          <div className="flex gap-2 justify-center">
-            <Button variant="primary" size="sm" className="rounded-[9px]" onClick={() => navigate('/docs/new')}>
-              <PenLine size={15} /> 写文档
-            </Button>
-            <Button variant="outline" size="sm" className="rounded-[9px]" onClick={() => fileRef.current?.click()}>
-              <Import size={15} /> 选择文件
-            </Button>
-          </div>
-        </EmptyState>
-      ) : filtered !== null && filtered.length === 0 ? (
-        <EmptyState icon={Search} title="没有匹配的文档" hint="换个关键词试试（全文搜索需 2 个字符以上）。" />
-      ) : (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
-          {(filtered ?? docsInView.map((d) => ({ doc: d, titleHit: true }))).map(({ doc: d }) => {
-            const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
-            const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
-            return (
-              <DocDragItem key={d.id} doc={d}><DocCard
-                doc={d}
-                pct={pct}
-                hit={hit}
-                onOpen={() =>
-                  // 共享元素转场：文档卡片 → 阅读页连续生长（不支持时自动退化为直接跳转）
-                  morphOpen(
-                    () => document.getElementById(`doc-${d.id}`),
-                    () => (hit?.seg ? openDocAtHit(d, hit.seg) : navigate(`/docs/${d.id}`)),
-                  )
+          {docsLive === undefined ? (
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
+              {Array.from({ length: 6 }).map((_, i) => <DocCardSkeleton key={i} />)}
+            </div>
+          ) : docs.length === 0 && pending.length === 0 ? (
+            <EmptyState
+              icon={IconDocs}
+              title="文档库还是空的"
+              hint="导入 PDF / EPUB / Word / PPT / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
+            >
+              <div className="flex gap-2 justify-center">
+                <Button variant="primary" size="sm" className="rounded-[9px]" onClick={() => navigate('/docs/new')}>
+                  <PenLine size={15} /> 写文档
+                </Button>
+                <Button variant="outline" size="sm" className="rounded-[9px]" onClick={() => fileRef.current?.click()}>
+                  <Import size={15} /> 选择文件
+                </Button>
+              </div>
+            </EmptyState>
+          ) : visibleDocs.length === 0 ? (
+            hasFilters ? (
+              <EmptyState icon={Search} title="没有匹配的文档" hint="调整格式/状态/标签筛选，或换个关键词试试（全文搜索需 2 个字符以上）。" />
+            ) : (
+              <EmptyState
+                icon={IconDocs}
+                title={
+                  isUserFolder
+                    ? '这个文件夹还是空的'
+                    : activeFolder === STARRED_VIEW
+                      ? '还没有星标文档'
+                      : activeFolder === RECENT_VIEW
+                        ? '还没有阅读记录'
+                        : activeFolder === ANNOTATED_VIEW
+                          ? '还没有带批注的文档'
+                          : '没有未分类的文档'
                 }
-                onEdit={() => navigate(`/docs/edit/${d.id}`)}
-                onRead={() => openDoc({ docId: d.id })}
-                onShare={() => {
-                  void getDocBlob(d.hash).then(async (blob) => {
-                    if (!blob) { toast('文件本体没找到，可能被系统清理了'); return }
-                    const msg = await shareMarkdown(d.title, await readDocumentText(blob))
-                    if (msg) toast(msg)
-                  }).catch(() => toast('分享失败，请重试'))
-                }}
-                folderName={folders.find((f) => f.id === d.folderId)?.name}
-                onMove={() => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
-                onRequestConfirm={() => setPendingDelete(d)}
-              /></DocDragItem>
+                hint={isUserFolder ? '把文档拖进此文件夹，或在文件夹内直接导入。' : '在文档卡片上加星标、划词做批注后会自动汇聚到这里。'}
+              />
             )
-          })}
-        </div>
-      )}
-      </>}
+          ) : viewMode === 'table' ? (
+            <DocsTable
+              rows={visibleDocs.map((d) => ({
+                doc: d,
+                hit: keyword.trim().length >= 2 ? textHits[d.hash] : undefined,
+              }))}
+              folders={folders}
+              progressMap={progressMap}
+              annCountByHash={annCountByHash}
+              onOpen={(d, hit) =>
+                morphOpen(
+                  () => document.getElementById(`doc-${d.id}`),
+                  () => (hit ? openDocAtHit(d, hit.seg, query.trim()) : navigate(`/docs/${d.id}`)),
+                )
+              }
+              onRead={(d) => openDoc({ docId: d.id })}
+              onEdit={(d) => navigate(`/docs/edit/${d.id}`)}
+              onShare={(d) => {
+                void getDocBlob(d.hash).then(async (blob) => {
+                  if (!blob) { toast('文件本体没找到，可能被系统清理了'); return }
+                  const msg = await shareMarkdown(d.title, await readDocumentText(blob))
+                  if (msg) toast(msg)
+                }).catch(() => toast('分享失败，请重试'))
+              }}
+              onMove={(d) => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
+              onToggleStar={toggleStar}
+              onEditMeta={(d) => setMetaDoc(d)}
+              onCopyCitation={copyCitation}
+              onRequestConfirm={(d) => setPendingDelete(d)}
+            />
+          ) : (
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
+              {visibleDocs.map((d) => {
+                const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
+                const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
+                return (
+                  <DocDragItem key={d.id} doc={d}><DocCard
+                    doc={d}
+                    pct={pct}
+                    annCount={annCountByHash[d.hash] ?? 0}
+                    hit={hit}
+                    onOpen={() =>
+                      morphOpen(
+                        () => document.getElementById(`doc-${d.id}`),
+                        () => (hit ? openDocAtHit(d, hit.seg, query.trim()) : navigate(`/docs/${d.id}`)),
+                      )
+                    }
+                    onEdit={() => navigate(`/docs/edit/${d.id}`)}
+                    onRead={() => openDoc({ docId: d.id })}
+                    onShare={() => {
+                      void getDocBlob(d.hash).then(async (blob) => {
+                        if (!blob) { toast('文件本体没找到，可能被系统清理了'); return }
+                        const msg = await shareMarkdown(d.title, await readDocumentText(blob))
+                        if (msg) toast(msg)
+                      }).catch(() => toast('分享失败，请重试'))
+                    }}
+                    onToggleStar={() => toggleStar(d)}
+                    onEditMeta={() => setMetaDoc(d)}
+                    onCopyCitation={(style) => copyCitation(d, style)}
+                    folderName={folderPathName(d.folderId, folders)}
+                    onMove={() => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
+                    onRequestConfirm={() => setPendingDelete(d)}
+                  /></DocDragItem>
+                )
+              })}
+            </div>
+          )}
+          </>}
         </div>
       </div>
 
-      {/* 文件选择器挂在根节点：桌面和手机的入口（含空状态里的按钮）共用同一个 ref */}
       <input
         ref={fileRef}
         type="file"
@@ -419,235 +593,54 @@ export function DocsPage() {
         }}
       />
 
-      <Dialog
-        open={folderDialog != null}
-        onOpenChange={(v) => !v && setFolderDialog(null)}
-        title={folderDialog?.mode === 'move' ? '移动到文件夹' : '新建文件夹'}
-        description={folderDialog?.mode === 'move' ? `把「${folderDialog.doc.title}」放进哪个文件夹？` : '文件夹用来收拢长期任务相关的资料。'}
-      >
-        {folderDialog?.mode === 'move' ? (
-          <div className="flex flex-col gap-1.5 max-h-[50dvh] overflow-y-auto">
-            <button
-              type="button"
-              onClick={() => {
-                const d = folderDialog.doc
-                setFolderDialog(null)
-                void setDocFolder(d.id, undefined).then(() => toast('已移回未分类'))
-              }}
-              className="h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-left text-[13px] hover:border-primary/50 cursor-pointer shrink-0"
-            >
-              未分类
-            </button>
-            {folders.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => {
-                  if (folderDialog.mode !== 'move') return
-                  const d = folderDialog.doc
-                  setFolderDialog(null)
-                  void setDocFolder(d.id, f.id).then(() => toast(`已移到「${f.name}」`))
-                }}
-                className={cn(
-                  'h-10 px-3 rounded-[10px] text-left text-[13px] border transition-colors cursor-pointer flex items-center gap-2',
-                  folderDialog.doc.folderId === f.id ? 'border-primary bg-primary-soft text-primary' : 'bg-surface-2 border-outline hover:border-primary/50',
-                )}
-              >
-                <FolderInput size={14} />
-                <span className="truncate flex-1">{f.name}</span>
-                <span className="text-[11px] opacity-60">{folderCounts[f.id] ?? 0}</span>
-              </button>
-            ))}
-            {folders.length === 0 && <p className="text-[12px] text-on-surface-2 py-2">还没有文件夹，先新建一个。</p>}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <input
-              autoFocus
-              value={folderName}
-              onChange={(e) => setFolderName(e.target.value)}
-              placeholder="文件夹名称，如「毕业论文」"
-              className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[14px] outline-none focus:border-primary/60"
-              onKeyDown={(e) => { if (e.key === 'Enter' && folderName.trim()) void doCreateFolder() }}
-            />
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setFolderDialog(null)}>取消</Button>
-              <Button variant="primary" disabled={!folderName.trim()} onClick={() => void doCreateFolder()}>创建</Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
+      <DocsDialogs
+        folders={folders}
+        folderCounts={folderCounts}
+        folderDialog={folderDialog}
+        folderName={folderName}
+        onFolderNameChange={setFolderName}
+        folderParentId={folderParentId}
+        onFolderParentIdChange={setFolderParentId}
+        onCloseFolderDialog={() => setFolderDialog(null)}
+        onCreateFolder={() => void doCreateFolder()}
+        onMoveDoc={(d, fid, fname) => {
+          setFolderDialog(null)
+          void setDocFolder(d.id, fid).then(() => toast(fname ? `已移到「${fname}」` : '已移回未分类'))
+        }}
+        folderToDelete={folderToDelete}
+        onCloseFolderToDelete={() => setFolderToDelete(null)}
+        onConfirmDeleteFolder={(f) => {
+          setFolderToDelete(null)
+          void deleteFolder(f.id).then(() => {
+            if (activeFolder === f.id) setFolderParam(null)
+            toast('文件夹已删除')
+          })
+        }}
+        pendingDelete={pendingDelete}
+        onClosePendingDelete={() => setPendingDelete(null)}
+        onConfirmDeleteDoc={(d) => {
+          setPendingDelete(null)
+          void deleteDoc(d).then(() => toast('已移入回收站')).catch(() => toast('删除失败，请重试'))
+        }}
+        metaDoc={metaDoc}
+        onCloseMetaDoc={() => setMetaDoc(null)}
+        onMetaSaved={(msg) => toast(msg)}
+      />
 
-      <Dialog
-        open={folderToDelete != null}
-        onOpenChange={(v) => !v && setFolderToDelete(null)}
-        title="删除文件夹？"
-        description="文件夹里的文档不会被删除，只会解除归属；关联的任务也会保留。"
-      >
-        <div className="flex justify-end gap-2">
-          <Button onClick={() => setFolderToDelete(null)}>取消</Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              const f = folderToDelete
-              setFolderToDelete(null)
-              if (!f) return
-              void deleteFolder(f.id).then(() => {
-                if (activeFolder === f.id) setFolderParam(null)
-                toast('文件夹已删除')
-              })
-            }}
-          >
-            删除
-          </Button>
-        </div>
-      </Dialog>
-
-      {/* 菜单中的删除统一先确认，鼠标、触摸和键盘共用同一路径。 */}
-      <Dialog
-        open={!!pendingDelete}
-        onOpenChange={(v) => !v && setPendingDelete(null)}
-        title="移入回收站？"
-        description={`「${pendingDelete?.title ?? ''}」会移入回收站，可以随时恢复正文、批注和阅读进度。`}
-      >
-        <div className="flex justify-end gap-2">
-          <Button onClick={() => setPendingDelete(null)}>取消</Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              const d = pendingDelete
-              setPendingDelete(null)
-              if (d) void deleteDoc(d).then(() => toast('已移入回收站')).catch(() => toast('删除失败，请重试'))
-            }}
-          >
-            确认删除
-          </Button>
-        </div>
-      </Dialog>
+      <AnnotationReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        docs={docs}
+        annotations={allAnnotations}
+        onJump={(docId, anchor, hlId) => openDoc({ docId, anchor }, hlId)}
+      />
     </div>
     </DocDragWorkspace>
   )
 }
 
-interface CardProps {
-  doc: Doc
-  pct: number
-  hit?: { count: number; snippet: string; seg?: number }
-  folderName?: string
-  onMove: () => void
-  onOpen: () => void
-  onEdit: () => void
-  onRead: () => void
-  onShare: () => void
-  onRequestConfirm: () => void
-}
-
-/** 阅读是主动作，菜单集中承载次要操作，卡片高度随内容变化。 */
-function DocCard({ doc: d, pct, hit, folderName, onMove, onOpen, onEdit, onRead, onShare, onRequestConfirm }: CardProps) {
-  return (
-    <article id={`doc-${d.id}`} className="card card-hover group relative flex items-start overflow-hidden">
-      <button type="button" onClick={onOpen} aria-label={`阅读 ${d.title}`} className="flex flex-1 min-w-0 items-start gap-3 p-4 pr-1 text-left cursor-pointer">
-        <span className="grid place-items-center w-10 h-12 rounded-[10px] bg-surface-2 shrink-0" aria-hidden>
-          <FileTypeIcon kind={d.kind} size={30} />
-        </span>
-        <span className="flex-1 min-w-0">
-          <span className="block text-ui-body font-medium leading-6 line-clamp-2">{d.title}</span>
-          <span className="block text-ui-caption text-on-surface-2 mt-1 leading-5">
-            {DOC_KIND_LABEL[d.kind]} · {formatBytes(d.size)}
-          </span>
-          <span className="block text-ui-caption text-on-surface-2 leading-5 truncate">
-            {d.lastOpenedAt
-              ? `上次阅读 ${fmtListDate(d.lastOpenedAt)}`
-              : `添加于 ${fmtListDate(d.addedAt)}`}
-            {folderName && ` · ${folderName}`}
-          </span>
-          {hit && (
-            <span className="block text-ui-caption text-on-surface mt-2 leading-relaxed line-clamp-2">
-              <span className="text-primary font-medium">{hit.count} 处命中{hit.seg ? ` · ${segLabel(d.kind, hit.seg)}` : ''}：</span>{hit.snippet}
-            </span>
-          )}
-          <span className="flex items-center gap-2 mt-2.5">
-            <span className="flex-1 h-1 rounded-full bg-surface-3 overflow-hidden">
-              <span className={cn('block h-full w-full rounded-full transition-transform duration-300 origin-left', pct >= 100 ? 'bg-ok' : 'bg-primary/70')} style={{ transform: `scaleX(${pct / 100})` }} />
-            </span>
-            <span className="text-[12px] text-on-surface-2 tabular-nums">{pct}%</span>
-          </span>
-        </span>
-      </button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button type="button" onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} aria-label={`文档操作：${d.title}`} className="grid place-items-center w-9 h-9 rounded-[10px] m-2 ml-0 shrink-0 text-on-surface-2 hover:bg-surface-2 hover:text-on-surface cursor-pointer transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 data-[state=open]:opacity-100">
-            <MoreHorizontal size={20} strokeWidth={1.8} aria-hidden />
-          </button>
-        </DropdownMenuTrigger>
-        <MenuContent>
-          <DropdownItem onSelect={onRead}><BookOpen size={16} aria-hidden />继续阅读</DropdownItem>
-          {d.kind === 'md' && <DropdownItem onSelect={onEdit}><PenLine size={16} aria-hidden />继续写作</DropdownItem>}
-          {d.kind === 'md' && <DropdownItem onSelect={onShare}><Share2 size={16} aria-hidden />分享 / 导出</DropdownItem>}
-          <DropdownItem onSelect={onMove}><FolderInput size={16} aria-hidden />移动到文件夹</DropdownItem>
-          <MenuSeparator />
-          <DropdownItem danger onSelect={onRequestConfirm}><Trash2 size={16} aria-hidden />删除文档…</DropdownItem>
-        </MenuContent>
-      </DropdownMenu>
-    </article>
-  )
-}
-function FolderChip({ active, onClick, children, dropId }: { active: boolean; onClick: () => void; children: React.ReactNode; dropId: string }) {
-  const { setNodeRef, isOver } = useDocDropTarget(dropId)
-  return (
-    <button
-      ref={setNodeRef}
-      data-doc-drop={dropId}
-      type="button"
-      onClick={onClick}
-      className={cn(
-        isOver && 'ring-2 ring-primary bg-primary-soft',
-        'shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-[12px] transition-colors cursor-pointer',
-        active ? 'bg-primary-soft border-primary/40 text-primary font-medium' : 'bg-surface-2 border-outline text-on-surface-2 hover:text-on-surface',
-      )}
-    >
-      {children}
-    </button>
-  )
-}
-
-function segLabel(kind: Doc['kind'], seg: number): string {
-  if (kind === 'pdf') return `第${seg}页`
-  if (kind === 'pptx') return `第${seg}片`
-  if (kind === 'epub') return `第${seg}章`
-  return `#${seg}`
-}
-
-/**
- * 导入中的卡片（ui-motion 43「照片上传进度」的信息版）：
- * 卡片先到位、占住真实卡片的位置，扫光条来回走，等指纹算完再换成真卡。
- * 大 PDF 算 SHA-256 要好几百毫秒起步，之前点完「导入」什么都不动，像没反应。
- */
-function ImportingCard({ name, at }: { name: string; at: number }) {
-  const [elapsed, setElapsed] = useState(0)
-  useEffect(() => {
-    const id = window.setInterval(() => setElapsed(Math.round((Date.now() - at) / 100) / 10), 200)
-    return () => window.clearInterval(id)
-  }, [at])
-  return (
-    <div className="card relative overflow-hidden px-4 py-3.5 flex gap-3.5" aria-live="polite">
-      <span className="grid place-items-center w-11 h-11 rounded-[12px] text-on-surface-2/80 shrink-0">
-        <FileType2 size={20} />
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-[15px] font-semibold truncate">{name}</span>
-        <span className="block text-[12px] text-on-surface-2 mt-0.5 tabular-nums">
-          正在计算内容指纹… {elapsed > 0 ? `${elapsed.toFixed(1)}s` : ''}
-        </span>
-        <span className="flex items-center gap-2 mt-2">
-          <span className="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden skeleton" />
-        </span>
-      </span>
-    </div>
-  )
-}
-
-/** 手机「＋」菜单里的一项 */function MenuItem({ icon: Icon, onClick, children }: { icon: typeof Plus; onClick: () => void; children: React.ReactNode }) {
+/** 手机「＋」菜单里的一项 */
+function MobileMenuItem({ icon: Icon, onClick, children }: { icon: typeof Plus; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -656,69 +649,6 @@ function ImportingCard({ name, at }: { name: string; at: number }) {
     >
       <Icon size={15} className="text-on-surface-2" />
       {children}
-    </button>
-  )
-}
-
-/** 桌面侧边文件夹树（手机用顶部横向标签） */
-function FolderTree({
-  folders, counts, total, trashCount, active, onPick, onCreate, onDelete,
-}: {
-  folders: Folder[]
-  counts: Record<string, number>
-  total: number
-  trashCount: number
-  active: string | null
-  onPick: (id: string | null) => void
-  onCreate: () => void
-  onDelete: () => void
-}) {
-  return (
-    <aside className="hidden lg:flex flex-col gap-0.5 w-44 shrink-0 sticky top-2">
-      <p className="text-[11px] font-medium text-on-surface-2 tracking-wide px-2 mb-1">文件夹</p>
-      <TreeItem dropId={UNFILED_FOLDER} active={!active} onClick={() => onPick(null)} icon={FileText} label="未分类文档" count={total} />
-      {folders.map((f) => (
-        <TreeItem key={f.id} dropId={f.id} active={active === f.id} onClick={() => onPick(f.id)} icon={FolderInput} label={f.name} count={counts[f.id] ?? 0} />
-      ))}
-      <TreeItem dropId={TRASH_FOLDER} active={active === TRASH_FOLDER} onClick={() => onPick(TRASH_FOLDER)} icon={Trash2} label="回收站" count={trashCount} />
-      <button
-        type="button"
-        onClick={onCreate}
-        className="flex items-center gap-2 h-8 px-2 mt-1 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface cursor-pointer"
-      >
-        <FolderPlus size={14} /> 新建文件夹
-      </button>
-      {active && active !== TRASH_FOLDER && (
-        <button
-          type="button"
-          onClick={onDelete}
-          className="flex items-center gap-2 h-8 px-2 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-danger/10 hover:text-danger cursor-pointer"
-        >
-          <Trash2 size={14} /> 删除文件夹
-        </button>
-      )}
-    </aside>
-  )
-}
-
-function TreeItem({ active, onClick, icon: Icon, label, count, dropId }: { active: boolean; onClick: () => void; icon: typeof FileText; label: string; count: number; dropId: string }) {
-  const { setNodeRef, isOver } = useDocDropTarget(dropId)
-  return (
-    <button
-      ref={setNodeRef}
-      data-doc-drop={dropId}
-      type="button"
-      onClick={onClick}
-      className={cn(
-        isOver && 'ring-2 ring-primary bg-primary-soft',
-        'flex items-center gap-2 h-8 px-2 rounded-[8px] text-[13px] transition-colors cursor-pointer text-left',
-        active ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
-      )}
-    >
-      <Icon size={14} className="shrink-0" />
-      <span className="truncate flex-1">{label}</span>
-      <span className="text-[11px] tabular-nums opacity-60">{count}</span>
-      {active && <ChevronRight size={12} className="shrink-0 opacity-60" />}
     </button>
   )
 }

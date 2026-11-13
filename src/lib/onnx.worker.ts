@@ -1,24 +1,28 @@
 /// <reference lib="webworker" />
-import * as ort from 'onnxruntime-web'
-
 /**
  * ONNX 推理 Worker（v3.3）：模型加载与推理都关在 Worker 里，主线程只收结果。
  *
+ * - 动态 import('onnxruntime-web')，与 InlineOnnxRunner 共享同一个 ort.bundle.min chunk。
  * - COOP/COEP 头在 GitHub Pages / 安卓 WebView 都设不了 → 多线程 wasm 必挂，
  *   一律 `numThreads = 1`。
  * - executionProviders：能开 WebGPU 就用（快），不行降 wasm。
  */
 
-const sessions = new Map<string, ort.InferenceSession>()
-let configured = false
+type OrtModule = typeof import('onnxruntime-web')
+type InferenceSession = import('onnxruntime-web').InferenceSession
+type TensorType = import('onnxruntime-web').Tensor.Type
 
-function configure(): void {
-  if (configured) return
-  configured = true
-  ort.env.wasm.numThreads = 1
-  // 不设 wasmPaths：onnxruntime-web 的 bundle 自带 jsep 的 .mjs，生产构建的 .wasm 由 Vite 打进 assets/。
-  // 以前设成相对的 './ort/'，ort 会按 Worker 脚本位置解析成 assets/ort/（不存在）→ 推理初始化 404。
-  // dev 由 vite.config.ts 的 optimizeDeps.exclude 让运行时留在 node_modules，避免预构建目录提供不了 wasm。
+let ortPromise: Promise<OrtModule> | null = null
+const sessions = new Map<string, InferenceSession>()
+
+async function getOrt(): Promise<OrtModule> {
+  if (!ortPromise) {
+    ortPromise = import('onnxruntime-web').then((ort) => {
+      ort.env.wasm.numThreads = 1
+      return ort
+    })
+  }
+  return ortPromise
 }
 
 interface TensorMsg {
@@ -32,8 +36,8 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'init'; key: string; modelBuffer: ArrayBuffer }
     | { type: 'run'; id: number; key: string; inputs: Record<string, TensorMsg> }
   try {
+    const ort = await getOrt()
     if (msg.type === 'init') {
-      configure()
       if ((navigator as Navigator & { gpu?: unknown }).gpu) {
         try {
           sessions.set(msg.key, await ort.InferenceSession.create(msg.modelBuffer, { executionProviders: ['webgpu'] }))
@@ -49,22 +53,26 @@ self.onmessage = async (e: MessageEvent) => {
     }
     const session = sessions.get(msg.key)
     if (!session) throw new Error(`模型 ${msg.key} 未初始化`)
-    const feeds: Record<string, ort.Tensor> = {}
+    const feeds: Record<string, import('onnxruntime-web').Tensor> = {}
     for (const [name, t] of Object.entries(msg.inputs)) {
-      feeds[name] = new ort.Tensor(t.type as ort.Tensor.Type, t.data, t.dims)
+      feeds[name] = new ort.Tensor(t.type as TensorType, t.data, t.dims)
     }
     const results = await session.run(feeds)
     const outputs: Record<string, TensorMsg> = {}
     const transfer: ArrayBuffer[] = []
     for (const [name, t] of Object.entries(results)) {
       outputs[name] = { type: String(t.type), data: t.data as TensorMsg['data'], dims: t.dims.slice() }
-      const buf = (t.data as { buffer?: ArrayBuffer }).buffer
-      if (buf instanceof ArrayBuffer && !transfer.includes(buf)) transfer.push(buf)
+      if (t.data instanceof ArrayBuffer) transfer.push(t.data)
+      else if (ArrayBuffer.isView(t.data)) transfer.push(t.data.buffer as ArrayBuffer)
     }
     self.postMessage({ type: 'result', id: msg.id, ok: true, outputs }, transfer)
   } catch (err) {
-    // init 阶段没有 id，必须带回 key，主线程才知道是哪个会话失败了
-    const { id, key } = e.data as { id?: number; key?: string }
-    self.postMessage({ type: 'result', id, key, ok: false, error: err instanceof Error ? err.message : String(err) })
+    self.postMessage({
+      type: 'result',
+      id: (msg as { id?: number }).id,
+      key: (msg as { key?: string }).key,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
   }
 }

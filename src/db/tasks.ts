@@ -272,20 +272,32 @@ export async function reorderTasks(visibleIds: string[], activeId: string, overI
     const from = visible.indexOf(activeId)
     const to = visible.indexOf(overId)
     if (from < 0 || to < 0) return
+    const updatedAt = Date.now()
+    const pinnedChanged = new Set<string>()
     const targetPinned = byId.get(overId)?.pinned
     if (!!byId.get(activeId)?.pinned !== !!targetPinned) {
-      if (mode === 'swap') await db.tasks.update(overId, { pinned: byId.get(activeId)?.pinned || undefined })
-      await db.tasks.update(activeId, { pinned: targetPinned || undefined })
+      if (mode === 'swap') {
+        const overTask = byId.get(overId)!
+        byId.set(overId, { ...overTask, pinned: byId.get(activeId)?.pinned || undefined })
+        pinnedChanged.add(overId)
+      }
+      const activeTask = byId.get(activeId)!
+      byId.set(activeId, { ...activeTask, pinned: targetPinned || undefined })
+      pinnedChanged.add(activeId)
     }
     if (mode === 'swap') [visible[from], visible[to]] = [visible[to], visible[from]]
     else visible.splice(to, 0, visible.splice(from, 1)[0])
     const ids = new Set(visible)
     let index = 0
-    const updatedAt = Date.now()
+    const changed: Task[] = []
     for (const [rank, task] of all.entries()) {
       const id = ids.has(task.id) ? visible[index++] : task.id
-      await db.tasks.update(id, { sortOrder: rank, updatedAt })
+      const current = byId.get(id)!
+      if (current.sortOrder !== rank || pinnedChanged.has(id)) {
+        changed.push({ ...current, sortOrder: rank, updatedAt })
+      }
     }
+    if (changed.length) await db.tasks.bulkPut(changed)
   })
 }
 
@@ -533,20 +545,14 @@ function parseJson(json: string): unknown {
   }
 }
 
-/** 目录式快照的写入路径：json 里的清单 + 从 OPFS 读出来的原始 Blob */
-export async function importSnapshotParts(
-  parts: { json: string; blobs: { hash: string; type?: string; blob: Blob }[] },
-  mode: ImportMode = 'merge',
-): Promise<ImportResult> {
-  const data = parseJson(parts.json) as Record<string, unknown>
-  data.blobRows = parts.blobs
-  return writeAll(data, mode)
-}
-
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions, db.tombstones, db.folders, db.mathNotes],
+    [
+      db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks,
+      db.aiProviders, db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions,
+      db.tombstones, db.folders, db.fanqieBooks, db.fanqieChapters, db.signatures, db.qrHistory, db.mathNotes,
+    ],
     async () => {
       await db.tasks.clear()
       await db.settings.clear()
@@ -563,6 +569,10 @@ export async function clearAllData(): Promise<void> {
       await db.focusSessions.clear()
       await db.tombstones.clear()
       await db.folders.clear()
+      await db.fanqieBooks.clear()
+      await db.fanqieChapters.clear()
+      await db.signatures.clear()
+      await db.qrHistory.clear()
       await db.mathNotes.clear()
       localStorage.removeItem('ws-doc-tabs')
       localStorage.removeItem('ws-focus-records')

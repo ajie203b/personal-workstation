@@ -35,7 +35,7 @@ export function MathEditorDialog({
   const initial = block ? (block.edited ?? block.recognized) : ''
   useEffect(() => {
     if (open) { setValue(initial); setSelection(null) }
-  }, [open, block?.key])
+  }, [open, block?.key, initial])
 
   const submit = () => onSubmit(value.trim())
   const insert = (symbol: string) => {

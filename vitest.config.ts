@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    isolate: false,
     include: ['src/**/*.test.{ts,tsx}'],
   },
 })

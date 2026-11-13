@@ -958,6 +958,18 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 .hl-blue { background: rgba(96, 165, 250, 0.38); }
 .hl-red { background: rgba(248, 113, 113, 0.38); }
 
+/* 页内查找高亮 */
+.find-hit {
+  background: rgba(250, 204, 21, 0.48);
+  color: inherit;
+  border-radius: 2px;
+}
+.find-hit-active {
+  background: rgba(249, 115, 22, 0.58);
+  outline: 1.5px solid rgba(234, 88, 12, 0.9);
+  border-radius: 2px;
+}
+
 /* PDF 暗色反色：仅作用于画布，保留批注颜色语义 */
 .pdf-dark canvas {
   filter: invert(0.92) hue-rotate(180deg) contrast(1.05);
@@ -1036,10 +1048,20 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 .md-body h2 { font-size: 1.36em; }
 .md-body h3 { font-size: 1.16em; }
 .md-body h4 { font-size: 1.02em; }
+.md-body h5 { font-size: 0.94em; }
+.md-body h6 { font-size: 0.88em; color: var(--md-ink-2); }
 .md-body p { margin: 0.9em 0; }
 .md-body ul, .md-body ol { margin: 0.9em 0; padding-left: 1.5em; }
 .md-body ul { list-style: disc; }
 .md-body ol { list-style: decimal; }
+.md-body ul[data-type="taskList"] { list-style: none; padding-left: 0.25em; }
+.md-body ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.55em; padding-left: 0; }
+.md-body ul[data-type="taskList"] li > label { margin-top: 0.25em; flex-shrink: 0; display: inline-flex; cursor: pointer; }
+.md-body ul[data-type="taskList"] li > label input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+.md-body ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
+.md-body ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--md-ink-2); text-decoration: line-through; }
+.typora-focus-mode .ProseMirror > * { opacity: 0.34; transition: opacity 160ms ease; }
+.typora-focus-mode .ProseMirror > .typora-focus-active { opacity: 1; }
 .md-body li { margin: 0.32em 0; padding-left: 0.1em; }
 .md-body li::marker { color: var(--md-ink-2); }
 .md-body li > ul, .md-body li > ol { margin: 0.3em 0; }
@@ -1264,3 +1286,62 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 @keyframes stats-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .stats-view-transition { animation: stats-view-in 220ms ease-out backwards; }
 @media (prefers-reduced-motion: reduce) { .stats-view-transition { animation: none; } }
+
+/* Office / WPS P1: clean multi-page printing for readers and Markdown documents */
+@media print {
+  header,
+  aside,
+  nav,
+  [role="toolbar"],
+  [role="search"],
+  .sel-popover,
+  .pdf-floating-pill {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root,
+  main,
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-hidden {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .md-body,
+  .flow-body,
+  .reader-prose {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .md-body pre,
+  .md-body blockquote,
+  .md-body tr,
+  .md-body img,
+  .flow-body pre,
+  .flow-body blockquote,
+  .flow-body tr,
+  .flow-body img,
+  [data-page-slot] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  [data-page-slot] {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

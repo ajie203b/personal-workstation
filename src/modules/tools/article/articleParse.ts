@@ -230,7 +230,7 @@ export function extractArticle(html: string, url: string): ParsedArticle {
   let usedReadability = false
 
   // isProbablyReaderable 不碰文档，可安全探路；parse() 会改写文档，只能跑一次
-  let readerable = false
+  let readerable: boolean
   try {
     readerable = isProbablyReaderable(doc)
   } catch {

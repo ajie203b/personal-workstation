@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 import type { Update } from '@tauri-apps/plugin-updater'
+import { httpJson } from './http'
 import { isNative, isTauri } from './native'
 import { todayStr } from './date'
 import {
@@ -224,19 +225,10 @@ interface AppUpdatePlugin {
 const AppUpdate = registerPlugin<AppUpdatePlugin>('AppUpdate')
 
 async function fetchJson(url: string, timeoutMs: number): Promise<unknown> {
-  const ctrl = new AbortController()
-  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(`${url}?t=${Date.now()}`, {
-      cache: 'no-store',
-      headers: { Accept: 'application/vnd.github+json' },
-      signal: ctrl.signal,
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } finally {
-    window.clearTimeout(timer)
-  }
+  return httpJson(`${url}?t=${Date.now()}`, {
+    headers: { Accept: 'application/vnd.github+json' },
+    timeoutMs,
+  })
 }
 
 async function readLatestRelease(): Promise<LatestRelease | null> {

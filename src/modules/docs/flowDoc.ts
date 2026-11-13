@@ -1,6 +1,7 @@
 import type { DocKind } from '@/db/db'
 import { sanitizeHtmlBody } from '@/lib/sanitizeHtml'
 import { readDocumentText } from '@/lib/readDocumentText'
+import { parsePptxSlideParagraphs } from '@/lib/pptxXml'
 
 /**
  * 流式文档解析（v1.3）：EPUB / DOCX / PPTX / TXT → 统一段落模型，
@@ -19,6 +20,12 @@ export interface FlowSegment {
   text: string
 }
 
+export interface FlowTocItem {
+  level: number
+  title: string
+  anchor: string
+}
+
 export interface FlowDoc {
   unit: 'chapter' | 'slide' | 'doc'
   segments: FlowSegment[]
@@ -26,6 +33,8 @@ export interface FlowDoc {
   text: string
   /** Parsed and scoped Word CSS, never raw styles from the input document. */
   styles?: string
+  /** Optional intra-document outline (e.g. Word heading hierarchy). */
+  toc?: FlowTocItem[]
   /** EPUB 图片按需取：path 来自 data-epub-src，返回 blob URL */
   resolveImage?: (path: string) => Promise<string | null>
   /** 释放解析过程创建的 blob URL（文档关闭时调用，防内存泄漏） */
@@ -200,11 +209,11 @@ async function parsePptx(blob: Blob): Promise<FlowDoc> {
   const segments: FlowSegment[] = []
   for (const p of slidePaths) {
     const xml = await zip.file(p)!.async('string')
-    const texts = Array.from(xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)).map((m) => m[1].trim()).filter(Boolean)
-    if (!texts.length) continue
+    const paragraphs = parsePptxSlideParagraphs(xml)
+    if (!paragraphs.length) continue
     const n = Number(p.match(/slide(\d+)\.xml/)![1])
-    const html = `<h2 class="ppt-slide-no">第 ${n} 片</h2>` + texts.map((t) => `<p>${esc(t)}</p>`).join('')
-    segments.push({ title: `第 ${n} 片 · ${texts[0].slice(0, 24)}`, html, text: texts.join(' ') })
+    const html = `<h2 class="ppt-slide-no">第 ${n} 片</h2>` + paragraphs.map((line) => `<p>${esc(line).replace(/\n/g, '<br/>')}</p>`).join('')
+    segments.push({ title: `第 ${n} 片 · ${paragraphs[0].replace(/\s+/g, ' ').slice(0, 24)}`, html, text: paragraphs.join(' ').replace(/\s+/g, ' ').trim() })
   }
   if (!segments.length) throw new Error('PPTX 解析为空')
   return { unit: 'slide', segments, text: segments.map((s) => s.text).join('\n') }

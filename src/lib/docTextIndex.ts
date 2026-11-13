@@ -1,6 +1,7 @@
 import type { Doc, DocKind } from '@/db/db'
 import { db } from '@/db/db'
 import { readDocumentText } from './readDocumentText'
+import { parsePptxSlideParagraphs } from './pptxXml'
 
 /**
  * 文档全文索引（v1.3）：导入时抽取纯文本存 docText 表，
@@ -112,8 +113,8 @@ async function extractPptx(blob: Blob): Promise<{ text: string; segments: string
   const segments: string[] = []
   for (const p of slidePaths) {
     const xml = await zip.file(p)!.async('string')
-    const texts = Array.from(xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)).map((m) => m[1])
-    segments.push(texts.join(' ').replace(/\s+/g, ' ').trim())
+    const paragraphs = parsePptxSlideParagraphs(xml)
+    segments.push(paragraphs.join(' ').replace(/\s+/g, ' ').trim())
   }
   return { text: segments.join('\n'), segments, segmentUnit: 'slide' }
 }
@@ -134,6 +135,7 @@ export async function backfillDocTextIndex(limit = 5): Promise<number> {
   const docs = await db.docs.toArray()
   let done = 0
   for (const doc of docs) {
+    if (doc.deletedAt) continue
     const has = await db.docText.get(doc.hash)
     if (has) continue
     const row = await db.blobs.get(doc.hash)

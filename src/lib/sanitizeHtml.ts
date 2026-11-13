@@ -90,7 +90,6 @@ const SAFE_DATA_URL = /^data:image\/(png|jpe?g|gif|webp|avif|bmp);/i
  * @param allowDataImage 是否放行 data:image/（正文内嵌图片用得到；链接不允许）
  */
 export function isSafeUrl(raw: string, allowDataImage = true): boolean {
-  // eslint-disable-next-line no-control-regex
   const url = raw.replace(/[\u0000-\u0020\u007f-\u009f]/g, '').toLowerCase()
   if (!url) return false
   if (url.startsWith('#') || url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) return true

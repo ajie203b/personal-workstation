@@ -5,7 +5,7 @@ import { DOMParser as ProseMirrorParser } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
-import { Bold, Code, Highlighter, Italic, List, ListOrdered, Quote, Redo2, Undo2 } from 'lucide-react'
+import { Bold, Code, Focus, Highlighter, Italic, List, ListOrdered, Quote, Redo2, Search, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
@@ -13,6 +13,14 @@ import { MarkdownContent, splitMdBlocks } from './MdReader'
 import { MarkdownWordCount } from './MarkdownWordCount'
 import { HighlightMark } from './mdHighlight'
 import { captureLocalPosition, restoreLocalPosition, type LocalScrollPosition } from './localScrollPosition'
+import { EditorFindExtension } from './editor/editorFind'
+import { useEditorFindReplace } from './editor/useEditorFindReplace'
+import { EditorFindReplaceBar } from './editor/EditorFindReplaceBar'
+import { EditorFocusExtension } from './editor/editorFocus'
+import { detectSlashTrigger, SlashCommandMenu, type SlashTriggerState } from './editor/SlashCommandMenu'
+import { executeSlashCommand } from './editor/typoraCommands'
+
+const LOCAL_SLASH_ALLOWED = new Set(['h1', 'h2', 'h3', 'h4', 'bullet', 'ordered', 'quote', 'code', 'hr'])
 
 type RenderImage = (src: string | undefined, alt: string | undefined) => ReactNode
 type MarkdownStorage = { getMarkdown: () => string; parser: { parse: (markdown: string) => string } }
@@ -93,6 +101,13 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
 }) {
   const [mode, setMode] = useState<'rich' | 'source'>('rich')
   const [fontSize, setFontSize] = useState(17)
+  const [focusMode, setFocusMode] = useState(false)
+  const [typewriterMode, setTypewriterMode] = useState(false)
+  const [docTick, setDocTick] = useState(0)
+  const [slashTrigger, setSlashTrigger] = useState<SlashTriggerState | null>(null)
+  const dismissedSlashTo = useRef<number | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const richContainerRef = useRef<HTMLDivElement | null>(null)
   const loaded = useRef<string>()
   const editingPosition = useRef(initialPosition)
   const imageRenderer = useRef(renderImage)
@@ -103,6 +118,8 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
       StarterKit.configure({ link: { openOnClick: false } }),
       Image.configure({ inline: true, allowBase64: true }),
       HighlightMark,
+      EditorFindExtension,
+      EditorFocusExtension.configure({ scrollRef: richContainerRef }),
       MarkdownBlock.configure({ renderImage: (src, alt) => imageRenderer.current?.(src, alt) ?? <img src={src} alt={alt} />, getDefinitions: () => '\n\n' + definitionsRef.current }),
       Markdown.configure({ html: false, breaks: false, transformPastedText: true, transformCopiedText: true }),
     ],
@@ -111,9 +128,29 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
     onUpdate: ({ editor }) => {
       const next = storage(editor).getMarkdown()
       loaded.current = next
+      setDocTick(t => t + 1)
+      dismissedSlashTo.current = null
+      setSlashTrigger(detectSlashTrigger(editor))
       onChange(next)
     },
+    onSelectionUpdate: ({ editor }) => {
+      const nextSlash = detectSlashTrigger(editor)
+      if (!nextSlash || nextSlash.range.to !== dismissedSlashTo.current) {
+        if (nextSlash?.range.to !== dismissedSlashTo.current) dismissedSlashTo.current = null
+        setSlashTrigger(nextSlash)
+      }
+    },
     editorProps: { attributes: { class: 'md-body outline-none min-h-[55vh]', spellcheck: 'false', 'aria-label': 'Markdown 编辑区' } },
+  })
+
+  const find = useEditorFindReplace({
+    editor,
+    docTick,
+    sourceMode: mode === 'source',
+    sourceText: markdown,
+    onSourceChange: onChange,
+    textareaRef,
+    containerRef: richContainerRef,
   })
 
   useLayoutEffect(() => {
@@ -141,7 +178,20 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
   function toggleMode() {
     const view = scrollRef.current
     if (view) editingPosition.current = captureLocalPosition(view)
+    setSlashTrigger(null)
     setMode(mode === 'rich' ? 'source' : 'rich')
+  }
+
+  function toggleFocusMode() {
+    const next = !focusMode
+    setFocusMode(next)
+    editor?.commands.setTyporaModes({ focusMode: next })
+  }
+
+  function toggleTypewriterMode() {
+    const next = !typewriterMode
+    setTypewriterMode(next)
+    editor?.commands.setTyporaModes({ typewriterMode: next })
   }
 
   return <div className="flex-1 min-h-0 flex flex-col">
@@ -166,17 +216,63 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
         <ToolBtn label="有序列表" onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>
         <ToolBtn label="引用" onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={15} /></ToolBtn>
         <ToolBtn label="代码块" onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={15} /></ToolBtn>
+        <ToolBtn label="专注段落" active={focusMode} onClick={toggleFocusMode}><Focus size={15} /></ToolBtn>
+        <button
+          type="button"
+          aria-label="打字机居中"
+          aria-pressed={typewriterMode}
+          onClick={toggleTypewriterMode}
+          className={cn(
+            'px-2 h-8 shrink-0 rounded-lg text-xs cursor-pointer transition-colors',
+            typewriterMode ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3',
+          )}
+        >打字机</button>
       </>}
+      <ToolBtn label="查找替换" active={find.open} onClick={() => (find.open ? find.closeFind() : find.openFind(false))}><Search size={15} /></ToolBtn>
       <label className="ml-auto flex items-center gap-1 text-xs text-on-surface-2">显示字号
         <select aria-label="显示字号" className="bg-surface border border-outline rounded-md px-1.5 h-8" value={fontSize} onChange={e => setFontSize(Number(e.target.value))}>
           {[14, 16, 17, 18, 20, 24, 28, 32].map(px => <option key={px}>{px}</option>)}
         </select>
       </label>
     </div>
-    {mode === 'source' ? <textarea ref={el => { scrollRef.current = el }} value={markdown} onChange={e => onChange(e.target.value)}
+    <EditorFindReplaceBar
+      open={find.open}
+      focusTick={find.focusTick}
+      showReplace={find.showReplace}
+      onToggleReplace={() => find.setShowReplace(s => !s)}
+      query={find.query}
+      replaceText={find.replaceText}
+      caseSensitive={find.caseSensitive}
+      active={find.active}
+      total={find.total}
+      onQueryChange={find.setQuery}
+      onReplaceTextChange={find.setReplaceText}
+      onToggleCase={find.toggleCase}
+      onNext={find.onNext}
+      onPrev={find.onPrev}
+      onReplaceCurrent={find.onReplaceCurrent}
+      onReplaceAll={find.onReplaceAll}
+      onClose={find.closeFind}
+    />
+    {mode === 'source' ? <textarea ref={el => { textareaRef.current = el; scrollRef.current = el }} value={markdown} onChange={e => onChange(e.target.value)}
       className="flex-1 min-h-0 w-full resize-none bg-surface px-6 md:px-12 py-8 font-mono leading-7 outline-none" style={{ fontSize }} spellCheck={false} aria-label="编辑 Markdown 原文" />
-      : <div ref={el => { scrollRef.current = el }} className="flex-1 min-h-0 overflow-y-auto">
-        <div className="reader-prose mx-auto py-8 min-w-0" style={{ ['--reader-width' as string]: '90%', fontSize }}><EditorContent editor={editor} /></div>
+      : <div ref={el => { richContainerRef.current = el; scrollRef.current = el }} className="flex-1 min-h-0 overflow-y-auto relative">
+        <div className={cn('reader-prose mx-auto py-8 min-w-0', focusMode && 'typora-focus-mode')} style={{ ['--reader-width' as string]: '90%', fontSize }}><EditorContent editor={editor} /></div>
+        {editor && slashTrigger && (
+          <SlashCommandMenu
+            editor={editor}
+            trigger={slashTrigger}
+            allowedIds={LOCAL_SLASH_ALLOWED}
+            onExecute={(id, range) => {
+              setSlashTrigger(null)
+              executeSlashCommand(editor, id, range)
+            }}
+            onDismiss={() => {
+              dismissedSlashTo.current = slashTrigger.range.to
+              setSlashTrigger(null)
+            }}
+          />
+        )}
       </div>}
     <MarkdownWordCount markdown={markdown} />
   </div>

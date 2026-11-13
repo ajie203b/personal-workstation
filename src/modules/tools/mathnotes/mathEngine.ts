@@ -80,12 +80,15 @@ export class MathEngine {
 
   async recognize(key: string, strokes: Stroke[], charHeight: number, onProgress?: (ratio: number, file: string) => void): Promise<RecognizedBlock> {
     const out = await this.request({ type: 'recognize', id: this.nextId++, key, strokes, charHeight }, onProgress)
-    if (out.type !== 'recognized') throw new Error('识别返回异常')
-    return { key: out.key, latex: out.latex, confidence: out.confidence, ms: out.ms, result: out.result }
+    if (out.type !== 'recognizedRaw') throw new Error('识别返回异常')
+    const result: ComputeResult = out.incompleteSystem
+      ? { kind: 'error', latex: '', text: '', message: '方程组未识别完整，点击后按行修改各个等式' }
+      : await this.compute(out.key, out.latex)
+    return { key: out.key, latex: out.latex, confidence: out.confidence, ms: out.ms, result }
   }
 
   async compute(key: string, latex: string): Promise<ComputeResult> {
-    const out = await this.request({ type: 'compute', id: this.nextId++, key, latex })
+    const out = await this.secondaryRequest(id => ({ type: 'compute', id, key, latex }))
     if (out.type !== 'computed') throw new Error('计算返回异常')
     return out.result
   }

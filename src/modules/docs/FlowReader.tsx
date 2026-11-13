@@ -7,6 +7,7 @@ import { saveScrollAndProgress } from '@/db/docs'
 import { handleDocLink } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
 import { collectTextAnchors, wrapText } from './reader/textAnchors'
+import { clearFindMarks, highlightDomMatches, normalizeQuery, setActiveFindMark } from './reader/docFind'
 
 export interface FlowSelectionInfo {
   text: string
@@ -35,13 +36,17 @@ interface Props {
   initialTarget: FlowJumpTarget | null
   /** 双指缩放提交后的字号（px） */
   onFontSizeChange?: (px: number) => void
+  onActiveAnchor?: (anchor: string) => void
+  findQuery?: string
+  findActive?: number
+  onFindState?: (state: { total: number; searching: boolean }) => void
 }
 
 /**
  * 流式阅读器（v1.3）：EPUB / DOCX / PPTX / TXT 统一滚动阅读。
  * 复用沉浸排版设置与批注体系（v1.3.1：划词高亮按章节/片定位，文本 mark 包裹）。
  */
-export function FlowReader({ hash, flow, settings, annotations, jump, onSelection, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onFontSizeChange }: Props) {
+export function FlowReader({ hash, flow, settings, annotations, jump, onSelection, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onFontSizeChange, onActiveAnchor, findQuery = '', findActive = 0, onFindState }: Props) {
   const restoredRef = useRef(false)
   const lastWriteRef = useRef(0)
   const lastJumpTs = useRef(0)
@@ -142,6 +147,8 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     return () => window.removeEventListener('keydown', onKey)
   }, [preview])
 
+  const lastActiveAnchor = useRef('')
+
   // 进度上报：滚动位置 → 当前 segment + 总进度
   const report = useCallback(() => {
     const container = scrollRef.current
@@ -164,12 +171,25 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       lastReportedPct.current = intPct
       onProgress(idx, intPct / 100)
     }
+    if (flow.toc?.length && onActiveAnchor && proseRef.current) {
+      const cr = container.getBoundingClientRect()
+      let active = flow.toc[0].anchor
+      for (const item of flow.toc) {
+        if (!item.anchor.startsWith('el:')) continue
+        const target = proseRef.current.querySelector<HTMLElement>('#' + CSS.escape(item.anchor.slice(3)))
+        if (target && target.getBoundingClientRect().top <= cr.top + viewH * 0.35) active = item.anchor
+      }
+      if (active !== lastActiveAnchor.current) {
+        lastActiveAnchor.current = active
+        onActiveAnchor(active)
+      }
+    }
     const now = Date.now()
     if (now - lastWriteRef.current > 1200) {
       lastWriteRef.current = now
       void saveScrollAndProgress(hash, top, { kind: 'flow', segIdx: idx, ratio }, pct)
     }
-  }, [hash, onProgress, scrollRef])
+  }, [hash, flow.toc, onActiveAnchor, onProgress, scrollRef])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -181,6 +201,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   // 批注逐片回放，跨章节也保留精确选区；旧批注按起点及摘录兼容定位。
   useLayoutEffect(() => {
     const roots = segRefs.current
+    clearFindMarks(roots)
     // 先清掉旧 mark
     for (const root of roots) {
       if (!root) continue
@@ -211,6 +232,48 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       }
     }
   }, [annotations, flow])
+
+  const onFindStateRef = useRef(onFindState)
+  onFindStateRef.current = onFindState
+  const findMatchRootsRef = useRef<number[]>([])
+  const lastFindScrollRef = useRef<{ query: string; active: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const roots = segRefs.current
+    const { total, matchRoots } = highlightDomMatches(roots, findQuery)
+    findMatchRootsRef.current = matchRoots
+    onFindStateRef.current?.({ total, searching: false })
+  }, [findQuery, annotations, flow])
+
+  useEffect(() => {
+    const prose = proseRef.current
+    if (!prose) return
+    if (!normalizeQuery(findQuery)) {
+      lastFindScrollRef.current = null
+      setActiveFindMark(prose, -1)
+      return
+    }
+    const segIdx = findMatchRootsRef.current[findActive]
+    const segEl = segIdx != null ? segRefs.current[segIdx] : null
+    if (segEl) segEl.style.contentVisibility = 'visible'
+    const hit = setActiveFindMark(prose, findActive)
+    const prev = lastFindScrollRef.current
+    if (prev && prev.query === findQuery && prev.active === findActive) return
+    lastFindScrollRef.current = { query: findQuery, active: findActive }
+    const container = scrollRef.current
+    if (!hit || !container) return
+    const cRect = container.getBoundingClientRect()
+    const hRect = hit.getBoundingClientRect()
+    const relTop = hRect.top - cRect.top
+    if (relTop < 48 || relTop > container.clientHeight - 64) {
+      const top = container.scrollTop + relTop - container.clientHeight * 0.35
+      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }
+    if (segEl) {
+      const t = window.setTimeout(() => segEl.style.removeProperty('content-visibility'), 2000)
+      return () => window.clearTimeout(t)
+    }
+  }, [findQuery, findActive, annotations, flow, scrollRef])
 
   // EPUB 图片按需加载：只解压进入视口附近的图片，打开大书不再等全部资源
   useEffect(() => {
@@ -288,13 +351,27 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     return () => window.clearTimeout(t)
   }, [initialTarget, onRestored, scrollRef])
 
-  // 跳转锚点 f{n} / 批注闪烁
+  // 跳转锚点 f{n} / el:{id} / 批注闪烁
   useEffect(() => {
     if (!jump || jump.ts === lastJumpTs.current) return
     lastJumpTs.current = jump.ts
-    const m = jump.anchor.match(/^f(\d+)/)
     const container = scrollRef.current
-    if (!m || !container) return
+    if (!container) return
+    if (jump.anchor.startsWith('el:')) {
+      const id = jump.anchor.slice(3)
+      const target = proseRef.current?.querySelector<HTMLElement>('#' + CSS.escape(id))
+      if (!target) return
+      const seg = target.closest<HTMLElement>('[data-seg]')
+      if (seg) seg.style.contentVisibility = 'visible'
+      const top = container.scrollTop + (target.getBoundingClientRect().top - container.getBoundingClientRect().top) - 16
+      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+      target.classList.add('ann-flash', 'rounded-[8px]')
+      const t1 = window.setTimeout(() => target.classList.remove('ann-flash', 'rounded-[8px]'), 1600)
+      const t2 = seg ? window.setTimeout(() => seg.style.removeProperty('content-visibility'), 2000) : 0
+      return () => { window.clearTimeout(t1); if (t2) window.clearTimeout(t2) }
+    }
+    const m = jump.anchor.match(/^f(\d+)/)
+    if (!m) return
     const idx = Number(m[1])
     const el = segRefs.current[idx]
     if (el) {

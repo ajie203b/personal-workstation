@@ -10,6 +10,7 @@ import { useTasksUi } from '@/stores/tasks'
 import { openDocAtHit } from '@/shared/DeepLink'
 import { Skeleton } from '@/shared/ui/Skeleton'
 import { cn } from '@/lib/cn'
+import { guardNavigation } from '@/lib/unsavedGuard'
 
 interface PaletteItem {
   id: string
@@ -57,9 +58,10 @@ export function CommandPalette() {
   // 索引行只在面板打开时读一次，小写副本按 indexedAt 缓存；
   // 原来每次击键都全表重读并整篇 toLowerCase，文档一多输入就明显掉帧。
   const kw = query.trim().toLowerCase()
+  const needFulltext = open && kw.length >= 2
   const indexRows = useLiveQuery(
-    () => (open ? db.docText.toArray() : Promise.resolve([] as DocText[])),
-    [open],
+    () => (needFulltext ? db.docText.toArray() : Promise.resolve([] as DocText[])),
+    [needFulltext],
     [] as DocText[],
   )
   const lowerCache = useRef(new Map<string, { at: number; lower: string }>())
@@ -102,17 +104,23 @@ export function CommandPalette() {
   }, [open, kw, indexRows, docs])
 
   const items = useMemo<PaletteItem[]>(() => {
-    const openTask = (id: string, tier: string) => {
-      useTasksUi.getState().openDetail(id)
-      navigate(`/tasks?tier=${tier}`)
-    }
+    const go = (to: string, after?: () => void) =>
+      guardNavigation(() => {
+        navigate(to)
+        after?.()
+      })
+    const openTask = (id: string, tier: string) =>
+      guardNavigation(() => {
+        useTasksUi.getState().openDetail(id)
+        navigate(`/tasks?tier=${tier}`)
+      })
     const actions: PaletteItem[] = [
-      { id: 'a-new-task', group: '动作', label: '新建任务', hint: 'N', icon: <Plus size={15} />, run: () => { navigate('/tasks'); setTimeout(() => window.dispatchEvent(new CustomEvent('ws:focus-quickadd')), 150) } },
-      { id: 'a-new-doc', group: '动作', label: '写文档', hint: 'MD 编辑器', icon: <FileText size={15} />, run: () => navigate('/docs/new') },
-      { id: 'a-today', group: '动作', label: '今日', icon: <CalendarCheck size={15} />, run: () => navigate('/today') },
-      { id: 'a-tasks', group: '动作', label: '任务清单', icon: <ListTodo size={15} />, run: () => navigate('/tasks') },
-      { id: 'a-docs', group: '动作', label: '文档工作站', icon: <FileText size={15} />, run: () => navigate('/docs') },
-      { id: 'a-settings', group: '动作', label: '设置', icon: <Settings2 size={15} />, run: () => navigate('/settings') },
+      { id: 'a-new-task', group: '动作', label: '新建任务', hint: 'N', icon: <Plus size={15} />, run: () => go('/tasks', () => setTimeout(() => window.dispatchEvent(new CustomEvent('ws:focus-quickadd')), 150)) },
+      { id: 'a-new-doc', group: '动作', label: '写文档', hint: 'MD 编辑器', icon: <FileText size={15} />, run: () => go('/docs/new') },
+      { id: 'a-today', group: '动作', label: '今日', icon: <CalendarCheck size={15} />, run: () => go('/today') },
+      { id: 'a-tasks', group: '动作', label: '任务清单', icon: <ListTodo size={15} />, run: () => go('/tasks') },
+      { id: 'a-docs', group: '动作', label: '文档工作站', icon: <FileText size={15} />, run: () => go('/docs') },
+      { id: 'a-settings', group: '动作', label: '设置', icon: <Settings2 size={15} />, run: () => go('/settings') },
       {
         id: 'a-theme', group: '动作',
         label: theme === 'dark' ? '切换到浅色主题' : '切换到深色主题',
@@ -120,13 +128,13 @@ export function CommandPalette() {
         run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
       },
     ]
-    const taskItems: PaletteItem[] = (tasks ?? []).slice(0, 40).map((t) => ({
+    const taskItems: PaletteItem[] = (tasks ?? []).map((t) => ({
       id: `t-${t.id}`, group: '任务', label: t.title, hint: t.tier === 'today' ? '今日' : t.tier === 'upcoming' ? '近期' : t.tier === 'anytime' ? '随时' : '将来',
       icon: <ListTodo size={15} />, run: () => openTask(t.id, t.tier),
     }))
-    const docItems: PaletteItem[] = (docs ?? []).slice(0, 40).map((d) => ({
+    const docItems: PaletteItem[] = (docs ?? []).map((d) => ({
       id: `d-${d.id}`, group: '文档', label: d.title, hint: d.kind.toUpperCase(),
-      icon: <FileText size={15} />, run: () => navigate(`/docs/${d.id}`),
+      icon: <FileText size={15} />, run: () => go(`/docs/${d.id}`),
     }))
     const fulltextItems: PaletteItem[] = (kw.length >= 2 ? fulltextHits : []).map((h) => ({
       id: `ft-${h.docId}`,
@@ -134,7 +142,7 @@ export function CommandPalette() {
       label: h.title,
       hint: `${h.count} 处命中${h.seg ? ` · 第${h.seg}${h.unit}` : ''}`,
       icon: <Search size={15} />,
-      run: () => openDocAtHit({ id: h.docId, kind: h.kind }, h.seg),
+      run: () => guardNavigation(() => openDocAtHit({ id: h.docId, kind: h.kind }, h.seg, kw)),
     }))
     return [...actions, ...taskItems, ...docItems, ...fulltextItems]
   }, [tasks, docs, fulltextHits, kw, theme, navigate, setTheme])
@@ -145,7 +153,7 @@ export function CommandPalette() {
     if (query.trim() && !pinyinFn) {
       import('pinyin-pro').then((m) => setPinyinFn(() => m.pinyin)).catch(() => {})
     }
-  }, [query])
+  }, [query, pinyinFn])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

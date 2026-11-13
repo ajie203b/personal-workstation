@@ -90,7 +90,7 @@ function buildChapterXhtml(input: ArticleEpubInput, bodyNodes: Node[]): string {
     const meta = xhtml.createElementNS(XHTML_NS, 'p')
     meta.setAttribute('class', 'meta')
     if (input.byline) {
-      meta.appendChild(xhtml.createTextNode(`作者:${input.byline}　`))
+      meta.appendChild(xhtml.createTextNode(`作者:${input.byline}\u3000`))
     }
     if (input.sourceUrl) {
       meta.appendChild(xhtml.createTextNode('来源:'))
@@ -98,7 +98,7 @@ function buildChapterXhtml(input: ArticleEpubInput, bodyNodes: Node[]): string {
       a.setAttribute('href', input.sourceUrl)
       a.textContent = input.sourceUrl
       meta.appendChild(a)
-      meta.appendChild(xhtml.createTextNode(`　抓取时间:${formatCapturedAt(input.capturedAt)}`))
+      meta.appendChild(xhtml.createTextNode(`\u3000抓取时间:${formatCapturedAt(input.capturedAt)}`))
     } else {
       meta.appendChild(xhtml.createTextNode(`抓取时间:${formatCapturedAt(input.capturedAt)}`))
     }

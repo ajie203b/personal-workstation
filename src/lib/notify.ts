@@ -1,7 +1,13 @@
-import { LocalNotifications } from '@capacitor/local-notifications'
 import { db } from '@/db/db'
 import { isNative } from './native'
 import type { Task } from '@/db/db'
+
+let localNotificationsPromise: Promise<typeof import('@capacitor/local-notifications')['LocalNotifications']> | null = null
+
+function getLocalNotifications() {
+  localNotificationsPromise ??= import('@capacitor/local-notifications').then((m) => m.LocalNotifications)
+  return localNotificationsPromise
+}
 
 /**
  * 任务提醒通知（v1.3）：
@@ -51,7 +57,8 @@ export async function setNotifyEnabled(on: boolean): Promise<void> {
 async function exactAlarmsAllowed(): Promise<boolean> {
   if (!isNative()) return false
   try {
-    const res = await LocalNotifications.checkExactNotificationSetting()
+    const ln = await getLocalNotifications()
+    const res = await ln.checkExactNotificationSetting()
     return res.exact_alarm === 'granted'
   } catch {
     return false
@@ -102,10 +109,11 @@ export function parseTimeOfDay(value: string | undefined): { hh: number; mm: num
 /** 单个任务：按当前状态与到期时间注册/取消提醒（写入路径末尾调用） */
 export async function syncTaskNotification(task: Task): Promise<void> {
   if (!isNative() || !(await getNotifyEnabled())) return
+  const ln = await getLocalNotifications()
   // 先把这个任务的所有时间槽取消干净：时间点从 3 个改成 1 个时，
   // 多出来的旧提醒必须一起撤掉，否则会一直响
   try {
-    await LocalNotifications.cancel({
+    await ln.cancel({
       notifications: Array.from({ length: MAX_REMINDER_SLOTS }, (_, i) => ({ id: notifIdForSlot(task.id, i) })),
     })
   } catch { /* 尚未注册时 cancel 部分机型报错，忽略 */ }
@@ -115,11 +123,11 @@ export async function syncTaskNotification(task: Task): Promise<void> {
     .map((at, slot) => ({ at, slot }))
     .filter((s) => s.at.getTime() > now)
   if (!slots.length) return
-  const perm = await LocalNotifications.checkPermissions()
+  const perm = await ln.checkPermissions()
   if (perm.display !== 'granted') return
   const exact = await exactAlarmsAllowed()
   try {
-    await LocalNotifications.schedule({
+    await ln.schedule({
       notifications: slots.map((s) => taskNotification(task, s.at, s.slot, slots.length, exact)),
     })
   } catch {
@@ -146,8 +154,9 @@ function taskNotification(task: Task, at: Date, slot = 0, slots = 1, exact = fal
 /** 全量重排（应用启动 / 开关打开时调用）：先清后建 */
 export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
   if (!isNative() || !(await getNotifyEnabled())) return
+  const ln = await getLocalNotifications()
   await cancelAllTaskNotifications()
-  const perm = await LocalNotifications.checkPermissions()
+  const perm = await ln.checkPermissions()
   if (perm.display !== 'granted') return
   const exact = await exactAlarmsAllowed()
   const now = Date.now()
@@ -158,7 +167,7 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
       .filter((s) => s.at.getTime() > now)
     if (!slots.length) continue
     try {
-      await LocalNotifications.schedule({
+      await ln.schedule({
         notifications: slots.map((s) => taskNotification(t, s.at, s.slot, slots.length, exact)),
       })
     } catch { /* 单条失败不阻塞 */ }
@@ -167,19 +176,20 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
 
 async function cancelAllTaskNotifications(): Promise<void> {
   try {
+    const ln = await getLocalNotifications()
     const tasks = await db.tasks.toArray()
     const notifications = tasks.flatMap((t) =>
       Array.from({ length: MAX_REMINDER_SLOTS }, (_, i) => ({ id: notifIdForSlot(t.id, i) })),
     )
-    if (notifications.length) await LocalNotifications.cancel({ notifications })
+    if (notifications.length) await ln.cancel({ notifications })
   } catch { /* ignore */ }
 }
 
 /** 申请通知权限（设置页开关打开时调用） */
 export async function requestNotifyPermission(): Promise<boolean> {
   if (!isNative()) return false
-  const { LocalNotifications: LN } = await import('@capacitor/local-notifications')
-  const res = await LN.requestPermissions()
+  const ln = await getLocalNotifications()
+  const res = await ln.requestPermissions()
   return res.display === 'granted'
 }
 
@@ -191,7 +201,8 @@ const FOCUS_NOTIF_ID = 2_147_480_000
 async function canNotify(): Promise<boolean> {
   if (!isNative()) return false
   try {
-    const perm = await LocalNotifications.checkPermissions()
+    const ln = await getLocalNotifications()
+    const perm = await ln.checkPermissions()
     return perm.display === 'granted'
   } catch {
     return false
@@ -206,9 +217,10 @@ export async function scheduleFocusEnd(at: number, body: string): Promise<void> 
   if (!isNative() || at <= Date.now()) return
   if (!(await canNotify())) return
   try {
+    const ln = await getLocalNotifications()
     const exact = await exactAlarmsAllowed()
-    await LocalNotifications.cancel({ notifications: [{ id: FOCUS_NOTIF_ID }] })
-    await LocalNotifications.schedule({
+    await ln.cancel({ notifications: [{ id: FOCUS_NOTIF_ID }] })
+    await ln.schedule({
       notifications: [
         {
           id: FOCUS_NOTIF_ID,
@@ -228,6 +240,7 @@ export async function scheduleFocusEnd(at: number, body: string): Promise<void> 
 export async function cancelFocusEnd(): Promise<void> {
   if (!isNative()) return
   try {
-    await LocalNotifications.cancel({ notifications: [{ id: FOCUS_NOTIF_ID }] })
+    const ln = await getLocalNotifications()
+    await ln.cancel({ notifications: [{ id: FOCUS_NOTIF_ID }] })
   } catch { /* ignore */ }
 }

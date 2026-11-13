@@ -1,142 +1,42 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
-import { saveScrollAndProgress } from '@/db/docs'
+import { getDocBlob, saveScrollAndProgress } from '@/db/docs'
+import { openExternal } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
 import type { Annotation, DocSettings } from '@/db/db'
-import { getDocBlob } from '@/db/docs'
-import { cn } from '@/lib/cn'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import {
+  cropPdfCanvas,
+  mergeLineRects,
+  readPageSelection,
+  type NormRect,
+  type PdfSelectionInfo,
+} from './pdf/pdfRects'
+import { PageAnnotationsOverlay, PageFindOverlay, SelectionLayer } from './pdf/PdfPageOverlays'
+import {
+  canUsePdfSpread,
+  computePdfDisplayWidth,
+  computePdfFitWidth,
+  computePdfLayout,
+  computePdfRenderDpr,
+  computeTrimTransform,
+  findRowAtY,
+} from './pdf/pdfLayout'
+import { collectTextLayerFindRects, countMatchesInText, normalizeQuery } from './reader/docFind'
+import type { FilterAnnotationsArgs, OnItemClickArgs } from 'react-pdf/dist/shared/types.js'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
-interface NormRect {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
-/**
- * 按行并块。pdf.js 文本层同一行会因字体切换产出互相覆盖的 span（整行一段，拉丁词与标点又单独成段），
- * Range.getClientRects() 因此拿到重叠矩形：半透明底色叠两处深浅不一，标点单独成段处还断开。
- * 规则：垂直重叠过半算同一行；同行内水平间隙小于 0.9 倍行高的并成一块——够吞下词间空格，不至于跨过双栏栏距。
- * aspect = 页高 / 页宽，把行高换算到与 x 同一量纲。
- */
-function mergeLineRects(rects: NormRect[], aspect: number): NormRect[] {
-  const out: NormRect[] = []
-  for (const r of [...rects].sort((a, b) => a.y - b.y || a.x - b.x)) {
-    let hit: NormRect | null = null
-    let hitGap = Infinity
-    for (const m of out) {
-      const overlapY = Math.min(m.y + m.h, r.y + r.h) - Math.max(m.y, r.y)
-      if (overlapY < Math.min(m.h, r.h) * 0.5) continue
-      const gap = Math.max(m.x, r.x) - Math.min(m.x + m.w, r.x + r.w)
-      if (gap < hitGap) {
-        hitGap = gap
-        hit = m
-      }
-    }
-    if (hit && hitGap <= Math.max(hit.h, r.h) * aspect * 0.9) {
-      const x = Math.min(hit.x, r.x)
-      const y = Math.min(hit.y, r.y)
-      const right = Math.max(hit.x + hit.w, r.x + r.w)
-      const bottom = Math.max(hit.y + hit.h, r.y + r.h)
-      hit.x = x
-      hit.y = y
-      hit.w = right - x
-      hit.h = bottom - y
-    } else {
-      out.push({ ...r })
-    }
-  }
-  return out
-}
-
-/** 选区 Range → 页内归一化并块矩形（wRect 为该页 wrapper 的矩形，换算成页的百分比） */
-function collectPageRects(range: Range, wRect: DOMRect): NormRect[] {
-  return mergeLineRects(
-    Array.from(range.getClientRects())
-      .map((r) => ({
-        x: (r.left - wRect.left) / wRect.width,
-        y: (r.top - wRect.top) / wRect.height,
-        w: r.width / wRect.width,
-        h: r.height / wRect.height,
-      }))
-      .filter((r) => r.w > 0.001 && r.h > 0.001),
-    wRect.height / wRect.width,
-  )
-}
-
-/**
- * 选区预览层：每页挂一个，自己订阅选区变化。
- * 刻意不放在 PdfReader 的 state 里——拖拽选区时 selectionchange 每帧都来，
- * 状态挂在页列表上会连带 5 个 <Page> 一起重渲染，向右拖动就能感到卡顿。
- * 矩形存成页内百分比，所以滚动也不失配，无需跟 scroll。
- */
-function SelectionLayer({ page }: { page: number }) {
-  const [rects, setRects] = useState<NormRect[] | null>(null)
-
-  useEffect(() => {
-    // 16ms 合并：与一帧同量级。刻意不用 rAF——页面不可见时 rAF 挂起，选区反馈会整个丢掉
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const sync = () => {
-      timer = undefined
-      const sel = window.getSelection()
-      const node = sel?.anchorNode
-      const owner = sel && !sel.isCollapsed && sel.rangeCount
-        ? ((node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null)
-        : null
-      if (!owner || Number(owner.dataset.page) !== page) {
-        setRects((prev) => (prev ? null : prev))
-        return
-      }
-      const next = collectPageRects(sel!.getRangeAt(0), owner.getBoundingClientRect())
-      setRects(next.length ? next : null)
-    }
-    const onSel = () => {
-      if (timer) return
-      timer = setTimeout(sync, 16)
-    }
-    document.addEventListener('selectionchange', onSel)
-    return () => {
-      clearTimeout(timer)
-      document.removeEventListener('selectionchange', onSel)
-    }
-  }, [page])
-
-  if (!rects) return null
-  return (
-    <div className="absolute inset-0 pointer-events-none">
-      {rects.map((r, i) => (
-        <span
-          key={i}
-          className="sel-preview absolute"
-          style={{
-            left: `${r.x * 100}%`,
-            top: `${r.y * 100}%`,
-            width: `${r.w * 100}%`,
-            height: `${r.h * 100}%`,
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-export interface PdfSelectionInfo {
-  text: string
-  page: number
-  rects: NormRect[]
-  /** 浮条锚点（容器坐标）：below=true 表示应显示在选区下方 */
-  popover: { left: number; y: number; below: boolean }
-}
+export type { PdfSelectionInfo }
 
 export interface TocItem {
   level: number
   title: string
   page: number
+  anchor?: string
 }
 
 interface Props {
@@ -157,6 +57,11 @@ interface Props {
   initialTarget: { page: number; offsetRatio: number } | null
   /** 双指缩放提交（页宽倍数，1 = 适配阅读区） */
   onZoom?: (zoom: number) => void
+  findQuery?: string
+  findActive?: number
+  onFindState?: (state: { total: number; searching: boolean }) => void
+  selectedAnnId?: string | null
+  onSelectAnnotation?: (sel: { ann: Annotation; popover: { left: number; y: number; below: boolean } } | null) => void
 }
 
 // 当前页前后各渲染几页：手机上一个 canvas 就是几 MB（dpr 3 时 1098×1420），
@@ -174,9 +79,19 @@ const PDF_OPTIONS = {
   standardFontDataUrl: 'pdfjs/standard_fonts/',
 }
 
+function filterPdfLinkAnnotations({ annotations }: FilterAnnotationsArgs) {
+  return annotations.filter((a) => {
+    if (a.subtype !== 'Link') return false
+    const item = a as { url?: string; unsafeUrl?: string }
+    if (item.url) return /^(https?:|mailto:|tel:)/i.test(item.url)
+    if (item.unsafeUrl) return false
+    return true
+  })
+}
+
 /** PDF 阅读器：精确占位 + 窗口渲染 + 文本层划词 + 区域截图 + 暗色反色 */
 export function PdfReader({
-  hash, localBlob, localScrollProgress, settings, annotations, jump, onSelection, shotMode, onShot, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onZoom,
+  hash, localBlob, localScrollProgress, settings, annotations, jump, onSelection, shotMode, onShot, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onZoom, findQuery = '', findActive = 0, onFindState, selectedAnnId, onSelectAnnotation,
 }: Props) {
   const [data, setData] = useState<Blob | null>(null)
   const [numPages, setNumPages] = useState(0)
@@ -208,45 +123,67 @@ export function PdfReader({
   const [reloadKey, setReloadKey] = useState(0)
   /** 已画完的页：用来做「模糊 → 清晰」的入场（画布出来前先给一块糊的占位） */
   const [drawn, setDrawn] = useState<Set<number>>(() => new Set())
+  const pdfProxyRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
+  const pageTextCacheRef = useRef<Map<number, string>>(new Map())
+  const pageWrappersRef = useRef<Map<number, HTMLElement>>(new Map())
+  const [textReadyTick, setTextReadyTick] = useState(0)
+  const [findMatches, setFindMatches] = useState<{ page: number; pageMatchIdx: number }[]>([])
+  const [pageFindRects, setPageFindRects] = useState<Map<number, NormRect[][]>>(() => new Map())
+  const pageFindRectsRef = useRef(pageFindRects)
+  pageFindRectsRef.current = pageFindRects
+  const lastScrolledFindRef = useRef<{ query: string; active: number; count: number } | null>(null)
+  const pendingRefineMatchRef = useRef<{ page: number; pageMatchIdx: number } | null>(null)
 
   useEffect(() => {
     let alive = true
+    pdfProxyRef.current = null
+    pageTextCacheRef.current.clear()
+    setData(null)
     void (localBlob ? Promise.resolve(localBlob) : getDocBlob(hash)).then(async (blob) => {
       if (!alive) return
       if (!blob) {
-        // 文件本体不在（被系统清理 / 换了设备只同步了元信息）：给可重试的错误，别让细条一直停在 8%
         setLoadError('找不到这个 PDF 的文件本体，可能已被系统清理。重新导入一份即可。')
         return
       }
-      const buf = blob
-      // 直接把 Blob 交给 react-pdf：之前传 ArrayBuffer 会被 worker transfer 成 detached，
-      // 组件因缩放/重渲染再次拿同一 buffer 时就会抛 "Cannot perform Construct on a detached ArrayBuffer"。
-      // 重试时组件可能已切到别篇，别把旧文件塞进去
-      if (alive) setData(buf)
+      if (alive) setData(blob)
     })
     return () => { alive = false }
   }, [hash, localBlob, reloadKey])
 
-  // 正文宽度滑块同样作用于 PDF：100% 铺满画布，50% 收到一半；zoom 再在此之上倍乘。
-  // 手机上不提供宽度设置，直接按屏宽适配；桌面保留按文档记忆的宽度。
-  const widthRatio = phoneLayout ? 1 : Math.min(1, Math.max(0.5, (settings.widthPct ?? 90) / 100))
-  const fitW = Math.max(180, (containerW - 24) * widthRatio)
-  const dispW = Math.max(180, Math.min(Math.round(fitW * zoom), 2600))
+  const spreadActive = canUsePdfSpread(settings.pdfSpread, containerW, phoneLayout)
+  const trimmed = Boolean(settings.pdfTrimMargins)
+  const fitW = computePdfFitWidth(containerW, phoneLayout, settings.widthPct, spreadActive)
+  const dispW = computePdfDisplayWidth(fitW, zoom)
+  const [rasterW, setRasterW] = useState(dispW)
+  const prevDocHashRef = useRef(hash)
+  useEffect(() => {
+    if (prevDocHashRef.current !== hash || !numPages) {
+      prevDocHashRef.current = hash
+      setRasterW(dispW)
+      return
+    }
+    if (dispW === rasterW) return
+    const id = window.setTimeout(() => setRasterW(dispW), 160)
+    return () => window.clearTimeout(id)
+  }, [hash, numPages, dispW, rasterW])
+
   // 页宽很大时按比例降低画布 DPR，避免 2600px 宽、dpr2 的 canvas 把手机内存和渲染拖垮
-  const renderDpr = Math.max(1, Math.min(PDF_DPR, 3000 / dispW))
-  const pageH = (i: number) => (ratios[i] ? Math.round(dispW * ratios[i]) : Math.round(dispW * 1.414))
+  const renderDpr = computePdfRenderDpr(rasterW, PDF_DPR)
+  const previewScale = rasterW > 0 ? dispW / rasterW : 1
+  const { trimTransform, previewTransform } = computeTrimTransform(trimmed, previewScale)
+  const pageH = useCallback(
+    (i: number) => (ratios[i] ? Math.round(dispW * ratios[i]) : Math.round(dispW * 1.414)),
+    [dispW, ratios],
+  )
+  const layoutMetrics = useMemo(
+    () => computePdfLayout(numPages, ratios, dispW, spreadActive),
+    [numPages, ratios, dispW, spreadActive],
+  )
   const offsets = useRef<number[]>([])
   const layout = useCallback(() => {
-    const arr: number[] = []
-    let acc = 0
-    for (let i = 0; i < numPages; i++) {
-      arr.push(acc)
-      acc += pageH(i) + 16
-    }
-    offsets.current = arr
-    return acc
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numPages, dispW, ratios])
+    offsets.current = layoutMetrics.pageOffsets
+    return layoutMetrics.totalHeight
+  }, [layoutMetrics])
 
   usePinch(scrollRef, {
     onStart: () => {
@@ -259,7 +196,6 @@ export function PdfReader({
       const box = transformRef.current
       const el = scrollRef.current
       if (!box || !el || Math.abs(p - 1) < 0.005) return
-      // 以双指中心为缩放锚点：先把视口坐标换算成内容坐标，手感不会飘
       const rect = el.getBoundingClientRect()
       const ox = mid.x - rect.left + el.scrollLeft
       const oy = mid.y - rect.top + el.scrollTop
@@ -279,8 +215,6 @@ export function PdfReader({
         const max = el.scrollHeight - el.clientHeight
         zoomAnchor.current = { ratio: max > 0 ? el.scrollTop / max : 0 }
       }
-      // 保留当前 transform 到新页宽渲染完成；useLayoutEffect([dispW]) 会在 paint 前复位，
-      // 避免「先缩回 1x 再变大」造成的那一下闪屏
       if (onZoom) {
         onZoom(next)
       } else if (box) {
@@ -290,8 +224,6 @@ export function PdfReader({
     },
   })
 
-  // 页宽变了之后把阅读位置按比例放回去，缩放不会把人甩到别处；
-  // 同时在 paint 前清掉手势 transform，让新页宽直接接管。
   useLayoutEffect(() => {
     const box = transformRef.current
     if (box) {
@@ -307,21 +239,18 @@ export function PdfReader({
       const max = el.scrollHeight - el.clientHeight
       el.scrollTop = Math.max(0, anchor.ratio * max)
     }
-    // 放大后页宽超过屏幕时，横向落在页面正中，别一上来只看到左半页
     el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2)
-  }, [dispW])
+  }, [dispW, scrollRef])
 
-  // 首屏 containerW 可能先于页数/比例就绪：等页面真正撑开后再横向居中一次。
-  // 只跟 numPages / ratios / dispW 跑，用户自己横向拖动后不会被打断。
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !numPages) return
     let raf1 = 0
     let raf2 = 0
-    const center = () => { el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2) }
+    const centerScroll = () => { el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2) }
     raf1 = requestAnimationFrame(() => {
-      center()
-      raf2 = requestAnimationFrame(center)
+      centerScroll()
+      raf2 = requestAnimationFrame(centerScroll)
     })
     return () => {
       cancelAnimationFrame(raf1)
@@ -329,12 +258,10 @@ export function PdfReader({
     }
   }, [numPages, ratios, dispW, scrollRef])
 
-  // 页宽变化后旧 canvas 先淡出成模糊占位，等新画布画完再淡入，避免硬闪
   useLayoutEffect(() => {
     setDrawn(new Set())
-  }, [dispW])
+  }, [rasterW])
 
-  // 容器宽度跟踪
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -345,7 +272,6 @@ export function PdfReader({
     return () => ro.disconnect()
   }, [scrollRef])
 
-  // 横竖屏 / 桌面窗口缩放时同步手机/桌面排版
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
     const sync = () => setPhoneLayout(mq.matches)
@@ -356,10 +282,8 @@ export function PdfReader({
 
   const onLoad = useCallback(
     async (pdf: import('pdfjs-dist').PDFDocumentProxy) => {
-      // 整个结构解析都包在 try 里：文档能打开但页面读不出来（扫描件缺对象、页码表坏了）时，
-      // pdf.getPage 会抛「Invalid page request」。以前这个异常没人接，界面就永远是空白的一页，
-      // 既不报错也没法重试。现在统一收成可重试的错误卡。
       try {
+        pdfProxyRef.current = pdf
         const n = pdf.numPages
         if (!n || n < 1) throw new Error('这份 PDF 里没有可显示的页面')
         const ratioOf = async (i: number) => {
@@ -367,11 +291,6 @@ export function PdfReader({
           const vp = page.getViewport({ scale: 1 })
           return vp.height / vp.width
         }
-        // 页宽高比（仅元数据，不渲染）必须和 numPages 一次性提交：分两次 setState 会先用猜想的
-        // 1.414 画一遍全部占位，真实比例到达后整篇重排 —— 实测 14 页文档每页挪 44px、总高 7794→7178，
-        // 而恢复阅读位置又排在重排之后，于是打开文件先看见首页再瞬移到上次阅读处，就是那下抖动。
-        // 但 300 页逐个 getPage 要 1.2s，所以先抽样：全篇同尺寸（绝大多数 PDF）就立刻出首帧，
-        // 后台再量全篇，真出现混合尺寸才补一次提交；抽样不一致时宁可等量完，保证首帧版面就是对的。
         const same = (a: number, b: number) => Math.abs(a - b) < 1e-3
         const allIdx = Array.from({ length: n }, (_, i) => i + 1)
         const probe = [...new Set([1, n, ...[0.25, 0.5, 0.75].map(fraction => Math.max(1, Math.round(n * fraction)))])].sort((a, b) => a - b)
@@ -389,7 +308,6 @@ export function PdfReader({
           commit(await Promise.all(allIdx.map(ratioOf)))
         }
 
-        // 大纲解析：dest → 页码
         const outlineItems: TocItem[] = []
         try {
           const outline = await pdf.getOutline()
@@ -415,7 +333,6 @@ export function PdfReader({
         } catch {
           /* 无大纲 */
         }
-        // 结构量完了：细条走到头再收
         setLoadPct(1)
         onLoaded(n, outlineItems)
       } catch (e) {
@@ -425,32 +342,24 @@ export function PdfReader({
     [onLoaded],
   )
 
-  // 滚动：双坐标 + 进度
   const onScroll = useCallback(() => {
     const container = scrollRef.current
     if (!container || !numPages) return
-    layout() // 先保证占位偏移表已填充（首次滚动前无人调用过 layout）
+    layout()
     const top = container.scrollTop
     const maxScroll = container.scrollHeight - container.clientHeight
     const pct = maxScroll > 0 ? Math.min(1, top / maxScroll) : 0
 
-    // 二分找当前页（视口上 1/3 处）
     const probe = top + container.clientHeight * 0.3
-    let lo = 0
-    let hi = offsets.current.length - 1
-    let current = 0
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1
-      if (offsets.current[mid] <= probe) {
-        current = mid
-        lo = mid + 1
-      } else hi = mid - 1
-    }
-    setCenter(current + 1)
+    const rowIdx = findRowAtY(layoutMetrics.rows, probe)
+    const row = layoutMetrics.rows[rowIdx]
+    const currentPage = row?.pages[0] ?? 1
+    const current = currentPage - 1
+    setCenter(currentPage)
     const intPct = Math.round(pct * 100)
     if (intPct !== lastReportedPct.current) {
       lastReportedPct.current = intPct
-      onProgress(current + 1, intPct / 100)
+      onProgress(currentPage, intPct / 100)
     }
 
     const delta = Math.abs(top - lastScrollTop.current)
@@ -459,17 +368,15 @@ export function PdfReader({
     if (now - lastWriteRef.current < 500) return
     lastWriteRef.current = now
     if (delta < 3000) {
-      const pageTop = offsets.current[current]
-      const pageHpx = pageH(current)
+      const pageTop = offsets.current[current] ?? 0
+      const pageHpx = row?.height || pageH(current)
       const offsetRatio = pageHpx > 0 ? Math.min(1, Math.max(0, (probe - pageTop) / pageHpx)) : 0
-      void saveScrollAndProgress(hash, top, { kind: 'pdf', page: current + 1, offsetRatio }, pct)
+      void saveScrollAndProgress(hash, top, { kind: 'pdf', page: currentPage, offsetRatio }, pct)
     } else {
       void saveScrollAndProgress(hash, top, null, pct)
     }
-  }, [hash, numPages, onProgress, scrollRef, layout, pageH])
+  }, [hash, numPages, onProgress, scrollRef, layout, layoutMetrics.rows, pageH])
 
-  // 首次挂载：恢复深度进度（与保存基准一致：视口上 1/3）
-  // 用 layout effect：滚动必须在浏览器绘制这一帧之前落位，否则先闪一下首页再瞬移到上次阅读处
   useLayoutEffect(() => {
     if (restoredRef.current || (!initialTarget && localScrollProgress == null) || !numPages || !ratios.length) return
     const container = scrollRef.current
@@ -486,7 +393,6 @@ export function PdfReader({
     onRestored()
   }, [initialTarget, localScrollProgress, numPages, ratios, scrollRef, onRestored, layout, pageH])
 
-  // 跳转（目录/批注/深链）
   useEffect(() => {
     if (!jump || jump.ts === lastJumpTs.current || !numPages || !ratios.length) return
     lastJumpTs.current = jump.ts
@@ -504,42 +410,18 @@ export function PdfReader({
     }
   }, [jump, numPages, ratios, scrollRef, layout, pageH])
 
-  // 划词检测（mouseup 与移动端 selectionchange/touchend 共用）
-  const computePageSelection = useCallback((page: number, wrapper: HTMLElement): PdfSelectionInfo | null => {
-    const sel = window.getSelection()
-    const container = scrollRef.current
-    if (!sel || sel.isCollapsed || !container) return null
-    const text = sel.toString().trim()
-    if (!text) return null
-    const range = sel.getRangeAt(0)
-    const wRect = wrapper.getBoundingClientRect()
-    const rects = collectPageRects(range, wRect)
-    if (!rects.length) return null
-    const last = rects[rects.length - 1]
-    const firstTop = rects[0].y * wRect.height + wRect.top
-    const lastBottom = (last.y + last.h) * wRect.height + wRect.top
-    const below = firstTop < 90
-    return {
-      text,
-      page,
-      rects,
-      popover: {
-        left: (last.x + last.w / 2) * wRect.width + wRect.left,
-        y: below ? lastBottom : firstTop,
-        below,
-      },
-    }
-  }, [scrollRef])
-
   const onPageMouseUp = useCallback(
     (page: number, wrapper: HTMLElement) => {
-      onSelection(computePageSelection(page, wrapper))
+      onSelectAnnotation?.(null)
+      onSelection(readPageSelection(page, wrapper, scrollRef.current))
     },
-    [onSelection, computePageSelection],
+    [onSelection, onSelectAnnotation, scrollRef],
   )
 
-  // 移动端长按选词没有 mouseup，靠 selectionchange / touchend 补一次；
-  // 250ms 防抖让浮条不在拖拽过程中反复跳动（拖拽中的视觉反馈由 SelectionLayer 逐帧给）
+  useEffect(() => {
+    if (shotMode) onSelectAnnotation?.(null)
+  }, [shotMode, onSelectAnnotation])
+
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
     const debounced = () => {
@@ -550,7 +432,7 @@ export function PdfReader({
         const pageEl = sel && !sel.isCollapsed
           ? ((node instanceof Element ? node : node?.parentElement)?.closest('[data-page]') as HTMLElement | null)
           : null
-        onSelection(pageEl ? computePageSelection(Number(pageEl.dataset.page), pageEl) : null)
+        onSelection(pageEl ? readPageSelection(Number(pageEl.dataset.page), pageEl, scrollRef.current) : null)
       }, 250)
     }
     document.addEventListener('selectionchange', debounced)
@@ -560,30 +442,7 @@ export function PdfReader({
       document.removeEventListener('selectionchange', debounced)
       document.removeEventListener('touchend', debounced)
     }
-  }, [computePageSelection, onSelection])
-
-  // —— 区域截图（M2.5）：从渲染画布裁剪矩形区域 ——
-  const cropCanvas = useCallback((wrapper: HTMLElement, rect: { x: number; y: number; w: number; h: number }): string | null => {
-    const canvas = wrapper.querySelector('canvas')
-    if (!canvas) return null
-    const sx = rect.x * canvas.width
-    const sy = rect.y * canvas.height
-    const sw = Math.max(2, rect.w * canvas.width)
-    const sh = Math.max(2, rect.h * canvas.height)
-    const outW = Math.min(480, Math.round(sw))
-    const outH = Math.max(2, Math.round(sh * (outW / sw)))
-    const out = document.createElement('canvas')
-    out.width = outW
-    out.height = outH
-    const ctx = out.getContext('2d')
-    if (!ctx) return null
-    ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, outW, outH)
-    try {
-      return out.toDataURL('image/jpeg', 0.82)
-    } catch {
-      return null
-    }
-  }, [])
+  }, [onSelection, scrollRef])
 
   const onShotMouseDown = useCallback((e: React.MouseEvent, page: number, wrapper: HTMLElement) => {
     if (!shotMode) return
@@ -607,21 +466,137 @@ export function PdfReader({
     const w = Math.abs(drag.x1 - drag.x0)
     const h = Math.abs(drag.y1 - drag.y0)
     setDrag(null)
-    if (w < 0.02 || h < 0.02) return // 过小的框选视为误触
-    const img = cropCanvas(wrapper, { x, y, w, h })
+    if (w < 0.02 || h < 0.02) return
+    const img = cropPdfCanvas(wrapper, { x, y, w, h })
     if (img && onShot) {
       onShot({ page, rects: [{ x, y, w, h }], img })
     }
-    // 清掉可能残留的文本选择
     window.getSelection()?.removeAllRanges()
-  }, [shotMode, drag, cropCanvas, onShot])
+  }, [shotMode, drag, onShot])
 
+  const [pageDraft, setPageDraft] = useState<string | null>(null)
   const renderWindow = containerW > 0 && containerW < 768 ? RENDER_WINDOW_NARROW : RENDER_WINDOW_WIDE
-  const lo = Math.max(1, center - renderWindow)
-  const hi = Math.min(numPages, center + renderWindow)
+  const lo = Math.max(1, center - renderWindow - (spreadActive ? 1 : 0))
+  const hi = Math.min(numPages, center + renderWindow + (spreadActive ? 1 : 0))
   const dark = settings.theme === 'night' || settings.theme === 'dusk'
 
-  // 历史批注存的是逐 span 的碎矩形，渲染前同样并一次块（并块幂等，新批注无副作用）
+  const scrollToPdfPage = useCallback((pageNumber: number) => {
+    const container = scrollRef.current
+    if (!container || !numPages || !ratios.length) return
+    const target = Math.min(numPages, Math.max(1, pageNumber))
+    layout()
+    container.scrollTo({ top: Math.max(0, (offsets.current[target - 1] ?? 0) - 12), behavior: 'smooth' })
+    setCenter(target)
+  }, [numPages, ratios.length, layout, scrollRef])
+
+  const onPdfItemClick = useCallback(({ pageNumber }: OnItemClickArgs) => {
+    if (shotMode) return
+    if (pageNumber) scrollToPdfPage(pageNumber)
+  }, [shotMode, scrollToPdfPage])
+
+  const onFindStateRef = useRef(onFindState)
+  onFindStateRef.current = onFindState
+
+  // 逐页扫描 PDF 文本并缓存，用于页内查找计数与跨页跳转
+  useEffect(() => {
+    const pdf = pdfProxyRef.current
+    if (!normalizeQuery(findQuery) || !numPages || !pdf) {
+      setFindMatches([])
+      setPageFindRects(new Map())
+      lastScrolledFindRef.current = null
+      pendingRefineMatchRef.current = null
+      onFindStateRef.current?.({ total: 0, searching: false })
+      return
+    }
+    let alive = true
+    onFindStateRef.current?.({ total: 0, searching: true })
+    void (async () => {
+      const hits: { page: number; pageMatchIdx: number }[] = []
+      for (let p = 1; p <= numPages; p++) {
+        if (!alive) return
+        let text = pageTextCacheRef.current.get(p)
+        if (text == null) {
+          try {
+            const page = await pdf.getPage(p)
+            const tc = await page.getTextContent()
+            text = tc.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? '\n' : '') : '')).join('')
+          } catch {
+            text = ''
+          }
+          pageTextCacheRef.current.set(p, text)
+        }
+        const count = countMatchesInText(text, findQuery)
+        for (let k = 0; k < count; k++) hits.push({ page: p, pageMatchIdx: k })
+        if (p % 15 === 0) await new Promise<void>((r) => setTimeout(r, 0))
+      }
+      if (!alive) return
+      setFindMatches(hits)
+      onFindStateRef.current?.({ total: hits.length, searching: false })
+    })()
+    return () => { alive = false }
+  }, [findQuery, numPages])
+
+  // 为渲染窗口内含命中的页面计算精确高亮矩形
+  useEffect(() => {
+    if (!normalizeQuery(findQuery) || !findMatches.length) {
+      setPageFindRects((prev) => (prev.size ? new Map() : prev))
+      return
+    }
+    const pagesWithHits = new Set<number>()
+    for (const m of findMatches) if (m.page >= lo && m.page <= hi) pagesWithHits.add(m.page)
+    const next = new Map<number, NormRect[][]>()
+    for (const p of pagesWithHits) {
+      const wrapper = pageWrappersRef.current.get(p)
+      const textLayer = wrapper?.querySelector('.textLayer')
+      if (!wrapper || !textLayer) continue
+      const rects = collectTextLayerFindRects(textLayer, wrapper.getBoundingClientRect(), findQuery)
+      if (rects.length) next.set(p, rects)
+    }
+    setPageFindRects(next)
+  }, [findQuery, findMatches, lo, hi, dispW, textReadyTick])
+
+  const activeFindMatch = findMatches.length
+    ? findMatches[Math.min(Math.max(0, findActive), findMatches.length - 1)]
+    : null
+
+  // 切换到新命中处：先滚到目标页，等 textLayer 算好矩形后再微调到该行
+  useEffect(() => {
+    if (!findMatches.length || !numPages || !ratios.length) return
+    const idx = Math.min(Math.max(0, findActive), findMatches.length - 1)
+    const prev = lastScrolledFindRef.current
+    if (prev && prev.query === findQuery && prev.active === idx && prev.count === findMatches.length) return
+    lastScrolledFindRef.current = { query: findQuery, active: idx, count: findMatches.length }
+    const match = findMatches[idx]
+    const container = scrollRef.current
+    if (!container) return
+    layout()
+    const pageTop = offsets.current[match.page - 1] ?? 0
+    const exactRect = pageFindRectsRef.current.get(match.page)?.[match.pageMatchIdx]?.[0]
+    if (exactRect) {
+      pendingRefineMatchRef.current = null
+      const y = pageTop + exactRect.y * pageH(match.page - 1) - container.clientHeight * 0.35
+      container.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
+    } else {
+      pendingRefineMatchRef.current = { page: match.page, pageMatchIdx: match.pageMatchIdx }
+      container.scrollTo({ top: Math.max(0, pageTop - 12), behavior: 'smooth' })
+      setCenter(match.page)
+    }
+  }, [findQuery, findActive, findMatches, numPages, ratios.length, layout, pageH, scrollRef])
+
+  useEffect(() => {
+    const pending = pendingRefineMatchRef.current
+    if (!pending) return
+    const exactRect = pageFindRects.get(pending.page)?.[pending.pageMatchIdx]?.[0]
+    if (!exactRect) return
+    pendingRefineMatchRef.current = null
+    const container = scrollRef.current
+    if (!container) return
+    layout()
+    const pageTop = offsets.current[pending.page - 1] ?? 0
+    const y = pageTop + exactRect.y * pageH(pending.page - 1) - container.clientHeight * 0.35
+    container.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
+  }, [pageFindRects, layout, pageH, scrollRef])
+
   const annRects = useMemo(() => {
     const m = new Map<string, NormRect[]>()
     for (const a of annotations) {
@@ -631,9 +606,19 @@ export function PdfReader({
     return m
   }, [annotations, ratios])
 
+  const annotationsByPage = useMemo(() => {
+    const m = new Map<number, Annotation[]>()
+    for (const a of annotations) {
+      if (!a.page || !a.rects) continue
+      const list = m.get(a.page) ?? []
+      list.push(a)
+      m.set(a.page, list)
+    }
+    return m
+  }, [annotations])
+
   return (
     <div className="relative h-full">
-      {/* 顶部细条：先快后慢地走，解析完 / 出错就收起（不占阅读空间，2px） */}
       {(loadPct < 1 || data === null) && !loadError && (
         <div className="absolute inset-x-0 top-0 z-20 h-[2px] bg-transparent pointer-events-none" aria-hidden>
           <div
@@ -648,7 +633,6 @@ export function PdfReader({
       )}
 
       {loadError && (
-        // 就地重试：不拆整页，只把内容区换成一张可重试的卡片
         <div className="h-full grid place-items-center px-6">
           <div className="max-w-sm text-center">
             <p className="text-[15px] font-semibold">这份 PDF 打不开</p>
@@ -672,7 +656,19 @@ export function PdfReader({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        // pan-x pan-y：禁掉浏览器整页缩放，横竖滚动交给容器自己；双指手势由 usePinch 接
+        onClick={(e) => {
+          const a = (e.target as Element).closest?.('.annotationLayer a[href]')
+          if (!a) return
+          const href = a.getAttribute('href') ?? ''
+          if (!href || href.startsWith('#')) {
+            e.preventDefault()
+          } else if (/^(https?:|mailto:|tel:)/i.test(href)) {
+            e.preventDefault()
+            openExternal(href)
+          } else {
+            e.preventDefault()
+          }
+        }}
         style={{ touchAction: 'pan-x pan-y', display: loadError ? 'none' : undefined }}
         className="h-full overflow-auto overscroll-contain bg-surface-3/45"
       >
@@ -681,106 +677,170 @@ export function PdfReader({
             key={reloadKey}
             file={data ?? undefined}
             onLoadSuccess={onLoad}
+            onItemClick={onPdfItemClick}
             onLoadProgress={({ loaded, total }) => {
               if (total > 0) setLoadPct(Math.min(0.98, loaded / total))
             }}
             onLoadError={(e) => setLoadError(e?.message || '文件可能已损坏，或格式不受支持')}
             loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13px]">正在载入 PDF…</div>}
             error={null}
-            // min-w-full + w-max：页比屏幕窄时居中；放大到超出屏幕时整页铺开，
-            // 左侧不会因为 flex 居中而跑到不可滚动的负坐标里
-            className="flex flex-col items-center py-5 gap-5 min-w-full w-max"
+            className="flex flex-col items-center py-5 gap-4 min-w-full w-max"
             options={PDF_OPTIONS}
           >
         {numPages > 0 &&
-          Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
-            const inWindow = p >= lo && p <= hi
-            return (
-              // mx-auto：页宽小于容器时居中；放大到超出容器时从左侧开始，横向滚动才够得着
-              <div key={p} className="flex flex-col items-center gap-1 mx-auto">
-                <div
-                  data-page={p}
-                  style={{
-                    width: dispW,
-                    height: pageH(p - 1),
-                    // 画布还没画出来时先糊着：比一块死白更像「内容正在显影」
-                    filter: inWindow && !drawn.has(p) ? 'blur(10px)' : undefined,
-                    opacity: inWindow && !drawn.has(p) ? 0.55 : 1,
-                    transition: 'filter 260ms ease-out, opacity 260ms ease-out',
-                  }}
-                  className={`relative rounded-[6px] overflow-hidden bg-white ring-1 ring-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_18px_44px_-26px_rgba(0,0,0,0.4)] ${dark ? 'pdf-dark' : ''} ${shotMode ? 'cursor-crosshair select-none' : ''}`}
-                  onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
-                  onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
-                  onMouseMove={(e) => onShotMouseMove(e, p, e.currentTarget)}
-                >
-                  {inWindow ? (
-                    <Page
-                      pageNumber={p}
-                      width={dispW}
-                      devicePixelRatio={renderDpr}
-                      renderTextLayer
-                      renderAnnotationLayer={false}
-                      loading=""
-                      onRenderSuccess={() => setDrawn((s) => (s.has(p) ? s : new Set(s).add(p)))}
-                    />
-                  ) : null}
-                  {/* 截图框选预览 */}
-                  {drag && drag.page === p && (
+          layoutMetrics.rows.map((row, rowIdx) => (
+            <div key={rowIdx} className="flex items-start justify-center gap-3 mx-auto">
+              {row.pages.map((p) => {
+                const inWindow = p >= lo && p <= hi
+                const pageAnns = annotationsByPage.get(p)
+                const findRects = pageFindRects.get(p)
+                const activeIdxOnPage = activeFindMatch?.page === p ? activeFindMatch.pageMatchIdx : -1
+                const slotH = pageH(p - 1)
+                const rasterH = ratios[p - 1] ? Math.round(rasterW * ratios[p - 1]) : Math.round(rasterW * 1.414)
+                return (
+                  <div key={p} className="flex flex-col items-center gap-1">
                     <div
-                      className="absolute border-2 border-primary bg-primary/10 pointer-events-none z-10"
-                      style={{
-                        left: `${Math.min(drag.x0, drag.x1) * 100}%`,
-                        top: `${Math.min(drag.y0, drag.y1) * 100}%`,
-                        width: `${Math.abs(drag.x1 - drag.x0) * 100}%`,
-                        height: `${Math.abs(drag.y1 - drag.y0) * 100}%`,
-                      }}
-                    />
-                  )}
-                  {/* 批注叠层：文字高亮填充 / 截图批注描边 */}
-                  {annotations
-                    .filter((a) => a.page === p && a.rects)
-                    .map((a) => {
-                      const isShot = a.kind === 'shot'
-                      const colorCls = a.color === 'yellow' ? 'hl-yellow' : a.color === 'green' ? 'hl-green' : a.color === 'blue' ? 'hl-blue' : 'hl-red'
-                      return (
+                      data-page-slot={p}
+                      style={{ width: dispW, height: slotH }}
+                      className={`relative rounded-[6px] overflow-hidden bg-white ring-1 ring-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_18px_44px_-26px_rgba(0,0,0,0.4)] ${dark ? 'pdf-dark' : ''}`}
+                    >
+                      <div
+                        className="w-full h-full origin-center"
+                        style={trimTransform ? { transform: trimTransform } : undefined}
+                      >
                         <div
-                          key={a.id}
-                          data-ann={a.id}
-                          className={`absolute inset-0 pointer-events-none ${flashId === a.id ? 'ann-flash' : ''}`}
-                          style={{ ['--ann-opacity' as string]: '0.4' }}
+                          data-page={p}
+                          ref={(el) => {
+                            if (el) pageWrappersRef.current.set(p, el)
+                            else pageWrappersRef.current.delete(p)
+                          }}
+                          style={{
+                            width: rasterW,
+                            height: rasterH,
+                            transform: previewTransform,
+                            transformOrigin: 'top left',
+                            filter: inWindow && !drawn.has(p) ? 'blur(10px)' : undefined,
+                            opacity: inWindow && !drawn.has(p) ? 0.55 : 1,
+                            transition: 'filter 260ms ease-out, opacity 260ms ease-out',
+                          }}
+                          className={`relative ${shotMode ? 'cursor-crosshair select-none' : ''}`}
+                          onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
+                          onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
+                          onMouseMove={(e) => onShotMouseMove(e, p, e.currentTarget)}
                         >
-                          {(annRects.get(a.id) ?? a.rects!).map((r, ri) => (
-                            <span
-                              key={ri}
-                              className={cn('absolute', isShot ? 'border-2 border-primary' : colorCls)}
+                          {inWindow ? (
+                            <Page
+                              pageNumber={p}
+                              width={rasterW}
+                              devicePixelRatio={renderDpr}
+                              renderTextLayer
+                              renderAnnotationLayer={!shotMode}
+                              filterAnnotations={filterPdfLinkAnnotations}
+                              loading=""
+                              onRenderTextLayerSuccess={() => setTextReadyTick((t) => t + 1)}
+                              onRenderSuccess={() => setDrawn((s) => (s.has(p) ? s : new Set(s).add(p)))}
+                            />
+                          ) : null}
+                          {drag && drag.page === p && (
+                            <div
+                              className="absolute border-2 border-primary bg-primary/10 pointer-events-none z-10"
                               style={{
-                                left: `${r.x * 100}%`,
-                                top: `${r.y * 100}%`,
-                                width: `${r.w * 100}%`,
-                                height: `${r.h * 100}%`,
-                                ...(isShot ? { background: 'color-mix(in srgb, var(--primary) 8%, transparent)' } : {}),
+                                left: `${Math.min(drag.x0, drag.x1) * 100}%`,
+                                top: `${Math.min(drag.y0, drag.y1) * 100}%`,
+                                width: `${Math.abs(drag.x1 - drag.x0) * 100}%`,
+                                height: `${Math.abs(drag.y1 - drag.y0) * 100}%`,
                               }}
                             />
-                          ))}
+                          )}
+                          {findRects && <PageFindOverlay matches={findRects} activeMatchIdx={activeIdxOnPage} />}
+                          {pageAnns && (
+                            <PageAnnotationsOverlay
+                              annotations={pageAnns}
+                              annRects={annRects}
+                              flashId={flashId}
+                              interactive={!shotMode && !!onSelectAnnotation}
+                              selectedId={selectedAnnId}
+                              onSelectAnn={(ann, rect) => {
+                                const below = rect.top < 120
+                                onSelectAnnotation?.({
+                                  ann,
+                                  popover: { left: rect.left + rect.width / 2, y: below ? rect.bottom : rect.top, below },
+                                })
+                              }}
+                            />
+                          )}
+                          {!shotMode && <SelectionLayer page={p} />}
                         </div>
-                      )
-                    })}
-                  {/* 选区预览：独立组件，拖拽时只有它自己重渲染 */}
-                  {!shotMode && <SelectionLayer page={p} />}
-                </div>
-                <span className="text-[10.5px] tabular-nums tracking-[0.04em] text-on-surface-2/80 select-none mt-0.5">
-                  {p} / {numPages}
-                </span>
-              </div>
-            )
-          })}
+                      </div>
+                    </div>
+                    <span className="text-[10.5px] tabular-nums tracking-[0.04em] text-on-surface-2/80 select-none mt-0.5">
+                      {p} / {numPages}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          ))}
           </Document>
         </div>
       </div>
+      {numPages > 0 && (
+        <div className="pdf-floating-pill absolute bottom-3 left-3 z-10 flex items-center gap-0.5 h-8 px-1.5 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur">
+          <button
+            type="button"
+            aria-label="上一页"
+            disabled={center <= 1}
+            onClick={() => scrollToPdfPage(center - 1)}
+            className="grid place-items-center w-6 h-6 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <form
+            className="flex items-center gap-1 px-1"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const raw = pageDraft ?? String(center)
+              const n = Number(raw)
+              setPageDraft(null)
+              if (Number.isFinite(n) && n >= 1) scrollToPdfPage(Math.min(numPages, Math.round(n)))
+            }}
+          >
+            <input
+              type="text"
+              inputMode="numeric"
+              aria-label="跳转页码"
+              value={pageDraft ?? String(center)}
+              onFocus={(e) => {
+                setPageDraft(String(center))
+                e.currentTarget.select()
+              }}
+              onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ''))}
+              onBlur={() => {
+                if (pageDraft !== null && pageDraft !== '') {
+                  const n = Number(pageDraft)
+                  if (Number.isFinite(n) && n >= 1) scrollToPdfPage(Math.min(numPages, Math.round(n)))
+                }
+                setPageDraft(null)
+              }}
+              className="w-8 bg-transparent text-center tabular-nums text-on-surface font-medium outline-none focus:bg-surface-3/70 rounded"
+            />
+            <span className="tabular-nums text-on-surface-2/80 select-none">/ {numPages}</span>
+          </form>
+          <button
+            type="button"
+            aria-label="下一页"
+            disabled={center >= numPages}
+            onClick={() => scrollToPdfPage(center + 1)}
+            className="grid place-items-center w-6 h-6 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
       {zoom !== 1 && (
         <button
           onClick={() => onZoom?.(1)}
-          className="absolute bottom-3 right-3 z-10 h-8 px-3 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur cursor-pointer"
+          className="pdf-floating-pill absolute bottom-3 right-3 z-10 h-8 px-3 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur cursor-pointer"
         >
           {Math.round(zoom * 100)}% · 重置
         </button>

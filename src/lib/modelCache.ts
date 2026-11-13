@@ -200,20 +200,37 @@ export async function pruneModel(id: string, version: string, sha256: string): P
 
 /** 清掉全部模型缓存，返回释放的字节数 */
 export async function clearModelCache(): Promise<number> {
+  if (typeof caches === 'undefined') return 0
   const freed = await modelCacheBytes()
   await caches.delete(CACHE_NAME)
   return freed
 }
 
+async function responseByteLength(res: Response): Promise<number> {
+  const markedLen = Number(res.headers.get(LENGTH_HEADER) ?? res.headers.get('content-length'))
+  if (Number.isFinite(markedLen) && markedLen > 0) return markedLen
+  const reader = res.body?.getReader()
+  if (reader) {
+    let total = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) total += value.byteLength
+    }
+    return total
+  }
+  return (await res.clone().arrayBuffer()).byteLength
+}
+
 /** 当前模型缓存占用（字节） */
 export async function modelCacheBytes(): Promise<number> {
-  if (!(await caches.has(CACHE_NAME))) return 0
+  if (typeof caches === 'undefined' || !(await caches.has(CACHE_NAME))) return 0
   const c = await cache()
   const keys = await c.keys()
   let total = 0
   for (const req of keys) {
     const res = await c.match(req)
-    if (res) total += (await res.clone().arrayBuffer()).byteLength
+    if (res) total += await responseByteLength(res)
   }
   return total
 }
