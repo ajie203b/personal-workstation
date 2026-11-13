@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-12T13:47:48.790Z",
+  "generatedAt": "2026-11-13T13:08:33.667Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
@@ -64,6 +64,10 @@
       "score": 53.9
     },
     {
+      "name": "Gemini 4 Hydrogen (Xhigh)",
+      "score": 53.9
+    },
+    {
       "name": "GPT-6.1 Sol (Xhigh)",
       "score": 52.5
     },
@@ -78,6 +82,10 @@
     {
       "name": "GPT-6.1 Terra (Max)",
       "score": 51.3
+    },
+    {
+      "name": "Gemini 4 Hydrogen (High)",
+      "score": 50.8
     },
     {
       "name": "Gemini 4 Argon (High)",
@@ -114,14 +122,6 @@
     {
       "name": "Kimi K3.1 Pro",
       "score": 46.5
-    },
-    {
-      "name": "GPT-6.1 Sol (Medium)",
-      "score": 46.3
-    },
-    {
-      "name": "GPT-6.1 Terra (Xhigh)",
-      "score": 45.3
     }
   ]
 }
