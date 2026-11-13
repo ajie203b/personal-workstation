@@ -33,7 +33,7 @@ struct PageHistory {
 impl PageHistory {
     fn record(&mut self, url: &Url) {
         if !browser_url(url) { return; }
-        if !matches!(url.domain(), Some("annas-archive.gd" | "annas-archive.gl" | "annas-archive.pk")) {
+        if !archive_site(url) {
             self.on_partner_site = true;
             return;
         }
@@ -57,6 +57,11 @@ impl PageHistory {
             self.pages.push(page);
             if self.pages.len() > 64 { self.pages.remove(0); }
         }
+    }
+
+    fn download_page(&self) -> Option<&Url> {
+        if self.on_partner_site { return None; }
+        self.pages.last().filter(|page| page.path().starts_with("/slow_download/"))
     }
 
     fn back(&mut self) -> Option<Url> {
@@ -137,6 +142,15 @@ fn browser_url(url: &Url) -> bool {
         })
 }
 
+fn archive_site(url: &Url) -> bool {
+    if !browser_url(url) { return false; }
+    let Some(host) = url.domain() else { return false; };
+    let (prefix, root) = host.split_once('.').unwrap_or(("", host));
+    let language = (2..=3).contains(&prefix.len()) && prefix.bytes().all(|b| b.is_ascii_lowercase());
+    let host = if language { root } else { host };
+    matches!(host, "annas-archive.gd" | "annas-archive.gl" | "annas-archive.pk") && url.port().is_none()
+}
+
 fn public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => !matches!(ip.octets(),
@@ -166,6 +180,7 @@ fn direct_filename(url: &Url) -> Option<String> {
 }
 
 fn navigation_allowed(app: &AppHandle, url: &Url) -> bool {
+    if intercept_download(app, url) { return false; }
     if browser_url(url) || matches!(url.as_str(), "about:blank" | "about:srcdoc") { return true; }
     if url.scheme() == "http" {
         if let Ok(mut transfers) = app.state::<ArchiveState>().0.lock() {
@@ -173,6 +188,24 @@ fn navigation_allowed(app: &AppHandle, url: &Url) -> bool {
         }
     }
     false
+}
+
+fn download_from_page(history: &PageHistory, url: &Url) -> Option<String> {
+    let page = history.download_page()?;
+    if page.origin() == url.origin() || !direct_url(url) || url.as_str().len() > 16384 { return None; }
+    direct_filename(url)
+}
+
+fn intercept_download(app: &AppHandle, url: &Url) -> bool {
+    let history = app.state::<ArchiveHistory>();
+    let name = history.0.lock().ok().and_then(|history| download_from_page(&history, url));
+    let Some(name) = name else { return false; };
+    if let Err(error) = queue_direct_download(app, url.clone(), name) {
+        if let Ok(mut transfers) = app.state::<ArchiveState>().0.lock() {
+            if transfers.active.is_none() && transfers.direct.is_none() { transfers.error = Some(error); }
+        }
+    }
+    true
 }
 
 fn archive_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -286,9 +319,9 @@ async fn request_direct(url: Url) -> Result<reqwest::Response, String> {
     if !response.status().is_success() {
         let code = response.status().as_u16();
         let message = match code {
-            401 | 403 | 404 | 410 => "请回到网页重新复制最新的下载地址",
+            401 | 403 | 404 | 410 => "请刷新下载页后重试，或换一个慢速服务器",
             429 => "服务器限流，请稍后重试",
-            300..=399 => "服务器要求跳转，请回到网页获取新的下载地址",
+            300..=399 => "服务器要求跳转，请刷新下载页或换一个慢速服务器",
             _ => "可换一个慢速服务器",
         };
         return Err(format!("下载失败（HTTP {code}），{message}"));
@@ -335,6 +368,10 @@ pub async fn archive_download_link(app: AppHandle, link: String) -> Result<(), S
     let url = Url::parse(link.trim()).map_err(|_| "请粘贴完整的电子书下载地址")?;
     if !direct_url(&url) { return Err("请使用 HTTPS 地址或指向公网 IP 的 HTTP 地址".into()); }
     let name = direct_filename(&url).ok_or("请粘贴网页复制的 EPUB 或 PDF 直链")?;
+    queue_direct_download(&app, url, name)
+}
+
+fn queue_direct_download(app: &AppHandle, url: Url, name: String) -> Result<(), String> {
     {
         let state = app.state::<ArchiveState>();
         let mut transfers = state.0.lock().map_err(|_| "无法读取下载状态")?;
@@ -342,6 +379,7 @@ pub async fn archive_download_link(app: AppHandle, link: String) -> Result<(), S
         transfers.direct = Some(Progress::default());
         transfers.error = None;
     }
+    let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = save_direct(&app, url, name).await;
         if let Ok(mut transfers) = app.state::<ArchiveState>().0.lock() {
@@ -488,6 +526,25 @@ mod tests {
         assert_eq!(book.path(), "/md5/51d2b22ca12a8b470b51f543298b34c9");
         history.record(&book);
         assert!(history.back().is_none());
+    }
+
+    #[test]
+    fn slow_download_links_route_from_localized_pages_to_the_downloader() {
+        let source = Url::parse("https://zh.annas-archive.gd/slow_download/51d2b22ca12a8b470b51f543298b34c9/0/0").unwrap();
+        let https = Url::parse("https://partner.example.org/signed/%E7%94%B5%E5%AD%90%E4%B9%A6.epub?token=test").unwrap();
+        let http = Url::parse("http://1.1.1.1:6060/signed/book.pdf").unwrap();
+        let mut history = PageHistory::default();
+        history.record(&source);
+        assert_eq!(download_from_page(&history, &https).as_deref(), Some("电子书.epub"));
+        assert_eq!(download_from_page(&history, &http).as_deref(), Some("book.pdf"));
+        for blocked in ["https://zh.annas-archive.gd/book.epub", "https://partner.example.org/verify",
+            "http://127.0.0.1/book.pdf", "https://tauri.localhost/book.pdf"] {
+            assert!(download_from_page(&history, &Url::parse(blocked).unwrap()).is_none(), "{blocked}");
+        }
+        history.record(&Url::parse("https://zh.annas-archive.gd.evil.example/slow_download/book").unwrap());
+        assert!(download_from_page(&history, &https).is_none());
+        history.record(&Url::parse("https://zh.annas-archive.gd/search?q=book").unwrap());
+        assert!(download_from_page(&history, &https).is_none());
     }
 
     #[test]
