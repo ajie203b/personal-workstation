@@ -18,6 +18,27 @@ const HOME: &str = "https://annas-archive.gd/";
 const VIEW: &str = "archive-browser";
 const MAX_BYTES: u64 = 150 * 1024 * 1024;
 
+// WebView2 can suppress a link targeting a new window before our navigation hook sees it.
+// Route real clicks on the slow-download page through the existing top-level navigation hook.
+const DOWNLOAD_LINK_CLICK: &str = r#"
+    (() => {
+        if (location.protocol !== 'https:' || location.port ||
+            !/^(?:[a-z]{2,3}\.)?annas-archive\.(?:gd|gl|pk)$/.test(location.hostname) ||
+            !location.pathname.startsWith('/slow_download/')) return;
+        window.addEventListener('click', (event) => {
+            if (!event.isTrusted || event.button !== 0) return;
+            const link = event.target instanceof Element && event.target.closest('a[href]');
+            if (!link) return;
+            const url = new URL(link.href, location.href);
+            if (url.origin === location.origin || !/^https?:$/.test(url.protocol) ||
+                !/\.(?:epub|pdf)$/i.test(url.pathname)) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            location.assign(url.href);
+        }, { capture: true });
+    })();
+"#;
+
 #[derive(Default)]
 pub struct ArchiveState(Mutex<Transfers>);
 
@@ -424,6 +445,7 @@ pub async fn archive_browser(app: AppHandle, action: BrowserAction, bounds: Opti
             let builder = WebviewBuilder::new(VIEW, WebviewUrl::External(HOME.parse::<Url>().unwrap()))
                 .data_directory(profile)
                 .devtools(false)
+                .initialization_script(DOWNLOAD_LINK_CLICK)
                 .on_navigation(move |url| navigation_allowed(&navigation_app, url))
                 .on_new_window(move |url, _| {
                     if navigation_allowed(&popup_app, &url) && browser_url(&url) {
