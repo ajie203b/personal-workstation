@@ -1,0 +1,12 @@
+{
+  "identifier": "archive",
+  "description": "只有 Kairos 主界面可以管理安娜的档案浏览器与下载文件",
+  "webviews": ["main"],
+  "permissions": [
+    "allow-archive-browser",
+    "allow-archive-downloads",
+    "allow-archive-download-read",
+    "allow-archive-download-link",
+    "allow-archive-download-remove"
+  ]
+}

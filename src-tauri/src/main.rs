@@ -1,6 +1,7 @@
 // 发布版不弹黑色控制台窗口
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod local_markdown;
+mod archive;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
@@ -24,6 +25,8 @@ async fn save_text_file(app: tauri::AppHandle, window: tauri::Window, default_na
 fn main() {
     tauri::Builder::default()
         .manage(local_markdown::LocalMarkdownState::default())
+        .manage(archive::ArchiveState::default())
+        .manage(archive::ArchiveHistory::default())
         // 资源管理器再开文件：各开独立文档窗口，不打断主窗口正在进行的工作
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             local_markdown::open_files(app, &args, std::path::Path::new(&cwd), true);
@@ -38,6 +41,11 @@ fn main() {
             local_markdown::local_markdown_image,
             local_markdown::local_document_open_with,
             local_markdown::local_markdown_defaults,
+            archive::archive_browser,
+            archive::archive_downloads,
+            archive::archive_download_read,
+            archive::archive_download_remove,
+            archive::archive_download_link,
         ])
         // 前端的 WebDAV 请求走这里：由 Rust 发出，不受浏览器跨域限制（坚果云不给 CORS）
         .plugin(tauri_plugin_http::init())
@@ -47,6 +55,10 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         // 冷启动带文件时主窗口在 setup 之后才创建，会盖住文档窗口；等它加载完再把文档窗口置顶
         .on_page_load(|window, payload| {
+            if window.label() == "archive-browser" {
+                archive::record_page(window, payload.url());
+                return;
+            }
             if window.label() != "main" || !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) { return; }
             let state = window.state::<local_markdown::LocalMarkdownState>();
             if let Ok(mut ready) = state.main_ready.lock() { *ready = true; }

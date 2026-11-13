@@ -33,6 +33,7 @@ const SettingsPage = lazy(() => import('@/modules/settings/SettingsPage').then((
 const StatsPage = lazy(() => import('@/modules/stats/StatsPage').then((m) => ({ default: m.StatsPage })))
 const ToolsPage = lazy(() => import('@/modules/tools/ToolsPage').then((m) => ({ default: m.ToolsPage })))
 const FanqiePage = lazy(() => import('@/modules/tools/FanqiePage').then((m) => ({ default: m.FanqiePage })))
+const ArchivePage = lazy(() => import('@/modules/tools/ArchivePage').then((m) => ({ default: m.ArchivePage })))
 const MediaParsePage = lazy(() => import('@/modules/tools/MediaParsePage').then((m) => ({ default: m.MediaParsePage })))
 const QrPage = lazy(() => import('@/modules/tools/qr/QrPage').then((m) => ({ default: m.QrPage })))
 const PdfToolPage = lazy(() => import('@/modules/tools/pdf/PdfToolPage').then((m) => ({ default: m.PdfToolPage })))
@@ -140,6 +141,7 @@ export default function App() {
             <Route path="stats" element={<StatsPage />} />
             <Route path="tools" element={<ToolsPage />} />
             <Route path="tools/fanqie" element={<FanqiePage />} />
+            <Route path="tools/archive" element={<ArchivePage />} />
             <Route path="tools/media" element={<MediaParsePage />} />
             <Route path="tools/qrcode" element={<QrPage />} />
             <Route path="tools/pdf" element={<PdfToolPage />} />

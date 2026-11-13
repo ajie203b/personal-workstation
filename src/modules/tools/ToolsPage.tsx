@@ -11,6 +11,7 @@ import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { orderTools } from './toolOrder'
 import { useUi } from '@/stores/ui'
+import { isNative, isTauri } from '@/lib/native'
 
 /**
  * 工具页（v2.2 起配置化）：模型智能排名永远置顶，下面是小工具入口。
@@ -29,6 +30,7 @@ interface ToolCard {
 
 const TOOL_CARDS: ToolCard[] = [
   { to: '/tools/fanqie', icon: IconToolNovel, title: '番茄小说', sub: '下载到本地书架' },
+  { to: '/tools/archive', icon: IconToolNovel, title: '安娜的档案', sub: '站内找书与导入阅读', badge: 'EPUB / PDF' },
   { to: '/tools/media', icon: IconToolDownload, title: '无水印下载', sub: '视频、图集解析', badge: '抖音 / B站' },
   { to: '/tools/qrcode', icon: IconToolQr, title: '二维码', sub: '生成与扫码' },
   { to: '/tools/pdf', icon: IconToolPdf, title: 'PDF 工具箱', sub: '合并、签名、水印' },
@@ -46,7 +48,8 @@ export function ToolsPage() {
   const savedOrder = useLiveQuery(() => db.settings.get('toolOrder'), [])
   // 拖拽落位先改本地顺序，再后台落库：否则会先弹回旧位置、等 liveQuery 回来才跳过去
   const [localOrder, setLocalOrder] = useState<string[] | null>(null)
-  const tools = orderTools(TOOL_CARDS, localOrder ?? savedOrder?.value)
+  const supportedTools = isTauri() || isNative() ? TOOL_CARDS : TOOL_CARDS.filter(({ to }) => to !== '/tools/archive')
+  const tools = orderTools(supportedTools, localOrder ?? savedOrder?.value)
   useEffect(() => {
     if (!localOrder) return
     const saved = Array.isArray(savedOrder?.value) ? savedOrder.value as string[] : null
