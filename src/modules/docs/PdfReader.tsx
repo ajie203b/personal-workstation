@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Link } from 'react-router'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -124,9 +125,10 @@ export function PdfReader({
   /** 已画完的页：用来做「模糊 → 清晰」的入场（画布出来前先给一块糊的占位） */
   const [drawn, setDrawn] = useState<Set<number>>(() => new Set())
   const pdfProxyRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
-  const pageTextCacheRef = useRef<Map<number, string>>(new Map())
+  const pageTextCacheRef = useRef<Map<number, Promise<string>>>(new Map())
   const pageWrappersRef = useRef<Map<number, HTMLElement>>(new Map())
   const [textReadyTick, setTextReadyTick] = useState(0)
+  const onRenderTextLayerSuccess = useCallback(() => setTextReadyTick((tick) => tick + 1), [])
   const [findMatches, setFindMatches] = useState<{ page: number; pageMatchIdx: number }[]>([])
   const [pageFindRects, setPageFindRects] = useState<Map<number, NormRect[][]>>(() => new Map())
   const pageFindRectsRef = useRef(pageFindRects)
@@ -497,6 +499,54 @@ export function PdfReader({
   const onFindStateRef = useRef(onFindState)
   onFindStateRef.current = onFindState
 
+  const readPageText = useCallback((pdf: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number) => {
+    const cache = pageTextCacheRef.current
+    const cached = cache.get(pageNumber)
+    if (cached) return cached
+    const text = pdf.getPage(pageNumber).then((page) => page.getTextContent()).then((content) =>
+      content.items.map((item) => 'str' in item ? item.str + (item.hasEOL ? '\n' : '') : '').join(''),
+    ).catch(() => '')
+    cache.set(pageNumber, text)
+    return text
+  }, [])
+
+  useEffect(() => {
+    const pdf = pdfProxyRef.current
+    if (!data || !pdf || !numPages || normalizeQuery(findQuery) || !window.requestIdleCallback) return
+    let active = true
+    let pending = 0
+    let nextPage = 1
+    let reading = false
+    const schedule = () => {
+      if (!active || reading || pending || pdfProxyRef.current !== pdf || document.hidden) return
+      while (pageTextCacheRef.current.has(nextPage)) nextPage++
+      if (nextPage > pdf.numPages) return
+      pending = window.requestIdleCallback(() => {
+        pending = 0
+        if (!active || pdfProxyRef.current !== pdf || document.hidden) return
+        reading = true
+        void readPageText(pdf, nextPage++).then(() => {
+          reading = false
+          schedule()
+        })
+      })
+    }
+    // 先让页面完成首屏绘制，再空闲时逐页读取；与搜索共享已缓存的请求。
+    const start = window.setTimeout(schedule, 600)
+    const onVisibility = () => {
+      window.cancelIdleCallback(pending)
+      pending = 0
+      if (!document.hidden) schedule()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      active = false
+      window.clearTimeout(start)
+      window.cancelIdleCallback(pending)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [data, findQuery, numPages, readPageText])
+
   // 逐页扫描 PDF 文本并缓存，用于页内查找计数与跨页跳转
   useEffect(() => {
     const pdf = pdfProxyRef.current
@@ -514,17 +564,8 @@ export function PdfReader({
       const hits: { page: number; pageMatchIdx: number }[] = []
       for (let p = 1; p <= numPages; p++) {
         if (!alive) return
-        let text = pageTextCacheRef.current.get(p)
-        if (text == null) {
-          try {
-            const page = await pdf.getPage(p)
-            const tc = await page.getTextContent()
-            text = tc.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? '\n' : '') : '')).join('')
-          } catch {
-            text = ''
-          }
-          pageTextCacheRef.current.set(p, text)
-        }
+        if (pdfProxyRef.current !== pdf) return
+        const text = await readPageText(pdf, p)
         const count = countMatchesInText(text, findQuery)
         for (let k = 0; k < count; k++) hits.push({ page: p, pageMatchIdx: k })
         if (p % 15 === 0) await new Promise<void>((r) => setTimeout(r, 0))
@@ -534,7 +575,7 @@ export function PdfReader({
       onFindStateRef.current?.({ total: hits.length, searching: false })
     })()
     return () => { alive = false }
-  }, [findQuery, numPages])
+  }, [data, findQuery, numPages, readPageText])
 
   // 为渲染窗口内含命中的页面计算精确高亮矩形
   useEffect(() => {
@@ -645,9 +686,9 @@ export function PdfReader({
               >
                 重试
               </button>
-              <a href="#/docs" className="h-9 px-4 rounded-[10px] border border-outline text-[13px] leading-9 text-on-surface-2 hover:text-on-surface">
+              <Link to="/docs" className="h-9 px-4 rounded-[10px] border border-outline text-[13px] leading-9 text-on-surface-2 hover:text-on-surface">
                 返回文档库
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -737,7 +778,7 @@ export function PdfReader({
                               renderAnnotationLayer={!shotMode}
                               filterAnnotations={filterPdfLinkAnnotations}
                               loading=""
-                              onRenderTextLayerSuccess={() => setTextReadyTick((t) => t + 1)}
+                              onRenderTextLayerSuccess={onRenderTextLayerSuccess}
                               onRenderSuccess={() => setDrawn((s) => (s.has(p) ? s : new Set(s).add(p)))}
                             />
                           ) : null}

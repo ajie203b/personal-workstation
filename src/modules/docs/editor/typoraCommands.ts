@@ -15,6 +15,12 @@ export function executeSlashCommand(editor: Editor, id: string, range: { from: n
     case 'h4':
       chain.setHeading({ level: 4 }).run()
       break
+    case 'h5':
+      chain.setHeading({ level: 5 }).run()
+      break
+    case 'h6':
+      chain.setHeading({ level: 6 }).run()
+      break
     case 'task':
       chain.toggleTaskList().run()
       break

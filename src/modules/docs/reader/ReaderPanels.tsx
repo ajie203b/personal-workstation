@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useNavigate } from 'react-router'
 import {
   ArrowUpDown, ArrowUpRight, Bookmark, ChevronLeft, ChevronRight, Highlighter, List,
   LocateFixed, MessageSquareText, Plus, ScanText, Search, Trash2, X,
@@ -452,6 +453,7 @@ export function RightContent({
   anchorFor: (a: Annotation) => string
   focusAnnId?: { id: string; ts: number } | null
 }) {
+  const navigate = useNavigate()
   const [editing, setEditing] = useState<string | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
   const [query, setQuery] = useState('')
@@ -495,7 +497,7 @@ export function RightContent({
                   key={t.id}
                   type="button"
                   onClick={() => {
-                    window.location.hash = `#/tasks?tier=${t.tier}&focus=${t.id}`
+                    navigate(`/tasks?tier=${t.tier}&focus=${t.id}`)
                   }}
                   className="group w-full text-left rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 hover:border-primary/30 hover:-translate-y-px transition-[border-color,transform] cursor-pointer"
                 >

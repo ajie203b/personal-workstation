@@ -24,7 +24,7 @@ export function DocsTable({
   onMove,
   onToggleStar,
   onEditMeta,
-  onCopyCitation,
+  onOpenCitation,
   onRequestConfirm,
 }: {
   rows: { doc: Doc; hit?: { count: number; snippet: string; seg?: number } }[]
@@ -38,7 +38,7 @@ export function DocsTable({
   onMove: (doc: Doc) => void
   onToggleStar: (doc: Doc) => void
   onEditMeta: (doc: Doc) => void
-  onCopyCitation: (doc: Doc, style: 'bibtex' | 'ris') => void
+  onOpenCitation: (doc: Doc) => void
   onRequestConfirm: (doc: Doc) => void
 }) {
   return (
@@ -134,8 +134,7 @@ export function DocsTable({
                       {d.kind === 'md' && <DropdownItem onSelect={() => onEdit(d)}><PenLine size={15} />继续写作</DropdownItem>}
                       <DropdownItem onSelect={() => onEditMeta(d)}><Tag size={15} />文献信息与标签</DropdownItem>
                       <DropdownItem onSelect={() => onToggleStar(d)}><Star size={15} />{d.starred ? '取消星标' : '设为星标'}</DropdownItem>
-                      <DropdownItem onSelect={() => onCopyCitation(d, 'bibtex')}><Quote size={15} />复制 BibTeX 引文</DropdownItem>
-                      <DropdownItem onSelect={() => onCopyCitation(d, 'ris')}><Quote size={15} />复制 RIS 引文</DropdownItem>
+                      <DropdownItem onSelect={() => onOpenCitation(d)}><Quote size={15} />引用…</DropdownItem>
                       {d.kind === 'md' && <DropdownItem onSelect={() => onShare(d)}><Share2 size={15} />分享 / 导出</DropdownItem>}
                       <DropdownItem onSelect={() => onMove(d)}><FolderInput size={15} />移动到文件夹</DropdownItem>
                       <MenuSeparator />

@@ -48,8 +48,13 @@ vi.mock('react-pdf', () => ({
     }
     return createElement('div', { 'data-testid': 'mock-pdf-document' }, children)
   },
-  Page: ({ pageNumber, width, onRenderSuccess }: { pageNumber: number; width: number; onRenderSuccess?: () => void }) => {
-    pageRenderSpy(pageNumber, width)
+  Page: ({ pageNumber, width, onRenderSuccess, onRenderTextLayerSuccess }: {
+    pageNumber: number
+    width: number
+    onRenderSuccess?: () => void
+    onRenderTextLayerSuccess?: () => void
+  }) => {
+    pageRenderSpy(pageNumber, width, onRenderTextLayerSuccess)
     queueMicrotask(() => onRenderSuccess?.())
     return createElement('div', { 'data-testid': `mock-page-${pageNumber}`, 'data-width': width })
   },
@@ -209,11 +214,15 @@ describe('Office / WPS & Performance P1', () => {
       // 测试平滑缩放预览 + 160ms 防抖重光栅化
       const page1El = host.querySelector<HTMLElement>('[data-page="1"]')!
       const initialW = Number(host.querySelector('[data-testid="mock-page-1"]')!.getAttribute('data-width'))
+      const onTextLayerReady = pageRenderSpy.mock.calls.filter(([page]) => page === 1).at(-1)?.[2]
+      expect(onTextLayerReady).toBeTypeOf('function')
       pageRenderSpy.mockClear()
 
       await act(async () => {
+        onTextLayerReady()
         root.render(createElement(Harness, { settings: { ...baseSettings, zoom: 1.5 } }))
       })
+      expect(pageRenderSpy.mock.calls.filter(([page]) => page === 1).at(-1)?.[2]).toBe(onTextLayerReady)
       // 防抖窗口内只用 CSS transform 预览，不立即触发高开销 canvas 重渲染
       expect(page1El.style.transform).toContain('scale(')
       expect(host.querySelector('[data-testid="mock-page-1"]')!.getAttribute('data-width')).toBe(String(initialW))

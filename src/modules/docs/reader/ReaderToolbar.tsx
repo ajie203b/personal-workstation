@@ -37,7 +37,7 @@ export function ReaderToolbar({
   onShare,
   onExportNotes,
   onExportMdFile,
-  onCopyCitation,
+  onOpenCitation,
   onOpenReview,
   reviewDueCount = 0,
 }: {
@@ -68,7 +68,7 @@ export function ReaderToolbar({
   onShare: () => void
   onExportNotes: () => void
   onExportMdFile?: () => void
-  onCopyCitation?: (style: 'bibtex' | 'ris') => void
+  onOpenCitation?: () => void
   onOpenReview?: () => void
   reviewDueCount?: number
 }) {
@@ -153,15 +153,10 @@ export function ReaderToolbar({
               )}
             </>
           )}
-          {onCopyCitation && (
+          {onOpenCitation && (
             <>
               <MenuSeparator />
-              <MenuItem onSelect={() => onCopyCitation('bibtex')}>
-                <Quote size={15} /> 复制 BibTeX 引文
-              </MenuItem>
-              <MenuItem onSelect={() => onCopyCitation('ris')}>
-                <Quote size={15} /> 复制 RIS 引文
-              </MenuItem>
+              <MenuItem onSelect={onOpenCitation}><Quote size={15} /> 引用…</MenuItem>
             </>
           )}
         </MenuContent>
@@ -200,42 +195,22 @@ export function ReaderToolbar({
           )}
         </button>
       )}
-      {(hasAnnotations || onCopyCitation) && (
+      {(hasAnnotations || onOpenCitation) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label="批注导出与引文"
-              title="批注导出与引文"
+              aria-label="导出与引用"
+              title="导出与引用"
               className="hidden sm:grid place-items-center shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
             >
               <BookDown size={18} />
             </button>
           </DropdownMenuTrigger>
           <MenuContent>
-            {hasAnnotations && (
-              <>
-                <MenuItem onSelect={onExportNotes}>
-                  <BookDown size={15} /> 导出批注到文档库
-                </MenuItem>
-                {onExportMdFile && (
-                  <MenuItem onSelect={onExportMdFile}>
-                    <FileDown size={15} /> 导出批注 .md 文件
-                  </MenuItem>
-                )}
-                {onCopyCitation && <MenuSeparator />}
-              </>
-            )}
-            {onCopyCitation && (
-              <>
-                <MenuItem onSelect={() => onCopyCitation('bibtex')}>
-                  <Quote size={15} /> 复制 BibTeX 引文
-                </MenuItem>
-                <MenuItem onSelect={() => onCopyCitation('ris')}>
-                  <Quote size={15} /> 复制 RIS 引文
-                </MenuItem>
-              </>
-            )}
+            {hasAnnotations && <MenuItem onSelect={onExportNotes}><BookDown size={15} /> 导出批注到文档库</MenuItem>}
+            {hasAnnotations && onExportMdFile && <MenuItem onSelect={onExportMdFile}><FileDown size={15} /> 导出批注 .md 文件</MenuItem>}
+            {onOpenCitation && <MenuItem onSelect={onOpenCitation}><Quote size={15} /> 引用…</MenuItem>}
           </MenuContent>
         </DropdownMenu>
       )}

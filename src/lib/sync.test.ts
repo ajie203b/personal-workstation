@@ -97,6 +97,46 @@ it('首次同步遇到另一设备同时创建云端文件时重新合并双方�
   expect(dav.lastSyncJson()?.tasks.map(t => t.id).sort()).toEqual(['local', 'remote'])
 })
 
+it('同步同时下载四个小文件，再单独下载每个大文件', async () => {
+  const small = ['small-1', 'small-2', 'small-3', 'small-4']
+  const large = ['large-1', 'large-2']
+  const hashes = [...small, ...large]
+  const dav = fakeDav({
+    [SYNC_URL]: JSON.stringify({
+      app: 'personal-workstation', version: 4,
+      tasks: [], settings: [], positions: [], annotations: [], bookmarks: [], focusSessions: [], folders: [], tombstones: [],
+      docs: hashes.map(hash => ({
+        id: hash, hash, size: large.includes(hash) ? 21 * 1024 * 1024 : 3,
+        kind: 'pdf', title: hash, addedAt: 1000,
+      })),
+      blobMeta: hashes.map(hash => ({ hash, type: 'application/pdf' })),
+    }),
+  })
+  const active = new Map<string, () => void>()
+  let holdDownloads = true
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const hash = String(input).match(/\/blobs\/([^/]+)\.b64$/)?.[1]
+    if (init?.method !== 'GET' || !hash) return dav.fetchImpl(input, init)
+    if (holdDownloads) await new Promise<void>(resolve => active.set(hash, resolve))
+    active.delete(hash)
+    return new Response('UERG')
+  })
+  const result = syncNow()
+  try {
+    await vi.waitFor(() => expect([...active.keys()].sort()).toEqual(small))
+    active.forEach(release => release())
+    await vi.waitFor(() => expect([...active.keys()]).toEqual([large[0]]))
+    active.get(large[0])!()
+    await vi.waitFor(() => expect([...active.keys()]).toEqual([large[1]]))
+  } finally {
+    // 即使断言失败，也让下载结束，避免同步锁影响后面的用例。
+    holdDownloads = false
+    active.forEach(release => release())
+    await result
+  }
+  expect((await result).blobsDown).toBe(6)
+})
+
 it('WebDAV 合并额度记录并把结果写回本机及云端', async () => {
   const legacy = { id: 'legacy', name: '旧记录' }
   const local = { id: 'local', name: '本机', updatedAt: 3 }

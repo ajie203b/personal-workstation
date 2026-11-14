@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { Link2 } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { fmtDateTime } from '@/lib/date'
@@ -11,6 +11,7 @@ import { fmtDateTime } from '@/lib/date'
  * 因此同时读 hash 内 search 与 location.search。
  */
 export function ShareInbound() {
+  const navigate = useNavigate()
   const [params] = useSearchParams()
   const [saved, setSaved] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -53,7 +54,7 @@ export function ShareInbound() {
           {saved ? '已收进文档工作站' : failed ? '保存失败' : '正在收进文档工作站…'}
         </h1>
         <p className="text-[13px] text-on-surface-2 break-all">{title}</p>
-        <Button variant="primary" onClick={() => { window.location.hash = '#/docs' }}>
+        <Button variant="primary" onClick={() => navigate('/docs')}>
           前往查看
         </Button>
       </div>

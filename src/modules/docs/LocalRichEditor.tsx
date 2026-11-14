@@ -5,7 +5,7 @@ import { DOMParser as ProseMirrorParser } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
-import { Bold, Code, Focus, Highlighter, Italic, List, ListOrdered, Quote, Redo2, Search, Undo2 } from 'lucide-react'
+import { Bold, Code, Focus, Heading1, Highlighter, Italic, List, ListOrdered, Quote, Redo2, Search, Strikethrough, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
@@ -19,8 +19,9 @@ import { EditorFindReplaceBar } from './editor/EditorFindReplaceBar'
 import { EditorFocusExtension } from './editor/editorFocus'
 import { detectSlashTrigger, SlashCommandMenu, type SlashTriggerState } from './editor/SlashCommandMenu'
 import { executeSlashCommand } from './editor/typoraCommands'
+import { InlineMath } from './editor/mdMath'
 
-const LOCAL_SLASH_ALLOWED = new Set(['h1', 'h2', 'h3', 'h4', 'bullet', 'ordered', 'quote', 'code', 'hr'])
+const LOCAL_SLASH_ALLOWED = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bullet', 'ordered', 'quote', 'code', 'hr'])
 
 type RenderImage = (src: string | undefined, alt: string | undefined) => ReactNode
 type MarkdownStorage = { getMarkdown: () => string; parser: { parse: (markdown: string) => string } }
@@ -89,7 +90,7 @@ function loadMarkdown(editor: Editor, markdown: string, definitions: MutableRefO
 function ToolBtn({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: ReactNode }) {
   return <button type="button" aria-label={label} title={label} aria-pressed={active}
     className={cn('grid place-items-center w-8 h-8 shrink-0 rounded-lg text-on-surface-2 hover:bg-surface-3', active && 'bg-primary-soft text-primary')}
-    onClick={onClick}>{children}</button>
+    onMouseDown={e => e.preventDefault()} onClick={onClick}>{children}</button>
 }
 
 export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, initialPosition }: {
@@ -118,6 +119,7 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
       StarterKit.configure({ link: { openOnClick: false } }),
       Image.configure({ inline: true, allowBase64: true }),
       HighlightMark,
+      InlineMath,
       EditorFindExtension,
       EditorFocusExtension.configure({ scrollRef: richContainerRef }),
       MarkdownBlock.configure({ renderImage: (src, alt) => imageRenderer.current?.(src, alt) ?? <img src={src} alt={alt} />, getDefinitions: () => '\n\n' + definitionsRef.current }),
@@ -200,17 +202,10 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
       {mode === 'rich' && editor && <>
         <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolBtn>
         <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolBtn>
-        <select aria-label="标题级别" className="bg-surface border border-outline rounded-md px-1.5 h-8 text-sm"
-          value={[1, 2, 3, 4, 5, 6].find(level => editor.isActive('heading', { level })) ?? 0}
-          onChange={e => {
-            const level = Number(e.target.value) as 0 | 1 | 2 | 3 | 4 | 5 | 6
-            if (level) editor.chain().focus().setHeading({ level }).run()
-            else editor.chain().focus().setParagraph().run()
-          }}>
-          <option value={0}>正文</option>{[1, 2, 3, 4, 5, 6].map(level => <option key={level} value={level}>标题 {level}</option>)}
-        </select>
+        <ToolBtn label="一级标题" active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 size={16} /></ToolBtn>
         <ToolBtn label="加粗" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={15} /></ToolBtn>
         <ToolBtn label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
+        <ToolBtn label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={15} /></ToolBtn>
         <ToolBtn label="高亮" active={editor.isActive('hl')} onClick={() => editor.chain().focus().toggleMark('hl').run()}><Highlighter size={15} /></ToolBtn>
         <ToolBtn label="无序列表" onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={15} /></ToolBtn>
         <ToolBtn label="有序列表" onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>

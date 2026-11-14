@@ -47,7 +47,7 @@ describe('unsavedGuard navigation & link interception', () => {
       if (!dirty) return false
       deferred = proceed
       return true
-    })
+    }, vi.fn())
 
     const onProceed = vi.fn()
     guardNavigation(onProceed)
@@ -66,11 +66,12 @@ describe('unsavedGuard navigation & link interception', () => {
   it('intercepts hash NavLink clicks only when guard is active and dirty', () => {
     let dirty = true
     let deferred: (() => void) | null = null
+    const navigate = vi.fn()
     const unregister = registerUnsavedGuard((proceed) => {
       if (!dirty) return false
       deferred = proceed
       return true
-    })
+    }, navigate)
 
     const link = document.createElement('a')
     link.setAttribute('href', '#/tasks')
@@ -80,6 +81,9 @@ describe('unsavedGuard navigation & link interception', () => {
     link.dispatchEvent(blockedEvt)
     expect(blockedEvt.defaultPrevented).toBe(true)
     expect(deferred).not.toBeNull()
+    expect(navigate).not.toHaveBeenCalled()
+    deferred!()
+    expect(navigate).toHaveBeenCalledWith('/tasks')
 
     // Modified clicks (open in new tab) are never intercepted
     const ctrlEvt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ctrlKey: true })

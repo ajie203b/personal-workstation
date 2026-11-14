@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Clock, FileText, FolderInput, FolderPlus, Highlighter, Layers, Plus, Star, Trash2 } from 'lucide-react'
 import type { Folder } from '@/db/db'
 import { cn } from '@/lib/cn'
@@ -29,6 +29,7 @@ export function FolderChip({
     <button
       ref={dropId ? setNodeRef : undefined}
       data-doc-drop={dropId}
+      aria-pressed={active}
       type="button"
       onClick={onClick}
       className={cn(
@@ -57,12 +58,8 @@ export function FolderStripMobile({
   recentCount,
   annotatedCount,
   uncategorizedCount,
-  trashCount,
   activeFolder,
-  inTrash,
   onPick,
-  onCreate,
-  onDelete,
 }: {
   folders: Folder[]
   counts: Record<string, number>
@@ -71,58 +68,44 @@ export function FolderStripMobile({
   recentCount: number
   annotatedCount: number
   uncategorizedCount: number
-  trashCount: number
   activeFolder: string | null
-  inTrash: boolean
   onPick: (id: string | null) => void
-  onCreate: (parentId?: string) => void
-  onDelete: () => void
 }) {
   const cur = activeFolder ?? ALL_DOCS_VIEW
-  const isUserFolder = folders.some((f) => f.id === activeFolder)
+  const stripRef = useRef<HTMLDivElement>(null)
+  const activeIndex = folders.findIndex((folder) => folder.id === activeFolder)
+  useLayoutEffect(() => {
+    const strip = stripRef.current
+    const chip = strip?.querySelector('[aria-pressed="true"]')
+    if (!strip || !chip || !strip.clientWidth) return
+    const bounds = strip.getBoundingClientRect()
+    const selected = chip.getBoundingClientRect()
+    if (selected.right > bounds.right) strip.scrollLeft += selected.right - bounds.right + 4
+    else if (selected.left < bounds.left) strip.scrollLeft += selected.left - bounds.left - 4
+  }, [cur, activeIndex])
+  const countLabel = (count: number) => count > 0 && <span className="opacity-60">{count}</span>
   return (
-    <div className="lg:hidden flex items-start gap-2">
-      <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-        <FolderChip active={cur === ALL_DOCS_VIEW} onClick={() => onPick(null)}>
-          全部 <span className="opacity-60">{allCount}</span>
-        </FolderChip>
-        <FolderChip active={cur === STARRED_VIEW} onClick={() => onPick(STARRED_VIEW)}>
-          星标 <span className="opacity-60">{starredCount}</span>
-        </FolderChip>
-        <FolderChip active={cur === RECENT_VIEW} onClick={() => onPick(RECENT_VIEW)}>
-          最近 <span className="opacity-60">{recentCount}</span>
-        </FolderChip>
-        <FolderChip active={cur === ANNOTATED_VIEW} onClick={() => onPick(ANNOTATED_VIEW)}>
-          有批注 <span className="opacity-60">{annotatedCount}</span>
-        </FolderChip>
-        <FolderChip dropId={UNFILED_FOLDER} active={cur === UNFILED_FOLDER} onClick={() => onPick(UNFILED_FOLDER)}>
-          未分类 <span className="opacity-60">{uncategorizedCount}</span>
-        </FolderChip>
-        {folders.map((f) => (
-          <FolderChip key={f.id} dropId={f.id} active={activeFolder === f.id} onClick={() => onPick(f.id)}>
-            {f.name} <span className="opacity-60">{subtreeCount(f.id, folders, counts)}</span>
-          </FolderChip>
-        ))}
-        <button
-          type="button"
-          onClick={() => onCreate()}
-          className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-full border border-dashed border-outline text-[12px] text-on-surface-2 hover:text-on-surface hover:border-primary/50 transition-colors cursor-pointer"
-        >
-          <FolderPlus size={13} /> 新建文件夹
-        </button>
-        {isUserFolder && !inTrash && (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="shrink-0 h-8 px-2.5 rounded-full text-[12px] text-on-surface-2 hover:text-danger cursor-pointer"
-          >
-            删除文件夹
-          </button>
-        )}
-      </div>
-      <FolderChip dropId={TRASH_FOLDER} active={inTrash} onClick={() => onPick(TRASH_FOLDER)}>
-        <Trash2 size={13} />回收站 <span className="opacity-60">{trashCount}</span>
+    <div ref={stripRef} className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1" aria-label="文档分类">
+      <FolderChip active={cur === ALL_DOCS_VIEW} onClick={() => onPick(null)}>
+        全部 {countLabel(allCount)}
       </FolderChip>
+      <FolderChip active={cur === STARRED_VIEW} onClick={() => onPick(STARRED_VIEW)}>
+        星标 {countLabel(starredCount)}
+      </FolderChip>
+      <FolderChip active={cur === RECENT_VIEW} onClick={() => onPick(RECENT_VIEW)}>
+        最近 {countLabel(recentCount)}
+      </FolderChip>
+      <FolderChip active={cur === ANNOTATED_VIEW} onClick={() => onPick(ANNOTATED_VIEW)}>
+        有批注 {countLabel(annotatedCount)}
+      </FolderChip>
+      <FolderChip dropId={UNFILED_FOLDER} active={cur === UNFILED_FOLDER} onClick={() => onPick(UNFILED_FOLDER)}>
+        未分类 {countLabel(uncategorizedCount)}
+      </FolderChip>
+      {folders.map((f) => (
+        <FolderChip key={f.id} dropId={f.id} active={activeFolder === f.id} onClick={() => onPick(f.id)}>
+          {f.name} {countLabel(subtreeCount(f.id, folders, counts))}
+        </FolderChip>
+      ))}
     </div>
   )
 }
@@ -318,7 +301,7 @@ function TreeItem({
       <button type="button" onClick={onClick} className="flex-1 min-w-0 flex items-center gap-2 text-left cursor-pointer h-full">
         <Icon size={14} className="shrink-0" />
         <span className="truncate flex-1">{label}</span>
-        <span className="text-[11px] tabular-nums opacity-60">{count}</span>
+        {count > 0 && <span className="text-[11px] tabular-nums opacity-60">{count}</span>}
       </button>
       {onCreateChild && (
         <button

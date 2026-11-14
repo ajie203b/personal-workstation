@@ -13,7 +13,7 @@ import { shareMarkdown } from '@/lib/shareDoc'
 import { Skeleton } from '@/shared/ui/Skeleton'
 import { recognizeImageDataUrl } from '@/modules/tools/ocr/ocrClient'
 import { AnnotationReviewDialog } from './AnnotationReviewDialog'
-import { formatCitation } from './citation'
+import { CitationDialog } from './CitationDialog'
 import { exportAnnotationsToMarkdownFile } from './exportAnnotations'
 import { isAnnotationDue } from './reviewSm2'
 import { MdReader, parseMdBlocks } from './MdReader'
@@ -91,6 +91,7 @@ export function DocReaderPage() {
   const [showSettings, setShowSettings] = useState(false)
   const paramQ = params.get('q')?.trim() ?? ''
   const [findOpen, setFindOpen] = useState(() => Boolean(paramQ))
+  const [citationOpen, setCitationOpen] = useState(false)
   const [findQuery, setFindQuery] = useState(paramQ)
   const [debouncedFindQuery, setDebouncedFindQuery] = useState(paramQ)
   const [findActive, setFindActive] = useState(0)
@@ -316,7 +317,7 @@ export function DocReaderPage() {
         <div>
           <p className="text-[15px] font-semibold mb-1.5">{docId ? '文档不存在或已删除' : '加载中…'}</p>
           {docId && (
-            <button onClick={() => { window.location.hash = '#/docs' }} className="text-[13px] text-primary hover:underline cursor-pointer">
+            <button onClick={() => navigate('/docs')} className="text-[13px] text-primary hover:underline cursor-pointer">
               返回文档库
             </button>
           )}
@@ -376,17 +377,12 @@ export function DocReaderPage() {
             .then((name) => toast(`已导出 ${name}`))
             .catch(() => toast('导出失败'))
         }}
-        onCopyCitation={(style) => {
-          const txt = formatCitation(doc, style)
-          void navigator.clipboard.writeText(txt).then(
-            () => toast(style === 'bibtex' ? '已复制 BibTeX 引文' : '已复制 RIS 引文'),
-            () => toast('复制失败'),
-          )
-        }}
+        onOpenCitation={() => setCitationOpen(true)}
         onOpenReview={() => setReviewOpen(true)}
         reviewDueCount={reviewDueCount}
       />
 
+      {citationOpen && <CitationDialog doc={doc} onClose={() => setCitationOpen(false)} />}
       <ReaderFindBar
         open={findOpen}
         focusTick={findFocusTick}

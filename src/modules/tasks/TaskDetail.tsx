@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import * as RadixDialog from '@radix-ui/react-dialog'
 import { X, Plus, ListChecks, Pin, PinOff, Timer, FolderOpen, CalendarClock, ChevronDown, Clock3, Repeat } from 'lucide-react'
 import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type SubTask, type Task, type Tier } from '@/db/db'
@@ -19,6 +20,7 @@ import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
 import { fmtDateTime, fmtDue, fmtStartAt, todayStr } from '@/lib/date'
 import { uid } from '@/lib/id'
+import { guardNavigation } from '@/lib/unsavedGuard'
 import { MORPH_NAME, consumeMorph, morphClose } from '@/lib/viewTransition'
 
 const FIELD = 'text-[12px] font-medium text-on-surface-2 mb-1.5 block'
@@ -41,6 +43,7 @@ export function TaskDetail() {
 }
 
 function TaskDetailContent({ detailId }: { detailId: string }) {
+  const navigate = useNavigate()
   const openDetail = useTasksUi((s) => s.openDetail)
   const toast = useUi((s) => s.toast)
   const task = useLiveQuery(() => db.tasks.get(detailId), [detailId]) ?? null
@@ -342,7 +345,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                       type="button"
                       onClick={() => {
                         openDetail(null)
-                        window.location.hash = `#/docs?folder=${task.folderId}`
+                        guardNavigation(() => navigate(`/docs?folder=${task.folderId}`))
                       }}
                       className="flex-1 min-w-0 h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-left text-[13px] hover:border-primary/50 transition-colors cursor-pointer flex items-center gap-2"
                     >
@@ -541,7 +544,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                     // 写「待开始专注」指令：FocusTimer 挂载后消费它，弹出选时小框并自动开始
                     try { localStorage.setItem('ws-focus-start', JSON.stringify({ taskId: task.id, at: Date.now() })) } catch { /* ignore */ }
                     openDetail(null)
-                    window.location.hash = `#/today?focus-task=${task.id}`
+                    guardNavigation(() => navigate(`/today?focus-task=${task.id}`))
                   }}
                   className="shrink-0 w-10 px-0 justify-center"
                 >

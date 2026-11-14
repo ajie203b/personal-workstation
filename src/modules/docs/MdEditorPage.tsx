@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router'
-import { EditorContent, useEditor } from '@tiptap/react'
+import { useBlocker, useNavigate, useParams } from 'react-router'
+import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 // v3 把 BubbleMenu / FloatingMenu 挪到子路径，定位也从 tippy 换成 Floating UI
 import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
@@ -11,7 +11,7 @@ import { readDocumentText } from '@/lib/readDocumentText'
 import {
   ArrowLeft, Bold, CheckSquare, Code, Code2, Eye, Focus, Highlighter, ImagePlus,
   Italic, List, ListOrdered, ListPlus, ListTree, Quote, Redo2, Save, Search, Share2,
-  Sigma, Strikethrough, Table2, Undo2,
+  Heading1, MoreHorizontal, Sigma, Strikethrough, Table2, Undo2,
 } from 'lucide-react'
 import { db, type Doc } from '@/db/db'
 import { addTask } from '@/db/tasks'
@@ -40,7 +40,7 @@ function formatDraftTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-const TOOLBAR_BTN = 'grid place-items-center w-8 h-8 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer'
+const TOOLBAR_BTN = 'grid place-items-center shrink-0 w-11 h-11 md:w-8 md:h-8 rounded-[10px] text-on-surface-2 hover:bg-surface-3 transition-colors cursor-pointer'
 const TOOLBAR_ON = 'bg-primary-soft text-primary'
 const HL_LABEL: Record<HlColor, string> = { yellow: '黄色', green: '绿色', blue: '蓝色', red: '红色' }
 
@@ -54,9 +54,11 @@ function ToolBtn({ label, active, onClick, children }: {
     <button
       type="button"
       aria-label={label}
+      aria-pressed={active}
       title={label}
       data-tip={label}
       className={cn(TOOLBAR_BTN, 'tip', active && TOOLBAR_ON)}
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
     >
       {children}
@@ -77,7 +79,8 @@ export function MdEditorPage() {
   const [contentSeed, setContentSeed] = useState<string | null>(null)
   const [countMarkdown, setCountMarkdown] = useState('')
   const [draftCandidate, setDraftCandidate] = useState<MdDraft | null>(null)
-  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null)
+  const [moreTools, setMoreTools] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [sourceMode, setSourceMode] = useState(false)
   const [sourceText, setSourceText] = useState('')
@@ -90,27 +93,39 @@ export function MdEditorPage() {
   const draftKey = mdDraftKey(docId)
   const seedingRef = useRef(false)
   const dirtyRef = useRef(false)
-  dirtyRef.current = dirty
+  const savingRef = useRef(false)
   const sourceModeRef = useRef(false)
   sourceModeRef.current = sourceMode
   const sourceTextRef = useRef('')
   sourceTextRef.current = sourceText
   const titleRef = useRef(title)
   titleRef.current = title
+  const baseHashRef = useRef(existing?.hash)
+  baseHashRef.current = existing?.hash
   const editSeqRef = useRef(0)
   const loadedDocIdRef = useRef<string | null>(null)
-  const pendingLeaveRef = useRef<(() => void) | null>(null)
+  const pendingLeaveRef = useRef<{ proceed: () => void; reset?: () => void } | null>(null)
   const saveRef = useRef<((opts?: { silent?: boolean; navigateOnCreate?: boolean }) => Promise<boolean>) | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const editorPageRef = useRef<HTMLDivElement>(null)
   const bodyScrollRef = useRef<HTMLDivElement>(null)
   const sourceTextareaRef = useRef<HTMLTextAreaElement>(null)
   const insertImagesRef = useRef<(files: File[]) => void>(() => {})
+
+  useEffect(() => {
+    const viewport = window.visualViewport
+    const page = editorPageRef.current
+    if (!page || !viewport) return
+    const resize = () => page.style.setProperty('--editor-viewport-height', `${viewport.height}px`)
+    resize()
+    viewport.addEventListener('resize', resize)
+    return () => viewport.removeEventListener('resize', resize)
+  }, [])
 
   // 载入待编辑文档 + 检测本地未保存草稿
   useEffect(() => {
     let cancelled = false
     setDraftCandidate(null)
-    setLastAutoSavedAt(null)
     if (!docId) {
       loadedDocIdRef.current = null
       setExisting(null)
@@ -223,6 +238,16 @@ export function MdEditorPage() {
     },
   })
 
+  const marks = useEditorState({
+    editor,
+    selector: ({ editor }) => ({
+      bold: editor?.isActive('bold') ?? false,
+      italic: editor?.isActive('italic') ?? false,
+      strike: editor?.isActive('strike') ?? false,
+      highlight: editor?.isActive('hl') ?? false,
+    }),
+  })
+
   // 内容就绪后一次性灌入（避免编辑器重建）
   useEffect(() => {
     if (ready && editor && contentSeed != null) {
@@ -278,6 +303,7 @@ export function MdEditorPage() {
     editSeqRef.current += 1
     dirtyRef.current = true
     setDirty(true)
+    sourceTextRef.current = next
     setSourceText(next)
     setCountMarkdown(next)
   }, [])
@@ -311,14 +337,16 @@ export function MdEditorPage() {
 
   const save = useCallback(
     async (opts?: { silent?: boolean; navigateOnCreate?: boolean }): Promise<boolean> => {
-      if (!editor || saving) return false
+      if (!editor || savingRef.current) return false
       const md = getLiveMarkdown()
-      if (!md.trim()) {
+      if (!existing && !md.trim()) {
         if (!opts?.silent) toast('内容为空')
         return false
       }
       const seqAtStart = editSeqRef.current
+      savingRef.current = true
       setSaving(true)
+      setSaveFailed(false)
       try {
         // 保存统一走 saveMarkdownDoc：内容变了就换 hash，同步才会把新正文当成新本体上传
         // （旧实现在这里复用 existing.hash，远端 sync.json 里的 hash 一直没变，正文永远停在第一版）
@@ -326,62 +354,56 @@ export function MdEditorPage() {
         loadedDocIdRef.current = saved.id
         setExisting(saved)
         if (existing) {
-          setTitle(saved.title)
-          if (opts?.silent) {
-            setLastAutoSavedAt(Date.now())
-          } else {
-            setLastAutoSavedAt(null)
-            toast('已保存')
-          }
+          if (editSeqRef.current === seqAtStart) setTitle(saved.title)
+          if (!opts?.silent) toast('已保存')
         } else {
-          clearMdDraft(mdDraftKey(undefined))
           if (!opts?.silent) toast('文档已创建')
-          // 建完立刻切到「编辑这篇」的路由：否则留在 /docs/new 上再按一次保存，
-          // existing 还是空，会再新建一篇一模一样的文档（连按两下就是两篇）
-          if (opts?.navigateOnCreate !== false) {
-            navigate(`/docs/edit/${saved.id}`, { replace: true })
-          }
         }
         clearMdDraft(mdDraftKey(saved.id))
         clearMdDraft(draftKey)
         if (editSeqRef.current === seqAtStart) {
           dirtyRef.current = false
           setDirty(false)
-        } else {
-          const latestMd = getLiveMarkdown() || md
-          writeMdDraft(mdDraftKey(saved.id), {
+        } else if (dirtyRef.current) {
+          writeMdDraft(draftKey, {
             title: titleRef.current,
-            markdown: latestMd,
+            markdown: getLiveMarkdown(),
             savedAt: Date.now(),
             baseHash: saved.hash,
           })
         }
+        if (!docId && opts?.navigateOnCreate !== false && !pendingLeaveRef.current && !dirtyRef.current) {
+          navigate(`/docs/edit/${saved.id}`, { replace: true, state: { createdDocId: saved.id } })
+        }
         return true
       } catch {
+        setSaveFailed(true)
         if (!opts?.silent) toast('保存失败，请重试')
         return false
       } finally {
+        savingRef.current = false
         setSaving(false)
       }
     },
-    [editor, existing, title, toast, navigate, saving, draftKey, getLiveMarkdown],
+    [editor, existing, title, toast, navigate, docId, draftKey, getLiveMarkdown],
   )
   saveRef.current = save
 
-  // 500ms 本地草稿防丢 + 1800ms 已有文档静默自动保存
+  const flushDraft = useCallback(() => {
+    if (!dirtyRef.current) return
+    writeMdDraft(draftKey, {
+      title: titleRef.current,
+      markdown: getLiveMarkdown(),
+      savedAt: Date.now(),
+      baseHash: baseHashRef.current,
+    })
+  }, [draftKey, getLiveMarkdown])
+
+  // 500ms 写本地草稿，正文停笔 1800ms 后自动保存到文档库。
   useEffect(() => {
     if (!ready || !dirty) return
-    const draftTimer = window.setTimeout(() => {
-      if (!editor) return
-      const md = getLiveMarkdown() || countMarkdown
-      writeMdDraft(draftKey, {
-        title: titleRef.current,
-        markdown: md,
-        savedAt: Date.now(),
-        baseHash: existing?.hash,
-      })
-    }, 500)
-    const autoTimer = existing
+    const draftTimer = window.setTimeout(flushDraft, 500)
+    const autoTimer = (existing || countMarkdown.trim()) && !leaveOpen
       ? window.setTimeout(() => {
           void saveRef.current?.({ silent: true })
         }, 1800)
@@ -390,7 +412,7 @@ export function MdEditorPage() {
       window.clearTimeout(draftTimer)
       if (autoTimer != null) window.clearTimeout(autoTimer)
     }
-  }, [ready, dirty, title, countMarkdown, existing, draftKey, editor, getLiveMarkdown])
+  }, [ready, dirty, title, countMarkdown, existing, leaveOpen, flushDraft])
 
   const restoreDraft = useCallback(() => {
     if (!draftCandidate || !editor) return
@@ -415,26 +437,55 @@ export function MdEditorPage() {
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => {
       if (!dirtyRef.current) return
+      flushDraft()
       e.preventDefault()
       e.returnValue = ''
     }
     window.addEventListener('beforeunload', onUnload)
-    return () => window.removeEventListener('beforeunload', onUnload)
-  }, [])
+    window.addEventListener('pagehide', flushDraft)
+    return () => {
+      flushDraft()
+      window.removeEventListener('beforeunload', onUnload)
+      window.removeEventListener('pagehide', flushDraft)
+    }
+  }, [flushDraft])
 
   // 应用内路由离开守卫
+  const requestLeave = useCallback((proceed: () => void, reset?: () => void) => {
+    pendingLeaveRef.current = { proceed, reset }
+    setLeaveOpen(true)
+  }, [])
+
   useEffect(() => {
     return registerUnsavedGuard((proceed) => {
       if (!dirtyRef.current) return false
-      pendingLeaveRef.current = proceed
-      setLeaveOpen(true)
+      if (!pendingLeaveRef.current) requestLeave(proceed)
       return true
-    })
-  }, [])
+    }, navigate)
+  }, [navigate, requestLeave])
+
+  const blocker = useBlocker(({ historyAction }) => historyAction === 'POP' && dirtyRef.current)
+  useEffect(() => {
+    if (blocker.state === 'blocked') requestLeave(blocker.proceed, blocker.reset)
+  }, [blocker, requestLeave])
+
+  const closeLeave = () => {
+    pendingLeaveRef.current?.reset?.()
+    pendingLeaveRef.current = null
+    setLeaveOpen(false)
+  }
+
+  const proceedLeave = () => {
+    const pending = pendingLeaveRef.current
+    pendingLeaveRef.current = null
+    setLeaveOpen(false)
+    pending?.proceed()
+  }
 
   return (
     <div
-      className="h-full flex flex-col bg-surface"
+      ref={editorPageRef}
+      className="h-full max-md:max-h-[var(--editor-viewport-height,100%)] flex flex-col bg-surface"
       style={{
         paddingTop: 'env(safe-area-inset-top, 0px)',
         paddingLeft: 'env(safe-area-inset-left, 0px)',
@@ -452,7 +503,7 @@ export function MdEditorPage() {
         </button>
         <input
           value={title}
-          onChange={(e) => { editSeqRef.current += 1; dirtyRef.current = true; setTitle(e.target.value); setDirty(true) }}
+          onChange={(e) => { editSeqRef.current += 1; dirtyRef.current = true; titleRef.current = e.target.value; setTitle(e.target.value); setDirty(true) }}
           placeholder="文档标题"
           className="flex-1 min-w-0 bg-transparent outline-none text-[15px] font-semibold"
         />
@@ -460,19 +511,8 @@ export function MdEditorPage() {
           className={cn('text-[11px] sm:text-[11.5px] tabular-nums shrink-0', dirty ? 'text-p1' : 'text-on-surface-2')}
           aria-live="polite"
         >
-          {saving
-            ? '保存中…'
-            : dirty
-              ? '未保存'
-              : !existing
-                ? '新文档'
-                : lastAutoSavedAt
-                  ? `已自动保存 ${formatDraftTime(lastAutoSavedAt)}`
-                  : '已保存'}
+          {saveFailed ? '保存失败' : saving || (dirty && (existing || countMarkdown.trim())) ? '保存中…' : dirty ? '本地草稿' : existing ? '已保存' : '新文档'}
         </span>
-        <Button variant="primary" size="sm" disabled={saving} onClick={() => void save()}>
-          <Save size={14} /> {saving ? '保存中' : '保存'}
-        </Button>
         <Button
           size="sm"
           aria-label="切换到阅读模式"
@@ -521,57 +561,52 @@ export function MdEditorPage() {
 
       {/* 工具栏 */}
       {editor && (
-        <div className="shrink-0 flex flex-col border-b border-outline/60">
-          <div className="flex items-center gap-0.5 px-3 md:px-6 py-1.5 overflow-x-auto md:overflow-visible md:flex-wrap">
+        <div className="max-md:order-last shrink-0 flex flex-col bg-surface border-outline/60 max-md:border-t md:border-b" role="toolbar" aria-label="文档编辑工具">
+          <div className="flex items-center gap-0.5 px-3 md:px-6 py-1 overflow-x-auto md:overflow-visible md:flex-wrap">
             {!sourceMode && (
               <>
                 <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolBtn>
-                <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolBtn>
-                <span className="w-px h-5 bg-outline mx-1" />
-                <select
-                  aria-label="段落级别"
-                  value={([1, 2, 3, 4, 5, 6].find((l) => editor.isActive('heading', { level: l })) ?? 0)}
-                  onChange={(e) => {
-                    const lvl = Number(e.target.value)
-                    if (lvl === 0) editor.chain().focus().setParagraph().run()
-                    else editor.chain().focus().setHeading({ level: lvl as 1 | 2 | 3 | 4 | 5 | 6 }).run()
-                  }}
-                  className="h-8 px-2 rounded-[9px] bg-surface-2 border border-outline/70 text-[12px] text-on-surface outline-none cursor-pointer mr-0.5"
-                >
-                  <option value={0}>正文</option>
-                  {[1, 2, 3, 4, 5, 6].map((l) => (
-                    <option key={l} value={l}>H{l} 标题</option>
-                  ))}
-                </select>
-                <ToolBtn label="加粗" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={15} /></ToolBtn>
-                <ToolBtn label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
-                <ToolBtn label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={15} /></ToolBtn>
-                <ToolBtn label="高亮（黄色）" active={editor.isActive('hl')} onClick={() => editor.chain().focus().toggleMark('hl', { color: 'yellow' }).run()}><Highlighter size={15} /></ToolBtn>
-                <span className="w-px h-5 bg-outline mx-1" />
+                <ToolBtn label="一级标题" active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 size={16} /></ToolBtn>
+                <ToolBtn label="加粗" active={marks?.bold} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={16} /></ToolBtn>
                 <ToolBtn label="无序列表" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={15} /></ToolBtn>
-                <ToolBtn label="有序列表" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>
                 <ToolBtn label="待办清单" active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={15} /></ToolBtn>
-                <ToolBtn label="引用" active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={15} /></ToolBtn>
-                <ToolBtn label="代码块" active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={15} /></ToolBtn>
-                <ToolBtn label="插入表格 (3×3)" active={isCursorInTable(editor.state)} onClick={() => editor.chain().focus().insertGfmTable({ rows: 3, cols: 3 }).run()}><Table2 size={15} /></ToolBtn>
-                <ToolBtn label="行内公式 ($...$)" onClick={() => editor.chain().focus().insertInlineMath('').run()}><span className="text-[12px] font-mono font-semibold">$</span></ToolBtn>
-                <ToolBtn label="公式块 ($$...$$)" onClick={() => editor.chain().focus().insertMathBlock('').run()}><Sigma size={15} /></ToolBtn>
-                <ToolBtn label="插入图片（也可直接粘贴或拖入）" onClick={() => imageInputRef.current?.click()}><ImagePlus size={15} /></ToolBtn>
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files?.length) void insertImages(Array.from(e.target.files))
-                    e.target.value = ''
-                  }}
-                />
               </>
             )}
+            <button type="button" aria-label="更多编辑工具" aria-expanded={moreTools} onMouseDown={(e) => e.preventDefault()} onClick={() => setMoreTools((value) => !value)} className={cn(TOOLBAR_BTN, 'md:hidden', moreTools && TOOLBAR_ON)}>
+              <MoreHorizontal size={19} />
+            </button>
+            <div className={cn('items-center gap-0.5 shrink-0', moreTools ? 'flex' : 'hidden md:flex')}>
+              {!sourceMode && (
+                <>
+                  <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolBtn>
+                  {([2, 3, 4, 5, 6] as const).map((level) => (
+                    <ToolBtn key={level} label={`${level} 级标题`} active={editor.isActive('heading', { level })} onClick={() => editor.chain().focus().toggleHeading({ level }).run()}><span className="text-xs font-semibold">H{level}</span></ToolBtn>
+                  ))}
+                  <ToolBtn label="斜体" active={marks?.italic} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
+                  <ToolBtn label="删除线" active={marks?.strike} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={15} /></ToolBtn>
+                  <ToolBtn label="高亮（黄色）" active={marks?.highlight} onClick={() => editor.chain().focus().toggleMark('hl', { color: 'yellow' }).run()}><Highlighter size={15} /></ToolBtn>
+                  <ToolBtn label="有序列表" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>
+                  <ToolBtn label="引用" active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={15} /></ToolBtn>
+                  <ToolBtn label="代码块" active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={15} /></ToolBtn>
+                  <ToolBtn label="插入表格 (3×3)" active={isCursorInTable(editor.state)} onClick={() => editor.chain().focus().insertGfmTable({ rows: 3, cols: 3 }).run()}><Table2 size={15} /></ToolBtn>
+                  <ToolBtn label="行内公式 ($...$)" onClick={() => editor.chain().focus().insertInlineMath('').run()}><span className="text-[12px] font-mono font-semibold">$</span></ToolBtn>
+                  <ToolBtn label="公式块 ($$...$$)" onClick={() => editor.chain().focus().insertMathBlock('').run()}><Sigma size={15} /></ToolBtn>
+                  <ToolBtn label="插入图片（也可直接粘贴或拖入）" onClick={() => imageInputRef.current?.click()}><ImagePlus size={15} /></ToolBtn>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.length) void insertImages(Array.from(e.target.files))
+                      e.target.value = ''
+                    }}
+                  />
+                </>
+              )}
+              {saveFailed && <ToolBtn label="重试保存" onClick={() => void save()}><Save size={15} /></ToolBtn>}
 
-            <div className="ml-auto flex items-center gap-0.5 pl-2 shrink-0">
               <ToolBtn label="查找与替换 (Ctrl+F / Ctrl+H)" active={findReplace.open} onClick={() => findReplace.openFind(true)}>
                 <Search size={15} />
               </ToolBtn>
@@ -589,7 +624,7 @@ export function MdEditorPage() {
                     title="打字机模式（光标保持在屏幕中部）"
                     onClick={() => setTypewriterMode((v) => !v)}
                     className={cn(
-                      'h-7 px-2 rounded-[8px] text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap',
+                      'h-11 md:h-8 px-2 rounded-[8px] text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap',
                       typewriterMode ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
                     )}
                   >
@@ -756,10 +791,7 @@ export function MdEditorPage() {
       <Dialog
         open={leaveOpen}
         onOpenChange={(open) => {
-          if (!open) {
-            pendingLeaveRef.current = null
-            setLeaveOpen(false)
-          }
+          if (!open) closeLeave()
         }}
         title="有未保存的修改"
         description="离开当前文档前，是否先保存你的更改？"
@@ -768,10 +800,7 @@ export function MdEditorPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              pendingLeaveRef.current = null
-              setLeaveOpen(false)
-            }}
+            onClick={closeLeave}
           >
             继续编辑
           </Button>
@@ -782,10 +811,7 @@ export function MdEditorPage() {
               clearMdDraft(draftKey)
               dirtyRef.current = false
               setDirty(false)
-              setLeaveOpen(false)
-              const proceed = pendingLeaveRef.current
-              pendingLeaveRef.current = null
-              proceed?.()
+              proceedLeave()
             }}
           >
             放弃修改
@@ -797,11 +823,7 @@ export function MdEditorPage() {
             onClick={() => {
               void (async () => {
                 const ok = await save({ navigateOnCreate: false })
-                if (!ok) return
-                setLeaveOpen(false)
-                const proceed = pendingLeaveRef.current
-                pendingLeaveRef.current = null
-                proceed?.()
+                if (ok && !dirtyRef.current) proceedLeave()
               })()
             }}
           >

@@ -1106,6 +1106,8 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 .md-body .md-table-scroll { max-width: 100%; overflow-x: auto; margin: 1.2em 0; }
 .md-body .md-table-scroll table { margin: 0; }
 .md-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--md-quote) 52%, transparent); }
+.tiptap.md-body th, .tiptap.md-body td { border: 1px solid color-mix(in srgb, var(--on-surface-2) 40%, var(--outline)); }
+.tiptap.md-body th { background: var(--surface-2); }
 .md-body img { display: block; max-width: 100%; max-height: 72vh; object-fit: contain; margin: 1.2em auto; border-radius: 10px; }
 .md-body hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--md-rule), transparent); margin: 2em 0; }
 .md-body mark { background: transparent; color: inherit; padding: 0.1em 0; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background-color var(--dur-1) var(--ease-standard); }

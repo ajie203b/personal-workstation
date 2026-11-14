@@ -192,6 +192,7 @@ async function ensureDirs(cfg: WebdavConfig, base: string): Promise<void> {
 /* ---------------- 文档本体 ---------------- */
 
 const BLOB_SYNC_CONCURRENCY = 4
+const MAX_PARALLEL_BLOB_BYTES = 20 * 1024 * 1024
 
 async function blobToBase64(blob: Blob): Promise<string> {
   return bytesToBase64(new Uint8Array(await blob.arrayBuffer()))
@@ -211,7 +212,17 @@ async function runConcurrent<T>(items: readonly T[], limit: number, worker: (ite
       await worker(items[idx])
     }
   })
-  await Promise.all(workers)
+  const results = await Promise.allSettled(workers)
+  const failure = results.find((result) => result.status === 'rejected')
+  if (failure) throw failure.reason
+}
+
+async function syncBlobs<T extends { hash: string }>(
+  items: readonly T[], sizes: ReadonlyMap<string, number>, worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const large = (item: T) => (sizes.get(item.hash) ?? Infinity) > MAX_PARALLEL_BLOB_BYTES
+  await runConcurrent(items.filter((item) => !large(item)), BLOB_SYNC_CONCURRENCY, worker)
+  for (const item of items.filter(large)) await worker(item)
 }
 
 /* ---------------- 本地写入 ---------------- */
@@ -462,13 +473,16 @@ async function performSync(): Promise<SyncReport> {
 
   const localHashes = new Set((await db.blobs.toCollection().primaryKeys()) as string[])
   merged.payload.blobMeta = (merged.payload.blobMeta ?? []).filter((m) => localHashes.has(m.hash) || remoteHashes.has(m.hash))
+  const blobSizes = new Map(merged.payload.docs.flatMap(({ hash, size }) =>
+    Number.isFinite(size) && size > 0 ? [[hash, size] as const] : [],
+  ))
 
   // 1) 补下载：远端有、本地没有的文档本体（限并发）
   let blobsDown = 0
   const downTargets = merged.payload.blobMeta.filter((m, i, arr) =>
     !localHashes.has(m.hash) && remoteHashes.has(m.hash) && arr.findIndex((x) => x.hash === m.hash) === i,
   )
-  await runConcurrent(downTargets, BLOB_SYNC_CONCURRENCY, async (meta) => {
+  await syncBlobs(downTargets, blobSizes, async (meta) => {
     const res = await getText(cfg, join(base, `blobs/${meta.hash}.b64`))
     if (!res?.text) return
     const blob = base64ToBlob(res.text, meta.type)
@@ -487,7 +501,7 @@ async function performSync(): Promise<SyncReport> {
   const upTargets = merged.payload.blobMeta.filter((m, i, arr) =>
     localHashes.has(m.hash) && !remoteHashes.has(m.hash) && arr.findIndex((x) => x.hash === m.hash) === i,
   )
-  await runConcurrent(upTargets, BLOB_SYNC_CONCURRENCY, async (meta) => {
+  await syncBlobs(upTargets, blobSizes, async (meta) => {
     const row = await db.blobs.get(meta.hash)
     if (!row) return
     await putText(cfg, join(base, `blobs/${meta.hash}.b64`), await blobToBase64(row.blob))

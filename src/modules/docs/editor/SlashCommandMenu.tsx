@@ -25,6 +25,8 @@ export const SLASH_COMMANDS: SlashCommandItem[] = [
   { id: 'h2', label: '二级标题', hint: 'H2', keywords: ['h2', 'heading', '标题'], icon: Heading2 },
   { id: 'h3', label: '三级标题', hint: 'H3', keywords: ['h3', 'heading', '标题'], icon: Heading3 },
   { id: 'h4', label: '四级标题', hint: 'H4', keywords: ['h4', 'heading', '标题'], icon: Heading4 },
+  { id: 'h5', label: '五级标题', hint: 'H5', keywords: ['h5', 'heading', '标题'], icon: Heading4 },
+  { id: 'h6', label: '六级标题', hint: 'H6', keywords: ['h6', 'heading', '标题'], icon: Heading4 },
   { id: 'task', label: '待办清单', hint: '- [ ]', keywords: ['todo', 'task', 'check', '待办', '清单'], icon: CheckSquare },
   { id: 'bullet', label: '无序列表', hint: '- ', keywords: ['ul', 'list', 'bullet', '列表'], icon: List },
   { id: 'ordered', label: '有序列表', hint: '1. ', keywords: ['ol', 'ordered', 'number', '编号'], icon: ListOrdered },

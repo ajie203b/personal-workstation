@@ -6,7 +6,7 @@ import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
-import { openDoc } from '@/shared/DeepLink'
+import { docPath } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { GettingStarted } from './GettingStarted'
 import { prefersReducedMotion } from '@/lib/motion'
@@ -315,6 +315,7 @@ function KeyboardHint({ className }: { className?: string }) {
 
 /** My Day 智能建议队列：逾期 → 今日到期 → 3 日内 → 高优先加权 */
 function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
+  const navigate = useNavigate()
   const suggestions = useMemo(() => {
     const today = todayStr()
     const threeDaysStr = addDaysStr(3)
@@ -346,7 +347,7 @@ function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
         {suggestions.map(({ task }) => (
           <button
             key={task.id}
-            onClick={() => { window.location.hash = `#/tasks?tier=${task.tier}&focus=${task.id}` }}
+            onClick={() => navigate(`/tasks?tier=${task.tier}&focus=${task.id}`)}
             className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-3 transition-colors text-left cursor-pointer w-full"
           >
             <span
@@ -389,7 +390,7 @@ function RecentReads() {
               role="button"
               onClick={(e) => {
                 e.stopPropagation()
-                openDoc({ docId: d.id })
+                navigate(docPath({ docId: d.id }))
               }}
               className="flex items-center gap-2 px-2 py-1.5 rounded-[10px] hover:bg-surface-3 transition-colors"
             >

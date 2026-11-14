@@ -4,6 +4,8 @@ import { useUi } from '@/stores/ui'
 import { db } from '@/db/db'
 import { exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
+import { Dialog } from '@/shared/ui/Sheet'
+import { clearLegacySnapshots } from '@/lib/legacySnapshots'
 import { fmtDateTime, todayStr } from '@/lib/date'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { isNative } from '@/lib/native'
@@ -25,6 +27,7 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
   const [usage, setUsage] = useState<string>('')
   const [lastBackup, setLastBackup] = useState<number | null>(null)
   const [modelBytes, setModelBytes] = useState<number | null>(null)
+  const [confirmSnapshots, setConfirmSnapshots] = useState(false)
   const toast = useUi((s) => s.toast)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -73,6 +76,7 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
   }
 
   const { state: clearCacheState, run: runClearCache } = useAsyncButton({ successHoldMs: 900 })
+  const { state: snapshotState, run: runClearSnapshots } = useAsyncButton()
 
   const doClearModelCache = async () => {
     try {
@@ -127,6 +131,28 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
             : '还没有导出过备份'}
           {backupStale ? ' · 建议现在导出一次，之后每周一次即可' : ' · 备份状态良好'}
         </div>
+        {'getDirectory' in (navigator.storage ?? {}) && (
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => setConfirmSnapshots(true)}>
+            <Trash2 size={14} /> 清理旧快照
+          </Button>
+        )}
+        <Dialog
+          open={confirmSnapshots}
+          onOpenChange={setConfirmSnapshots}
+          title="清理旧快照"
+          description="旧版本自动生成的快照可能含有旧 AI Key。清理会永久删除这些快照，当前任务、文档和手动导出的备份仍可使用。"
+        >
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setConfirmSnapshots(false)}>取消</Button>
+            <Button variant="destructive" state={snapshotState} onClick={() => {
+              void runClearSnapshots(async () => {
+                const count = await clearLegacySnapshots()
+                setConfirmSnapshots(false)
+                toast(count ? `已清理 ${count} 份旧快照` : '没有旧快照需要清理')
+              }).catch(() => toast('清理旧快照失败，请重试'))
+            }}>清理</Button>
+          </div>
+        </Dialog>
       </section>
 
       <section className="card p-4">

@@ -1,4 +1,5 @@
 import { Clock, FileText, ListChecks, Pin, Repeat } from 'lucide-react'
+import { useNavigate } from 'react-router'
 import { PRIORITY_VAR, type Task } from '@/db/db'
 import { fmtDue, fmtStartAt, futureReason, isFutureTask } from '@/lib/date'
 import { repeatLabel } from '@/lib/repeat'
@@ -6,7 +7,7 @@ import { checkinProgress } from '@/db/tasks'
 import { cn } from '@/lib/cn'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { checkInWithUndo, toggleTaskWithUndo } from './taskActions'
-import { openDoc } from '@/shared/DeepLink'
+import { docPath } from '@/shared/DeepLink'
 import { useTasksUi } from '@/stores/tasks'
 import { morphOpen } from '@/lib/viewTransition'
 
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function TaskItem({ task, focused, overlay, flip }: Props) {
+  const navigate = useNavigate()
   const openDetail = useTasksUi((s) => s.openDetail)
   const done = task.status === 'done'
   const future = isFutureTask(task)
@@ -130,7 +132,7 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    openDoc(task.docRef!)
+                    navigate(docPath(task.docRef!))
                   }}
                   title="打开关联文档"
                   className="inline-flex max-w-full min-w-0 items-center gap-1 text-primary hover:underline cursor-pointer"

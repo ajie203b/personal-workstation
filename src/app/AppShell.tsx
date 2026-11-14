@@ -87,7 +87,7 @@ export function AppShell() {
       <RouteProgress />
       <Sidebar />
       <div className={cn('flex-1 flex flex-col min-w-0', !immersive && 'md:pt-[env(safe-area-inset-top,0px)]')}>
-        {!immersive && <TopBar title={title} />}
+        {!immersive && pathname !== '/docs' && <TopBar title={title} />}
         <main
           id="main-scroll"
           className={cn(

@@ -113,7 +113,7 @@ export async function saveMarkdownDoc(input: {
   const old = input.doc
 
   if (!old) {
-    const doc: Doc = { id, hash, title, kind: 'md', size: markdown.length, addedAt: now, updatedAt: now, lastOpenedAt: now }
+    const doc: Doc = { id, hash, title, kind: 'md', size: blob.size, addedAt: now, updatedAt: now }
     await db.transaction('rw', db.docs, db.blobs, async () => {
       await db.blobs.put({ hash, blob })
       await db.docs.add(doc)
@@ -122,7 +122,7 @@ export async function saveMarkdownDoc(input: {
     return doc
   }
 
-  const next: Doc = { ...old, hash, title, size: markdown.length, updatedAt: now, lastOpenedAt: now }
+  const next: Doc = { ...old, hash, title, size: blob.size, updatedAt: now }
 
   if (old.hash === hash) {
     await db.docs.put(next)

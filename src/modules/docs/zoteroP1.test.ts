@@ -98,6 +98,7 @@ describe('citation & reviewSm2 & reader annotation filters', () => {
     })
     const bib = formatCitation(doc, 'bibtex')
     expect(bib).toContain('@article{hekaiming2016_doc123,')
+    expect(bib).toContain('author = {He Kaiming and Zhang Xiangyu}')
     expect(bib).toContain('journal = {CVPR}')
     expect(bib).toContain('doi = {10.1109/CVPR.2016.90}')
 
@@ -109,6 +110,20 @@ describe('citation & reviewSm2 & reader annotation filters', () => {
 
     const md = formatCitation(doc, 'markdown')
     expect(md).toBe('[Deep Residual Learning](#/docs/doc123456) (He Kaiming, Zhang Xiangyu, 2016, CVPR, DOI: 10.1109/CVPR.2016.90)')
+  })
+
+  it('preserves family-name commas and escapes BibTeX field values', () => {
+    const doc = mkDoc('doc123456', {
+      title: 'Sets {A} & 50% of B',
+      meta: { author: 'Vaswani, A.; Shazeer, N.', venue: 'Research & Design' },
+    })
+    expect(formatCitation(doc, 'bibtex')).toContain(String.raw`title = {Sets {\textbraceleft}A{\textbraceright} \& 50\% of B}`)
+    expect(formatCitation(doc, 'bibtex')).toContain('author = {Vaswani, A. and Shazeer, N.}')
+    expect(formatCitation(doc, 'ris').split('\n').filter((line) => line.startsWith('AU  - ')))
+      .toEqual(['AU  - Vaswani, A.', 'AU  - Shazeer, N.'])
+    doc.meta!.author = 'Vaswani, A.'
+    expect(formatCitation(doc, 'ris').split('\n').filter((line) => line.startsWith('AU  - ')))
+      .toEqual(['AU  - Vaswani, A.'])
   })
 
   it('schedules SM-2 intervals and due checks', () => {

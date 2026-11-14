@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Copy, FolderInput, X } from 'lucide-react'
+import { FolderInput, Quote, X } from 'lucide-react'
 import type { Doc, DocReadStatus, Folder } from '@/db/db'
 import { updateDocMeta } from '@/db/docs'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
 import { cn } from '@/lib/cn'
-import { formatCitation, type CitationStyle } from './citation'
+import { CitationDialog } from './CitationDialog'
 import { buildFolderTree, type FolderTreeNode } from './libraryModel'
 
 export type FolderDialogState = { mode: 'create'; parentId?: string } | { mode: 'move'; doc: Doc } | null
@@ -203,18 +203,11 @@ function DocMetaDialog({ doc, onClose, onSaved }: { doc: Doc; onClose: () => voi
     setTagInput('')
   }
 
-  const copyCite = async (style: CitationStyle) => {
-    const previewDoc: Doc = {
-      ...doc,
-      title: title.trim() || doc.title,
-      meta: { author: author.trim() || undefined, year: year.trim() || undefined, venue: venue.trim() || undefined, doi: doi.trim() || undefined },
-    }
-    try {
-      await navigator.clipboard.writeText(formatCitation(previewDoc, style))
-      onSaved?.(`已复制 ${style.toUpperCase()} 引文`)
-    } catch {
-      onSaved?.('复制失败，请手动复制')
-    }
+  const [citationOpen, setCitationOpen] = useState(false)
+  const citationDoc: Doc = {
+    ...doc,
+    title: title.trim() || doc.title,
+    meta: { author: author.trim() || undefined, year: year.trim() || undefined, venue: venue.trim() || undefined, doi: doi.trim() || undefined },
   }
 
   const submit = async () => {
@@ -241,11 +234,11 @@ function DocMetaDialog({ doc, onClose, onSaved }: { doc: Doc; onClose: () => voi
           <span>文档标题</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-9 px-3 rounded-[9px] bg-surface-2 border border-outline text-[13px] text-on-surface outline-none focus:border-primary/60" />
         </label>
+        <label className="flex flex-col gap-1 text-[12px] text-on-surface-2">
+          <span>作者</span>
+          <textarea rows={3} value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="如 Zhang, L.; Li, M." className="px-3 py-2 rounded-[9px] bg-surface-2 border border-outline text-[13px] text-on-surface outline-none focus:border-primary/60" />
+        </label>
         <div className="grid grid-cols-2 gap-2.5">
-          <label className="flex flex-col gap-1 text-[12px] text-on-surface-2">
-            <span>作者</span>
-            <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="如 Zhang, L.; Li, M." className="h-9 px-3 rounded-[9px] bg-surface-2 border border-outline text-[13px] text-on-surface outline-none focus:border-primary/60" />
-          </label>
           <label className="flex flex-col gap-1 text-[12px] text-on-surface-2">
             <span>年份</span>
             <input value={year} onChange={(e) => setYear(e.target.value)} placeholder="2025" className="h-9 px-3 rounded-[9px] bg-surface-2 border border-outline text-[13px] text-on-surface outline-none focus:border-primary/60" />
@@ -306,11 +299,7 @@ function DocMetaDialog({ doc, onClose, onSaved }: { doc: Doc; onClose: () => voi
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-outline/60">
-          <div className="flex items-center gap-1.5">
-            <Button size="sm" variant="outline" onClick={() => void copyCite('bibtex')}><Copy size={12} /> BibTeX</Button>
-            <Button size="sm" variant="outline" onClick={() => void copyCite('ris')}><Copy size={12} /> RIS</Button>
-            <Button size="sm" variant="outline" onClick={() => void copyCite('markdown')}><Copy size={12} /> MD 引用</Button>
-          </div>
+          <Button size="sm" variant="outline" onClick={() => setCitationOpen(true)}><Quote size={14} /> 引用…</Button>
           <div className="flex items-center gap-2 ml-auto">
             <Button size="sm" onClick={onClose}>取消</Button>
             <Button size="sm" variant="primary" disabled={saving || !title.trim()} onClick={() => void submit()}>
@@ -319,6 +308,7 @@ function DocMetaDialog({ doc, onClose, onSaved }: { doc: Doc; onClose: () => voi
           </div>
         </div>
       </div>
+      {citationOpen && <CitationDialog doc={citationDoc} onClose={() => setCitationOpen(false)} />}
     </Dialog>
   )
 }

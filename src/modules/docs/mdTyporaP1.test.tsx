@@ -6,7 +6,7 @@ import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from 'tiptap-markdown'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { createHashRouter, createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { findMatchesInDoc, findTextMatches, replaceAllInEditor, replaceOneInEditor, EditorFindExtension } from './editor/editorFind'
 import { EditorFocusExtension } from './editor/editorFocus'
@@ -16,6 +16,7 @@ import { MdOutlinePanel } from './editor/MdOutlinePanel'
 import { SLASH_COMMANDS, detectSlashTrigger, filterSlashCommands } from './editor/SlashCommandMenu'
 import { executeSlashCommand } from './editor/typoraCommands'
 import { MdEditorPage } from './MdEditorPage'
+import { mdDraftKey, readMdDraft } from './mdDraft'
 
 vi.mock('./MermaidBlock', () => ({
   MermaidBlock: ({ chart }: { chart: string }) => <div data-testid="mermaid-preview">{chart}</div>,
@@ -57,6 +58,22 @@ describe('Typora P1 extensions', () => {
     editor.destroy()
   })
 
+  it('moves Enter to the same column in the next row without losing inline formatting or pipes', () => {
+    const editor = createHeadlessEditor('| A | **B** |\n| --- | --- |\n| X | a\\|b |')
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'B') editor.commands.setTextSelection(pos)
+    })
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', cancelable: true }))
+
+    expect(editor.state.selection.$from.parent.type.name).toBe('tableCell')
+    expect(editor.state.selection.$from.parent.textContent).toBe('a|b')
+    expect(getMd(editor)).toBe('| A | **B** |\n| --- | --- |\n| X | a\\|b |\n')
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', cancelable: true }))
+    expect(editor.state.doc.firstChild!.childCount).toBe(3)
+    expect(editor.state.selection.$from.index(-1)).toBe(1)
+    editor.destroy()
+  })
+
   it('parses and round-trips inline math ($...$), block math ($$...$$), and task lists', () => {
     const source = '- [ ] 待办任务\n- [x] 已完成任务\n\n行内 $E=mc^2$ 测试\n\n$$\n\\frac{a}{b}\n$$'
     const editor = createHeadlessEditor(source)
@@ -65,6 +82,34 @@ describe('Typora P1 extensions', () => {
     expect(md).toContain('- [x] 已完成任务')
     expect(md).toContain('$E=mc^2$')
     expect(md).toContain('$$\n\\frac{a}{b}\n$$')
+    editor.destroy()
+  })
+
+  it('types an inline formula as soon as the closing dollar is entered', () => {
+    const editor = createHeadlessEditor('公式 $x^2')
+    const end = editor.state.doc.content.size - 1
+    editor.commands.setTextSelection(end)
+    const { view } = editor
+    const handled = view.someProp('handleTextInput', handler => handler(view, end, end, '$', () => view.state.tr))
+    expect(handled).toBe(true)
+    expect(editor.state.doc.firstChild?.lastChild?.type.name).toBe('inlineMath')
+    expect(editor.state.doc.firstChild?.lastChild?.attrs.latex).toBe('x^2')
+    expect(getMd(editor)).toBe('公式 $x^2$')
+    editor.destroy()
+  })
+
+  it('starts in the first cell and keeps typing in the table after Tab on the last cell', () => {
+    const editor = createHeadlessEditor('')
+    editor.commands.insertGfmTable({ rows: 2, cols: 2 })
+    expect(editor.state.selection.$from.parent.textContent).toBe('列 1')
+    for (let i = 0; i < 4; i++) {
+      const key = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true })
+      editor.view.dom.dispatchEvent(key)
+      expect(key.defaultPrevented).toBe(true)
+    }
+    editor.commands.insertContent('保留正文')
+    expect(getMd(editor)).toContain('| 保留正文 |  |')
+    expect(editor.state.doc.firstChild?.childCount).toBe(3)
     editor.destroy()
   })
 
@@ -122,6 +167,7 @@ describe('MdOutlinePanel & MdEditorPage Typora UI', () => {
   afterEach(() => {
     act(() => root.unmount())
     host.remove()
+    localStorage.clear()
   })
 
   it('renders real-time heading outline and forwards click selection', async () => {
@@ -145,18 +191,16 @@ describe('MdOutlinePanel & MdEditorPage Typora UI', () => {
   })
 
   it('supports Typora outline, table insertion, find-and-replace, and rich<->source round-trip in MdEditorPage', async () => {
+    const router = createMemoryRouter([
+      { path: '/docs/new', element: <MdEditorPage /> },
+    ], { initialEntries: ['/docs/new'] })
     await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/docs/new']}>
-          <Routes>
-            <Route path="/docs/new" element={<MdEditorPage />} />
-          </Routes>
-        </MemoryRouter>,
-      )
+      root.render(<RouterProvider router={router} />)
     })
 
     // 打开大纲并插入 3x3 表格
     await act(async () => {
+      host.querySelector<HTMLButtonElement>('[aria-label="更多编辑工具"]')!.click()
       host.querySelector<HTMLButtonElement>('[aria-label="展开实时大纲"]')!.click()
     })
     expect(host.querySelector('[aria-label="文档大纲"]')).not.toBeNull()
@@ -193,6 +237,61 @@ describe('MdOutlinePanel & MdEditorPage Typora UI', () => {
       replaceAllBtn.click()
     })
     expect(textarea.value).toContain('| ColumnA | 列 2 | 列 3 |')
+    // 在 500ms 草稿计时器触发前移走编辑器。
+    await act(async () => { root.render(null) })
+    expect(readMdDraft(mdDraftKey())?.markdown).toContain('| ColumnA | 列 2 | 列 3 |')
+  })
+
+  it('offers to stay or discard when the browser goes back from a dirty editor', async () => {
+    window.history.replaceState(null, '', '#/docs')
+    const router = createHashRouter([
+      { path: '/docs', element: <div>文档库</div> },
+      { path: '/docs/new', element: <MdEditorPage /> },
+    ])
+    try {
+      await act(async () => { root.render(<RouterProvider router={router} />) })
+      await act(async () => { await router.navigate('/docs/new') })
+      const titleInput = host.querySelector<HTMLInputElement>('input[placeholder="文档标题"]')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(titleInput, '新标题')
+        titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+
+      async function goBack() {
+        await act(async () => {
+          for (const waitForRestoredEntry of [false, true]) {
+            await new Promise<void>((resolve) => {
+              window.addEventListener('popstate', () => resolve(), { once: true })
+              if (!waitForRestoredEntry) window.history.back()
+            })
+            if (router.state.location.pathname === '/docs') break
+          }
+        })
+      }
+
+      await goBack()
+      expect(window.location.hash).toBe('#/docs/new')
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain('有未保存的修改')
+      const clickDialogButton = async (name: string) => {
+        const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+          .find((element) => element.textContent === name)!
+        await act(async () => { button.click() })
+      }
+      await clickDialogButton('继续编辑')
+      expect(titleInput.value).toBe('新标题')
+
+      await goBack()
+      await clickDialogButton('放弃修改')
+      await act(async () => {
+        if (router.state.location.pathname !== '/docs') {
+          await new Promise<void>((resolve) => window.addEventListener('popstate', () => resolve(), { once: true }))
+        }
+      })
+      expect(host.textContent).toBe('文档库')
+      expect(readMdDraft(mdDraftKey())).toBeNull()
+    } finally {
+      router.dispose()
+    }
   })
 
   it('adds Typora Find/Replace and Focus/Typewriter modes to LocalRichEditor without breaking table preservation', async () => {

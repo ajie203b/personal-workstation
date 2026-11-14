@@ -7,7 +7,7 @@ import {
 import { db, type Doc, type DocKind, type DocText, type Task } from '@/db/db'
 import { useUi, togglePalette } from '@/stores/ui'
 import { useTasksUi } from '@/stores/tasks'
-import { openDocAtHit } from '@/shared/DeepLink'
+import { docHitPath } from '@/shared/DeepLink'
 import { Skeleton } from '@/shared/ui/Skeleton'
 import { cn } from '@/lib/cn'
 import { guardNavigation } from '@/lib/unsavedGuard'
@@ -142,7 +142,7 @@ export function CommandPalette() {
       label: h.title,
       hint: `${h.count} 处命中${h.seg ? ` · 第${h.seg}${h.unit}` : ''}`,
       icon: <Search size={15} />,
-      run: () => guardNavigation(() => openDocAtHit({ id: h.docId, kind: h.kind }, h.seg, kw)),
+      run: () => guardNavigation(() => navigate(docHitPath({ id: h.docId, kind: h.kind }, h.seg, kw))),
     }))
     return [...actions, ...taskItems, ...docItems, ...fulltextItems]
   }, [tasks, docs, fulltextHits, kw, theme, navigate, setTheme])

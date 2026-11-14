@@ -59,22 +59,25 @@ function assertStatus(status: number, ok: boolean, onStatus?: (status: number) =
 }
 
 async function webFetchResponse(url: string, opts: HttpOptions, timeoutMs: number, connectTimeoutMs: number): Promise<Response> {
+  if (!isTauri()) {
+    const res = await fetch(url, {
+      headers: opts.headers,
+      cache: opts.cache ?? 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'follow',
+    })
+    assertStatus(res.status, res.ok, opts.onStatus)
+    return res
+  }
+
   const ctrl = new AbortController()
   const timer = globalThis.setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const signal = ctrl.signal
-    const res = isTauri()
-      ? await tauriFetch(url, {
-          headers: opts.headers,
-          signal,
-          connectTimeout: connectTimeoutMs,
-        })
-      : await fetch(url, {
-          headers: opts.headers,
-          cache: opts.cache ?? 'no-store',
-          signal,
-          redirect: 'follow',
-        })
+    const res = await tauriFetch(url, {
+      headers: opts.headers,
+      signal: ctrl.signal,
+      connectTimeout: connectTimeoutMs,
+    })
     assertStatus(res.status, res.ok, opts.onStatus)
     return res
   } finally {

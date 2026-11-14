@@ -1,6 +1,6 @@
 import { StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { HashRouter } from 'react-router'
+import { createHashRouter, RouterProvider } from 'react-router'
 import App from './App'
 import './styles/index.css'
 import { registerSW } from 'virtual:pwa-register'
@@ -34,14 +34,15 @@ const PageLoader = (
   </div>
 )
 
+const router = createHashRouter([{
+  path: '*',
+  element: <Suspense fallback={PageLoader}><App /></Suspense>,
+}])
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <HashRouter>
-        <Suspense fallback={PageLoader}>
-          <App />
-        </Suspense>
-      </HashRouter>
+      <RouterProvider router={router} />
     </ErrorBoundary>
   </StrictMode>,
 )

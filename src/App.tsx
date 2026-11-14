@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 import { liveQuery } from 'dexie'
 import { AppShell } from './app/AppShell'
 import { KeyboardShortcutsDialog } from '@/shared/KeyboardShortcuts'
@@ -60,7 +60,9 @@ function DocReaderRoute() {
 
 function MdEditorRoute() {
   const { docId } = useParams()
-  return <MdEditorPage key={docId ?? 'new'} />
+  const { state } = useLocation()
+  const sessionKey = state?.createdDocId === docId ? 'new' : docId ?? 'new'
+  return <MdEditorPage key={sessionKey} />
 }
 
 /**

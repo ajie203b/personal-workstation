@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Node } from '@tiptap/core'
+import { InputRule, Node } from '@tiptap/core'
 import CodeBlock from '@tiptap/extension-code-block'
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
 import katex from 'katex'
@@ -244,6 +244,17 @@ export const InlineMath = Node.create({
   renderHTML({ node }) {
     const latex = String(node.attrs.latex ?? '')
     return ['span', { 'data-inline-math': 'true', 'data-latex': latex }, `$${latex}$`]
+  },
+
+  addInputRules() {
+    return [new InputRule({
+      find: /(?<![\\$])\$((?:\\[^\n]|[^$\\\n])+)\$$/,
+      handler: ({ state, range, match }) => {
+        const latex = match[1]
+        if (latex !== latex.trim() || !latex.trim()) return null
+        state.tr.replaceWith(range.from, range.to, this.type.create({ latex })).scrollIntoView()
+      },
+    })]
   },
 
   addCommands() {

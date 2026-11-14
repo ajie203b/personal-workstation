@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core'
+import { guardNavigation } from './unsavedGuard'
 
 /** 是否运行在原生壳（安卓 App）内 */
 export function isNative(): boolean {
@@ -35,10 +36,12 @@ export async function initAndroidBackButton(): Promise<void> {
       openDialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       return
     }
-    if (canGoBack) {
-      window.history.back()
-    } else {
-      void App.exitApp()
-    }
+    guardNavigation(() => {
+      if (canGoBack) {
+        window.history.back()
+      } else {
+        void App.exitApp()
+      }
+    })
   })
 }

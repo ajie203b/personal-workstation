@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { FolderOpen, FolderPlus, Import, LayoutGrid, MoreHorizontal, PenLine, Plus, Search, Sparkles, Table2 } from 'lucide-react'
+import { FolderOpen, FolderPlus, Import, LayoutGrid, MoreHorizontal, PenLine, Plus, Search, Settings2, SlidersHorizontal, Sparkles, Table2, Trash2 } from 'lucide-react'
 import { isTauri } from '@/lib/native'
 import { IconDocs } from '@/shared/icons'
 import { DOC_KIND_LABEL, type Annotation, type Doc, type DocKind, type DocReadStatus, type Folder } from '@/db/db'
@@ -15,7 +15,7 @@ import { db } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
-import { openDoc, openDocAtHit } from '@/shared/DeepLink'
+import { docPath, docHitPath } from '@/shared/DeepLink'
 import { backfillDocTextIndex } from '@/lib/docTextIndex'
 import { morphOpen } from '@/lib/viewTransition'
 import { DocDragWorkspace, DocDragItem, TRASH_FOLDER, UNFILED_FOLDER } from './DocDrag'
@@ -25,16 +25,26 @@ import { DocCard, ImportingCard } from './DocsCards'
 import { DocsTable } from './DocsTable'
 import { DocsDialogs, type FolderDialogState } from './DocsDialogs'
 import { AnnotationReviewDialog } from './AnnotationReviewDialog'
-import { formatCitation } from './citation'
+import { CitationDialog } from './CitationDialog'
+import { Sheet } from '@/shared/ui/Sheet'
+import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem } from '@/shared/ui/Menu'
+import { useFocusActive } from '@/shared/FocusMiniBar'
 import { isAnnotationDue } from './reviewSm2'
 import {
   ANNOTATED_VIEW,
   RECENT_VIEW,
   STARRED_VIEW,
   filterAndSortDocs,
-  folderPathName,
   type DocSortKey,
 } from './libraryModel'
+
+const DESKTOP_DOCS = '(min-width: 1024px)'
+function subscribeToWidth(onChange: () => void) {
+  const query = window.matchMedia(DESKTOP_DOCS)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+const isDesktopWidth = () => window.matchMedia(DESKTOP_DOCS).matches
 
 /** 文档工作站 · 文档库（三栏工作区的入口） */
 export function DocsPage() {
@@ -42,7 +52,10 @@ export function DocsPage() {
   const docsLive = useDocsLive()
   const docs = useMemo(() => docsLive ?? [], [docsLive])
   const [params, setParams] = useSearchParams()
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [citationDoc, setCitationDoc] = useState<Doc | null>(null)
+  const desktop = useSyncExternalStore(subscribeToWidth, isDesktopWidth)
+  const focusActive = useFocusActive()
   const activeFolder = params.get('folder')
   const inTrash = activeFolder === TRASH_FOLDER
   const trashCount = useLiveQuery(() => db.docs.filter(d => !!d.deletedAt).count(), [], 0)
@@ -191,12 +204,6 @@ export function DocsPage() {
     void updateDocMeta(doc.id, { starred: !doc.starred })
   }
 
-  const copyCitation = (doc: Doc, style: 'bibtex' | 'ris') => {
-    void navigator.clipboard.writeText(formatCitation(doc, style))
-      .then(() => toast(`已复制 ${style.toUpperCase()} 引文`))
-      .catch(() => toast('复制失败，请重试'))
-  }
-
   const switchViewMode = (mode: 'grid' | 'table') => {
     setViewMode(mode)
     try { localStorage.setItem('docs:viewMode', mode) } catch { /* ignore */ }
@@ -265,6 +272,92 @@ export function DocsPage() {
 
   const hasFilters = kindFilter !== 'all' || statusFilter !== 'all' || !!tagFilter || !!query.trim()
   const isUserFolder = folders.some((f) => f.id === activeFolder)
+  const hasOptions = kindFilter !== 'all' || statusFilter !== 'all' || !!tagFilter || sortBy !== 'recent'
+  const requestFolderDelete = () => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)
+
+  const filters = (compact: boolean) => (
+    <div className={compact ? "grid gap-3 [&_select]:h-11 [&_select]:w-full" : "flex flex-wrap items-center gap-2 text-[12px]"}>
+      <select
+        aria-label="按格式筛选"
+        value={kindFilter}
+        onChange={(e) => setKindFilter(e.target.value as DocKind | 'all')}
+        className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
+      >
+        <option value="all">全部格式</option>
+        {(Object.keys(DOC_KIND_LABEL) as DocKind[]).map((k) => (
+          <option key={k} value={k}>{DOC_KIND_LABEL[k]}</option>
+        ))}
+      </select>
+      <select
+        aria-label="按阅读状态筛选"
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value as DocReadStatus | 'all')}
+        className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
+      >
+        <option value="all">全部状态</option>
+        <option value="unread">未读</option>
+        <option value="reading">在读</option>
+        <option value="done">已读</option>
+      </select>
+      {(compact || allTags.length > 0) && (
+        <select
+          aria-label="按标签筛选"
+          disabled={!allTags.length}
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
+        >
+          <option value="">全部标签</option>
+          {allTags.map((t) => (
+            <option key={t} value={t}>#{t}</option>
+          ))}
+        </select>
+      )}
+      {(hasOptions || (!compact && hasFilters)) && (
+        <button
+          type="button"
+          onClick={() => { setKindFilter('all'); setStatusFilter('all'); setTagFilter(''); setSortBy('recent'); if (!compact) setKeyword('') }}
+          className="h-8 px-2.5 rounded-[9px] text-primary hover:bg-primary-soft cursor-pointer"
+        >
+          重置筛选
+        </button>
+      )}
+      <div className={compact ? "" : "ml-auto flex items-center gap-2"}>
+        <select
+          aria-label="排序方式"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as DocSortKey)}
+          className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
+        >
+          <option value="recent">最近打开</option>
+          <option value="added">添加时间</option>
+          <option value="title">标题 A-Z</option>
+          <option value="progress">阅读进度</option>
+          <option value="annotations">批注最多</option>
+        </select>
+        {desktop && <div className="inline-flex rounded-[9px] border border-outline bg-surface-2 p-0.5" role="group" aria-label="视图切换">
+          <button
+            type="button"
+            aria-label="卡片视图"
+            title="卡片视图"
+            onClick={() => switchViewMode('grid')}
+            className={`grid place-items-center w-7 h-7 rounded-[7px] cursor-pointer ${viewMode === 'grid' ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:text-on-surface'}`}
+          >
+            <LayoutGrid size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="文献表格视图"
+            title="文献表格视图"
+            onClick={() => switchViewMode('table')}
+            className={`grid place-items-center w-7 h-7 rounded-[7px] cursor-pointer ${viewMode === 'table' ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:text-on-surface'}`}
+          >
+            <Table2 size={14} />
+          </button>
+        </div>}
+      </div>
+    </div>
+  )
 
   return (
     <DocDragWorkspace docs={docs} onDrop={async (doc, target) => {
@@ -278,7 +371,7 @@ export function DocsPage() {
     }}>
     <div className="mx-auto w-full max-w-[1500px] px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 cascade">
       {/* 桌面：标题 + 搜索 / 写作 / 导入 一行放得下 */}
-      <div className="hidden md:flex md:items-start gap-3">
+      <div className="hidden lg:flex lg:items-start gap-3">
         <div>
           <h1 className="text-[22px] font-bold leading-8">文档工作站</h1>
           <p className="text-[13px] text-on-surface-2 mt-0.5">本地优先 · 文献分类与引文 · 划词截图与间隔复习</p>
@@ -308,44 +401,36 @@ export function DocsPage() {
       </div>
 
       {/* 手机：常用入口直接展示，搜索框随剩余宽度收缩。 */}
-      <div className="md:hidden flex items-center gap-2">
+      <div className="lg:hidden flex items-center gap-2 pt-[env(safe-area-inset-top)]">
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder="搜索标题、作者或全文…"
           aria-label="搜索文档"
-          className="flex-1 min-w-0 h-9 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+          className="flex-1 min-w-0 h-11 px-3 rounded-[10px] bg-surface-2 border border-outline text-[16px] outline-none focus:border-primary/60"
         />
-        <Button size="icon" className="shrink-0 w-9 h-9" aria-label="写文档" title="写文档" onClick={() => navigate('/docs/new')}>
-          <PenLine size={18} />
-        </Button>
-        {isTauri() && <Button size="icon" className="shrink-0 w-9 h-9" aria-label="本地文档" title="打开本地文档" onClick={() => navigate('/local-markdown')}><FolderOpen size={18} /></Button>}
-        <Button variant="primary" size="icon" className="shrink-0 w-9 h-9" aria-label="导入文档" title="导入文档" state={importState} onClick={() => fileRef.current?.click()}>
-          <Import size={18} />
-        </Button>
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            aria-label="更多文档操作"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="w-9 h-9 grid place-items-center rounded-[10px] bg-surface-2 border border-outline text-on-surface cursor-pointer active:scale-95 transition-transform"
-          >
-            <MoreHorizontal size={19} />
+        {!inTrash && (
+          <button type="button" aria-label="筛选文档" aria-haspopup="dialog" onClick={() => setFiltersOpen(true)}
+            className="relative grid place-items-center shrink-0 w-11 h-11 rounded-[10px] border border-outline bg-surface-2 text-on-surface cursor-pointer">
+            <SlidersHorizontal size={18} />
+            {hasOptions && <span aria-hidden className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" />}
           </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-              <div className="pop absolute right-0 top-11 z-40 w-44 p-1.5 flex flex-col">
-                <MobileMenuItem icon={FolderPlus} onClick={() => { setMenuOpen(false); openCreateFolder() }}>新建文件夹</MobileMenuItem>
-                {allAnnotations.length > 0 && (
-                  <MobileMenuItem icon={Sparkles} onClick={() => { setMenuOpen(false); setReviewOpen(true) }}>
-                    批注复习{dueReviewCount > 0 ? ` (${dueReviewCount})` : ''}
-                  </MobileMenuItem>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" aria-label="更多文档操作" className="grid place-items-center shrink-0 w-11 h-11 rounded-[10px] text-on-surface-2 hover:bg-surface-2 cursor-pointer">
+              <MoreHorizontal size={20} />
+            </button>
+          </DropdownMenuTrigger>
+          <MenuContent>
+            <MenuItem onSelect={() => openCreateFolder()}><FolderPlus size={16} />新建文件夹</MenuItem>
+            {isUserFolder && <MenuItem onSelect={requestFolderDelete}><Trash2 size={16} />删除文件夹</MenuItem>}
+            {isTauri() && <MenuItem onSelect={() => navigate('/local-markdown')}><FolderOpen size={16} />本地文档</MenuItem>}
+            {allAnnotations.length > 0 && <MenuItem onSelect={() => setReviewOpen(true)}><Sparkles size={16} />批注复习{dueReviewCount > 0 ? ` (${dueReviewCount})` : ''}</MenuItem>}
+            <MenuItem active={inTrash} onSelect={() => setFolderParam(TRASH_FOLDER)}><Trash2 size={16} />回收站{trashCount > 0 ? ` (${trashCount})` : ''}</MenuItem>
+            <MenuItem onSelect={() => navigate('/settings')}><Settings2 size={16} />设置</MenuItem>
+          </MenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="flex items-start gap-5">
@@ -361,7 +446,7 @@ export function DocsPage() {
           active={activeFolder}
           onPick={setFolderParam}
           onCreate={(pid) => openCreateFolder(pid)}
-          onDelete={() => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)}
+          onDelete={requestFolderDelete}
         />
 
         <div className="flex-1 min-w-0 flex flex-col gap-3.5">
@@ -373,97 +458,12 @@ export function DocsPage() {
             recentCount={recentCount}
             annotatedCount={annotatedCount}
             uncategorizedCount={uncategorizedCount}
-            trashCount={trashCount}
             activeFolder={activeFolder}
-            inTrash={inTrash}
             onPick={setFolderParam}
-            onCreate={(pid) => openCreateFolder(pid)}
-            onDelete={() => setFolderToDelete(folders.find((f) => f.id === activeFolder) ?? null)}
           />
 
-          {inTrash ? <DocTrash /> : <>
-          {docs.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-[12px]">
-              <select
-                aria-label="按格式筛选"
-                value={kindFilter}
-                onChange={(e) => setKindFilter(e.target.value as DocKind | 'all')}
-                className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
-              >
-                <option value="all">全部格式</option>
-                {(Object.keys(DOC_KIND_LABEL) as DocKind[]).map((k) => (
-                  <option key={k} value={k}>{DOC_KIND_LABEL[k]}</option>
-                ))}
-              </select>
-              <select
-                aria-label="按阅读状态筛选"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as DocReadStatus | 'all')}
-                className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
-              >
-                <option value="all">全部状态</option>
-                <option value="unread">未读</option>
-                <option value="reading">在读</option>
-                <option value="done">已读</option>
-              </select>
-              {allTags.length > 0 && (
-                <select
-                  aria-label="按标签筛选"
-                  value={tagFilter}
-                  onChange={(e) => setTagFilter(e.target.value)}
-                  className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
-                >
-                  <option value="">全部标签</option>
-                  {allTags.map((t) => (
-                    <option key={t} value={t}>#{t}</option>
-                  ))}
-                </select>
-              )}
-              {hasFilters && (
-                <button
-                  type="button"
-                  onClick={() => { setKindFilter('all'); setStatusFilter('all'); setTagFilter(''); setKeyword('') }}
-                  className="h-8 px-2.5 rounded-[9px] text-primary hover:bg-primary-soft cursor-pointer"
-                >
-                  重置筛选
-                </button>
-              )}
-              <div className="ml-auto flex items-center gap-2">
-                <select
-                  aria-label="排序方式"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as DocSortKey)}
-                  className="h-8 px-2.5 rounded-[9px] bg-surface-2 border border-outline text-on-surface outline-none focus:border-primary/60 cursor-pointer"
-                >
-                  <option value="recent">最近打开</option>
-                  <option value="added">添加时间</option>
-                  <option value="title">标题 A-Z</option>
-                  <option value="progress">阅读进度</option>
-                  <option value="annotations">批注最多</option>
-                </select>
-                <div className="inline-flex rounded-[9px] border border-outline bg-surface-2 p-0.5" role="group" aria-label="视图切换">
-                  <button
-                    type="button"
-                    aria-label="卡片视图"
-                    title="卡片视图"
-                    onClick={() => switchViewMode('grid')}
-                    className={`grid place-items-center w-7 h-7 rounded-[7px] cursor-pointer ${viewMode === 'grid' ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:text-on-surface'}`}
-                  >
-                    <LayoutGrid size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="文献表格视图"
-                    title="文献表格视图"
-                    onClick={() => switchViewMode('table')}
-                    className={`grid place-items-center w-7 h-7 rounded-[7px] cursor-pointer ${viewMode === 'table' ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:text-on-surface'}`}
-                  >
-                    <Table2 size={14} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {inTrash ? <><Button size="sm" className="self-start" onClick={() => setFolderParam(null)}>返回全部</Button><DocTrash /></> : <>
+          {desktop && docs.length > 0 && filters(false)}
 
           {pending.length > 0 && (
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
@@ -475,7 +475,7 @@ export function DocsPage() {
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
               {Array.from({ length: 6 }).map((_, i) => <DocCardSkeleton key={i} />)}
             </div>
-          ) : docs.length === 0 && pending.length === 0 ? (
+          ) : docs.length === 0 && pending.length === 0 && !isUserFolder ? (
             <EmptyState
               icon={IconDocs}
               title="文档库还是空的"
@@ -507,10 +507,14 @@ export function DocsPage() {
                           ? '还没有带批注的文档'
                           : '没有未分类的文档'
                 }
-                hint={isUserFolder ? '把文档拖进此文件夹，或在文件夹内直接导入。' : '在文档卡片上加星标、划词做批注后会自动汇聚到这里。'}
-              />
+                hint={isUserFolder
+                  ? desktop ? '把文档拖进此文件夹，或在这里直接导入。' : '选择要放入此文件夹的文件。'
+                  : '给文档加星标或做批注后，会出现在相应分类。'}
+              >
+                {isUserFolder && <Button variant="primary" size="sm" state={importState} onClick={() => fileRef.current?.click()}><Import size={15} />导入到此文件夹</Button>}
+              </EmptyState>
             )
-          ) : viewMode === 'table' ? (
+          ) : desktop && viewMode === 'table' ? (
             <DocsTable
               rows={visibleDocs.map((d) => ({
                 doc: d,
@@ -522,10 +526,10 @@ export function DocsPage() {
               onOpen={(d, hit) =>
                 morphOpen(
                   () => document.getElementById(`doc-${d.id}`),
-                  () => (hit ? openDocAtHit(d, hit.seg, query.trim()) : navigate(`/docs/${d.id}`)),
+                  () => navigate(hit ? docHitPath(d, hit.seg, query.trim()) : docPath({ docId: d.id })),
                 )
               }
-              onRead={(d) => openDoc({ docId: d.id })}
+              onRead={(d) => navigate(docPath({ docId: d.id }))}
               onEdit={(d) => navigate(`/docs/edit/${d.id}`)}
               onShare={(d) => {
                 void getDocBlob(d.hash).then(async (blob) => {
@@ -537,39 +541,28 @@ export function DocsPage() {
               onMove={(d) => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
               onToggleStar={toggleStar}
               onEditMeta={(d) => setMetaDoc(d)}
-              onCopyCitation={copyCitation}
+              onOpenCitation={setCitationDoc}
               onRequestConfirm={(d) => setPendingDelete(d)}
             />
           ) : (
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
               {visibleDocs.map((d) => {
-                const pct = Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)
                 const hit = keyword.trim().length >= 2 ? textHits[d.hash] : undefined
                 return (
                   <DocDragItem key={d.id} doc={d}><DocCard
                     doc={d}
-                    pct={pct}
-                    annCount={annCountByHash[d.hash] ?? 0}
+                    pct={Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)}
                     hit={hit}
                     onOpen={() =>
                       morphOpen(
                         () => document.getElementById(`doc-${d.id}`),
-                        () => (hit ? openDocAtHit(d, hit.seg, query.trim()) : navigate(`/docs/${d.id}`)),
+                        () => navigate(hit ? docHitPath(d, hit.seg, query.trim()) : docPath({ docId: d.id })),
                       )
                     }
-                    onEdit={() => navigate(`/docs/edit/${d.id}`)}
-                    onRead={() => openDoc({ docId: d.id })}
-                    onShare={() => {
-                      void getDocBlob(d.hash).then(async (blob) => {
-                        if (!blob) { toast('文件本体没找到，可能被系统清理了'); return }
-                        const msg = await shareMarkdown(d.title, await readDocumentText(blob))
-                        if (msg) toast(msg)
-                      }).catch(() => toast('分享失败，请重试'))
-                    }}
+                    onRead={() => navigate(docPath({ docId: d.id }))}
                     onToggleStar={() => toggleStar(d)}
                     onEditMeta={() => setMetaDoc(d)}
-                    onCopyCitation={(style) => copyCitation(d, style)}
-                    folderName={folderPathName(d.folderId, folders)}
+                    onOpenCitation={() => setCitationDoc(d)}
                     onMove={() => { setFolderName(''); setFolderDialog({ mode: 'move', doc: d }) }}
                     onRequestConfirm={() => setPendingDelete(d)}
                   /></DocDragItem>
@@ -580,6 +573,26 @@ export function DocsPage() {
           </>}
         </div>
       </div>
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen} title="筛选文档">
+        {filters(true)}
+      </Sheet>
+      {citationDoc && <CitationDialog doc={citationDoc} onClose={() => setCitationDoc(null)} />}
+      {!inTrash && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" aria-label="添加文档"
+              className="lg:hidden fixed right-4 z-30 grid place-items-center w-14 h-14 rounded-full bg-primary-action text-on-primary-action shadow-lg cursor-pointer"
+              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${focusActive ? '8.25rem' : '4.25rem'})` }}>
+              <Plus size={26} />
+            </button>
+          </DropdownMenuTrigger>
+          <MenuContent>
+            <MenuItem onSelect={() => navigate('/docs/new')}><PenLine size={16} />写文档</MenuItem>
+            <MenuItem onSelect={() => fileRef.current?.click()}><Import size={16} />导入文档</MenuItem>
+          </MenuContent>
+        </DropdownMenu>
+      )}
 
       <input
         ref={fileRef}
@@ -632,7 +645,7 @@ export function DocsPage() {
         onOpenChange={setReviewOpen}
         docs={docs}
         annotations={allAnnotations}
-        onJump={(docId, anchor, hlId) => openDoc({ docId, anchor }, hlId)}
+        onJump={(docId, anchor, hlId) => navigate(docPath({ docId, anchor }, hlId))}
       />
     </div>
     </DocDragWorkspace>
@@ -640,15 +653,3 @@ export function DocsPage() {
 }
 
 /** 手机「＋」菜单里的一项 */
-function MobileMenuItem({ icon: Icon, onClick, children }: { icon: typeof Plus; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-2.5 h-9 px-2.5 rounded-[8px] text-[13px] text-left hover:bg-surface-3 cursor-pointer"
-    >
-      <Icon size={15} className="text-on-surface-2" />
-      {children}
-    </button>
-  )
-}
