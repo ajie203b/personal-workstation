@@ -1,6 +1,0 @@
-import{i as s,aj as l,q as f,C as y,n as x}from"./index-DKEe5CIT.js";import{b as m,s as u}from"./saveFile-D8HnJagF.js";/**
- * @license lucide-react v0.474.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */const p=[["circle",{cx:"18",cy:"5",r:"3",key:"gq8acd"}],["circle",{cx:"6",cy:"12",r:"3",key:"w7nqdw"}],["circle",{cx:"18",cy:"19",r:"3",key:"1xt0gg"}],["line",{x1:"8.59",x2:"15.42",y1:"13.51",y2:"17.49",key:"47mynk"}],["line",{x1:"15.41",x2:"8.59",y1:"6.51",y2:"10.49",key:"1n3mei"}]],d=s("Share2",p),w=x("FileExport");function g(r){return(r.trim()||"文档").replace(/[\\/:*?"<>|]/g,"_").slice(0,80)}async function k(r,t){var c;const a=g(r),i=`${a}.md`;if(l()){const e=await f("save_text_file",{defaultName:i,content:t});return e?`已导出到 ${e}`:""}const n=new Blob([t],{type:"text/markdown"});if(y.isNativePlatform())return await w.shareFile({fileName:i,dataBase64:await m(n),mimeType:"text/markdown",title:a}),"已调起系统分享";const o=new File([t],i,{type:"text/markdown"});try{if((c=navigator.canShare)!=null&&c.call(navigator,{files:[o]}))return await navigator.share({files:[o],title:a}),"已分享";if(navigator.share)return await navigator.share({title:a,text:t}),"已分享"}catch(e){if(e instanceof DOMException&&e.name==="AbortError")return""}return`已保存到${await u(n,i)}`}export{d as S,k as s};
