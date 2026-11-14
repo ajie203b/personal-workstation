@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T13:08:33.667Z",
+  "generatedAt": "2026-11-14T12:13:18.267Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
@@ -116,12 +116,12 @@
       "score": 48.2
     },
     {
-      "name": "Claude Fable 5.1 (High)",
-      "score": 47.2
+      "name": "Gemini 4 Argon (Medium)",
+      "score": 47.6
     },
     {
-      "name": "Kimi K3.1 Pro",
-      "score": 46.5
+      "name": "Claude Fable 5.1 (High)",
+      "score": 47.2
     }
   ]
 }
