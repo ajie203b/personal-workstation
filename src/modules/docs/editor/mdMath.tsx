@@ -5,6 +5,7 @@ import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewP
 import katex from 'katex'
 import { Check, Copy } from 'lucide-react'
 import { MermaidBlock } from '../MermaidBlock'
+import { SelectMenu } from '@/shared/ui/SelectMenu'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -434,6 +435,8 @@ function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
   const [copied, setCopied] = useState(false)
   const lang = String(node.attrs.language ?? '').trim().toLowerCase()
   const isMermaid = lang === 'mermaid'
+  const options = CODE_LANGUAGES.map(([value, label]) => ({ value: String(value), label: String(label) }))
+  if (!options.some(({ value }) => value === lang)) options.push({ value: lang, label: lang })
 
   return (
     <NodeViewWrapper className="my-3 rounded-[10px] border border-outline/70 bg-[var(--md-code-bg,var(--surface-2))] overflow-hidden">
@@ -441,16 +444,9 @@ function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
         contentEditable={false}
         className="flex items-center justify-between gap-2 px-3 py-1 border-b border-outline/50 bg-surface-2/80 text-[11px] text-on-surface-2"
       >
-        <select
-          aria-label="代码块语言"
-          value={String(node.attrs.language ?? '')}
-          onChange={(e) => updateAttributes({ language: e.target.value })}
-          className="h-6 px-1.5 rounded bg-transparent hover:bg-surface-3 text-[11px] font-mono outline-none cursor-pointer"
-        >
-          {CODE_LANGUAGES.map(([val, label]) => (
-            <option key={val} value={val}>{label}</option>
-          ))}
-        </select>
+        <SelectMenu ariaLabel="代码块语言" title="代码块语言" value={lang}
+          onChange={(language) => updateAttributes({ language })} options={options}
+          triggerClassName="h-11 md:h-8 font-mono" />
         <button
           type="button"
           onClick={() => {

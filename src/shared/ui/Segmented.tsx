@@ -3,6 +3,8 @@ import type { LucideIcon } from 'lucide-react'
 import type { AppIcon } from '@/shared/icons'
 import { cn } from '@/lib/cn'
 
+const RADIO_DIRECTION: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -1, ArrowDown: 1 }
+
 export interface SegmentOption<T extends string> {
   value: T
   label: string
@@ -21,13 +23,17 @@ interface Props<T extends string> {
   className?: string
   size?: 'sm' | 'md'
   ariaLabel?: string
+  touchSized?: boolean
+  disabled?: boolean
+  showLabels?: boolean
+  asRadio?: boolean
 }
 
 /**
  * 分段控件（v1.4 动效升级）：MD3 segmented button 气质 + 滑块跟随。
  * 滑块按 left/width 过渡（--ease-emph），切换时平滑滑动而非瞬切。
  */
-export function Segmented<T extends string>({ options, value, onChange, className, size = 'md', ariaLabel }: Props<T>) {
+export function Segmented<T extends string>({ options, value, onChange, className, size = 'md', ariaLabel, touchSized, disabled, showLabels, asRadio }: Props<T>) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRefs = useRef(new Map<string, HTMLButtonElement>())
   const [thumb, setThumb] = useState<{ left: number; width: number; ready: boolean }>({ left: 0, width: 0, ready: false })
@@ -62,8 +68,17 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
   return (
     <div
       ref={wrapRef}
-      role="tablist"
+      role={asRadio ? 'radiogroup' : 'tablist'}
       aria-label={ariaLabel}
+      onKeyDown={asRadio ? (event) => {
+        const direction = RADIO_DIRECTION[event.key]
+        if (!direction || disabled || !options.length) return
+        event.preventDefault()
+        const current = options.findIndex(option => option.value === value)
+        const next = options[(current + direction + options.length) % options.length]
+        onChange(next.value)
+        btnRefs.current.get(next.value)?.focus()
+      } : undefined}
       className={cn('relative inline-flex items-center gap-0.5 p-[3px] rounded-[12px] bg-surface-3/70', className)}
     >
       {/* 滑块：left/width 相对 tablist 边框测量 */}
@@ -84,20 +99,25 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
               if (el) btnRefs.current.set(o.value, el)
               else btnRefs.current.delete(o.value)
             }}
-            role="tab"
-            aria-selected={active}
+            role={asRadio ? 'radio' : 'tab'}
+            aria-label={o.label}
+            aria-selected={asRadio ? undefined : active}
+            aria-checked={asRadio ? active : undefined}
+            tabIndex={asRadio && !active ? -1 : undefined}
+            disabled={disabled}
             type="button"
             onClick={() => onChange(o.value)}
             className={cn(
               'relative z-[1] inline-flex items-center gap-1.5 rounded-[10px] font-medium whitespace-nowrap cursor-pointer select-none',
               'transition-colors duration-150 ease-standard active:scale-[0.97]',
               size === 'md' ? 'h-8 px-3 text-[13px]' : 'h-7 px-2.5 text-[12px]',
+              touchSized && 'max-md:h-11 max-md:min-w-11',
               active ? 'text-on-surface' : 'text-on-surface-2 hover:text-on-surface',
             )}
           >
             {o.dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: o.dot }} />}
             {o.icon && <o.icon size={15} strokeWidth={active ? 2.2 : 1.9} className="shrink-0" />}
-            <span className={cn(o.icon && 'hidden md:inline')}>{o.label}</span>
+            <span className={cn(o.icon && !showLabels && 'hidden md:inline')}>{o.label}</span>
             {o.badge != null && (
               <span
                 className={cn(

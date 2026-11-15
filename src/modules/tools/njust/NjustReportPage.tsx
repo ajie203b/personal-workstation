@@ -124,7 +124,7 @@ function Option({ checked, onChange, label, hint }: { checked: boolean; onChange
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--primary)] cursor-pointer"
+        className="app-checkbox mt-0.5"
       />
       <span className="min-w-0">
         <span className="block text-[13px]">{label}</span>
@@ -247,10 +247,10 @@ export function NjustReportPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4">
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
       <div className="flex items-center gap-3">
-        <BackButton onClick={() => navigate('/tools')} />
         <div className="min-w-0 flex-1">
-          <h1 className="text-[21px] md:text-[24px] font-bold leading-8 tracking-tight">NJUST 报告排版</h1>
+          <h1 className="hidden md:block text-[22px] font-bold leading-7">NJUST 报告排版</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5">txt / Markdown / docx → 南理工模板 Word，本地生成不上传</p>
         </div>
         <span className="hidden sm:inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-primary-soft text-primary text-[11px] font-medium shrink-0">

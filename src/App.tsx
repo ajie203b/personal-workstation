@@ -10,7 +10,6 @@ import { TodayPage } from '@/modules/today/TodayPage'
 import { db } from '@/db/db'
 import { getNotifyEnabled, syncAllTaskNotifications } from '@/lib/notify'
 import { ShareInbound } from '@/shared/ShareInbound'
-import { Spotlight } from '@/shared/Spotlight'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { useUi } from '@/stores/ui'
 import { useTasksUi } from '@/stores/tasks'
@@ -199,7 +198,6 @@ export default function App() {
       <TaskDetailHost />
       <GlobalAddSheet />
       <CommandPaletteHost />
-      <Spotlight />
       <ToastHost />
       <KeyboardShortcutsDialog />
       {/* 应用内更新：仅安卓 App / 桌面主窗口，网页版和独立文档窗口不渲染 */}

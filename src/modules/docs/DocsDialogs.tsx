@@ -4,6 +4,7 @@ import type { Doc, DocReadStatus, Folder } from '@/db/db'
 import { updateDocMeta } from '@/db/docs'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
+import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { cn } from '@/lib/cn'
 import { CitationDialog } from './CitationDialog'
 import { buildFolderTree, type FolderTreeNode } from './libraryModel'
@@ -34,9 +35,6 @@ export function DocsDialogs({
   folderToDelete,
   onCloseFolderToDelete,
   onConfirmDeleteFolder,
-  pendingDelete,
-  onClosePendingDelete,
-  onConfirmDeleteDoc,
   metaDoc,
   onCloseMetaDoc,
   onMetaSaved,
@@ -54,9 +52,6 @@ export function DocsDialogs({
   folderToDelete: Folder | null
   onCloseFolderToDelete: () => void
   onConfirmDeleteFolder: (folder: Folder) => void
-  pendingDelete: Doc | null
-  onClosePendingDelete: () => void
-  onConfirmDeleteDoc: (doc: Doc) => void
   metaDoc?: Doc | null
   onCloseMetaDoc?: () => void
   onMetaSaved?: (msg: string) => void
@@ -108,21 +103,16 @@ export function DocsDialogs({
               onKeyDown={(e) => { if (e.key === 'Enter' && folderName.trim()) onCreateFolder() }}
             />
             {folders.length > 0 && onFolderParentIdChange && (
-              <label className="flex flex-col gap-1 text-[12px] text-on-surface-2">
+              <div className="flex flex-col gap-1 text-[12px] text-on-surface-2">
                 <span>上级目录（可选）</span>
-                <select
+                <SelectMenu
+                  ariaLabel="上级目录"
+                  title="上级目录"
                   value={folderParentId ?? ''}
-                  onChange={(e) => onFolderParentIdChange(e.target.value)}
-                  className="h-9 px-2.5 rounded-[10px] bg-surface-2 border border-outline text-[13px] text-on-surface outline-none focus:border-primary/60"
-                >
-                  <option value="">根目录（顶层文件夹）</option>
-                  {flatFolders.map(({ folder: f, depth }) => (
-                    <option key={f.id} value={f.id}>
-                      {'　'.repeat(depth)}{f.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={onFolderParentIdChange}
+                  options={[{ value: '', label: '根目录（顶层文件夹）' }, ...flatFolders.map(({ folder, depth }) => ({ value: folder.id, label: folder.name, depth: depth + 1 }))]}
+                />
+              </div>
             )}
             <div className="flex justify-end gap-2">
               <Button onClick={onCloseFolderDialog}>取消</Button>
@@ -145,24 +135,6 @@ export function DocsDialogs({
             onClick={() => { if (folderToDelete) onConfirmDeleteFolder(folderToDelete) }}
           >
             删除
-          </Button>
-        </div>
-      </Dialog>
-
-      {/* 菜单中的删除统一先确认，鼠标、触摸和键盘共用同一路径。 */}
-      <Dialog
-        open={!!pendingDelete}
-        onOpenChange={(v) => !v && onClosePendingDelete()}
-        title="移入回收站？"
-        description={`「${pendingDelete?.title ?? ''}」会移入回收站，可以随时恢复正文、批注和阅读进度。`}
-      >
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClosePendingDelete}>取消</Button>
-          <Button
-            variant="destructive"
-            onClick={() => { if (pendingDelete) onConfirmDeleteDoc(pendingDelete) }}
-          >
-            确认删除
           </Button>
         </div>
       </Dialog>

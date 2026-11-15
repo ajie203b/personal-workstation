@@ -224,11 +224,15 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
         >打字机</button>
       </>}
       <ToolBtn label="查找替换" active={find.open} onClick={() => (find.open ? find.closeFind() : find.openFind(false))}><Search size={15} /></ToolBtn>
-      <label className="ml-auto flex items-center gap-1 text-xs text-on-surface-2">显示字号
-        <select aria-label="显示字号" className="bg-surface border border-outline rounded-md px-1.5 h-8" value={fontSize} onChange={e => setFontSize(Number(e.target.value))}>
-          {[14, 16, 17, 18, 20, 24, 28, 32].map(px => <option key={px}>{px}</option>)}
-        </select>
-      </label>
+      <div className="ml-auto flex items-center gap-1 text-xs text-on-surface-2" role="group" aria-label="显示字号">
+        <button type="button" aria-label="缩小字号" disabled={fontSize <= 14} onMouseDown={e => e.preventDefault()}
+          onClick={() => setFontSize(size => Math.max(14, size - 1))}
+          className="size-11 rounded-md border border-outline disabled:opacity-50">A−</button>
+        <output className="w-7 text-center tabular-nums" aria-label="当前字号">{fontSize}</output>
+        <button type="button" aria-label="放大字号" disabled={fontSize >= 32} onMouseDown={e => e.preventDefault()}
+          onClick={() => setFontSize(size => Math.min(32, size + 1))}
+          className="size-11 rounded-md border border-outline disabled:opacity-50">A＋</button>
+      </div>
     </div>
     <EditorFindReplaceBar
       open={find.open}

@@ -126,6 +126,20 @@ describe('citation & reviewSm2 & reader annotation filters', () => {
       .toEqual(['AU  - Vaswani, A.'])
   })
 
+  it('uses the first BibTeX author, preserves URL encoding, and omits an unknown year', () => {
+    const doc = mkDoc('doc123456', {
+      title: String.raw`A_B #$ ~ ^ \ path`,
+      meta: { author: 'Ada Lovelace and Grace Hopper' },
+      sourceUrl: 'https://example.com/A%20B#part',
+    })
+    const bib = formatCitation(doc, 'bibtex')
+    expect(bib).toContain('@misc{adalovelace_nd_doc123,')
+    expect(bib).toContain(String.raw`A\_B \#\$ {\textasciitilde} {\textasciicircum} {\textbackslash} path`)
+    expect(bib).toContain('url = {https://example.com/A%20B#part}')
+    expect(bib).not.toContain('year =')
+    expect(formatCitation(doc, 'ris')).not.toContain('PY  -')
+  })
+
   it('schedules SM-2 intervals and due checks', () => {
     const r1 = scheduleReview(undefined, 2, '2026-11-01', 100)
     expect(r1).toMatchObject({ reps: 1, interval: 1, due: '2026-11-02', lastAt: 100 })

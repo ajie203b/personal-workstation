@@ -27,8 +27,8 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
 
 const PageLoader = (
   <div className="h-full grid place-items-center text-on-surface-2 text-[13px]">
-    <div className="flex flex-col items-center gap-2">
-      <span className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+    <div role="status" className="flex flex-col items-center gap-2">
+      <span aria-hidden className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
       载入中…
     </div>
   </div>

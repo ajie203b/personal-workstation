@@ -50,7 +50,7 @@ export function FeedbackTab() {
           </h2>
           <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
             写下想要的功能、使用场景或需求。点击后在 GitHub 打开新建 Issue 页面，
-            标题和正文已经填好；确认无误再点「Submit new issue」提交。
+            请核对自动填入的标题和正文，再在 GitHub 提交。
           </p>
         </div>
         <label className="block">

@@ -110,14 +110,14 @@ export function DragSort({ ids, strategy, onMove, renderOverlay, children }: {
   )
 }
 
-export function DragSortItem({ id, children, className, label, as: Tag = 'div' }: {
-  id: string; children: ReactNode; className?: string; label?: string; as?: 'li' | 'div'
+export function DragSortItem({ id, children, className, label, tabIndex, as: Tag = 'div' }: {
+  id: string; children: ReactNode; className?: string; label?: string; tabIndex?: number; as?: 'li' | 'div'
 }) {
   const hasOverlay = useContext(DragOverlayContext)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, transition: SORT_TRANSITION })
   const layoutTransition = hasOverlay ? (transition ?? 'transform 0ms') : `transform ${SORT_DURATION}ms ${SORT_EASING}`
   return (
-    <Tag ref={setNodeRef} {...attributes} {...listeners} role={Tag === 'li' ? 'listitem' : label ? 'group' : undefined} aria-label={label}
+    <Tag ref={setNodeRef} {...attributes} {...listeners} tabIndex={tabIndex ?? attributes.tabIndex} role={Tag === 'li' ? 'listitem' : label ? 'group' : undefined} aria-label={label}
       data-sortable={id} data-dragging={isDragging || undefined}
       onContextMenu={e => e.preventDefault()}
       className={cn(

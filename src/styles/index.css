@@ -114,6 +114,7 @@
     animation-duration: 80ms !important;
     animation-iteration-count: 1 !important;
   }
+  .animate-spin { animation: none !important; }
 }
 
 /* 应用内动效总开关（设置页可关，独立于系统 prefers-reduced-motion） */
@@ -123,6 +124,7 @@
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
 }
+.no-motion .animate-spin { animation: none !important; }
 .no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot,
 .no-motion .confetti-layer, .no-motion .magnet-glow, .no-motion .sand-layer, .no-motion .sand-clone {
   animation: none !important;
@@ -172,7 +174,7 @@
   --color-danger: var(--danger);
   --color-on-danger: var(--on-danger);
 
-  --font-sans: system-ui, -apple-system, "SF Pro Text", "PingFang SC", "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  --font-sans: -apple-system, "SF Pro Text", "PingFang SC", "MiSans", "HarmonyOS Sans SC", "Microsoft YaHei UI", system-ui, Roboto, "Noto Sans SC", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
@@ -321,12 +323,15 @@
    基础样式
    ============================================================ */
 html, body, #root { height: 100%; }
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button { appearance: none; }
 #root { height: 100dvh; }
 
 body {
   background: var(--canvas);
   color: var(--on-surface);
-  font-family: system-ui, -apple-system, "SF Pro Text", "PingFang SC", "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -409,11 +414,6 @@ select:focus-visible {
 .tip:hover::after,
 .tip:focus-visible::after { opacity: 1; }
 
-/* 卡片内输入聚焦 → 卡片边框亮起（与外轮廓重合的反馈） */
-.card:has(input:focus-visible, textarea:focus-visible, select:focus-visible) {
-  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
-}
-
 /* TipTap 编辑区（contenteditable）：去掉焦点蓝框，光标即反馈 */
 .tiptap:focus,
 .tiptap:focus-visible,
@@ -440,6 +440,18 @@ select:focus-visible {
   box-shadow: var(--elev-card);
 }
 .task-card { box-shadow: none; }
+.task-list-group .task-card { border: 0; border-radius: 0; }
+.task-list-group .task-card:hover { transform: none; }
+.task-list-group > li:first-child .task-card { border-radius: 1rem 1rem 0 0; }
+.task-list-group > li:last-child .task-card { border-end-start-radius: 1rem; border-end-end-radius: 1rem; }
+.task-list-group > li + li::before {
+  content: '';
+  position: absolute;
+  inset: 0 1rem auto 3.25rem;
+  border-top: 1px solid color-mix(in srgb, var(--outline) 78%, transparent);
+  z-index: 1;
+  pointer-events: none;
+}
 /* 悬停不再逐帧改阴影：用位移 + 描边变色表达（合成层友好） */
 .card-hover {
   transition: transform var(--dur-1) var(--ease-standard), border-color var(--dur-1) var(--ease-standard);
@@ -628,14 +640,16 @@ select:focus-visible {
    注意：Radix 的定位 transform 在 [data-radix-popper-content-wrapper] 包裹层上，
    包裹层一旦带 transform，内部 fixed 元素就以它为基准 —— 所以必须钉包裹层，
    内层只负责样式与动画。旧 WebView 不认 :has() 时自动退回锚定下拉（仍可用）。 */
+.dialog-panel { animation: scale-in var(--dur-2) var(--ease-spring); }
 @media (max-width: 767px) {
+  .dialog-panel.mobile-dialog-sheet { animation: sheet-rise var(--dur-3) var(--ease-soft-spring); }
   [data-radix-popper-content-wrapper]:has(.select-menu) {
     position: fixed !important;
-    left: 0.75rem !important;
-    right: 0.75rem !important;
+    left: 0 !important;
+    right: 0 !important;
     top: auto !important;
-    bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
-    width: min(380px, 92vw) !important;
+    bottom: 0 !important;
+    width: 100% !important;
     min-width: 0 !important;
     margin-inline: auto !important;
     transform: none !important;
@@ -645,6 +659,9 @@ select:focus-visible {
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
+    border-radius: 20px 20px 0 0;
+    padding-inline: max(.75rem, env(safe-area-inset-left)) max(.75rem, env(safe-area-inset-right));
+    padding-bottom: calc(.75rem + env(safe-area-inset-bottom));
   }
   .select-menu-open { animation: select-sheet-in var(--dur-3) var(--ease-soft-spring) both; }
   .select-menu-closed { animation: select-sheet-out var(--dur-2) var(--ease-standard) both; }
@@ -1057,7 +1074,30 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 .md-body ul[data-type="taskList"] { list-style: none; padding-left: 0.25em; }
 .md-body ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.55em; padding-left: 0; }
 .md-body ul[data-type="taskList"] li > label { margin-top: 0.25em; flex-shrink: 0; display: inline-flex; cursor: pointer; }
-.md-body ul[data-type="taskList"] li > label input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+.app-checkbox, .md-body ul[data-type="taskList"] li > label input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--on-surface-2);
+  border-radius: 5px;
+  cursor: pointer;
+}
+:is(.app-checkbox, .md-body ul[data-type="taskList"] li > label input[type="checkbox"]):checked {
+  background: var(--primary-action);
+  border-color: var(--primary-action);
+}
+:is(.app-checkbox, .md-body ul[data-type="taskList"] li > label input[type="checkbox"]):checked::after {
+  content: '';
+  width: 6px;
+  height: 10px;
+  border: solid var(--on-primary-action);
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+.app-checkbox:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .md-body ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
 .md-body ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--md-ink-2); text-decoration: line-through; }
 .typora-focus-mode .ProseMirror > * { opacity: 0.34; transition: opacity 160ms ease; }

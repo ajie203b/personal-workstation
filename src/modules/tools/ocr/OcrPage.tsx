@@ -296,14 +296,14 @@ export function OcrPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
-      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="-mt-1 w-fit" />
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
           <IconToolOcr size={22} />
         </span>
         <div className="min-w-0">
-          <h1 className="text-[20px] md:text-[22px] font-bold leading-7">本地 OCR</h1>
+          <h1 className="hidden md:block text-[22px] font-bold leading-7">本地 OCR</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             拍照 / 截图取文字，点框复制、存为文档，识别在本地完成
           </p>
@@ -360,7 +360,7 @@ export function OcrPage() {
               <X size={15} /> 清除
             </Button>
           )}
-          <p className="text-[11.5px] text-on-surface-2 leading-relaxed">也可以直接 Ctrl+V 粘贴截图</p>
+          <p className="hidden md:block text-[11.5px] text-on-surface-2 leading-relaxed">也可以直接 Ctrl+V 粘贴截图</p>
         </div>
       </section>
 
@@ -451,7 +451,7 @@ export function OcrPage() {
           <EmptyState
             icon={ClipboardCopy}
             title="还没有待识别的图片"
-            hint="拍照、从相册选图，或直接 Ctrl+V 粘贴截图，识别框与文字会显示在这里。"
+            hint="拍照或从相册选图，识别框和文字会显示在这里。"
           />
         )
       )}

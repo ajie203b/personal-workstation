@@ -93,7 +93,7 @@ function WebdavCard() {
       </div>
 
       {!isNative() && !isTauri() && (
-        <p className="text-[12.5px] leading-relaxed text-danger">
+        <p className="rounded-lg bg-primary-soft px-3 py-2 text-[12.5px] leading-relaxed text-on-surface">
           网页版受浏览器跨域限制，连不上坚果云。电脑上请安装 Windows 桌面版（GitHub Releases 里的 Kairos 安装包），手机用安卓 App。
         </p>
       )}

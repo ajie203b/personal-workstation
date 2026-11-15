@@ -85,7 +85,7 @@ export function MergePanel() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="合并"
-          className="w-40 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60 text-right"
+          className="w-40 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60"
         />
       </Field>
 

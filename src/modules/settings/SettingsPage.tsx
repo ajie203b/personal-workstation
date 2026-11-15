@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect } from 'react'
+import { useSearchParams } from 'react-router'
 import { ChevronRight, Database, Info, Lightbulb, Palette, RefreshCw } from 'lucide-react'
-import { BackButton } from '@/shared/ui/BackButton'
+import { getSettingsSection, SETTINGS_TITLES, type SettingsSection } from '@/app/nav'
 import { cn } from '@/lib/cn'
 import { AppearanceTab } from './AppearanceTab'
 import { DataTab } from './DataTab'
@@ -8,14 +9,12 @@ import { SyncTab } from './SyncTab'
 import { FeedbackTab } from './FeedbackTab'
 import { AboutTab } from './AboutTab'
 
-type Tab = 'appearance' | 'data' | 'sync' | 'feedback' | 'about'
-
-const SECTIONS: { id: Tab; label: string; hint: string; icon: typeof Palette }[] = [
-  { id: 'appearance', label: '外观', hint: '主题、强调色、动效', icon: Palette },
-  { id: 'data', label: '数据', hint: '备份、恢复、数据安全', icon: Database },
-  { id: 'sync', label: '同步', hint: '用坚果云跨设备共用数据', icon: RefreshCw },
-  { id: 'feedback', label: '建议', hint: '你希望添加的功能', icon: Lightbulb },
-  { id: 'about', label: '关于', hint: '版本、更新、安装', icon: Info },
+const SECTIONS: { id: SettingsSection; hint: string; icon: typeof Palette }[] = [
+  { id: 'appearance', hint: '主题、强调色、动效', icon: Palette },
+  { id: 'data', hint: '备份、恢复、数据安全', icon: Database },
+  { id: 'sync', hint: '用坚果云跨设备共用数据', icon: RefreshCw },
+  { id: 'feedback', hint: '你希望添加的功能', icon: Lightbulb },
+  { id: 'about', hint: '版本、更新、安装', icon: Info },
 ]
 
 /**
@@ -23,8 +22,11 @@ const SECTIONS: { id: Tab; label: string; hint: string; icon: typeof Palette }[]
  * 手机是「一级列表 → 点进二级页」，不再用顶部分段选择器（三个选项还行，四个就挤了）。
  */
 export function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('appearance')
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const section = getSettingsSection(params.get('section'))
+  const tab = section ?? 'appearance'
+  const setTab = (section: SettingsSection) => setParams({ section })
+  useEffect(() => { document.getElementById('main-scroll')?.scrollTo({ top: 0 }) }, [section])
 
   const content = tab === 'appearance' ? <AppearanceTab />
     : tab === 'data' ? <DataTab onGoSync={() => setTab('sync')} />
@@ -50,26 +52,27 @@ export function SettingsPage() {
               )}
             >
               <s.icon size={15} className="shrink-0" />
-              {s.label}
+              {SETTINGS_TITLES[s.id]}
             </button>
           ))}
         </nav>
 
         {/* 手机：一级列表 */}
-        {!mobileOpen && (
-          <div className="md:hidden flex flex-col gap-2">
-            {SECTIONS.map((s) => (
+        {!section && (
+          <div className="md:hidden flex flex-col rounded-2xl bg-surface overflow-hidden">
+            {SECTIONS.map((s, index) => (
               <button
                 key={s.id}
                 type="button"
-                onClick={() => { setTab(s.id); setMobileOpen(true) }}
-                className="card flex items-center gap-3 px-4 py-3.5 text-left cursor-pointer"
+                onClick={() => setTab(s.id)}
+                className="relative flex items-center gap-3 px-4 py-3.5 text-left cursor-pointer hover:bg-surface-2"
               >
+                {index > 0 && <span aria-hidden className="absolute top-0 left-16 right-4 border-t border-outline/70" />}
                 <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
                   <s.icon size={17} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-medium">{s.label}</span>
+                  <span className="block text-[14px] font-medium">{SETTINGS_TITLES[s.id]}</span>
                   <span className="block text-[12px] text-on-surface-2 mt-0.5 truncate">{s.hint}</span>
                 </span>
                 <ChevronRight size={16} className="text-on-surface-2 shrink-0" />
@@ -79,10 +82,7 @@ export function SettingsPage() {
         )}
 
         {/* 内容：手机二级页才显示，桌面常显 */}
-        <div className={cn('flex-1 min-w-0 md:block', mobileOpen ? 'block' : 'hidden')}>
-          {mobileOpen && (
-            <BackButton text="设置" label="返回设置" onClick={() => setMobileOpen(false)} className="md:hidden mb-3" />
-          )}
+        <div className={cn('flex-1 min-w-0 md:block', section ? 'block' : 'hidden')}>
           {content}
         </div>
       </div>

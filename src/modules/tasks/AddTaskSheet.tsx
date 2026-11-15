@@ -48,7 +48,6 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       setHabitTimes(null)
       setHabitCount('')
       setTimeExpansion(null)
-      setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [open])
 
@@ -119,7 +118,7 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="添加任务" widthClass="w-[min(620px,92vw)]">
+    <Dialog open={open} onOpenChange={onOpenChange} title="添加任务" widthClass="w-[min(620px,92vw)]" mobileSheet initialFocus={inputRef}>
       <div className="flex flex-col gap-3">
         {/* 输入区 */}
         <div className="card px-3.5 py-3 focus-within:border-primary/50 transition-colors">

@@ -76,7 +76,7 @@ export function SecurityPanel() {
         <p className="text-[11px] text-on-surface-2">AES-256 加密。建议使用较长的密码；管理密码与打开密码不同，用于变更文档权限。</p>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-[12px]">
           {[{ label: '允许打印', value: allowPrint, set: setAllowPrint }, { label: '允许复制', value: allowCopy, set: setAllowCopy }, { label: '允许修改', value: allowModify, set: setAllowModify }].map(p =>
-            <label key={p.label} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={p.value} onChange={e => { job.reset(); p.set(e.target.checked) }} className="accent-primary" />{p.label}</label>)}
+            <label key={p.label} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={p.value} onChange={e => { job.reset(); p.set(e.target.checked) }} className="app-checkbox" />{p.label}</label>)}
         </div>
         <p className="text-[11px] text-on-surface-2">打印、复制权限由阅读软件执行；打开密码用于保护文件内容。</p>
       </>}

@@ -226,7 +226,7 @@ export async function detectFacePoints(image: RgbaImage): Promise<FacePoints | n
       if (best && best.score >= 0.85) break
     }
   }
-  if (!best) return null
+  if (!best || best.score < 0.6) return null
   return facePointsFromNormalized(best.keypoints, image.width, image.height)
 }
 

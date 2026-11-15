@@ -83,13 +83,24 @@ export function AppShell() {
   }
 
   return (
-    <div className="h-full flex bg-canvas">
+    <div className={cn('h-full flex bg-canvas', !immersive && 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]')}>
+      <a
+        href="#main-scroll"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-4 focus:py-3 focus:text-on-surface"
+        onClick={(e) => {
+          e.preventDefault()
+          const main = document.getElementById('main-scroll')
+          const target = main?.querySelector<HTMLElement>('[data-main-start]') ?? main
+          target?.focus()
+        }}
+      >跳到主内容</a>
       <RouteProgress />
       <Sidebar />
       <div className={cn('flex-1 flex flex-col min-w-0', !immersive && 'md:pt-[env(safe-area-inset-top,0px)]')}>
         {!immersive && pathname !== '/docs' && <TopBar title={title} />}
         <main
           id="main-scroll"
+          tabIndex={-1}
           className={cn(
             'flex-1 min-h-0',
             selfScrolling ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain',
@@ -110,12 +121,11 @@ export function AppShell() {
         <button
           type="button"
           id="fab-add"
-          data-tour="add"
           onClick={onAdd}
           aria-label="添加任务"
           title="添加任务"
           className={cn(
-            'md:hidden fixed right-4 z-30 grid place-items-center w-14 h-14 rounded-full cursor-pointer',
+            'md:hidden fixed right-[calc(1rem+env(safe-area-inset-right))] z-30 grid place-items-center w-14 h-14 rounded-full cursor-pointer',
             'bg-primary-action text-on-primary-action shadow-lg shadow-primary/25',
             'active:scale-95 transition-[transform,bottom] duration-200',
           )}

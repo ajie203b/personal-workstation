@@ -169,7 +169,7 @@ export function FinishReadingDialog({
                 type="checkbox"
                 checked={checked}
                 onChange={() => onTogglePick(t.id)}
-                className="w-4 h-4 shrink-0 accent-[var(--primary)]"
+                className="app-checkbox"
               />
               <span className="text-[13px] leading-snug">{t.title}</span>
             </label>

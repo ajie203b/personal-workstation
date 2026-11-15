@@ -1,6 +1,6 @@
 import * as RadixDialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 
@@ -21,11 +21,13 @@ export function Sheet({
   onOpenChange,
   title,
   children,
+  compact = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: ReactNode
   children: ReactNode
+  compact?: boolean
 }) {
   const bodyRef = useRef<HTMLDivElement>(null)
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_Q).matches)
@@ -122,7 +124,7 @@ export function Sheet({
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay
-          className="fixed inset-0 z-40 bg-black/30 overlay-fade"
+          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] overlay-fade"
           style={drag > 0 ? { opacity: Math.max(0.3, 1 - drag / 460) } : undefined}
         />
         <RadixDialog.Content
@@ -134,8 +136,10 @@ export function Sheet({
           onPointerCancel={endDrag}
           className={cn(
             'fixed z-50 bg-surface border-outline flex flex-col',
-            'max-md:inset-x-0 max-md:bottom-0 max-md:h-[85dvh] max-md:rounded-t-[20px] max-md:border-t max-md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]',
+            'max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-[20px] max-md:border-t max-md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]',
+            compact ? 'max-md:max-h-[85dvh]' : 'max-md:h-[85dvh]',
             'md:top-0 md:right-0 md:bottom-0 md:w-[min(440px,92vw)] md:border-l',
+            'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]',
           )}
           style={{
             transform: drag ? (narrow ? `translateY(${drag}px)` : `translateX(${drag}px)`) : undefined,
@@ -151,7 +155,7 @@ export function Sheet({
             <RadixDialog.Title className="text-[16px] font-semibold">{title}</RadixDialog.Title>
             <RadixDialog.Close
               aria-label="关闭"
-              className="grid place-items-center w-9 h-9 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors"
+              className="grid place-items-center size-11 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors"
             >
               <X size={18} />
             </RadixDialog.Close>
@@ -170,6 +174,8 @@ export function Dialog({
   description,
   children,
   widthClass = 'w-[min(400px,92vw)]',
+  mobileSheet = false,
+  initialFocus,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -178,28 +184,37 @@ export function Dialog({
   children: ReactNode
   /** 默认 400px；宽短弹窗传 w-[min(620px,92vw)] */
   widthClass?: string
+  mobileSheet?: boolean
+  initialFocus?: RefObject<HTMLElement>
 }) {
   const descriptionId = useId()
+  const titleRef = useRef<HTMLHeadingElement>(null)
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] overlay-fade" />
         <RadixDialog.Content
           data-app-modal="dialog"
           aria-describedby={description ? descriptionId : undefined}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            const target = initialFocus?.current ?? titleRef.current
+            target?.focus({ preventScroll: true })
+          }}
           className={cn(
             'dialog-panel pop fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-5',
             // 矮视口/宽弹窗（添加任务 620px）时内容会顶出屏幕且无法滚动
             'flex flex-col max-h-[min(86dvh,720px)] overflow-y-auto overscroll-contain',
             widthClass,
+            mobileSheet && 'mobile-dialog-sheet max-md:inset-x-0 max-md:top-auto max-md:bottom-0 max-md:w-full max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-b-none max-md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]',
           )}
-          style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         >
+          {mobileSheet && <div aria-hidden className="md:hidden mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-outline" />}
           <div className="flex items-start justify-between gap-3">
-            <RadixDialog.Title className="min-w-0 text-[17px] font-semibold">{title}</RadixDialog.Title>
+            <RadixDialog.Title ref={titleRef} tabIndex={-1} className="min-w-0 text-[17px] font-semibold outline-none">{title}</RadixDialog.Title>
             <RadixDialog.Close
               aria-label="关闭"
-              className="grid place-items-center w-9 h-9 -mt-1 -mr-1 shrink-0 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
+              className="grid place-items-center size-11 -mt-1 -mr-1 shrink-0 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
             >
               <X size={18} aria-hidden />
             </RadixDialog.Close>

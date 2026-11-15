@@ -210,11 +210,11 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
           <div className="grid gap-[3px]" style={{ gridTemplateColumns: 'auto repeat(13, minmax(0, 1fr))' }}>
             <span aria-hidden />
             {heatMonths.map((label, i) => (
-              <span key={i} className="h-3 text-[9px] leading-3 text-on-surface-2/70 text-center truncate select-none">{label}</span>
+              <span key={i} className="h-4 text-[11px] leading-4 text-on-surface-2 text-center truncate select-none">{label}</span>
             ))}
             {heatRows.map((row, ri) => (
               <Fragment key={ri}>
-                <span className="flex items-center justify-end pr-0.5 text-[9px] leading-none text-on-surface-2/70 select-none">
+                <span className="flex items-center justify-end pr-0.5 text-[11px] leading-none text-on-surface-2 select-none">
                   {['一', '二', '三', '四', '五', '六', '日'][ri]}
                 </span>
                 {row.map((cell) => {
@@ -282,7 +282,7 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
               <div key={m} className="rounded-[12px] bg-surface-2 px-3 py-3 text-center">
                 <p className="text-[12px] text-on-surface-2">{METRIC_LABEL[m]}{focusMode ? '（分钟）' : ''}</p>
                 <p className="text-[22px] font-bold tabular-nums mt-1">{current}</p>
-                <p className={cn('text-[11px] mt-0.5 tabular-nums', delta > 0 ? 'text-primary' : 'text-on-surface-2/70')}>
+                <p className={cn('text-[11px] mt-0.5 tabular-nums', delta > 0 ? 'text-primary' : 'text-on-surface-2')}>
                   {delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '— 持平'} · 上期 {previous}
                 </p>
                 {/* 两根柱子：本期高亮、上期弱化，入场时从 0 长到各自高度；
@@ -294,7 +294,7 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
                       <CompareBar value={previous} max={Math.max(current, previous, 1)} delay={i * 60 + 90} muted />
                     </>
                   ) : (
-                    <span className="text-[11px] text-on-surface-2/50 self-center">暂无数据</span>
+                    <span className="text-[11px] text-on-surface-2 self-center">暂无数据</span>
                   )}
                 </div>
               </div>

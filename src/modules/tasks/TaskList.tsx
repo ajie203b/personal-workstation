@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Inbox, Check, Plus, Trash2 } from 'lucide-react'
 import type { Task } from '@/db/db'
 import { useTasksUi } from '@/stores/tasks'
@@ -10,7 +10,6 @@ import { Button } from '@/shared/ui/Button'
 import { useFlipList } from '@/lib/useFlipList'
 import { haptic } from '@/lib/haptics'
 import { isFutureTask } from '@/lib/date'
-import { cn } from '@/lib/cn'
 import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { reorderTasks } from '@/db/tasks'
@@ -24,6 +23,7 @@ interface Props {
   scope: string
   /** 首页使用紧凑空态，给建议与专注控件留出空间 */
   denseEmpty?: boolean
+  hideEmptyAction?: boolean
 }
 
 const NAV_DIR: Record<string, 1 | -1> = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1 }
@@ -34,12 +34,13 @@ const NAV_DIR: Record<string, 1 | -1> = { ArrowDown: 1, ArrowUp: -1, j: 1, k: -1
  * 监听挂在 window 上并按作用域过滤——挂在 ul 上时，焦点不在列表内（刚进页面、
  * 点过卡片后又落回 body）按键事件根本不会流经 ul，键盘流会整条失效。
  */
-export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Props) {
-  const { focusId, setFocusId, openDetail } = useTasksUi()
+export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty, hideEmptyAction }: Props) {
+  const { focusId, setFocusId } = useTasksUi()
   const openAddSheet = useUi((s) => s.openAddSheet)
   // 左滑删除：软删除 + 撤销（与详情里的删除走同一条路径）；把卡片交给碎沙动画
   const removeTask = (t: Task, source?: HTMLElement | null, offsetX?: number) => deleteTaskWithUndo(t, source, offsetX)
   const containerRef = useRef<HTMLUListElement>(null)
+  const lastFocusedRow = useRef<string | null>(null)
   // 拖拽落位先改本地顺序，再后台落库：避免松手后先弹回旧位置、等 liveQuery 回来才跳过去
   const [optimisticIds, setOptimisticIds] = useState<string[] | null>(null)
   const skipFlip = useRef(false)
@@ -51,8 +52,17 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
       ]
     : tasks
   // 按键处理读最新数据，避免把 tasks 塞进依赖导致每帧重绑监听
-  const latest = useRef({ tasks: orderedTasks, focusId })
-  latest.current = { tasks: orderedTasks, focusId }
+  const latest = useRef(orderedTasks)
+  latest.current = orderedTasks
+  const tabStop = orderedTasks.find((t) => t.id === focusId)?.id ?? orderedTasks[0]?.id
+
+  useLayoutEffect(() => {
+    const last = lastFocusedRow.current
+    if (last && !orderedTasks.some((task) => task.id === last)) {
+      lastFocusedRow.current = null
+      if (tabStop && document.activeElement === document.body) document.getElementById(`task-${tabStop}`)?.focus()
+    }
+  })
 
   useEffect(() => {
     if (!optimisticIds) return
@@ -67,49 +77,56 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
     document.getElementById(`task-${focusId}`)?.scrollIntoView({ block: 'nearest' })
   }, [focusId])
 
-  useEffect(() => {
-    // 列表内容变化后，聚焦项可能已不在列表中。
-    // tasks 为空时不要清：首次加载 liveQuery 还没回来，深链（?focus=）会被误清掉。
-    if (focusId && tasks.length > 0 && !tasks.some((t) => t.id === focusId)) setFocusId(null)
-  }, [tasks, focusId, setFocusId])
-
   // 完成/删除后兄弟卡片滑到新位置，而不是瞬跳；拖拽排序交给 dnd-kit，不叠 FLIP
   useFlipList(containerRef, orderedTasks, skipFlip)
 
   useEffect(() => {
     /** 移动选中项；未选中时方向键都落到第一条 */
     const move = (dir: 1 | -1) => {
-      const { tasks: list, focusId: current } = latest.current
+      const list = latest.current
       if (!list.length) return
-      const idx = list.findIndex((t) => t.id === current)
+      const idx = list.findIndex((t) => t.id === useTasksUi.getState().focusId)
       const next = idx === -1 ? 0 : dir > 0 ? Math.min(idx + 1, list.length - 1) : Math.max(idx - 1, 0)
-      setFocusId(list[next].id)
+      const row = document.getElementById(`task-${list[next].id}`)
+      if (row && containerRef.current?.contains(row) && row.getClientRects().length) row.focus()
     }
 
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
-      const { tasks: list, focusId: current } = latest.current
-      if (!list.length) return
+      if (!latest.current.length) return
       const target = e.target as HTMLElement | null
       const inList = !!containerRef.current?.contains(target)
       // 焦点在 body（刚打开页面）时只接方向键；输入框、弹层、菜单内的按键一律不劫持
       if (!inList && target !== document.body) return
 
       const dir = NAV_DIR[e.key]
-      if (dir) {
+      if (dir && target?.dataset.sortable == null) {
+        if (!containerRef.current?.getClientRects().length) return
         e.preventDefault()
         move(dir)
         return
       }
       if (!inList) return
-      const idx = list.findIndex((t) => t.id === current)
-      if (idx === -1) return
+      const row = target?.closest<HTMLElement>('[data-task-row]')
+        ?? target?.querySelector<HTMLElement>('[data-task-row]')
+      if (!row) return
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        const actions = [row, ...row.querySelectorAll<HTMLElement>('[data-check-circle], [data-task-document]')]
+        const sort = row.closest<HTMLElement>('[data-sortable]')
+        if (sort) actions.push(sort)
+        const step = e.key === 'ArrowRight' ? 1 : -1
+        const index = actions.indexOf(target!)
+        e.preventDefault()
+        actions[(index + step + actions.length) % actions.length].focus()
+        return
+      }
+      if (target !== row) return
       if (e.key === ' ' || e.key === 'x' || e.key === 'X') {
         e.preventDefault()
-        void toggleTaskWithUndo(list[idx])
+        row.querySelector<HTMLButtonElement>('[data-check-circle]')?.click()
       } else if (e.key === 'Enter') {
         e.preventDefault()
-        openDetail(list[idx].id)
+        row.click()
       }
     }
 
@@ -117,7 +134,6 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
     const onEnterList = (ev: Event) => {
       const dir = (ev as CustomEvent<{ dir?: 1 | -1 }>).detail?.dir ?? 1
       move(dir)
-      containerRef.current?.focus({ preventScroll: true })
     }
 
     window.addEventListener('keydown', onKey)
@@ -126,14 +142,14 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('ws:list-enter', onEnterList)
     }
-  }, [setFocusId, openDetail])
+  }, [])
 
   if (orderedTasks.length === 0) {
     return (
       <EmptyState dense={denseEmpty} icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'}>
-        <Button size="sm" variant="primary" magnetic onClick={() => openAddSheet({ tier: 'today', todayContext: true })}>
+        {!hideEmptyAction && <Button size="sm" variant="primary" magnetic onClick={() => openAddSheet({ tier: 'today', todayContext: true })}>
           <Plus size={15} /> 加第一个任务
-        </Button>
+        </Button>}
       </EmptyState>
     )
   }
@@ -160,18 +176,24 @@ export function TaskList({ tasks, emptyTitle, emptyHint, scope, denseEmpty }: Pr
     <ul
       ref={containerRef}
       scope-data={scope}
-      tabIndex={0}
-      aria-label="任务列表（方向键选择，空格完成，回车详情）"
-      // 点击卡片后把焦点收回列表，后续方向键/空格继续可用
-      onClickCapture={() => containerRef.current?.focus({ preventScroll: true })}
+      aria-label="任务列表。上下方向键切换任务，左右方向键切换操作，空格完成，回车查看详情。"
+      onFocus={(e) => {
+        const row = (e.target as HTMLElement).closest<HTMLElement>('[data-task-row]')
+        const id = row?.dataset.taskRow ?? (e.target as HTMLElement).dataset.sortable
+        if (id) {
+          lastFocusedRow.current = id
+          setFocusId(id)
+        }
+      }}
+      onBlur={(e) => { if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) lastFocusedRow.current = null }}
       // 入场不再用 nth-child 级联（删项后位置错位，会把卡片挪回旧坐标），
       // 补位统一交给 FLIP
-      className={cn('flex flex-col gap-2 rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary/30')}
+      className="task-list-group flex flex-col rounded-2xl bg-surface"
     >
       {orderedTasks.map((t) => (
-        <DragSortItem key={t.id} id={t.id} as="li">
+        <DragSortItem key={t.id} id={t.id} as="li" tabIndex={-1} label={`排序：${t.title}`}>
           <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={(source, offsetX) => void removeTask(t, source, offsetX)} disabled={t.status === 'done' || isFutureTask(t)}>
-            <TaskItem task={t} focused={focusId === t.id} flip />
+            <TaskItem task={t} tabIndex={tabStop === t.id ? 0 : -1} focused={focusId === t.id} flip />
           </SwipeRow>
         </DragSortItem>
       ))}

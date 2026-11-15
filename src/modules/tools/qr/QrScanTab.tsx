@@ -217,7 +217,7 @@ export function QrScanTab({
         >
           {camActive ? <CameraOff size={15} /> : <Camera size={15} />} {camActive ? '停止相机' : '实时扫码'}
         </Button>
-        <p className="text-[11.5px] text-on-surface-2 leading-relaxed">
+        <p className="hidden md:block text-[11.5px] text-on-surface-2 leading-relaxed">
           也可以直接 Ctrl+V 粘贴图片
         </p>
       </div>

@@ -28,6 +28,7 @@ declare module '@tiptap/core' {
       addTableColumnAfter: () => ReturnType
       deleteTableColumn: () => ReturnType
       deleteGfmTable: () => ReturnType
+      exitGfmTable: () => ReturnType
     }
   }
 }
@@ -163,8 +164,21 @@ export const MdTable = Node.create({
     return {
       Enter: () => {
         const { state, view } = this.editor
+        if (state.selection instanceof TextSelection && state.selection.empty && isInTable(state)) {
+          const { table, map, bottom } = selectedRect(state)
+          if (bottom === map.height && table.lastChild?.children.every((cell) => cell.content.size === 0)) {
+            return this.editor.commands.exitGfmTable()
+          }
+        }
         return moveToNextTableRow(state, view.dispatch)
       },
+      ArrowDown: () => {
+        const { state, view } = this.editor
+        if (!(state.selection instanceof TextSelection) || !state.selection.empty || !isInTable(state)) return false
+        const { bottom, map } = selectedRect(state)
+        return bottom === map.height && view.endOfTextblock('down') && this.editor.commands.exitGfmTable()
+      },
+      'Mod-Enter': () => this.editor.commands.exitGfmTable(),
       Tab: () => {
         const { state, view } = this.editor
         return goToNextCell(1)(state, view.dispatch) || moveToNextTableRow(state, view.dispatch, true)
@@ -208,7 +222,7 @@ export const MdTable = Node.create({
                 return firstCell == null
               })
             })
-            if (firstCell != null) tr.setSelection(TextSelection.create(tr.doc, firstCell))
+            if (firstCell != null) tr.setSelection(TextSelection.create(tr.doc, firstCell, firstCell + '列 1'.length))
           }
           return true
         },
@@ -219,6 +233,17 @@ export const MdTable = Node.create({
       addTableColumnAfter: () => wrapPmCommand(addColumnAfter),
       deleteTableColumn: () => wrapPmCommand(deleteColumn),
       deleteGfmTable: () => wrapPmCommand(deleteTable),
+      exitGfmTable: () => ({ state, tr, dispatch }) => {
+        if (!isInTable(state)) return false
+        const { table, tableStart } = selectedRect(state)
+        const afterTable = tableStart - 1 + table.nodeSize
+        if (dispatch) {
+          const next = tr.doc.nodeAt(afterTable)
+          if (!next?.isTextblock) tr.insert(afterTable, state.schema.nodes.paragraph.create())
+          tr.setSelection(TextSelection.create(tr.doc, afterTable + 1)).scrollIntoView()
+        }
+        return true
+      },
     }
   },
 })

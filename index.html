@@ -18,7 +18,7 @@
       try {
         var saved = JSON.parse(localStorage.getItem('ws-ui') || '{}');
         var st = saved && saved.state ? saved.state : {};
-        var mode = st.themeMode || st.theme;
+        var mode = st.themeMode || st.theme || 'system';
         var dark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
         if (dark) {
           document.documentElement.classList.add('dark');

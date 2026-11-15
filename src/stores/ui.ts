@@ -92,7 +92,7 @@ export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
       theme: 'light',
-      themeMode: 'light',
+      themeMode: 'system',
       accent: 'blue',
       motion: true,
       sidebarCollapsed: false,
@@ -117,10 +117,22 @@ export const useUi = create<UiState>()(
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         // 带「撤销」的多留两秒：误删后要来得及反应，普通提示仍 4 秒
         const duration = action ? 6000 : 4000
-        set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, action, duration, createdAt: Date.now() }] }))
-        setTimeout(() => get().dismissToast(id), duration)
+        const startNow = get().toasts.length === 0
+        set((s) => ({ toasts: [...s.toasts, { id, message, action, duration, createdAt: Date.now() }] }))
+        if (startNow) setTimeout(() => get().dismissToast(id), duration)
       },
-      dismissToast: (id) => { set((s) => ({ toasts: s.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) })); setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 220) },
+      dismissToast: (id) => {
+        const [current, ...pending] = get().toasts
+        if (current?.id !== id || current.leaving) return
+        set({ toasts: [{ ...current, leaving: true }, ...pending] })
+        setTimeout(() => {
+          const remaining = get().toasts
+          if (remaining[0]?.id !== id) return
+          const next = remaining.slice(1)
+          set({ toasts: next })
+          if (next[0]) setTimeout(() => get().dismissToast(next[0].id), next[0].duration)
+        }, 220)
+      },
     }),
     {
       name: 'ws-ui',
@@ -131,7 +143,7 @@ export const useUi = create<UiState>()(
         const p = (persisted ?? {}) as Partial<UiState> & { theme?: string }
         const mode = (['system', 'light', 'dark'] as ThemeMode[]).includes(p.themeMode as ThemeMode)
           ? (p.themeMode as ThemeMode)
-          : p.theme === 'dark' ? 'dark' : 'light'
+          : p.theme === 'dark' || p.theme === 'light' ? p.theme : 'system'
         return {
           ...current,
           ...p,

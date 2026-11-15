@@ -83,7 +83,7 @@ export function ReaderToolbar({
       <button
         onClick={onBack}
         aria-label="返回文档库"
-        className="grid place-items-center shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors"
+        className="grid place-items-center shrink-0 size-11 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors"
       >
         <ArrowLeft size={19} />
       </button>
@@ -108,7 +108,7 @@ export function ReaderToolbar({
             type="button"
             aria-label="更多文档操作"
             title="更多"
-            className="sm:hidden grid place-items-center shrink-0 w-9 h-9 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
+            className="sm:hidden grid place-items-center shrink-0 size-11 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
           >
             <MoreHorizontal size={18} />
           </button>
@@ -185,7 +185,7 @@ export function ReaderToolbar({
           aria-label={reviewDueCount > 0 ? `复习待回顾批注 (${reviewDueCount})` : '间隔复习本文档批注'}
           title={reviewDueCount > 0 ? `复习待回顾批注 (${reviewDueCount})` : '间隔复习本文档批注'}
           onClick={onOpenReview}
-          className="hidden md:grid relative place-items-center shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
+          className="hidden md:grid relative place-items-center shrink-0 size-11 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
         >
           <GraduationCap size={18} />
           {reviewDueCount > 0 && (
@@ -202,7 +202,7 @@ export function ReaderToolbar({
               type="button"
               aria-label="导出与引用"
               title="导出与引用"
-              className="hidden sm:grid place-items-center shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
+              className="hidden sm:grid place-items-center shrink-0 size-11 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
             >
               <BookDown size={18} />
             </button>

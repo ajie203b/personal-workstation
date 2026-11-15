@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router'
 import {
   Camera,
@@ -15,6 +15,7 @@ import { IconToolIdPhoto } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
+import { HexColorInput } from '@/shared/ui/HexColorInput'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
@@ -159,7 +160,7 @@ export function IdPhotoPage() {
         } else {
           setPoints(null)
           setFaceState('none')
-          setFaceMsg('没检测到人脸，已按画面居中取景，可用滑杆手动对位')
+          setFaceMsg('没识别到人脸，请用滑杆手动调整。')
         }
       } catch (e) {
         setPoints(null)
@@ -396,14 +397,14 @@ export function IdPhotoPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
-      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="-mt-1 w-fit" />
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
           <IconToolIdPhoto size={22} />
         </span>
         <div className="min-w-0">
-          <h1 className="text-[20px] md:text-[22px] font-bold leading-7">证件照 / 报名照</h1>
+          <h1 className="hidden md:block text-[22px] font-bold leading-7">证件照 / 报名照</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             人脸取景、抠图换底、按规格裁剪压 KB、6 寸排版打印
           </p>
@@ -493,6 +494,8 @@ export function IdPhotoPage() {
                 max={0.3}
                 step={0.01}
                 value={adjust.offsetX}
+                className="reader-range"
+                style={{ '--range-pct': `${((adjust.offsetX + 0.3) / 0.6) * 100}%` } as CSSProperties}
                 onChange={(e) => {
                   setAdjust((a) => ({ ...a, offsetX: Number(e.target.value) }))
                   setResult(null)
@@ -507,6 +510,8 @@ export function IdPhotoPage() {
                 max={0.3}
                 step={0.01}
                 value={adjust.offsetY}
+                className="reader-range"
+                style={{ '--range-pct': `${((adjust.offsetY + 0.3) / 0.6) * 100}%` } as CSSProperties}
                 onChange={(e) => {
                   setAdjust((a) => ({ ...a, offsetY: Number(e.target.value) }))
                   setResult(null)
@@ -521,6 +526,8 @@ export function IdPhotoPage() {
                 max={1.5}
                 step={0.01}
                 value={adjust.zoom}
+                className="reader-range"
+                style={{ '--range-pct': `${((adjust.zoom - 0.8) / 0.7) * 100}%` } as CSSProperties}
                 onChange={(e) => {
                   setAdjust((a) => ({ ...a, zoom: Number(e.target.value) }))
                   setResult(null)
@@ -598,35 +605,20 @@ export function IdPhotoPage() {
                 {p.label}
               </button>
             ))}
-            <label className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[10px] border border-outline text-[12.5px] text-on-surface-2 cursor-pointer">
-              <input
-                type="color"
-                value={customBg}
-                onChange={(e) => {
-                  setCustomBg(e.target.value)
-                  setBg(e.target.value)
-                }}
-                className="w-5 h-5 border-0 bg-transparent p-0 cursor-pointer"
-              />
-              自定义
-            </label>
+            <HexColorInput label="自定义底色" value={customBg} onChange={value => { setCustomBg(value); setBg(value) }} />
           </div>
 
+          <div role="group" aria-label="照片规格" className="flex gap-2 overflow-x-auto pb-1">
+            {allSpecs.map((s) => (
+              <button key={s.id} type="button" aria-pressed={specId === s.id} onClick={() => { setSpecId(s.id); setResult(null) }}
+                className={cn('shrink-0 flex min-h-12 items-center gap-2 rounded-lg border px-3 py-2 text-left cursor-pointer',
+                  specId === s.id ? 'border-primary bg-primary-soft text-primary' : 'border-outline bg-surface-2 text-on-surface')}>
+                <span aria-hidden className="w-4 rounded-sm border border-current" style={{ aspectRatio: s.width / s.height }} />
+                <span className="text-xs">{s.name}<span className="block text-on-surface-2 tabular-nums">{s.width}×{s.height}</span></span>
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={specId}
-              onChange={(e) => {
-                setSpecId(e.target.value)
-                setResult(null)
-              }}
-              className="h-9 rounded-[10px] border border-outline bg-surface-2 px-2.5 text-[12.5px] outline-none focus:border-primary/60"
-            >
-              {allSpecs.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}（{s.width}×{s.height}）
-                </option>
-              ))}
-            </select>
             <Button variant="outline" className="h-9 px-3 text-[12.5px]" onClick={saveCurrentAsMine}>
               保存为我的规格
             </Button>

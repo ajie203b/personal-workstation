@@ -7,6 +7,7 @@ interface Props {
   onChange: () => void
   className?: string
   label?: string
+  tabIndex?: number
   /** 未来任务等场景：保留勾选框位置，但不可点 */
   disabled?: boolean
 }
@@ -50,11 +51,12 @@ function showCompletionFeedback(source: HTMLButtonElement) {
   window.setTimeout(() => feedback.remove(), 320)
 }
 
-export function CheckCircle({ checked, onChange, className, label, disabled }: Props) {
+export function CheckCircle({ checked, onChange, className, label, disabled, tabIndex }: Props) {
 
   return (
     <button
       type="button"
+      tabIndex={tabIndex}
       role="checkbox"
       data-check-circle=""
       aria-checked={checked}

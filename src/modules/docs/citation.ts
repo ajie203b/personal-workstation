@@ -10,34 +10,37 @@ function splitAuthors(value: string): string[] {
 }
 
 function escapeBibTeX(value: string): string {
-  return value.replace(/[{}&%]/g, (char) => {
+  return value.replace(/[{}&%_#$~^\\]/g, (char) => {
     if (char === '{') return '{\\textbraceleft}'
     if (char === '}') return '{\\textbraceright}'
+    if (char === '~') return '{\\textasciitilde}'
+    if (char === '^') return '{\\textasciicircum}'
+    if (char === '\\') return '{\\textbackslash}'
     return `\\${char}`
   })
 }
 
-function citeKey(doc: Doc): string {
-  const rawAuthor = doc.meta?.author?.split(/[,，;；、]/)[0]?.trim() ?? ''
+function citeKey(doc: Doc, firstAuthor = ''): string {
+  const rawAuthor = firstAuthor.split(/[,，]/)[0]
   const asciiAuthor = rawAuthor.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'ref'
-  const year = doc.meta?.year?.replace(/\D/g, '') || new Date(doc.addedAt).getFullYear().toString()
-  return `${asciiAuthor}${year}_${doc.id.slice(0, 6)}`
+  const year = doc.meta?.year?.match(/\b\d{4}\b/)?.[0]
+  return `${asciiAuthor}${year ?? '_nd'}_${doc.id.slice(0, 6)}`
 }
 
 export function formatCitation(doc: Doc, style: CitationStyle): string {
   const m = doc.meta
-  const key = citeKey(doc)
-  const year = m?.year?.trim() || String(new Date(doc.addedAt).getFullYear())
+  const year = m?.year?.trim()
   const authors = splitAuthors(m?.author ?? '')
   if (style === 'bibtex') {
+    const key = citeKey(doc, authors[0])
     const entryType = m?.venue ? 'article' : 'misc'
     const fields = [
       `  title = {${escapeBibTeX(doc.title)}}`,
       authors.length ? `  author = {${escapeBibTeX(authors.join(' and '))}}` : '',
-      `  year = {${escapeBibTeX(year)}}`,
+      year ? `  year = {${escapeBibTeX(year)}}` : '',
       m?.venue ? `  journal = {${escapeBibTeX(m.venue)}}` : '',
       m?.doi ? `  doi = {${escapeBibTeX(m.doi)}}` : '',
-      doc.sourceUrl ? `  url = {${escapeBibTeX(doc.sourceUrl)}}` : '',
+      doc.sourceUrl ? `  url = {${doc.sourceUrl.replace(/[{}\\\s]/g, encodeURIComponent)}}` : '',
     ].filter(Boolean)
     return `@${entryType}{${key},\n${fields.join(',\n')}\n}`
   }
@@ -47,7 +50,7 @@ export function formatCitation(doc: Doc, style: CitationStyle): string {
       `TY  - ${m?.venue ? 'JOUR' : 'GEN'}`,
       `TI  - ${doc.title}`,
       ...authors.map((author) => `AU  - ${author}`),
-      `PY  - ${year}`,
+      year ? `PY  - ${year}` : '',
       m?.venue ? `JO  - ${m.venue}` : '',
       m?.doi ? `DO  - ${m.doi}` : '',
       doc.sourceUrl ? `UR  - ${doc.sourceUrl}` : '',

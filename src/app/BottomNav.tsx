@@ -84,7 +84,6 @@ export function BottomNav() {
           <NavLink
             key={item.path}
             to={item.path}
-            data-tour={item.tour}
             onClick={() => haptic('selection')}
             className={({ isActive }) =>
               cn(
@@ -102,7 +101,7 @@ export function BottomNav() {
                   </span>
                   {item.path === '/tasks' && <NavBadge value={badge} />}
                 </span>
-                <span className={cn('relative z-[1] text-[12px] leading-none mt-0.5 transition-colors duration-150', isActive && 'font-medium text-primary')}>{item.path === '/docs' ? '文档' : item.label}</span>
+                <span className={cn('relative z-[1] text-[12px] leading-none mt-0.5 transition-colors duration-150', isActive && 'font-medium text-primary')}>{item.path === '/docs' ? '文档' : item.path === '/tasks' ? '任务' : item.label}</span>
               </>
             )}
           </NavLink>

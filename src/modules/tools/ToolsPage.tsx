@@ -13,12 +13,6 @@ import { orderTools } from './toolOrder'
 import { useUi } from '@/stores/ui'
 import { isNative, isTauri } from '@/lib/native'
 
-/**
- * 工具页（v2.2 起配置化）：模型智能排名永远置顶，下面是小工具入口。
- * 小工具卡一律 1:1（与番茄小说卡同尺寸，见 MEMORY 排版约束），
- * 新增工具在 TOOL_CARDS 里加一项即可。图标用 @/shared/icons 的
- * Material Symbols 体系（与导航/功能卡一致）。
- */
 interface ToolCard {
   to: string
   icon: AppIcon
@@ -89,12 +83,15 @@ export function ToolsPage() {
       draggable={false}
       tabIndex={overlay ? -1 : undefined}
       aria-label={t.title}
-      className={cn('tilt-card press card card-hover relative aspect-square w-full max-w-[190px] rounded-[16px] p-4', 'flex flex-col overflow-hidden select-none')}
+      className="tilt-card press card card-hover flex relative w-full min-h-[76px] items-center gap-2.5 px-3 py-2 overflow-hidden select-none"
     >
-      <span className="grid place-items-center w-11 h-11 rounded-[13px] bg-primary-soft text-primary shrink-0"><t.icon size={22} /></span>
-      {t.to === '/tools/fanqie' ? <span className={cn('absolute top-4 right-3.5 max-w-[calc(100%-4.5rem)] truncate text-[10.5px] tabular-nums', job?.phase === 'running' ? 'text-primary font-medium' : 'text-on-surface-2')}>{fanqieBadge}</span>
-        : t.badge ? <span className="absolute top-4 right-3.5 truncate text-[10.5px] text-on-surface-2 tabular-nums">{t.badge}</span> : null}
-      <span className="mt-auto min-w-0"><span className="block text-[15px] font-semibold leading-5">{t.title}</span><span className="block text-[11.5px] text-on-surface-2 mt-1 truncate">{t.sub}</span></span>
+      <span className="grid place-items-center size-9 rounded-[10px] bg-primary-soft text-primary shrink-0"><t.icon size={20} /></span>
+      <span className="min-w-0">
+        <span className="block text-[14px] font-semibold leading-5">{t.title}</span>
+        <span className={cn('block text-xs mt-0.5 truncate', t.to === '/tools/fanqie' && job?.phase === 'running' ? 'text-primary' : 'text-on-surface-2')}>
+          {t.to === '/tools/fanqie' && (job || localBooks) ? fanqieBadge : t.sub}
+        </span>
+      </span>
     </Link>
   )
 
@@ -119,7 +116,7 @@ export function ToolsPage() {
           }}>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {tools.map((t) => (
-            <DragSortItem key={t.to} id={t.to} className="w-full max-w-[190px]">
+            <DragSortItem key={t.to} id={t.to} className="w-full min-w-0">
             {toolCard(t)}
             </DragSortItem>
           ))}

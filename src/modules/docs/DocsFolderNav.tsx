@@ -34,7 +34,7 @@ export function FolderChip({
       onClick={onClick}
       className={cn(
         dropId && isOver && 'ring-2 ring-primary bg-primary-soft',
-        'shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-[12px] transition-colors cursor-pointer',
+        'shrink-0 inline-flex items-center gap-1.5 h-11 min-w-11 px-3 rounded-full border text-[12px] transition-colors cursor-pointer',
         active ? 'bg-primary-soft border-primary/40 text-primary font-medium' : 'bg-surface-2 border-outline text-on-surface-2 hover:text-on-surface',
       )}
     >
@@ -83,7 +83,7 @@ export function FolderStripMobile({
     if (selected.right > bounds.right) strip.scrollLeft += selected.right - bounds.right + 4
     else if (selected.left < bounds.left) strip.scrollLeft += selected.left - bounds.left - 4
   }, [cur, activeIndex])
-  const countLabel = (count: number) => count > 0 && <span className="opacity-60">{count}</span>
+  const countLabel = (count: number) => count > 0 && <span className="tabular-nums text-on-surface-2">{count}</span>
   return (
     <div ref={stripRef} className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1" aria-label="文档分类">
       <FolderChip active={cur === ALL_DOCS_VIEW} onClick={() => onPick(null)}>
@@ -301,7 +301,7 @@ function TreeItem({
       <button type="button" onClick={onClick} className="flex-1 min-w-0 flex items-center gap-2 text-left cursor-pointer h-full">
         <Icon size={14} className="shrink-0" />
         <span className="truncate flex-1">{label}</span>
-        {count > 0 && <span className="text-[11px] tabular-nums opacity-60">{count}</span>}
+        {count > 0 && <span className="text-[11px] tabular-nums text-on-surface-2">{count}</span>}
       </button>
       {onCreateChild && (
         <button

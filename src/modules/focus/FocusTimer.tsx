@@ -260,6 +260,9 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
       >
         <Segmented
           ariaLabel="专注时长"
+          asRadio
+          touchSized
+          disabled={store.running}
           size="sm"
           options={WORK_SEG_OPTIONS}
           value={String(store.workMin)}

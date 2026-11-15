@@ -102,6 +102,7 @@ describe('Typora P1 extensions', () => {
     const editor = createHeadlessEditor('')
     editor.commands.insertGfmTable({ rows: 2, cols: 2 })
     expect(editor.state.selection.$from.parent.textContent).toBe('列 1')
+    expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe('列 1')
     for (let i = 0; i < 4; i++) {
       const key = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true })
       editor.view.dom.dispatchEvent(key)
@@ -110,6 +111,30 @@ describe('Typora P1 extensions', () => {
     editor.commands.insertContent('保留正文')
     expect(getMd(editor)).toContain('| 保留正文 |  |')
     expect(editor.state.doc.firstChild?.childCount).toBe(3)
+    editor.destroy()
+  })
+
+  it('continues in a paragraph after Enter on an empty trailing row', () => {
+    const editor = createHeadlessEditor()
+    editor.commands.insertGfmTable({ rows: 2, cols: 2 })
+    let lastCell = 0
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'tableCell') lastCell = pos + 1
+    })
+    editor.commands.setTextSelection(lastCell)
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    editor.commands.insertContent('表格后的正文')
+    expect(editor.state.doc.lastChild?.textContent).toBe('表格后的正文')
+    expect(getMd(editor)).toContain('\n\n表格后的正文')
+    editor.destroy()
+  })
+
+  it('exits into the existing paragraph with Ctrl+Enter', () => {
+    const editor = createHeadlessEditor('| A |\n| --- |\n| B |\n\n正文')
+    editor.commands.setTextSelection(3)
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, cancelable: true }))
+    expect(editor.state.selection.$from.parent.textContent).toBe('正文')
+    expect(editor.state.doc.childCount).toBe(2)
     editor.destroy()
   })
 

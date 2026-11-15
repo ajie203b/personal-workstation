@@ -11,7 +11,7 @@ import { readDocumentText } from '@/lib/readDocumentText'
 import {
   ArrowLeft, Bold, CheckSquare, Code, Code2, Eye, Focus, Highlighter, ImagePlus,
   Italic, List, ListOrdered, ListPlus, ListTree, Quote, Redo2, Save, Search, Share2,
-  Heading1, MoreHorizontal, Sigma, Strikethrough, Table2, Undo2,
+  MoreHorizontal, Sigma, Strikethrough, Table2, Undo2,
 } from 'lucide-react'
 import { db, type Doc } from '@/db/db'
 import { addTask } from '@/db/tasks'
@@ -30,6 +30,7 @@ import { MdOutlinePanel } from './editor/MdOutlinePanel'
 import { InlineMath, MathBlock, MermaidCodeBlock } from './editor/mdMath'
 import { MD_TABLE_EXTENSIONS, isCursorInTable } from './editor/mdTable'
 import { SlashCommandMenu, detectSlashTrigger, type SlashTriggerState } from './editor/SlashCommandMenu'
+import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { executeSlashCommand, scrollEditorToHeading } from './editor/typoraCommands'
 import { useEditorFindReplace } from './editor/useEditorFindReplace'
 import { HL_COLORS, HighlightMark, type HlColor } from './mdHighlight'
@@ -511,7 +512,7 @@ export function MdEditorPage() {
           className={cn('text-[11px] sm:text-[11.5px] tabular-nums shrink-0', dirty ? 'text-p1' : 'text-on-surface-2')}
           aria-live="polite"
         >
-          {saveFailed ? '保存失败' : saving || (dirty && (existing || countMarkdown.trim())) ? '保存中…' : dirty ? '本地草稿' : existing ? '已保存' : '新文档'}
+          {saving ? '保存中…' : saveFailed ? '保存失败' : dirty ? '已编辑' : existing ? '已保存' : '新文档'}
         </span>
         <Button
           size="sm"
@@ -562,11 +563,20 @@ export function MdEditorPage() {
       {/* 工具栏 */}
       {editor && (
         <div className="max-md:order-last shrink-0 flex flex-col bg-surface border-outline/60 max-md:border-t md:border-b" role="toolbar" aria-label="文档编辑工具">
-          <div className="flex items-center gap-0.5 px-3 md:px-6 py-1 overflow-x-auto md:overflow-visible md:flex-wrap">
+          <div className="flex items-center gap-0.5 px-3 py-1 overflow-x-auto md:overflow-visible md:flex-wrap md:w-full md:max-w-[724px] md:mx-auto">
             {!sourceMode && (
               <>
                 <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolBtn>
-                <ToolBtn label="一级标题" active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 size={16} /></ToolBtn>
+                <SelectMenu ariaLabel="段落格式" title="段落格式"
+                  value={editor.isActive('heading') ? String(editor.getAttributes('heading').level) : 'paragraph'}
+                  options={[{ value: 'paragraph', label: '正文' }, ...[1, 2, 3, 4, 5, 6].map(level => ({ value: String(level), label: `${level} 级标题` }))]}
+                  triggerClassName="h-11 md:h-8 shrink-0 border-transparent bg-transparent px-2"
+                  onChange={(value) => {
+                    const chain = editor.chain().focus()
+                    if (value === 'paragraph') chain.setParagraph().run()
+                    else chain.setHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 }).run()
+                  }}
+                />
                 <ToolBtn label="加粗" active={marks?.bold} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={16} /></ToolBtn>
                 <ToolBtn label="无序列表" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={15} /></ToolBtn>
                 <ToolBtn label="待办清单" active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={15} /></ToolBtn>
@@ -579,9 +589,6 @@ export function MdEditorPage() {
               {!sourceMode && (
                 <>
                   <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolBtn>
-                  {([2, 3, 4, 5, 6] as const).map((level) => (
-                    <ToolBtn key={level} label={`${level} 级标题`} active={editor.isActive('heading', { level })} onClick={() => editor.chain().focus().toggleHeading({ level }).run()}><span className="text-xs font-semibold">H{level}</span></ToolBtn>
-                  ))}
                   <ToolBtn label="斜体" active={marks?.italic} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
                   <ToolBtn label="删除线" active={marks?.strike} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={15} /></ToolBtn>
                   <ToolBtn label="高亮（黄色）" active={marks?.highlight} onClick={() => editor.chain().focus().toggleMark('hl', { color: 'yellow' }).run()}><Highlighter size={15} /></ToolBtn>
@@ -622,6 +629,7 @@ export function MdEditorPage() {
                     type="button"
                     aria-label={typewriterMode ? '关闭打字机居中' : '打字机模式（光标行居中）'}
                     title="打字机模式（光标保持在屏幕中部）"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setTypewriterMode((v) => !v)}
                     className={cn(
                       'h-11 md:h-8 px-2 rounded-[8px] text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap',
@@ -639,17 +647,24 @@ export function MdEditorPage() {
           </div>
 
           {!sourceMode && isCursorInTable(editor.state) && (
-            <div className="flex items-center gap-1 px-3 md:px-6 py-1 border-t border-outline/40 bg-surface-2/50 text-[11px] overflow-x-auto">
-              <span className="text-on-surface-2 mr-1">表格操作：</span>
-              <button type="button" onClick={() => editor.chain().focus().addTableRowBefore().run()} className="h-6 px-2 rounded hover:bg-surface-3 cursor-pointer">+上行</button>
-              <button type="button" onClick={() => editor.chain().focus().addTableRowAfter().run()} className="h-6 px-2 rounded hover:bg-surface-3 cursor-pointer">+下行</button>
-              <button type="button" onClick={() => editor.chain().focus().deleteTableRow().run()} className="h-6 px-2 rounded hover:bg-surface-3 cursor-pointer">-删行</button>
-              <span className="w-px h-3.5 bg-outline mx-1" />
-              <button type="button" onClick={() => editor.chain().focus().addTableColumnBefore().run()} className="h-6 px-2 rounded hover:bg-surface-3 cursor-pointer">+左列</button>
-              <button type="button" onClick={() => editor.chain().focus().addTableColumnAfter().run()} className="h-6 px-2 rounded hover:bg-surface-3 cursor-pointer">+右列</button>
-              <button type="button" onClick={() => editor.chain().focus().deleteTableColumn().run()} className="h-6 px-2 rounded hover:bg-surface-3 cursor-pointer">-删列</button>
-              <span className="w-px h-3.5 bg-outline mx-1" />
-              <button type="button" onClick={() => editor.chain().focus().deleteGfmTable().run()} className="h-6 px-2 rounded text-danger hover:bg-danger/10 cursor-pointer">删表格</button>
+            <div
+              role="group"
+              aria-label="表格操作"
+              className="flex items-center gap-1 px-3 py-1 border-t border-outline/40 bg-surface-2/50 text-xs overflow-x-auto md:w-full md:max-w-[724px] md:mx-auto"
+              onMouseDown={(e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault() }}
+            >
+              {([
+                ['退出表格', 'exitGfmTable'],
+                ['上方插行', 'addTableRowBefore'], ['下方插行', 'addTableRowAfter'], ['删除行', 'deleteTableRow'],
+                ['左侧插列', 'addTableColumnBefore'], ['右侧插列', 'addTableColumnAfter'], ['删除列', 'deleteTableColumn'],
+                ['删除表格', 'deleteGfmTable'],
+              ] as const).map(([label, command]) => (
+                <button key={command} type="button" onClick={() => editor.chain().focus()[command]().run()}
+                  className={cn('h-11 min-w-11 md:h-8 shrink-0 whitespace-nowrap px-2 rounded-lg cursor-pointer hover:bg-surface-3',
+                    command === 'deleteGfmTable' && 'text-danger hover:bg-danger/10')}>
+                  {label}
+                </button>
+              ))}
             </div>
           )}
         </div>

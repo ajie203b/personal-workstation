@@ -24,16 +24,15 @@ export interface DocCardProps {
   onMove: () => void
   onOpen: () => void
   onRead: () => void
-  onRequestConfirm: () => void
+  onTrash: () => void
 }
 
-/** 阅读是主动作，菜单集中承载次要操作，卡片高度随内容变化。 */
 export function DocCard({
-  doc: d, pct, hit, onToggleStar, onEditMeta, onOpenCitation, onMove, onOpen, onRead, onRequestConfirm,
+  doc: d, pct, hit, onToggleStar, onEditMeta, onOpenCitation, onMove, onOpen, onRead, onTrash,
 }: DocCardProps) {
   return (
-    <article id={`doc-${d.id}`} className="card card-hover group relative flex items-start overflow-hidden">
-      <button type="button" onClick={onOpen} aria-label={`阅读 ${d.title}`} className="flex flex-1 min-w-0 items-start gap-3 p-3 pr-0 text-left cursor-pointer">
+    <article id={`doc-${d.id}`} className="card card-hover group relative flex h-full items-start overflow-hidden">
+      <button type="button" onClick={onOpen} aria-label={`${d.kind === 'md' && !hit ? '继续写作' : '阅读'} ${d.title}`} className="flex flex-1 min-w-0 items-start gap-3 p-3 pr-0 self-stretch text-left cursor-pointer">
         <span className="grid place-items-center w-10 h-12 rounded-[10px] bg-surface-2 shrink-0" aria-hidden>
           <FileTypeIcon kind={d.kind} size={30} />
         </span>
@@ -70,7 +69,7 @@ export function DocCard({
             <DropdownItem onSelect={onOpenCitation}><Quote size={16} aria-hidden />引用…</DropdownItem>
             <DropdownItem onSelect={onMove}><FolderInput size={16} aria-hidden />移动到文件夹</DropdownItem>
             <MenuSeparator />
-            <DropdownItem danger onSelect={onRequestConfirm}><Trash2 size={16} aria-hidden />删除文档…</DropdownItem>
+            <DropdownItem danger onSelect={onTrash}><Trash2 size={16} aria-hidden />移入回收站</DropdownItem>
           </MenuContent>
         </DropdownMenu>
       </div>

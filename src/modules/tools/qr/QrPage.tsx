@@ -53,14 +53,14 @@ export function QrPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
-      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="-mt-1 w-fit" />
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
           <IconToolQr size={22} />
         </span>
         <div className="min-w-0">
-          <h1 className="text-[20px] md:text-[22px] font-bold leading-7">二维码</h1>
+          <h1 className="hidden md:block text-[22px] font-bold leading-7">二维码</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             生成二维码、扫码识别：文本 / 网址 / WiFi / 名片，导出 PNG / SVG
           </p>
@@ -73,6 +73,8 @@ export function QrPage() {
         onChange={setTab}
         size="sm"
         ariaLabel="生成或扫码"
+        showLabels
+        touchSized
         className="w-fit"
       />
 

@@ -826,13 +826,13 @@ export function PdfReader({
         </div>
       </div>
       {numPages > 0 && (
-        <div className="pdf-floating-pill absolute bottom-3 left-3 z-10 flex items-center gap-0.5 h-8 px-1.5 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur">
+        <div className="pdf-floating-pill absolute bottom-3 left-3 z-10 flex items-center gap-0.5 min-h-11 px-1.5 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur">
           <button
             type="button"
             aria-label="上一页"
             disabled={center <= 1}
             onClick={() => scrollToPdfPage(center - 1)}
-            className="grid place-items-center w-6 h-6 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
+            className="grid place-items-center size-11 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
           >
             <ChevronLeft size={14} />
           </button>
@@ -863,7 +863,7 @@ export function PdfReader({
                 }
                 setPageDraft(null)
               }}
-              className="w-8 bg-transparent text-center tabular-nums text-on-surface font-medium outline-none focus:bg-surface-3/70 rounded"
+              className="size-11 bg-transparent text-center tabular-nums text-on-surface font-medium outline-none focus:bg-surface-3/70 rounded"
             />
             <span className="tabular-nums text-on-surface-2/80 select-none">/ {numPages}</span>
           </form>
@@ -872,7 +872,7 @@ export function PdfReader({
             aria-label="下一页"
             disabled={center >= numPages}
             onClick={() => scrollToPdfPage(center + 1)}
-            className="grid place-items-center w-6 h-6 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
+            className="grid place-items-center size-11 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
           >
             <ChevronRight size={14} />
           </button>

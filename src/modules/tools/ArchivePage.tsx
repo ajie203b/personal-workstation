@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 import { ArrowLeft, ClipboardPaste, Download, Home, RotateCw, Trash2 } from 'lucide-react'
 import { IconToolNovel } from '@/shared/icons'
 import { Button } from '@/shared/ui/Button'
 import { importDoc } from '@/db/docs'
 import { isNative, isTauri } from '@/lib/native'
+import { BackButton } from '@/shared/ui/BackButton'
 import { useUi } from '@/stores/ui'
 import {
   controlDesktopArchive, downloadArchiveLink, listArchiveDownloads, openAndroidArchive, readArchiveDownload,
@@ -116,7 +117,7 @@ function DesktopArchiveBrowser({ close, downloads, onError, onStart }: {
           void startLinkDownload()
         }}>
           <label htmlFor="archive-download-link" className="text-xs text-on-surface-2">
-            网页显示「已复制」后，在这里按 Ctrl+V，再点「开始下载」。
+            网页显示「已复制」后，把链接粘贴到下方，再点「开始下载」。
           </label>
           <div className="mt-1.5 flex items-center gap-2">
             <input id="archive-download-link" type="text" inputMode="url" autoFocus autoComplete="off" spellCheck={false}
@@ -206,15 +207,13 @@ export function ArchivePage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 pb-24 pt-4 md:px-8 md:pb-14">
-      <Link to="/tools" className="flex w-fit items-center gap-2 text-sm text-on-surface-2 hover:text-on-surface">
-        <ArrowLeft size={15} /> 工具
-      </Link>
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
       <header className="flex items-center gap-3">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-primary-soft text-primary">
           <IconToolNovel size={22} />
         </span>
         <div>
-          <h1 className="text-xl font-bold">安娜的档案</h1>
+          <h1 className="hidden md:block text-[22px] font-bold leading-7">安娜的档案</h1>
           <p className="mt-0.5 text-sm text-on-surface-2">在应用内找书，下载 EPUB 或 PDF 后导入阅读。</p>
         </div>
       </header>

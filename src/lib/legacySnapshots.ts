@@ -11,15 +11,23 @@ async function getLegacyBackups(): Promise<FileSystemDirectoryHandle | null> {
   }
 }
 
-export async function clearLegacySnapshots(): Promise<number> {
+async function findLegacySnapshots() {
   const backups = await getLegacyBackups()
-  if (!backups) return 0
-  // 收集文件名，删除过程中不改变正在遍历的目录。
   const names: string[] = []
+  if (!backups) return { backups, names }
   const entries = backups as FileSystemDirectoryHandle & { keys(): AsyncIterable<string> }
   for await (const name of entries.keys()) {
     if (SNAPSHOT_NAME.test(name)) names.push(name)
   }
-  for (const name of names) await backups.removeEntry(name, { recursive: true })
+  return { backups, names }
+}
+
+export async function countLegacySnapshots(): Promise<number> {
+  return (await findLegacySnapshots()).names.length
+}
+
+export async function clearLegacySnapshots(): Promise<number> {
+  const { backups, names } = await findLegacySnapshots()
+  for (const name of names) await backups?.removeEntry(name, { recursive: true })
   return names.length
 }

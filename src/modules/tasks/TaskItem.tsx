@@ -19,9 +19,10 @@ interface Props {
   overlay?: boolean
   /** 参与列表 FLIP 补位（只有列表视图的卡片需要） */
   flip?: boolean
+  tabIndex?: number
 }
 
-export function TaskItem({ task, focused, overlay, flip }: Props) {
+export function TaskItem({ task, focused, overlay, flip, tabIndex }: Props) {
   const navigate = useNavigate()
   const openDetail = useTasksUi((s) => s.openDetail)
   const done = task.status === 'done'
@@ -39,6 +40,10 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
     <div
       id={overlay ? undefined : `task-${task.id}`}
       data-flip-id={flip ? `task-${task.id}` : undefined}
+      data-task-row={task.id}
+      tabIndex={tabIndex}
+      role={flip ? 'group' : undefined}
+      aria-label={flip ? task.title : undefined}
       aria-current={focused ? 'true' : undefined}
       // 共享元素转场：这张卡在旧快照里带转场名，详情容器在新快照里带同名，
       // 于是「卡片 → 详情」在空间上连续生长（不支持时自动退化为直接打开）
@@ -54,14 +59,15 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
         <div className="relative shrink-0 mt-0.5">
           <CheckCircle
             className="mt-0"
+            tabIndex={flip || overlay ? -1 : undefined}
             checked={done || (habit && checkinTotal > 1 && checkedOut)}
             disabled={future}
             onChange={() => void (habit ? checkInWithUndo(task) : toggleTaskWithUndo(task))}
             label={future
               ? (futureWhy === 'start' ? '未来任务，开始时间到了再完成' : '未来任务，到截止日后再完成')
-              : done ? '恢复任务'
+              : done ? `恢复：${task.title}`
                 : habit && checkinTotal > 1 ? `打卡（${checkinCount}/${checkinTotal}）`
-                  : '完成任务'}
+                  : `完成：${task.title}`}
           />
           {/* 打卡进度：1/3 这样的数字比一句「进行中」更能说明还差几次 */}
           {habit && checkinTotal > 1 && !done && (
@@ -130,6 +136,8 @@ export function TaskItem({ task, focused, overlay, flip }: Props) {
               {task.docRef && (
                 <button
                   type="button"
+                  data-task-document=""
+                  tabIndex={flip || overlay ? -1 : undefined}
                   onClick={(e) => {
                     e.stopPropagation()
                     navigate(docPath(task.docRef!))

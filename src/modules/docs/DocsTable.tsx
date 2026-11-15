@@ -25,7 +25,7 @@ export function DocsTable({
   onToggleStar,
   onEditMeta,
   onOpenCitation,
-  onRequestConfirm,
+  onTrash,
 }: {
   rows: { doc: Doc; hit?: { count: number; snippet: string; seg?: number } }[]
   folders: readonly Folder[]
@@ -39,7 +39,7 @@ export function DocsTable({
   onToggleStar: (doc: Doc) => void
   onEditMeta: (doc: Doc) => void
   onOpenCitation: (doc: Doc) => void
-  onRequestConfirm: (doc: Doc) => void
+  onTrash: (doc: Doc) => void
 }) {
   return (
     <div className="rounded-[14px] border border-outline bg-surface overflow-x-auto">
@@ -138,7 +138,7 @@ export function DocsTable({
                       {d.kind === 'md' && <DropdownItem onSelect={() => onShare(d)}><Share2 size={15} />分享 / 导出</DropdownItem>}
                       <DropdownItem onSelect={() => onMove(d)}><FolderInput size={15} />移动到文件夹</DropdownItem>
                       <MenuSeparator />
-                      <DropdownItem danger onSelect={() => onRequestConfirm(d)}><Trash2 size={15} />删除文档…</DropdownItem>
+                      <DropdownItem danger onSelect={() => onTrash(d)}><Trash2 size={15} />移入回收站</DropdownItem>
                     </MenuContent>
                   </DropdownMenu>
                 </td>

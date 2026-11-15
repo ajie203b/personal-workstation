@@ -50,22 +50,23 @@ export function PdfToolPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
-      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="-mt-1 w-fit" />
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
           <IconToolPdf size={22} />
         </span>
         <div className="min-w-0">
-          <h1 className="text-[20px] md:text-[22px] font-bold leading-7">PDF 工具箱</h1>
+          <h1 className="hidden md:block text-[22px] font-bold leading-7">PDF 工具箱</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             合并、页面整理、转换、签名、压缩与密码保护。全程本地处理，文件不出设备。
           </p>
         </div>
       </header>
 
-      <div role="tablist" aria-label="PDF 工具" className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1 rounded-[14px] bg-surface-3/70 p-1">
-        {TABS.map(item => <button key={item.value} type="button" role="tab" aria-selected={tab === item.value} aria-controls="pdf-tool-panel" id={`pdf-tool-${item.value}`}
+      <div role="tablist" aria-label="PDF 工具" className="flex gap-1 overflow-x-auto rounded-[14px] bg-surface-3/70 p-1">
+        {TABS.map(item => <button key={item.value} type="button" role="tab" aria-selected={tab === item.value} tabIndex={tab === item.value ? 0 : -1}
+          aria-controls="pdf-tool-panel" id={`pdf-tool-${item.value}`}
           onClick={() => setParams({ tool: item.value }, { replace: true })}
           onKeyDown={e => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
@@ -75,7 +76,7 @@ export function PdfToolPage() {
             setParams({ tool: next.value }, { replace: true })
             document.getElementById(`pdf-tool-${next.value}`)?.focus()
           }}
-          className={cn('flex items-center justify-center gap-1.5 min-h-10 px-1.5 rounded-[10px] text-[12px] whitespace-nowrap cursor-pointer transition-colors', tab === item.value ? 'bg-surface text-primary font-semibold shadow-sm' : 'text-on-surface-2 hover:text-on-surface hover:bg-surface/60')}>
+          className={cn('flex flex-1 shrink-0 items-center justify-center gap-1.5 min-h-11 px-3 rounded-[10px] text-[12px] whitespace-nowrap cursor-pointer transition-colors', tab === item.value ? 'bg-surface text-primary font-semibold shadow-sm' : 'text-on-surface-2 hover:text-on-surface hover:bg-surface/60')}>
           {item.icon && <item.icon size={15} aria-hidden />}<span>{item.label}</span>
         </button>)}
       </div>

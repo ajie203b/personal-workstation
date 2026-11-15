@@ -107,10 +107,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn(
         'press group relative inline-flex items-center font-medium select-none',
         'transition-[color,opacity,transform] duration-150 ease-standard',
-        !busy && disabled && 'opacity-45 pointer-events-none',
+        !busy && disabled && 'pointer-events-none',
+        !busy && disabled && variant !== 'primary' && 'opacity-45',
         variantCls[variant],
         sizeCls[size],
         stateCls[state],
+        !busy && disabled && variant === 'primary' && 'text-on-surface-2',
         className,
       )}
       {...rest}
@@ -120,8 +122,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         aria-hidden
         className={cn(
           'btn-fill absolute top-0 bottom-0 left-1/2 -translate-x-1/2',
-          state === 'idle' && fillCls[variant],
-          state === 'idle' && (variant === 'primary' || variant === 'destructive') && 'shadow-sm',
+          state === 'idle' && (disabled && variant === 'primary' ? 'bg-surface-3' : fillCls[variant]),
+          state === 'idle' && !disabled && (variant === 'primary' || variant === 'destructive') && 'shadow-sm',
           fillStateCls[state],
         )}
         style={{

@@ -377,7 +377,7 @@ export function ModelStatusBanner({
 }) {
   if (model.phase !== 'loading' && model.phase !== 'error' && recognizing <= 0) return null
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-3.5 pointer-events-auto">
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-3.5 w-max max-w-[calc(100%-1.5rem)] pointer-events-auto">
       {model.phase === 'loading' ? (
         <div className="card flex items-center gap-2.5 px-3.5 py-2 shadow-lg min-w-[240px]">
           <Loader2 size={14} className="animate-spin text-primary shrink-0" />
@@ -393,14 +393,16 @@ export function ModelStatusBanner({
           </div>
         </div>
       ) : model.phase === 'error' ? (
-        <div className="card flex items-center gap-2 px-3.5 py-2 shadow-lg max-w-[92vw]">
-          <p className="text-[12px] text-danger leading-snug min-w-0">{model.message}</p>
-          <Button size="sm" variant="outline" className="h-8 px-3 shrink-0" onClick={onOpenSettings}>
-            换下载源
-          </Button>
-          <Button size="sm" variant="primary" className="h-8 px-3 shrink-0" onClick={onRetryModel}>
-            重试
-          </Button>
+        <div className="card flex flex-col gap-2 px-4 py-3 shadow-lg max-w-sm">
+          <p role="status" className="text-[13px] text-danger">识别模型加载失败，请检查网络或换下载源。</p>
+          <details className="text-xs text-on-surface-2">
+            <summary className="cursor-pointer">详情</summary>
+            <p className="break-all max-h-24 overflow-y-auto mt-1">{model.message}</p>
+          </details>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="outline" className="h-11 px-3" onClick={onOpenSettings}>换下载源</Button>
+            <Button size="sm" variant="primary" className="h-11 px-3" onClick={onRetryModel}>重试</Button>
+          </div>
         </div>
       ) : (
         <div className="card flex items-center gap-2 px-3 py-1.5 shadow">

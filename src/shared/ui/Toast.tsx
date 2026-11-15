@@ -3,16 +3,18 @@ import { X } from 'lucide-react'
 import { useUi, type ToastItem } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
+import { useFocusActive } from '@/shared/FocusMiniBar'
 
 /** 轻提示：底部居中（手机）/ 右下角（桌面），支持「撤销」与上滑收走 */
 export function ToastHost() {
-  const { toasts, dismissToast } = useUi()
-  if (!toasts.length) return null
+  const toast = useUi((s) => s.toasts[0])
+  const dismissToast = useUi((s) => s.dismissToast)
+  const focusActive = useFocusActive()
+  if (!toast) return null
   return (
-    <div className="fixed z-[60] bottom-[calc(3.5rem+env(safe-area-inset-bottom)+12px)] md:bottom-6 inset-x-0 px-4 flex flex-col items-center gap-2 md:items-end md:right-5 md:left-auto pointer-events-none md:max-w-sm">
-      {toasts.map((t) => (
-        <ToastCard key={t.id} toast={t} onDismiss={() => dismissToast(t.id)} />
-      ))}
+    <div className={cn('fixed z-[60] inset-x-0 px-4 flex justify-center lg:justify-end lg:right-5 lg:left-auto pointer-events-none lg:max-w-sm lg:bottom-6',
+      focusActive ? 'bottom-[calc(8.25rem+3.5rem+12px+env(safe-area-inset-bottom))]' : 'bottom-[calc(4.25rem+3.5rem+12px+env(safe-area-inset-bottom))]')}>
+      <ToastCard key={toast.id} toast={toast} onDismiss={() => dismissToast(toast.id)} />
     </div>
   )
 }
@@ -79,15 +81,16 @@ function ToastCard({ toast: t, onDismiss }: { toast: ToastItem; onDismiss: () =>
         touchAction: 'none',
       }}
     >
-      <span className="text-[13px]">{t.message}</span>
+      <span className="text-[13px] min-w-0 line-clamp-2 break-all">{t.message}</span>
       {t.action && (
         <button
           type="button"
           className="text-[13px] font-semibold px-2 py-1 rounded-lg hover:bg-primary-soft shrink-0 transition-colors"
           style={{ color: 'var(--primary)', fontWeight: 600 }}
           onClick={() => {
-            t.action!.run()
+            if (t.leaving) return
             onDismiss()
+            t.action!.run()
           }}
         >
           {t.action.label}

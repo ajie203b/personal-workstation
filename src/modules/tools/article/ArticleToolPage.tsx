@@ -201,14 +201,14 @@ export function ArticleToolPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
-      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="-mt-1 w-fit" />
+      <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
       <header className="flex items-start gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
           <IconToolArticle size={22} />
         </span>
         <div className="min-w-0">
-          <h1 className="text-[20px] md:text-[22px] font-bold leading-7">文章离线</h1>
+          <h1 className="hidden md:block text-[22px] font-bold leading-7">文章离线</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             粘贴文章链接，提取正文并本地化图片，存进文档库或导出 EPUB
           </p>
@@ -336,14 +336,13 @@ export function ArticleToolPage() {
           <EmptyState
             icon={IconToolArticle}
             title="还没有文章"
-            hint="粘贴文章链接点「抓取」，或用 ?url= 预填直接进来。"
+            hint="粘贴文章链接后，点「抓取」。"
           />
         )
       )}
 
       <p className="text-[11px] text-on-surface-2 leading-relaxed px-1">
         仅用于个人离线收藏，请支持原作者、不要传播存档内容。图片下载失败会保留原链接（离线后可能不显示）；
-        网页版跨域抓取依赖本机代理，微信图床防盗链在网页版走代理路径，未在真机验证。
       </p>
     </div>
   )

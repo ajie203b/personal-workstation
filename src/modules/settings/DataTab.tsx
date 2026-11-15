@@ -5,7 +5,7 @@ import { db } from '@/db/db'
 import { exportAll, importAll } from '@/db/tasks'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
-import { clearLegacySnapshots } from '@/lib/legacySnapshots'
+import { clearLegacySnapshots, countLegacySnapshots } from '@/lib/legacySnapshots'
 import { fmtDateTime, todayStr } from '@/lib/date'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { isNative } from '@/lib/native'
@@ -28,6 +28,7 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
   const [lastBackup, setLastBackup] = useState<number | null>(null)
   const [modelBytes, setModelBytes] = useState<number | null>(null)
   const [confirmSnapshots, setConfirmSnapshots] = useState(false)
+  const [snapshotCount, setSnapshotCount] = useState(0)
   const toast = useUi((s) => s.toast)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -39,6 +40,7 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
       if (typeof row?.value === 'number') setLastBackup(row.value)
     })
     void modelCacheBytes().then((bytes) => setModelBytes(bytes))
+    void countLegacySnapshots().then(setSnapshotCount).catch(() => undefined)
   }, [])
 
   const backupStale = lastBackup == null || Date.now() - lastBackup > BACKUP_REMIND_MS
@@ -50,7 +52,7 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
         const json = await exportAll()
         const blob = new Blob([json], { type: 'application/json' })
         // 本地日期，别用 toISOString（UTC 会让凌晨导出的文件名变成昨天）
-        const where = await saveBlob(blob, `个人工作站备份-${todayStr()}.json`)
+        const where = await saveBlob(blob, `Kairos备份-${todayStr()}.json`)
         const at = Date.now()
         setLastBackup(at)
         void db.settings.put({ key: LAST_BACKUP_KEY, value: at }).catch(() => undefined)
@@ -98,7 +100,7 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1">备份与恢复</h2>
         <p className="text-[13px] text-on-surface-2 mb-3.5 leading-relaxed">
-          所有数据保存在本机（IndexedDB）。换设备、清除浏览器数据或卸载应用前，先导出一份 JSON 备份。
+          所有数据保存在本机。换设备、清除浏览器数据或卸载应用前，先导出一份 JSON 备份。
           {usage && ` 当前占用约 ${usage}。`}
         </p>
         <div className="flex flex-wrap gap-2">
@@ -131,9 +133,9 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
             : '还没有导出过备份'}
           {backupStale ? ' · 建议现在导出一次，之后每周一次即可' : ' · 备份状态良好'}
         </div>
-        {'getDirectory' in (navigator.storage ?? {}) && (
+        {snapshotCount > 0 && (
           <Button variant="outline" size="sm" className="mt-3" onClick={() => setConfirmSnapshots(true)}>
-            <Trash2 size={14} /> 清理旧快照
+            <Trash2 size={14} /> 清理旧快照（{snapshotCount}）
           </Button>
         )}
         <Dialog
@@ -147,6 +149,7 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
             <Button variant="destructive" state={snapshotState} onClick={() => {
               void runClearSnapshots(async () => {
                 const count = await clearLegacySnapshots()
+                setSnapshotCount(0)
                 setConfirmSnapshots(false)
                 toast(count ? `已清理 ${count} 份旧快照` : '没有旧快照需要清理')
               }).catch(() => toast('清理旧快照失败，请重试'))

@@ -83,7 +83,7 @@ export function TasksPage() {
   }
 
   return (
-    <div className={cn('mx-auto w-full px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4', view === 'board' ? 'max-w-[1600px]' : 'max-w-5xl')}>
+    <div className={cn('mx-auto w-full px-4 md:px-8 pt-4 pb-36 md:pb-14 flex flex-col gap-4', view === 'board' ? 'max-w-[1600px]' : 'max-w-5xl')}>
       <div className="flex items-center gap-2">
         <h1 className="hidden md:block text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
 

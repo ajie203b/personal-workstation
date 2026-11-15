@@ -68,7 +68,7 @@ export function IntelligenceCard() {
           aria-label="打开 Artificial Analysis 官网榜单"
           title="查看官网榜单"
           onClick={(e) => { e.preventDefault(); openExternal('https://artificialanalysis.ai/leaderboards/models') }}
-          className="grid place-items-center w-8 h-8 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors shrink-0"
+          className="grid place-items-center size-11 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors shrink-0"
         >
           <ExternalLink size={15} aria-hidden />
         </a>
@@ -112,7 +112,7 @@ export function IntelligenceCard() {
               if (chartSrc !== localChart) setChartSrc(localChart)
               else setImageFailed(true)
             }}
-            className="h-[300px] w-auto max-w-none rounded-[10px] select-none pointer-events-none"
+            className="h-[min(300px,44dvh)] w-auto max-w-none rounded-[10px] select-none pointer-events-none dark:brightness-90"
           />
         </div>
       )}
@@ -122,7 +122,7 @@ export function IntelligenceCard() {
           href={chartSrc}
           rel="noopener noreferrer"
           onClick={openOriginal}
-          className="inline-flex items-center gap-1 text-primary hover:underline"
+          className="inline-flex min-h-11 items-center gap-1 text-primary hover:underline"
         >
           查看原图 <Maximize2 size={12} aria-hidden />
         </a>

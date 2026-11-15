@@ -127,7 +127,6 @@ export function TodayPage() {
             ref={addRef}
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
-            data-tour="add"
             onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
             className={cn(
               'group hidden md:grid relative place-items-center w-12 h-12 rounded-full border border-primary/20 bg-primary-soft text-primary shadow-sm shrink-0 mb-1 cursor-pointer',
@@ -170,9 +169,10 @@ export function TodayPage() {
           <TaskList
             scope="today"
             denseEmpty
+            hideEmptyAction
             tasks={todayTasks}
             emptyTitle="今日暂无待办"
-            emptyHint="点加号（桌面在右上角、手机在右下角），或按 N 快速添加；写「每天」可创建打卡任务。"
+            emptyHint="今天的待办会显示在这里。"
           />
           {/* 空态下面直接给下一步：没有任务、也没导入过文档的新用户最需要这个 */}
           {todayTasks.length === 0 && <GettingStarted />}

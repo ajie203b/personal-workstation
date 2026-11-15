@@ -37,7 +37,7 @@ export function IconBtn({
       title={label}
       onClick={onClick}
       {...rest}
-      className={`grid place-items-center shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-[10px] md:rounded-[12px] transition-colors cursor-pointer ${active ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface'} ${className}`}
+      className={`grid place-items-center shrink-0 size-11 rounded-[10px] md:rounded-[12px] transition-colors cursor-pointer ${active ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface'} ${className}`}
     >
       {children}
     </button>

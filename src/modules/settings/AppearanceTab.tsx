@@ -31,6 +31,8 @@ export function AppearanceTab() {
         <p className="text-[13px] text-on-surface-2 mb-3">跟随系统会在系统切换深浅色时自动变化。</p>
         <Segmented
           ariaLabel="主题模式"
+          asRadio
+          touchSized
           value={themeMode}
           onChange={(v) => setThemeMode(v as ThemeMode)}
           options={[
@@ -44,7 +46,7 @@ export function AppearanceTab() {
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1">强调色</h2>
         <p className="text-[13px] text-on-surface-2 mb-3">用于主按钮、链接、选中状态与番茄钟。完成保持绿色，删除与错误保持红色。</p>
-        <div className="flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap gap-1">
           {ACCENTS.map((a) => (
             <button
               key={a.value}
@@ -53,12 +55,13 @@ export function AppearanceTab() {
               aria-label={`强调色：${a.label}`}
               aria-pressed={accent === a.value}
               onClick={() => setAccent(a.value)}
-              className="w-7 h-7 rounded-full press transition-transform duration-150 hover:scale-110"
-              style={{
+              className="grid size-11 place-items-center rounded-full press transition-transform duration-150 hover:scale-110"
+            >
+              <span aria-hidden className="size-7 rounded-full" style={{
                 background: a.color,
                 boxShadow: accent === a.value ? '0 0 0 2px var(--surface), 0 0 0 4px var(--on-surface-2)' : undefined,
-              }}
-            />
+              }} />
+            </button>
           ))}
         </div>
       </section>
@@ -79,7 +82,7 @@ export function AppearanceTab() {
         <JellySwitch checked={haptics} onChange={() => setHaptics(!haptics)} label="触觉反馈" />
       </section>
 
-      <section className="card p-4 flex items-center justify-between gap-4">
+      <section className="card p-4 hidden md:flex items-center justify-between gap-4">
         <div>
           <h2 className="text-[14px] font-semibold">桌面侧栏默认收起</h2>
           <p className="text-[13px] text-on-surface-2 mt-0.5">开启后桌面端只显示图标栏，把横向空间让给内容；随时可在侧栏左上角展开。</p>

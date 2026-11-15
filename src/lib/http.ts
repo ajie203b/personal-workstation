@@ -58,7 +58,10 @@ function assertStatus(status: number, ok: boolean, onStatus?: (status: number) =
   if (!ok) throw new Error(`HTTP ${status}`)
 }
 
-async function webFetchResponse(url: string, opts: HttpOptions, timeoutMs: number, connectTimeoutMs: number): Promise<Response> {
+async function readFetchResponse<T>(
+  url: string, opts: HttpOptions, timeoutMs: number, connectTimeoutMs: number,
+  read: (response: Response) => Promise<T>,
+): Promise<T> {
   if (!isTauri()) {
     const res = await fetch(url, {
       headers: opts.headers,
@@ -67,7 +70,7 @@ async function webFetchResponse(url: string, opts: HttpOptions, timeoutMs: numbe
       redirect: 'follow',
     })
     assertStatus(res.status, res.ok, opts.onStatus)
-    return res
+    return read(res)
   }
 
   const ctrl = new AbortController()
@@ -79,7 +82,7 @@ async function webFetchResponse(url: string, opts: HttpOptions, timeoutMs: numbe
       connectTimeout: connectTimeoutMs,
     })
     assertStatus(res.status, res.ok, opts.onStatus)
-    return res
+    return await read(res)
   } finally {
     globalThis.clearTimeout(timer)
   }
@@ -118,14 +121,13 @@ export async function httpText(url: string, opts: HttpOptions = {}): Promise<Htt
       contentType: headerValue(res.headers, 'content-type'),
     }
   }
-  return withProxyFallback(url, opts, async (target) => {
-    const res = await webFetchResponse(target, opts, timeoutMs, connectTimeoutMs)
-    return {
+  return withProxyFallback(url, opts, (target) =>
+    readFetchResponse(target, opts, timeoutMs, connectTimeoutMs, async (res) => ({
       body: await res.text(),
       finalUrl: target === url ? res.url || url : url,
       contentType: res.headers.get('content-type') ?? '',
-    }
-  })
+    })),
+  )
 }
 
 export async function httpBytes(url: string, opts: HttpOptions = {}): Promise<HttpBytesResult> {
@@ -148,14 +150,13 @@ export async function httpBytes(url: string, opts: HttpOptions = {}): Promise<Ht
       contentType: headerValue(res.headers, 'content-type'),
     }
   }
-  return withProxyFallback(url, opts, async (target) => {
-    const res = await webFetchResponse(target, opts, timeoutMs, connectTimeoutMs)
-    return {
+  return withProxyFallback(url, opts, (target) =>
+    readFetchResponse(target, opts, timeoutMs, connectTimeoutMs, async (res) => ({
       bytes: await res.arrayBuffer(),
       finalUrl: target === url ? res.url || url : url,
       contentType: res.headers.get('content-type') ?? '',
-    }
-  })
+    })),
+  )
 }
 
 export async function httpJson<T = unknown>(url: string, opts: HttpOptions = {}): Promise<T> {

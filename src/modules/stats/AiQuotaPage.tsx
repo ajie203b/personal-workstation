@@ -6,12 +6,17 @@ import { CalendarDays, Plus, Pencil, Trash2, WalletCards } from 'lucide-react'
 import { db } from '@/db/db'
 import { useUi } from '@/stores/ui'
 import { DatePicker } from '@/shared/ui/DatePicker'
+import { Dialog } from '@/shared/ui/Sheet'
+import { Button } from '@/shared/ui/Button'
+import { Segmented } from '@/shared/ui/Segmented'
+import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { todayStr } from '@/lib/date'
 import { PROVIDER_GROUPS } from './quotaBrands'
 import { PROVIDERS, QUOTA_KEY, quotaSummary, quotaDisplayMode, quotaExpiry, quotaProviderLabel, quotaBrand, orderQuotaEntries, applyQuotaOrder, type QuotaDisplayMode, type QuotaEntry, type QuotaRecord } from './aiQuota'
 
 const blank = (): QuotaEntry => ({ id: crypto.randomUUID(), provider: 'OpenAI', name: '', account: '', kind: '会员', expiresAt: '', resetAt: '', total: null, used: null, unit: 'Token', note: '', displayMode: 'none', balance: null })
 const field = 'w-full rounded-xl border border-outline bg-surface-2 px-3 py-2 text-sm text-on-surface outline-none focus:border-primary'
+const providers = [...PROVIDER_GROUPS.flatMap(group => group.providers.map(provider => ({ value: provider.name, label: provider.name, group: group.label }))), { value: '其他', label: '其他', group: '其他' }]
 
 export function AiQuotaPage() {
   const entries = useLiveQuery(async () => (((await db.settings.get(QUOTA_KEY))?.value as QuotaRecord[] | undefined) ?? []).filter((item): item is QuotaEntry => !('deleted' in item && item.deleted)), [], [])
@@ -48,6 +53,7 @@ export function AiQuotaPage() {
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<QuotaEntry | null>(null)
   const change = <K extends keyof QuotaEntry>(key: K, value: QuotaEntry[K]) => setDraft(prev => prev ? { ...prev, [key]: value } : prev)
 
   async function save(event: FormEvent) {
@@ -72,7 +78,6 @@ export function AiQuotaPage() {
   }
 
   async function remove(entry: QuotaEntry) {
-    if (!window.confirm(`删除“${entry.name}”的记录？`)) return
     try {
       await db.transaction('rw', db.settings, async () => {
         const current = ((await db.settings.get(QUOTA_KEY))?.value as QuotaRecord[] | undefined) ?? []
@@ -92,15 +97,20 @@ export function AiQuotaPage() {
     {draft && <form onSubmit={save} className="card p-4 flex flex-col gap-4" aria-label={editing ? '编辑额度记录' : '添加额度记录'}>
       <div className="flex items-center justify-between"><h2 className="font-semibold">{editing ? '编辑记录' : '添加记录'}</h2><button type="button" onClick={() => setDraft(null)} className="text-sm text-on-surface-2">取消</button></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label className="text-sm flex flex-col gap-1">厂商<div className="flex items-center gap-2"><BrandIcon name="" provider={draft.provider} compact /><select aria-label="厂商" className={field} value={PROVIDERS.includes(draft.provider) ? draft.provider : '其他'} onChange={e => change('provider', e.target.value)}>{PROVIDER_GROUPS.map(group => <optgroup key={group.label} label={group.label}>{group.providers.map(provider => <option key={provider.name} value={provider.name}>{provider.name}</option>)}</optgroup>)}<option value="其他">其他</option></select></div></label>
+        <div className="text-sm flex flex-col gap-1"><span>厂商</span><div className="flex items-center gap-2"><BrandIcon name="" provider={draft.provider} compact />
+          <SelectMenu ariaLabel="厂商" title="厂商" triggerClassName="w-full" value={PROVIDERS.includes(draft.provider) ? draft.provider : '其他'} onChange={value => change('provider', value)} options={providers} />
+        </div></div>
         {(draft.provider === '其他' || !PROVIDERS.includes(draft.provider)) && <label className="text-sm flex flex-col gap-1">自定义厂商<input className={field} value={draft.provider === '其他' ? '' : draft.provider} onChange={e => change('provider', e.target.value || '其他')} placeholder="输入厂商名称" /></label>}
         <label className="text-sm flex flex-col gap-1">名称<input className={field} value={draft.name} onChange={e => change('name', e.target.value)} placeholder="如 ChatGPT Plus、API 套餐" required maxLength={80} /></label>
-        <label className="text-sm flex flex-col gap-1">类型<select className={field} value={draft.kind} onChange={e => {
-          const kind = e.target.value as QuotaEntry['kind']
+        <div className="text-sm flex flex-col gap-1"><span>类型</span>
+          <Segmented ariaLabel="类型" value={draft.kind} options={(['会员', 'API', '其他'] as const).map(value => ({ value, label: value }))} onChange={kind => {
           setDraft(previous => previous ? { ...previous, kind, displayMode: kind === 'API' && quotaDisplayMode(previous) === 'none' ? 'quota' : quotaDisplayMode(previous) } : previous)
-        }}><option>会员</option><option>API</option><option>其他</option></select></label>
+        }} /></div>
         <label className="text-sm flex flex-col gap-1">账号备注（可选）<input className={field} value={draft.account} onChange={e => change('account', e.target.value)} placeholder="如个人账号" maxLength={100} /></label>
-        <label className="text-sm flex flex-col gap-1">记录方式<select className={field} value={quotaDisplayMode(draft)} onChange={e => change('displayMode', e.target.value as QuotaDisplayMode)}><option value="none">只记录会员期限</option><option value="quota">额度与用量</option><option value="balance">账户余额</option></select></label>
+        <div className="text-sm flex flex-col gap-1"><span>记录方式</span>
+          <Segmented<QuotaDisplayMode> ariaLabel="记录方式" value={quotaDisplayMode(draft)} onChange={value => change('displayMode', value)}
+            options={[{ value: 'none', label: '仅期限' }, { value: 'quota', label: '额度与用量' }, { value: 'balance', label: '账户余额' }]} />
+        </div>
         {quotaDisplayMode(draft) === 'quota' && <>
           <label className="text-sm flex flex-col gap-1">总额度（可选）<input className={field} type="number" min="0" step="any" value={draft.total ?? ''} onChange={e => change('total', e.target.value === '' ? null : Number(e.target.value))} /></label>
           <label className="text-sm flex flex-col gap-1">已使用（可选）<input className={field} type="number" min="0" step="any" value={draft.used ?? ''} onChange={e => change('used', e.target.value === '' ? null : Number(e.target.value))} /></label>
@@ -121,8 +131,14 @@ export function AiQuotaPage() {
         const entry = orderedEntries.find(item => item.id === id)
         return entry ? <div data-quota-overlay aria-hidden="true" className="h-full overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/15"><QuotaCard entry={entry} onEdit={() => {}} onDelete={() => {}} overlay /></div> : null
       }}>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full"><QuotaCard entry={entry} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => void remove(entry)} /></DragSortItem>)}</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full"><QuotaCard entry={entry} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} /></DragSortItem>)}</div>
     </DragSort>
+    {pendingDelete && <Dialog open onOpenChange={() => setPendingDelete(null)} title="删除额度记录？" description={pendingDelete.name}>
+      <div className="flex justify-end gap-2">
+        <Button onClick={() => setPendingDelete(null)}>取消</Button>
+        <Button variant="destructive" onClick={() => { void remove(pendingDelete); setPendingDelete(null) }}>删除记录</Button>
+      </div>
+    </Dialog>}
 
   </div>
 }

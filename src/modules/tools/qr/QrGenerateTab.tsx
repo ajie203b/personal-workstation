@@ -17,6 +17,7 @@ import QRCodeStyling from 'qr-code-styling'
 import { Button } from '@/shared/ui/Button'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented, type SegmentOption } from '@/shared/ui/Segmented'
+import { HexColorInput } from '@/shared/ui/HexColorInput'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
@@ -260,6 +261,8 @@ export function QrGenerateTab({
             onChange={setKind}
             size="sm"
             ariaLabel="内容模板"
+            showLabels
+            touchSized
             className="w-fit max-w-full overflow-x-auto"
           />
 
@@ -380,27 +383,9 @@ export function QrGenerateTab({
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <label className="flex items-center gap-2 text-[12px] text-on-surface-2">
-              码色
-              <input
-                type="color"
-                value={shownColor}
-                onChange={(e) => patchStyle({ color: e.target.value })}
-                className="w-9 h-9 rounded-[10px] border border-outline bg-surface cursor-pointer p-0.5"
-                aria-label="码色"
-              />
-            </label>
+            <HexColorInput label="码色" value={shownColor} onChange={color => patchStyle({ color })} />
             {style.gradient && (
-              <label className="flex items-center gap-2 text-[12px] text-on-surface-2">
-                渐变色
-                <input
-                  type="color"
-                  value={shownGradientColor}
-                  onChange={(e) => patchStyle({ gradientColor: e.target.value })}
-                  className="w-9 h-9 rounded-[10px] border border-outline bg-surface cursor-pointer p-0.5"
-                  aria-label="渐变色"
-                />
-              </label>
+              <HexColorInput label="渐变色" value={shownGradientColor} onChange={gradientColor => patchStyle({ gradientColor })} />
             )}
             {!style.color && <span className="text-[11px] text-on-surface-2">默认跟随强调色</span>}
           </div>

@@ -103,7 +103,7 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
           placeholder={placeholder ?? '添加任务…（明天14:00 交报告 P1 #工作）'}
           className="flex-1 min-w-0 bg-transparent outline-none text-[15px] placeholder:text-on-surface-2/70"
         />
-        <button type="submit" disabled={!hasContent || saving} className="shrink-0 rounded-lg bg-primary-action px-3 py-2 text-sm text-on-primary-action disabled:opacity-45">
+        <button type="submit" disabled={!hasContent || saving} className="shrink-0 rounded-lg bg-primary-action px-3 py-2 text-sm text-on-primary-action disabled:bg-surface-3 disabled:text-on-surface-2">
           {saving ? '添加中' : '添加'}
         </button>
       </div>

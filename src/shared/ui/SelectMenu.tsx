@@ -1,12 +1,14 @@
 import * as RadixMenu from '@radix-ui/react-dropdown-menu'
 import { ChevronDown } from 'lucide-react'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 
 export interface SelectMenuOption {
   value: string
   label: string
+  depth?: number
+  group?: string
 }
 
 interface SelectMenuProps {
@@ -92,6 +94,7 @@ export function SelectMenu({
               contentClassName,
             )}
           >
+            <div aria-hidden className="md:hidden mx-auto my-2 h-1 w-10 rounded-full bg-outline" />
             {title && (
               <div className="md:hidden px-3 pt-2 pb-1 text-[12px] text-on-surface-2 tracking-wide">{title}</div>
             )}
@@ -103,14 +106,17 @@ export function SelectMenu({
               }}
             >
               {options.map((o, i) => (
+                <Fragment key={o.value}>
+                {o.group && o.group !== options[i - 1]?.group && (
+                  <RadixMenu.Label className="px-3 py-2 text-xs font-medium text-on-surface-2">{o.group}</RadixMenu.Label>
+                )}
                 <RadixMenu.RadioItem
-                  key={o.value}
                   value={o.value}
                   className={cn(
                     'select-row group flex items-center gap-2.5 px-3 h-11 md:h-10 rounded-[10px] cursor-pointer outline-none select-none',
                     'transition-colors duration-150 data-[highlighted]:bg-surface-3',
                   )}
-                  style={{ ['--i' as string]: Math.min(i, 6) }}
+                  style={{ ['--i' as string]: Math.min(i, 6), paddingInlineStart: o.depth ? 12 + Math.min(o.depth, 5) * 12 : undefined }}
                 >
                   {/* 单选圈：选中的小圆点轻轻弹出（不是只换个颜色） */}
                   <span
@@ -129,6 +135,7 @@ export function SelectMenu({
                   </span>
                   <span className="flex-1 min-w-0 line-clamp-2 text-[13px] leading-snug">{o.label}</span>
                 </RadixMenu.RadioItem>
+                </Fragment>
               ))}
             </RadixMenu.RadioGroup>
           </RadixMenu.Content>

@@ -6,6 +6,7 @@ import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from
 import { isNative } from '@/lib/native'
 import { supportsInAppUpdate } from '@/lib/appUpdateClient'
 import { AppUpdateCard } from '@/shared/AppUpdate'
+import { BrandMark } from '@/shared/BrandMark'
 
 export function AboutTab() {
   const [installable, setInstallable] = useState(canInstall())
@@ -29,6 +30,13 @@ export function AboutTab() {
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
+      <section className="card flex items-start gap-3 p-4">
+        <BrandMark />
+        <div>
+          <h2 className="text-[17px] font-semibold">Kairos</h2>
+          <p className="text-[13px] text-on-surface-2 mt-1">任务、文档和批注默认保存在本机。启用同步后，数据会写入你配置的 WebDAV 目录。</p>
+        </div>
+      </section>
       {/* 更新检查：安卓 App / 桌面版是应用内下载安装；网页版保持原来的版本检查（PWA 自己会更新） */}
       {supportsInAppUpdate() ? <AppUpdateCard /> : (
       <section className="card p-4">
