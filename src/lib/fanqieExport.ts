@@ -1,5 +1,6 @@
 import type { FanqieBook, FanqieChapterRow } from '@/db/db'
 import { formatDate, formatWordCount } from './fanqie'
+import { httpBytes } from './http'
 
 /** Windows/安卓文件系统不接受的字符换成全角，尽量保住书名原样 */
 export function sanitizeFilename(name: string): string {
@@ -45,8 +46,10 @@ export function buildFanqieTxt(book: FanqieBook, chapters: FanqieChapterRow[]): 
   return new Blob(['\ufeff' + parts.join('\n')], { type: 'text/plain;charset=utf-8' })
 }
 
-function escapeXml(s: string): string {
+/** 剔除 XML 1.0 非法控制字符后再做实体转义 */
+export function escapeXml(s: string): string {
   return s
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -63,7 +66,7 @@ function paragraphs(content: string): string {
     .join('\n')
 }
 
-function chapterXhtml(title: string, content: string): string {
+function xhtmlDoc(title: string, body: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-CN" lang="zh-CN">
@@ -73,14 +76,110 @@ function chapterXhtml(title: string, content: string): string {
   <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body>
-  <h1>${escapeXml(title)}</h1>
-  ${paragraphs(content)}
+${body}
 </body>
 </html>`
 }
 
-/** EPUB 3（带 NCX 兼容旧阅读器）；封面用生成的文字页，不依赖外链图片 */
-export async function buildFanqieEpub(book: FanqieBook, chapters: FanqieChapterRow[]): Promise<Blob> {
+interface CoverImageAsset {
+  filename: string
+  mediaType: string
+  bytes: ArrayBuffer
+}
+
+function detectImageFormat(bytes: ArrayBuffer, contentType: string): { ext: string; mediaType: string } | null {
+  const head = new Uint8Array(bytes.slice(0, 16))
+  if (head.length < 4) return null
+  if (head[0] === 0xff && head[1] === 0xd8) return { ext: 'jpg', mediaType: 'image/jpeg' }
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) {
+    return { ext: 'png', mediaType: 'image/png' }
+  }
+  if (
+    head.length >= 12 &&
+    head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
+    head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50
+  ) {
+    return { ext: 'webp', mediaType: 'image/webp' }
+  }
+  if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) return { ext: 'gif', mediaType: 'image/gif' }
+  if (contentType.startsWith('image/')) {
+    const clean = contentType.split(';')[0].trim().toLowerCase()
+    const ext = clean === 'image/png' ? 'png' : clean === 'image/webp' ? 'webp' : clean === 'image/gif' ? 'gif' : 'jpg'
+    return { ext, mediaType: clean }
+  }
+  return null
+}
+
+async function fetchCoverAsset(coverUrl?: string): Promise<CoverImageAsset | null> {
+  if (!coverUrl) return null
+  const url = coverUrl.replace(/^http:\/\//i, 'https://')
+  try {
+    const { bytes, contentType } = await httpBytes(url, { timeoutMs: 6_000, proxyFallback: true })
+    const fmt = detectImageFormat(bytes, contentType)
+    if (!fmt) return null
+    return {
+      filename: `cover.${fmt.ext}`,
+      mediaType: fmt.mediaType,
+      bytes,
+    }
+  } catch {
+    return null
+  }
+}
+
+function buildIntroXhtml(book: FanqieBook, downloadedCount: number): string {
+  const words = formatWordCount(book.wordCount)
+  const updated = formatDate(book.updatedAt)
+  const metaLines = [
+    `<p><strong>书名：</strong>${escapeXml(book.title)}</p>`,
+    `<p><strong>作者：</strong>${escapeXml(book.author || '佚名')}</p>`,
+    book.status ? `<p><strong>状态：</strong>${escapeXml(book.status)}</p>` : '',
+    words ? `<p><strong>字数：</strong>${escapeXml(words)}</p>` : '',
+    `<p><strong>章节：</strong>已收录 ${downloadedCount} / ${book.chapterCount || downloadedCount} 章</p>`,
+    updated ? `<p><strong>更新：</strong>${escapeXml(updated)}</p>` : '',
+    book.tags.length ? `<p><strong>标签：</strong>${escapeXml(book.tags.join(' · '))}</p>` : '',
+  ].filter(Boolean)
+  const abstractBody = book.abstract
+    ? `  <h2>简介正文</h2>\n  ${paragraphs(book.abstract)}`
+    : ''
+  return xhtmlDoc(
+    `书籍简介 - ${book.title}`,
+    `  <div class="intro">
+    <h1>书籍简介</h1>
+    <div class="intro-meta">
+      ${metaLines.join('\n      ')}
+    </div>
+${abstractBody}
+  </div>`,
+  )
+}
+
+export interface BuildEpubOptions {
+  /** 是否尝试抓取并内嵌封面图（默认 true） */
+  embedCover?: boolean
+  /** 存在分卷时是否生成分卷扉页（默认 true） */
+  volumePages?: boolean
+}
+
+interface ChapterEntry {
+  ch: FanqieChapterRow
+  name: string
+  id: string
+}
+
+interface VolumeGroup {
+  volume?: string
+  pageName?: string
+  pageId?: string
+  chapters: ChapterEntry[]
+}
+
+/** EPUB 3（带 NCX 兼容旧阅读器）：保留分卷层级、书籍简介页并尽力内嵌封面图 */
+export async function buildFanqieEpub(
+  book: FanqieBook,
+  chapters: FanqieChapterRow[],
+  options?: BuildEpubOptions,
+): Promise<Blob> {
   const rows = sortChapters(chapters)
   if (!rows.length) throw new Error('还没有下载任何章节')
   const JSZip = (await import('jszip')).default
@@ -97,35 +196,101 @@ export async function buildFanqieEpub(book: FanqieBook, chapters: FanqieChapterR
 </container>`,
   )
 
-  const files = rows.map((ch, i) => {
+  const coverImage = options?.embedCover === false ? null : await fetchCoverAsset(book.cover)
+  if (coverImage) {
+    zip.file(`OEBPS/${coverImage.filename}`, coverImage.bytes)
+  }
+
+  const chapterFiles: ChapterEntry[] = rows.map((ch, i) => {
     const name = `chapter-${String(i + 1).padStart(4, '0')}.xhtml`
-    zip.file(`OEBPS/${name}`, chapterXhtml(ch.title, ch.content))
+    zip.file(`OEBPS/${name}`, xhtmlDoc(ch.title, `  <h1>${escapeXml(ch.title)}</h1>\n  ${paragraphs(ch.content)}`))
     return { ch, name, id: `c${String(i + 1).padStart(4, '0')}` }
   })
+
+  // 按连续同卷名分组，保留分卷层级
+  const groups: VolumeGroup[] = []
+  for (const entry of chapterFiles) {
+    const vol = entry.ch.volume?.trim() || undefined
+    const last = groups[groups.length - 1]
+    if (!last || last.volume !== vol) {
+      groups.push({ volume: vol, chapters: [entry] })
+    } else {
+      last.chapters.push(entry)
+    }
+  }
+  const hasVolumes = groups.some((g) => Boolean(g.volume))
+  const includeVolumePages = hasVolumes && options?.volumePages !== false
+
+  const volumeFiles: { id: string; name: string }[] = []
+  if (includeVolumePages) {
+    let volIndex = 0
+    for (const g of groups) {
+      if (!g.volume) continue
+      volIndex++
+      const name = `volume-${String(volIndex).padStart(4, '0')}.xhtml`
+      const id = `v${String(volIndex).padStart(4, '0')}`
+      g.pageName = name
+      g.pageId = id
+      volumeFiles.push({ id, name })
+      const firstTitle = g.chapters[0]?.ch.title ?? ''
+      const lastTitle = g.chapters[g.chapters.length - 1]?.ch.title ?? ''
+      const sub = g.chapters.length > 1
+        ? `共 ${g.chapters.length} 章 · ${firstTitle} — ${lastTitle}`
+        : `共 ${g.chapters.length} 章 · ${firstTitle}`
+      zip.file(
+        `OEBPS/${name}`,
+        xhtmlDoc(
+          g.volume,
+          `  <div class="volume-page">\n    <h1>${escapeXml(g.volume)}</h1>\n    <p>${escapeXml(sub)}</p>\n  </div>`,
+        ),
+      )
+    }
+  }
 
   zip.file(
     'OEBPS/style.css',
     `body { font-family: "Noto Serif SC", "Songti SC", serif; line-height: 1.85; margin: 1.2em; }
 h1 { font-size: 1.4em; line-height: 1.5; margin: 1em 0 1.2em; }
+h2 { font-size: 1.15em; line-height: 1.5; margin: 1.2em 0 0.6em; }
 p { margin: 0.75em 0; text-indent: 2em; }
-.cover { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 80vh; text-align: center; }
-.cover h1 { font-size: 2em; text-indent: 0; }
-.cover p { text-indent: 0; color: #666; }`,
+.cover { text-align: center; padding: 2.5em 1em 2em; page-break-after: always; break-after: page; }
+.cover-image { max-width: 72%; max-height: 24em; height: auto; margin: 0 auto 1.4em; display: block; }
+.cover h1 { font-size: 1.9em; text-indent: 0; margin: 0.4em 0; }
+.cover p { text-indent: 0; color: #666; margin: 0.3em 0; }
+.intro { page-break-after: always; break-after: page; }
+.intro-meta { margin: 1em 0 1.4em; padding: 0.75em 1em; border-left: 3px solid #cccccc; }
+.intro-meta p { text-indent: 0; margin: 0.25em 0; font-size: 0.92em; color: #555555; }
+.volume-page { text-align: center; padding: 4em 1em 2em; page-break-after: always; break-after: page; }
+.volume-page h1 { font-size: 1.55em; margin: 0 0 0.6em; text-indent: 0; }
+.volume-page p { text-indent: 0; color: #666666; font-size: 0.92em; }`,
   )
 
-  zip.file(
-    'OEBPS/cover.xhtml',
-    `<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-CN" lang="zh-CN">
-<head><meta charset="utf-8"/><title>封面</title><link rel="stylesheet" type="text/css" href="style.css"/></head>
-<body><div class="cover"><h1>${escapeXml(book.title)}</h1><p>${escapeXml(book.author)}</p></div></body>
-</html>`,
-  )
+  const coverBody = coverImage
+    ? `  <div class="cover">\n    <img class="cover-image" src="${coverImage.filename}" alt="${escapeXml(book.title)}"/>\n    <h1>${escapeXml(book.title)}</h1>\n    <p>${escapeXml(book.author)}</p>\n  </div>`
+    : `  <div class="cover">\n    <h1>${escapeXml(book.title)}</h1>\n    <p>${escapeXml(book.author)}</p>\n  </div>`
+  zip.file('OEBPS/cover.xhtml', xhtmlDoc('封面', coverBody))
+  zip.file('OEBPS/intro.xhtml', buildIntroXhtml(book, rows.length))
 
-  const navItems = files
-    .map(({ ch, name }) => `      <li><a href="${name}">${escapeXml(ch.title)}</a></li>`)
-    .join('\n')
+  // nav.xhtml（支持嵌套分卷 <ol>）
+  const navEntries: string[] = [
+    '      <li><a href="cover.xhtml">封面</a></li>',
+    '      <li><a href="intro.xhtml">书籍简介</a></li>',
+  ]
+  for (const g of groups) {
+    if (g.volume) {
+      const volHeading = g.pageName
+        ? `<a href="${g.pageName}">${escapeXml(g.volume)}</a>`
+        : `<span>${escapeXml(g.volume)}</span>`
+      const children = g.chapters
+        .map(({ ch, name }) => `          <li><a href="${name}">${escapeXml(ch.title)}</a></li>`)
+        .join('\n')
+      navEntries.push(`      <li>\n        ${volHeading}\n        <ol>\n${children}\n        </ol>\n      </li>`)
+    } else {
+      for (const { ch, name } of g.chapters) {
+        navEntries.push(`      <li><a href="${name}">${escapeXml(ch.title)}</a></li>`)
+      }
+    }
+  }
   zip.file(
     'OEBPS/nav.xhtml',
     `<?xml version="1.0" encoding="utf-8"?>
@@ -136,42 +301,86 @@ p { margin: 0.75em 0; text-indent: 2em; }
   <nav epub:type="toc" id="toc">
     <h1>目录</h1>
     <ol>
-${navItems}
+${navEntries.join('\n')}
     </ol>
   </nav>
 </body>
 </html>`,
   )
 
-  const navPoints = files
-    .map(
-      ({ ch, name }, i) => `    <navPoint id="np${i + 1}" playOrder="${i + 1}">
+  // toc.ncx（存在分卷时 depth=2 并嵌套 navPoint）
+  let playOrder = 1
+  const ncxNodes: string[] = [
+    `    <navPoint id="np-intro" playOrder="${playOrder++}">
+      <navLabel><text>书籍简介</text></navLabel>
+      <content src="intro.xhtml"/>
+    </navPoint>`,
+  ]
+  let volCounter = 0
+  let chCounter = 0
+  for (const g of groups) {
+    if (g.volume) {
+      volCounter++
+      const volOrder = playOrder++
+      const volSrc = g.pageName ?? g.chapters[0].name
+      const childPoints = g.chapters
+        .map(({ ch, name }) => {
+          chCounter++
+          return `      <navPoint id="np${chCounter}" playOrder="${playOrder++}">
+        <navLabel><text>${escapeXml(ch.title)}</text></navLabel>
+        <content src="${name}"/>
+      </navPoint>`
+        })
+        .join('\n')
+      ncxNodes.push(`    <navPoint id="np-vol-${volCounter}" playOrder="${volOrder}">
+      <navLabel><text>${escapeXml(g.volume)}</text></navLabel>
+      <content src="${volSrc}"/>
+${childPoints}
+    </navPoint>`)
+    } else {
+      for (const { ch, name } of g.chapters) {
+        chCounter++
+        ncxNodes.push(`    <navPoint id="np${chCounter}" playOrder="${playOrder++}">
       <navLabel><text>${escapeXml(ch.title)}</text></navLabel>
       <content src="${name}"/>
-    </navPoint>`,
-    )
-    .join('\n')
+    </navPoint>`)
+      }
+    }
+  }
   zip.file(
     'OEBPS/toc.ncx',
     `<?xml version="1.0" encoding="utf-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head>
     <meta name="dtb:uid" content="urn:fanqie:${escapeXml(book.id)}"/>
-    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:depth" content="${hasVolumes ? '2' : '1'}"/>
     <meta name="dtb:totalPageCount" content="0"/>
     <meta name="dtb:maxPageNumber" content="0"/>
   </head>
   <docTitle><text>${escapeXml(book.title)}</text></docTitle>
   <navMap>
-${navPoints}
+${ncxNodes.join('\n')}
   </navMap>
 </ncx>`,
   )
 
-  const manifestChapters = files
-    .map(({ name, id }) => `    <item id="${id}" href="${name}" media-type="application/xhtml+xml"/>`)
-    .join('\n')
-  const spine = files.map(({ id }) => `    <itemref idref="${id}"/>`).join('\n')
+  const manifestExtras = [
+    coverImage
+      ? `    <item id="cover-image" href="${coverImage.filename}" media-type="${coverImage.mediaType}" properties="cover-image"/>`
+      : '',
+    ...volumeFiles.map(({ id, name }) => `    <item id="${id}" href="${name}" media-type="application/xhtml+xml"/>`),
+    ...chapterFiles.map(({ name, id }) => `    <item id="${id}" href="${name}" media-type="application/xhtml+xml"/>`),
+  ].filter(Boolean)
+
+  const spineRefs: string[] = [
+    '    <itemref idref="cover"/>',
+    '    <itemref idref="intro"/>',
+  ]
+  for (const g of groups) {
+    if (g.pageId) spineRefs.push(`    <itemref idref="${g.pageId}"/>`)
+    for (const { id } of g.chapters) spineRefs.push(`    <itemref idref="${id}"/>`)
+  }
+
   const subjects = book.tags.map((t) => `    <dc:subject>${escapeXml(t)}</dc:subject>`).join('\n')
   const modified = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
@@ -186,7 +395,7 @@ ${navPoints}
     <dc:language>zh-CN</dc:language>
     <dc:description>${escapeXml(book.abstract)}</dc:description>
     <dc:source>https://fanqienovel.com/page/${escapeXml(book.id)}</dc:source>
-${subjects}
+${coverImage ? '    <meta name="cover" content="cover-image"/>\n' : ''}${subjects}
     <meta property="dcterms:modified">${modified}</meta>
   </metadata>
   <manifest>
@@ -194,11 +403,11 @@ ${subjects}
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
     <item id="css" href="style.css" media-type="text/css"/>
     <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>
-${manifestChapters}
+    <item id="intro" href="intro.xhtml" media-type="application/xhtml+xml"/>
+${manifestExtras.join('\n')}
   </manifest>
   <spine toc="ncx">
-    <itemref idref="cover"/>
-${spine}
+${spineRefs.join('\n')}
   </spine>
 </package>`,
   )

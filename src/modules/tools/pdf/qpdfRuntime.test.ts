@@ -1,8 +1,9 @@
 import { createRequire } from 'node:module'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PDFDict, PDFDocument, PDFName, PDFNumber, StandardFonts } from 'pdf-lib'
+import { inspectPdfEncryption } from './pdfInspect'
 import { executeQpdf } from './qpdfRuntime'
-import { qpdfArguments, validatePdfPassword, type PdfJob } from './qpdfTypes'
+import { hasPdfEncryptMarker, qpdfArguments, validatePdfPassword, type PdfJob } from './qpdfTypes'
 import createModule from '@neslinesli93/qpdf-wasm'
 
 const require = createRequire(import.meta.url)
@@ -21,13 +22,13 @@ async function run(bytes: Uint8Array, job: PdfJob) {
     diagnostics: () => diagnostics,
   })
 }
-async function source() {
+async function source(useObjectStreams = false) {
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   doc.addPage([300, 400]).drawText('PDF toolkit round trip', { x: 20, y: 200, font })
   doc.addPage([400, 300])
   doc.getForm().createTextField('name').setText('Alice')
-  return doc.save({ useObjectStreams: false })
+  return doc.save({ useObjectStreams })
 }
 const encryptJob: PdfJob = { kind: 'encrypt', password: '测试 secret! @-123', ownerPassword: 'owner-unique-987', allowCopy: false, allowPrint: true, allowModify: false }
 
@@ -39,6 +40,42 @@ describe('真实 qpdf WASM', () => {
     expect(engine.callMain(['/in.pdf', '--encrypt', '--user-password=', '--owner-password=owner-private', '--bits=256', '--print=none', '--', '/out.pdf'])).toBe(0)
     const result = await run(fs.readFile('/out.pdf').slice(), { kind: 'decrypt', password: '' })
     expect((await PDFDocument.load(result.bytes)).getPageCount()).toBe(2)
+  })
+  it('支持仅设管理密码/权限限制（空打开密码）加解密闭环', async () => {
+    const input = await source(true)
+    const locked = await run(input, {
+      kind: 'encrypt',
+      password: '',
+      ownerPassword: 'owner-only-lock-999',
+      allowPrint: false,
+      allowCopy: false,
+      allowModify: false,
+    })
+    const inspected = await inspectPdfEncryption(locked.bytes)
+    expect(inspected.encrypted).toBe(true)
+    expect(inspected.doc).toBeUndefined()
+    const unlocked = await run(locked.bytes, { kind: 'decrypt', password: '' })
+    const after = await inspectPdfEncryption(unlocked.bytes)
+    expect(after.encrypted).toBe(false)
+    expect(after.doc?.getPageCount()).toBe(2)
+  })
+  it('/ObjStm AES-256 加密 PDF 稳健识别加密状态并用 qpdf 解锁，不触发 getPageCount 崩溃', async () => {
+    const input = await source(true)
+    const encrypted = await run(input, encryptJob)
+    expect(hasPdfEncryptMarker(encrypted.bytes)).toBe(true)
+    // 复现旧 bug：ignoreEncryption 下直接 getPageCount 会抛 Expected instance of PDFDict
+    const brokenDoc = await PDFDocument.load(encrypted.bytes, { ignoreEncryption: true })
+    expect(brokenDoc.isEncrypted).toBe(true)
+    expect(() => brokenDoc.getPageCount()).toThrow(/Expected instance of/i)
+    // 新边界：inspectPdfEncryption 安全返回 encrypted: true 且不崩
+    const inspected = await inspectPdfEncryption(encrypted.bytes)
+    expect(inspected).toEqual({ encrypted: true })
+    // 解密后恢复正常页数与内容
+    const unlocked = await run(encrypted.bytes, { kind: 'decrypt', password: encryptJob.password })
+    const clean = await inspectPdfEncryption(unlocked.bytes)
+    expect(clean.encrypted).toBe(false)
+    expect(clean.doc?.getPageCount()).toBe(2)
+    expect(clean.doc?.getForm().getTextField('name').getText()).toBe('Alice')
   })
   it('AES-256 加密、错误密码拒绝、正确密码解密后保留页面及表单', async () => {
     const input = await source()
@@ -75,4 +112,6 @@ it('密码校验与参数边界，包含 @ 前缀和特殊字符仍是一个参�
   expect(() => validatePdfPassword('x\0y')).toThrow('空字符')
   expect(() => validatePdfPassword('中'.repeat(43))).toThrow('密码过长')
   expect(qpdfArguments({ ...encryptJob, password: '@--test=中文' })).toContain('--user-password=@--test=中文')
+  expect(qpdfArguments({ ...encryptJob, password: '' })).toContain('--user-password=')
+  expect(() => qpdfArguments({ ...encryptJob, password: '', ownerPassword: '' })).toThrow('请输入密码')
 })

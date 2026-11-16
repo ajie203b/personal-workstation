@@ -82,41 +82,76 @@ export function visualRectToDraw(info: PageInfo, rect: VisualRect): DrawRect {
   }
 }
 
-/** 平铺水印：居中铺满的网格（整枚图留在页内），行间不错位 */
-export function tileRects(visW: number, visH: number, imgW: number, imgH: number, gap = 1.8): VisualRect[] {
-  const stepX = Math.max(1, imgW * gap)
-  const stepY = Math.max(1, imgH * gap)
-  const spaceX = stepX - imgW
-  const spaceY = stepY - imgH
-  // 图比页还大时至少留一枚（居中溢出，由调用方按需缩图）
-  const cols = Math.max(1, Math.floor((visW + spaceX) / stepX))
-  const rows = Math.max(1, Math.floor((visH + spaceY) / stepY))
-  const gridW = cols * imgW + (cols - 1) * spaceX
-  const gridH = rows * imgH + (rows - 1) * spaceY
-  const startX = (visW - gridW) / 2
-  const startY = (visH - gridH) / 2
+function fitTileAxis(avail: number, tileSize: number, prefGap: number, minGap: number, minCount: number) {
+  const countAtPref = Math.floor((avail + tileSize * (prefGap - 1)) / Math.max(1e-6, tileSize * prefGap))
+  const g = countAtPref >= minCount
+    ? prefGap
+    : minCount > 1
+      ? Math.min(prefGap, Math.max(minGap, 1 + (avail / tileSize - minCount) / (minCount - 1)))
+      : prefGap
+  const step = Math.max(1e-6, tileSize * g)
+  const space = step - tileSize
+  const count = Math.max(minCount, Math.floor((avail + space + 1e-6) / step))
+  const grid = count * tileSize + (count - 1) * space
+  return { count, step, start: (avail - grid) / 2 }
+}
+
+/** 平铺水印：自适应间距与缩放，横屏/旋转页也尽量铺满 >=2×2 网格且整枚留于页内 */
+export function tileRects(visW: number, visH: number, imgW: number, imgH: number, gap = 1.6): VisualRect[] {
+  if (visW <= 0 || visH <= 0 || imgW <= 0 || imgH <= 0) return []
+  const prefGap = Math.max(1.15, gap)
+  const minGap = Math.min(prefGap, 1.22)
+  const minCols = visW >= 40 ? 2 : 1
+  const minRows = visH >= 40 ? 2 : 1
+  const maxTileW = visW / (minCols + (minCols - 1) * (minGap - 1))
+  const maxTileH = visH / (minRows + (minRows - 1) * (minGap - 1))
+  const scale = Math.min(1, maxTileW / imgW, maxTileH / imgH)
+  const w = imgW * scale
+  const h = imgH * scale
+  const xAxis = fitTileAxis(visW, w, prefGap, minGap, minCols)
+  const yAxis = fitTileAxis(visH, h, prefGap, minGap, minRows)
   const out: VisualRect[] = []
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      out.push({ x: startX + c * stepX, y: startY + r * stepY, w: imgW, h: imgH })
+  for (let r = 0; r < yAxis.count; r++) {
+    for (let c = 0; c < xAxis.count; c++) {
+      out.push({ x: xAxis.start + c * xAxis.step, y: yAxis.start + r * yAxis.step, w, h })
     }
   }
   return out
 }
 
-/** 居中单枚（不缩放，图多大就多大） */
-export function centerRect(visW: number, visH: number, imgW: number, imgH: number): VisualRect {
-  return { x: (visW - imgW) / 2, y: (visH - imgH) / 2, w: imgW, h: imgH }
+/** 居中单枚（超宽/超高时等比缩进留白边距内，避免边缘裁切） */
+export function centerRect(visW: number, visH: number, imgW: number, imgH: number, margin = 18): VisualRect {
+  const safeMargin = Math.min(margin, visW * 0.1, visH * 0.1)
+  const maxW = Math.max(1, visW - safeMargin * 2)
+  const maxH = Math.max(1, visH - safeMargin * 2)
+  const scale = imgW > 0 && imgH > 0 ? Math.min(1, maxW / imgW, maxH / imgH) : 1
+  const w = imgW * scale
+  const h = imgH * scale
+  return { x: (visW - w) / 2, y: (visH - h) / 2, w, h }
 }
 
-/** 四角各一枚 */
+/** 四角各一枚（超宽图等比缩小以免左右/上下角相撞） */
 export function cornerRects(visW: number, visH: number, imgW: number, imgH: number, margin = 18): VisualRect[] {
+  const maxW = Math.max(1, (visW - margin * 3) / 2)
+  const maxH = Math.max(1, (visH - margin * 3) / 2)
+  const scale = imgW > 0 && imgH > 0 ? Math.min(1, maxW / imgW, maxH / imgH) : 1
+  const w = imgW * scale
+  const h = imgH * scale
   return [
-    { x: margin, y: margin, w: imgW, h: imgH },
-    { x: visW - margin - imgW, y: margin, w: imgW, h: imgH },
-    { x: margin, y: visH - margin - imgH, w: imgW, h: imgH },
-    { x: visW - margin - imgW, y: visH - margin - imgH, w: imgW, h: imgH },
+    { x: margin, y: margin, w, h },
+    { x: visW - margin - w, y: margin, w, h },
+    { x: margin, y: visH - margin - h, w, h },
+    { x: visW - margin - w, y: visH - margin - h, w, h },
   ]
+}
+
+/** 90°/270° 旋转缩略图放进指定宽高比容器时的安全缩放比，防止斜角被 overflow-hidden 裁掉 */
+export function thumbRotScale(imgW: number, imgH: number, rot: number, boxRatio = 3 / 4): number {
+  if (((rot % 180) + 180) % 180 === 0 || imgW <= 0 || imgH <= 0 || boxRatio <= 0) return 1
+  const fitScale = Math.min(boxRatio / imgW, 1 / imgH)
+  const drawW = imgW * fitScale
+  const drawH = imgH * fitScale
+  return Math.min(boxRatio / drawH, 1 / drawW) * 0.94
 }
 
 /** 页码位置（底部一行） */

@@ -264,3 +264,70 @@ export function levelingRotation(points: FacePoints): number {
   if (!Number.isFinite(a) || Math.abs(a) < LEVEL_MIN_RAD || Math.abs(a) > LEVEL_MAX_RAD) return 0
   return -a
 }
+
+/**
+ * 抠图后按真实发际/发丝顶部修正裁剪框：
+ * 仅依据关键点推算 `topY` 时，蓬松发型或高丸子头常被削掉发梢；
+ * 这里在当前框的水平中段内扫描 `alpha > 0.5` 的最顶行 `hairTopY`，
+ * 若头发距离框顶不足 `headroom * box.height`，则向上无损抬框或微扩（保比例）以免削发。
+ */
+export function refineCropWithAlpha(
+  box: CropBox,
+  alpha: Float32Array,
+  width: number,
+  height: number,
+  headroom = 0.1,
+): CropBox {
+  if (width <= 0 || height <= 0 || alpha.length < width * height) return box
+  const xStart = Math.max(0, Math.floor(box.x + box.width * 0.12))
+  const xEnd = Math.min(width - 1, Math.ceil(box.x + box.width * 0.88))
+  const scanWidth = xEnd - xStart + 1
+  if (scanWidth <= 0) return box
+
+  const minRowPixels = Math.max(3, Math.round(scanWidth * 0.03))
+  const yLimit = Math.min(height - 1, Math.floor(box.y + box.height * 0.45))
+  let hairTopY = -1
+  for (let y = 0; y <= yLimit; y++) {
+    const row = y * width
+    let hits = 0
+    for (let x = xStart; x <= xEnd; x++) {
+      if (alpha[row + x] > 0.5) {
+        hits++
+        if (hits >= minRowPixels) {
+          hairTopY = y
+          break
+        }
+      }
+    }
+    if (hairTopY >= 0) break
+  }
+
+  if (hairTopY < 0) return box
+  const marginRatio = clamp(headroom, 0.04, 0.35)
+  const desiredMargin = box.height * marginRatio
+  const targetY = Math.max(0, hairTopY - desiredMargin)
+  if (box.y <= targetY + 0.5) return box
+
+  const shift = box.y - targetY
+  if (shift <= box.height * 0.15) {
+    return { ...box, y: Math.round(targetY * 100) / 100 }
+  }
+
+  // 需补充较多留白时按原比例微扩（底部略下延或保持居中），避免下巴掉出底边
+  const aspect = box.width / Math.max(1e-6, box.height)
+  const bottomY = Math.min(height, box.y + box.height)
+  const neededH = Math.max(box.height, bottomY - targetY)
+  const newH = Math.min(height, neededH)
+  const newW = newH * aspect
+  const cx = box.x + box.width / 2
+  return fitAndClamp(
+    {
+      x: Math.round((cx - newW / 2) * 100) / 100,
+      y: Math.round(targetY * 100) / 100,
+      width: newW,
+      height: newH,
+    },
+    width,
+    height,
+  )
+}

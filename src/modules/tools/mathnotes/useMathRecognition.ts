@@ -7,11 +7,13 @@ import { DEFAULT_SOURCE, type ModelSourceConfig } from './recognizer'
 import { getSource, setSource } from './store'
 import type { EditKind } from './noteSession'
 import { IDLE_MS, type ModelState, type RecognizeJob } from './canvasDraw'
-import type { BlockResult, MathNotePage, NoteGraph, Stroke } from './types'
+import type { AngleMode, BlockResult, MathNotePage, NoteGraph, Stroke } from './types'
+import type { PageEntry } from './variables'
 
 export function useMathRecognition({
   pageId,
   version,
+  angleMode,
   pageRef,
   strokesRef,
   graphsRef,
@@ -23,6 +25,7 @@ export function useMathRecognition({
 }: {
   pageId: string
   version: number
+  angleMode: AngleMode
   pageRef: React.MutableRefObject<MathNotePage | null>
   strokesRef: React.MutableRefObject<Stroke[]>
   graphsRef: React.MutableRefObject<NoteGraph[]>
@@ -38,6 +41,10 @@ export function useMathRecognition({
   const [source, setSourceState] = useState<ModelSourceConfig>(DEFAULT_SOURCE)
   const [recognizing, setRecognizing] = useState(0)
   const [pageVariables, setPageVariables] = useState<Record<string, number>>({})
+  const pageVariablesRef = useRef<Record<string, number>>({})
+  pageVariablesRef.current = pageVariables
+  const angleModeRef = useRef<AngleMode>(angleMode)
+  angleModeRef.current = angleMode
   const lastEvaluation = useRef('')
 
   const plotFunction = useCallback(
@@ -97,12 +104,12 @@ export function useMathRecognition({
       if (!row || (row.edited == null && row.result.message?.includes('方程组未识别完整'))) return []
       return [{ key: block.key, latex: row.edited ?? row.recognized }]
     })
-    const signature = JSON.stringify([page.id, entries])
+    const signature = JSON.stringify([page.id, angleMode, entries])
     if (signature === lastEvaluation.current) return
     let active = true
     const timer = window.setTimeout(() => {
       void engine
-        .evaluatePage(entries)
+        .evaluatePage(entries, angleMode)
         .then((output) => {
           if (!active || pageRef.current?.id !== page.id) return
           lastEvaluation.current = signature
@@ -129,7 +136,7 @@ export function useMathRecognition({
       active = false
       window.clearTimeout(timer)
     }
-  }, [version, pageId, pageRef, strokesRef, resultsRef, bump, markEdited])
+  }, [version, pageId, angleMode, pageRef, strokesRef, resultsRef, bump, markEdited])
 
   const getQueue = useCallback((): RecognitionQueue<RecognizeJob> => {
     if (queueRef.current) return queueRef.current
@@ -137,7 +144,10 @@ export function useMathRecognition({
       async (job) => {
         const engine = engineRef.current
         if (!engine) throw new DOMException('已取消', 'AbortError')
-        const r = await engine.recognize(job.key, job.strokes, job.charHeight, onModelProgress)
+        const r = await engine.recognize(job.key, job.strokes, job.charHeight, onModelProgress, {
+          angleMode: angleModeRef.current,
+          variables: pageVariablesRef.current,
+        })
         // 模型若是在这次识别里顺带加载完的，状态条也要收起来
         setModel((m) => (m.phase === 'ready' ? m : { phase: 'ready', backend: engine.backend ?? 'wasm' }))
         if (pageRef.current?.id !== job.pageId) return
@@ -253,6 +263,23 @@ export function useMathRecognition({
     queueRef.current?.submit([])
   }, [])
 
+  /** 立即求值整页变量与公式（供手动纠错提交使用，避免 150ms 防抖闪烁） */
+  const evaluateEntriesNow = useCallback(
+    async (entries: PageEntry[]) => {
+      const page = pageRef.current
+      const engine = engineRef.current
+      if (!page || !engine) return null
+      const mode = angleModeRef.current
+      const signature = JSON.stringify([page.id, mode, entries])
+      const output = await engine.evaluatePage(entries, mode)
+      if (pageRef.current?.id !== page.id) return null
+      lastEvaluation.current = signature
+      setPageVariables((previous) => (JSON.stringify(previous) === JSON.stringify(output.variables) ? previous : output.variables))
+      return output
+    },
+    [pageRef],
+  )
+
   return {
     engineRef,
     queueRef,
@@ -260,6 +287,8 @@ export function useMathRecognition({
     source,
     setSourceState,
     recognizing,
+    pageVariables,
+    evaluateEntriesNow,
     plotFunction,
     loadModel,
     getQueue,

@@ -117,7 +117,14 @@ export const useUi = create<UiState>()(
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         // 带「撤销」的多留两秒：误删后要来得及反应，普通提示仍 4 秒
         const duration = action ? 6000 : 4000
-        const startNow = get().toasts.length === 0
+        const current = get().toasts
+        // 若当前是一条不带操作按钮的普通提示，直接替换为最新提示（避免连续报错/反馈被旧提示卡住 4 秒）
+        if (!action && current.length > 0 && !current[0].action && !current[0].leaving) {
+          set({ toasts: [{ id, message, duration, createdAt: Date.now() }, ...current.slice(1)] })
+          setTimeout(() => get().dismissToast(id), duration)
+          return
+        }
+        const startNow = current.length === 0
         set((s) => ({ toasts: [...s.toasts, { id, message, action, duration, createdAt: Date.now() }] }))
         if (startNow) setTimeout(() => get().dismissToast(id), duration)
       },

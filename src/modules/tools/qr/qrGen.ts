@@ -9,6 +9,7 @@ import { blobToImageData, decodeWithJsQr } from './qrScan'
 export type QrDotType = 'dots' | 'rounded' | 'square'
 export type QrEyeType = 'dot' | 'extra-rounded' | 'square'
 export type QrEyeDotType = 'dot' | 'square'
+export type QrErrorLevel = 'M' | 'Q' | 'H'
 
 export interface QrStyle {
   dotType: QrDotType
@@ -16,6 +17,10 @@ export interface QrStyle {
   eyeType: QrEyeType
   /** 码眼中心点形状 */
   eyeDotType: QrEyeDotType
+  /** 容错等级（默认 M；加 Logo 或圆点时自动升至 H） */
+  errorCorrectionLevel?: QrErrorLevel
+  /** 透明背景（PNG / SVG）；预览仍铺棋盘格提示透明区域 */
+  transparentBg?: boolean
   gradient: boolean
   /** 主色；空字符串 = 跟随当前强调色 --primary */
   color: string
@@ -55,16 +60,16 @@ export function relativeLuminance(hex: string): number {
 
 /**
  * 把颜色压暗到可扫描的亮度（深色主题的 --primary 是浅色，直接当码色会白底浅码扫不出）。
- * 只降亮度、不动色相；非 hex 输入原样返回，交给自检兜底。
+ * 默认上限 0.15（相对白底对比度 >= 5.2:1）；只降亮度、不动色相，非 hex 原样返回。
  */
-export function qrSafeColor(hex: string, maxLuminance = 0.36): string {
+export function qrSafeColor(hex: string, maxLuminance = 0.15): string {
   const trimmed = hex.trim()
   const rgb = parseHex(trimmed)
   if (!rgb) return trimmed
   let [r, g, b] = rgb
   let scale = 1
   while (relativeLuminance(toHex(r, g, b)) > maxLuminance && scale > 0.02) {
-    scale -= 0.06
+    scale -= 0.04
     r = rgb[0] * scale
     g = rgb[1] * scale
     b = rgb[2] * scale
@@ -107,12 +112,20 @@ export function toQrByteString(content: string): string {
   return Array.from(new TextEncoder().encode(content), (b) => String.fromCharCode(b)).join('')
 }
 
+/** 有效容错等级：加 Logo 或圆点样式时自动升级到 H，保障扫描识别率 */
+export function effectiveErrorCorrection(style: Pick<QrStyle, 'logo' | 'dotType' | 'errorCorrectionLevel'>): QrErrorLevel {
+  if (style.logo || style.dotType === 'dots') return 'H'
+  return style.errorCorrectionLevel ?? 'M'
+}
+
 /** 把内容 + 样式变成 qr-code-styling 配置；size 是导出/预览的边长像素 */
 export function buildQrOptions(content: string, style: QrStyle, size: number): Options {
   const base = resolveBaseColor(style)
   // 用户显式选的色原样用（自检会提示扫不出）；自动派生的终点色保底压到可扫亮度
   const end = style.gradientColor.trim() ? style.gradientColor.trim() : shadeHex(base, 0.22)
   const withLogo = Boolean(style.logo)
+  // 圆点型留更宽裕的静区，避免边界码眼与容器边缘贴得太近影响解码
+  const quietMargin = Math.max(12, Math.round(size * (style.dotType === 'dots' ? 0.07 : 0.06)))
 
   const fill = style.gradient
     ? {
@@ -132,11 +145,10 @@ export function buildQrOptions(content: string, style: QrStyle, size: number): O
     type: 'canvas',
     width: size,
     height: size,
-    margin: Math.max(4, Math.round(size / 64)),
+    margin: quietMargin,
     data: toQrByteString(content),
     qrOptions: {
-      // 加 Logo 时强制最高容错：Logo 会盖住中间的码点
-      errorCorrectionLevel: withLogo ? 'H' : 'M',
+      errorCorrectionLevel: effectiveErrorCorrection(style),
     },
     ...(withLogo
       ? {
@@ -151,7 +163,7 @@ export function buildQrOptions(content: string, style: QrStyle, size: number): O
     dotsOptions: { type: style.dotType, ...fill },
     cornersSquareOptions: { type: style.eyeType, ...fill },
     cornersDotOptions: { type: style.eyeDotType, ...fill },
-    backgroundOptions: { color: '#ffffff' },
+    backgroundOptions: { color: style.transparentBg ? 'transparent' : '#ffffff' },
   }
 }
 
@@ -200,9 +212,14 @@ export type SelfCheckResult = 'ok' | 'unreadable' | 'mismatch'
 /**
  * 容错自检：把样式渲染结果（含点型与 Logo）画到 canvas，交给 jsQR 试扫。
  * 扫不出 / 扫出的内容对不上都要明确报出来——Logo 压住关键区域时内容可能被破坏。
+ * 透明底二维码在自检时按白底合成，避免 rgba(0,0,0,0) 被 jsQR 当成纯黑像素。
  */
 export async function selfCheckQr(options: Options, expect: string): Promise<SelfCheckResult> {
-  const qr = new QRCodeStyling(options)
+  const checkOptions: Options =
+    options.backgroundOptions?.color === 'transparent'
+      ? { ...options, backgroundOptions: { ...options.backgroundOptions, color: '#ffffff' } }
+      : options
+  const qr = new QRCodeStyling(checkOptions)
   const blob = (await qr.getRawData('png')) as Blob | null
   if (!blob) return 'unreadable'
   const imageData = await blobToImageData(blob)

@@ -10,6 +10,7 @@ import {
 } from './idphotoCrop'
 import { planFaceSearchWindows, windowToImageNormalized } from './idphotoFaceSearch'
 import { applyMatrix, orientationTransform, readJpegOrientation, resetJpegOrientation } from './idphotoExif'
+import { rotateRgba } from './idphotoImage'
 
 const ASPECT = 295 / 413
 
@@ -141,5 +142,29 @@ describe('EXIF 方向', () => {
     // 方向 6（手机竖拍最常见）：原图左上角 → 输出右上角
     const t6 = orientationTransform(6, W, H)
     expect(applyMatrix(t6.matrix, 0, 0)).toEqual({ x: H, y: 0 })
+  })
+})
+
+describe('rotateRgba（无缝扶正旋转）', () => {
+  it('边缘外露角落用边界像素钳位填充，无黑角与原图拼接缝', () => {
+    const w = 10
+    const h = 10
+    const data = new Uint8ClampedArray(w * h * 4)
+    for (let i = 0; i < w * h; i++) {
+      data[i * 4] = 200
+      data[i * 4 + 1] = 180
+      data[i * 4 + 2] = 160
+      data[i * 4 + 3] = 255
+    }
+    const rotated = rotateRgba({ data, width: w, height: h }, 0.25, 5, 5)
+    expect(rotated.width).toBe(w)
+    expect(rotated.height).toBe(h)
+    // 四角不应变黑（clamp 外延），保持原背景色
+    for (const idx of [0, w - 1, (h - 1) * w, h * w - 1]) {
+      expect(rotated.data[idx * 4]).toBe(200)
+      expect(rotated.data[idx * 4 + 1]).toBe(180)
+      expect(rotated.data[idx * 4 + 2]).toBe(160)
+      expect(rotated.data[idx * 4 + 3]).toBe(255)
+    }
   })
 })

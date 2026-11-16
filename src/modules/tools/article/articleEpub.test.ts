@@ -100,4 +100,35 @@ describe('buildArticleEpub', () => {
     const xhtml = await zip.file('OEBPS/article.xhtml')?.async('string')
     expect(xhtml).toContain('https://cdn.example.com/pic.png')
   })
+
+  it('清洗危险标签并去重开头重复标题，同时生成 H2 节目录与完整样式', async () => {
+    const blob = await buildArticleEpub({
+      ...INPUT,
+      title: '章节与安全测试',
+      contentHtml:
+        '<h2>章节与安全测试</h2>' +
+        '<script>alert(1)</script><style>body{display:none}</style>' +
+        '<h2>第一节</h2><p onclick="evil()">正文</p><img src="https://cdn.example.com/a.png" onerror="evil()">' +
+        '<h2>第二节</h2><pre><code>let x = 1</code></pre>',
+    })
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer())
+    const xhtml = await zip.file('OEBPS/article.xhtml')?.async('string')
+    expect(xhtml).not.toContain('<script')
+    expect(xhtml).not.toContain('alert(1)')
+    expect(xhtml).not.toContain('onerror')
+    expect(xhtml).not.toContain('onclick')
+    const doc = new DOMParser().parseFromString(xhtml!, 'application/xhtml+xml')
+    expect(doc.querySelectorAll('h1, h2')).toHaveLength(3) // 1 个主 h1 + 第一节/第二节 2 个 h2
+
+    const nav = await zip.file('OEBPS/nav.xhtml')?.async('string')
+    const ncx = await zip.file('OEBPS/toc.ncx')?.async('string')
+    const css = await zip.file('OEBPS/style.css')?.async('string')
+    expect(nav).toContain('article.xhtml#sec-1')
+    expect(nav).toContain('第一节')
+    expect(ncx).toContain('name="dtb:depth" content="2"')
+    expect(ncx).toContain('article.xhtml#sec-2')
+    expect(css).toContain('table')
+    expect(css).toContain('pre')
+  })
 })

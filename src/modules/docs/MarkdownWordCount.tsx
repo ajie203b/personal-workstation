@@ -1,9 +1,10 @@
 import { memo, useDeferredValue, useMemo } from 'react'
 
-/** Source characters, excluding whitespace; count Unicode code points rather than UTF-16 units. */
+/** Source characters, excluding whitespace and embedded base64 data URIs; count Unicode code points. */
 export function countMarkdownCharacters(markdown: string): number {
+  const stripped = markdown.replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+/gi, '')
   let count = 0
-  for (const character of markdown) if (!/\s/u.test(character)) count++
+  for (const character of stripped) if (!/\s/u.test(character)) count++
   return count
 }
 

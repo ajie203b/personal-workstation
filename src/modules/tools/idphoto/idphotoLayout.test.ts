@@ -2,7 +2,15 @@
  * 排版布局测试：6 寸相纸上的行列选择、居中、裁切线。
  */
 import { describe, expect, it } from 'vitest'
-import { SHEET_6IN, computeSheetLayout, cutLines, pickGrid } from './idphotoLayout'
+import {
+  SHEET_5IN,
+  SHEET_6IN,
+  SHEET_A4,
+  computeSheetLayout,
+  cutLines,
+  maxSheetCount,
+  pickGrid,
+} from './idphotoLayout'
 
 describe('pickGrid', () => {
   it('一寸 295×413 × 8 → 4×2', () => {
@@ -69,5 +77,16 @@ describe('cutLines', () => {
       const nearY = Math.abs(l.y1 - cell.y) <= 12 || Math.abs(l.y1 - (cell.y + cell.height)) <= 12
       expect(nearX || nearY).toBe(true)
     }
+  })
+
+  it('支持 5 寸与 A4 相纸预设及最大张数计算', () => {
+    expect(SHEET_5IN).toEqual({ width: 1500, height: 1050, dpi: 300 })
+    expect(SHEET_A4).toEqual({ width: 2480, height: 3508, dpi: 300 })
+    const max5 = maxSheetCount({ width: 413, height: 579 }, SHEET_5IN)
+    expect(max5).toBe(3)
+    const layout5 = computeSheetLayout({ width: 413, height: 579 }, SHEET_5IN, 4)
+    expect(layout5.cells).toHaveLength(3)
+    const maxA4 = maxSheetCount({ width: 295, height: 413 }, SHEET_A4)
+    expect(maxA4).toBeGreaterThanOrEqual(48)
   })
 })

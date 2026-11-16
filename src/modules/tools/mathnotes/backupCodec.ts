@@ -21,6 +21,7 @@ export const MATH_NOTE_CODEC = 1
 export interface PackedStroke {
   id: string
   width: number
+  color?: string
   t0: number
   pts: number[]
 }
@@ -38,7 +39,7 @@ export function packStroke(s: Stroke): PackedStroke {
     pts.push(r(p.x, 10), r(p.y, 10), r(p.p, 100), t - prevT)
     prevT = t
   }
-  return { id: s.id, width: s.width, t0, pts }
+  return { id: s.id, width: s.width, ...(s.color ? { color: s.color } : {}), t0, pts }
 }
 
 export function unpackStroke(s: PackedStroke): Stroke {
@@ -48,7 +49,7 @@ export function unpackStroke(s: PackedStroke): Stroke {
     t += s.pts[i + 3]
     points.push({ x: s.pts[i] / 10, y: s.pts[i + 1] / 10, p: s.pts[i + 2] / 100, t })
   }
-  return { id: s.id, width: s.width, points }
+  return { id: s.id, width: s.width, ...(s.color ? { color: s.color } : {}), points }
 }
 
 export function packMathNote(page: MathNotePage): PackedMathNote {

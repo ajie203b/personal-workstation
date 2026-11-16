@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { AlertTriangle, CheckCircle2, FileText, Image as ImageIcon, Loader2, Upload, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, Eye, FileText, Image as ImageIcon, Loader2, Upload, X } from 'lucide-react'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
+import { Dialog } from '@/shared/ui/Sheet'
 import { useUi } from '@/stores/ui'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { cn } from '@/lib/cn'
@@ -108,6 +109,14 @@ function safeName(name: string): string {
   return name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'NJUST报告'
 }
 
+function baseWarnings(src: ParsedSource): string[] {
+  const list = [...src.warnings]
+  if (src.stats.words < 2500) {
+    list.unshift(`当前内容约 ${src.stats.words} 字，模板要求不少于 2500 字（如适用）`)
+  }
+  return list
+}
+
 function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <label className={cn('block min-w-0', className)}>
@@ -134,6 +143,135 @@ function Option({ checked, onChange, label, hint }: { checked: boolean; onChange
   )
 }
 
+function DocxPreviewModal({
+  blob,
+  onClose,
+  onSave,
+}: {
+  blob: Blob
+  onClose: () => void
+  onSave: (blob: Blob) => Promise<void>
+}) {
+  const [host, setHost] = useState<HTMLDivElement | null>(null)
+  const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
+  const [rendering, setRendering] = useState(false)
+  const [renderErr, setRenderErr] = useState('')
+  const [fitWidth, setFitWidth] = useState(true)
+  const [zoom, setZoom] = useState(1)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!viewport) return
+    const updateZoom = () => {
+      const w = viewport.clientWidth - 24
+      // A4 96dpi 宽度约 794px；窄屏按容器宽自适应缩放以免横向撑爆
+      setZoom(w > 0 ? Math.min(1, w / 820) : 1)
+    }
+    updateZoom()
+    const ro = new ResizeObserver(updateZoom)
+    ro.observe(viewport)
+    return () => ro.disconnect()
+  }, [viewport])
+
+  useEffect(() => {
+    if (!host) return
+    let cancelled = false
+    setRendering(true)
+    setRenderErr('')
+    host.innerHTML = ''
+    void (async () => {
+      try {
+        const { renderAsync } = await import('docx-preview')
+        if (cancelled) return
+        await renderAsync(blob, host, undefined, {
+          className: 'docx',
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          breakPages: true,
+          renderHeaders: true,
+          renderFooters: true,
+          useBase64URL: true,
+        })
+      } catch (e) {
+        if (!cancelled) setRenderErr(e instanceof Error ? e.message : 'Word 预览渲染失败')
+      } finally {
+        if (!cancelled) setRendering(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+      host.innerHTML = ''
+    }
+  }, [blob, host])
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => { if (!open) onClose() }}
+      title="Word 排版预览"
+      description="按生成后的 .docx 文件实时分页渲染（与导出文件一致）"
+      widthClass="w-[min(960px,95vw)]"
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant={fitWidth ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setFitWidth(true)}
+            >
+              自适应页宽
+            </Button>
+            <Button
+              variant={!fitWidth ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setFitWidth(false)}
+            >
+              100% 原寸
+            </Button>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={saving}
+            onClick={() => {
+              setSaving(true)
+              void onSave(blob).finally(() => setSaving(false))
+            }}
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            保存 .docx
+          </Button>
+        </div>
+
+        <div
+          ref={setViewport}
+          className="relative max-h-[65dvh] min-h-[200px] overflow-auto rounded-[12px] border border-outline bg-surface-3/60 p-2 sm:p-3"
+        >
+          {rendering && (
+            <div className="py-12 flex items-center justify-center gap-2 text-[13px] text-on-surface-2">
+              <Loader2 size={16} className="animate-spin" /> 正在分页渲染预览…
+            </div>
+          )}
+          {renderErr && (
+            <p className="py-8 text-center text-[13px] text-danger">{renderErr}</p>
+          )}
+          <div
+            ref={setHost}
+            style={fitWidth ? { zoom } : undefined}
+            className={cn(
+              'mx-auto w-fit [&_.docx-wrapper]:!bg-transparent [&_.docx-wrapper]:!p-2 [&_.docx-wrapper]:!gap-4',
+              '[&_.docx-wrapper>section.docx]:!shadow-md [&_.docx-wrapper>section.docx]:!mb-4',
+              rendering && 'opacity-0',
+            )}
+          />
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 export function NjustReportPage() {
   const navigate = useNavigate()
   const toast = useUi((s) => s.toast)
@@ -141,6 +279,7 @@ export function NjustReportPage() {
   const [meta, setMeta] = useState<ReportMeta>(loadMeta)
   const [options, setOptions] = useState<ReportOptions>({
     cover: true,
+    toc: false,
     reviewBox: true,
     headerFooter: true,
     autoNumberHeadings: true,
@@ -150,6 +289,8 @@ export function NjustReportPage() {
   const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState('')
   const [parsing, setParsing] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null)
   const [drag, setDrag] = useState(false)
   const [suppImages, setSuppImages] = useState<Map<string, string>>(new Map())
   const [suppNames, setSuppNames] = useState<string[]>([])
@@ -168,13 +309,9 @@ export function NjustReportPage() {
   const applySource = (parsed: ParsedSource, name: string) => {
     setSource(parsed)
     setFileName(name)
-    const list = [...parsed.warnings]
-    if (parsed.stats.words < 2500) {
-      list.unshift(`当前内容约 ${parsed.stats.words} 字，模板要求不少于 2500 字（如适用）`)
-    }
-    setWarnings(list)
+    setWarnings(baseWarnings(parsed))
     setError('')
-    if (parsed.title) setMeta((m) => ({ ...m, title: parsed.title! }))
+    setMeta((m) => ({ ...m, title: parsed.title ?? '' }))
   }
 
   const loadFile = async (file: File) => {
@@ -224,25 +361,52 @@ export function NjustReportPage() {
     setSuppNames((list) => list.filter((n) => n !== name))
   }
 
+  const buildDocxArtifact = async () => {
+    if (!source) throw new Error('还没有选择原稿')
+    const logos = options.cover || options.headerFooter ? await loadNjustLogos() : undefined
+    const list = baseWarnings(source)
+    const blocks = await resolveImages(source.blocks, suppImages, list)
+    const result = await buildReport({ meta, blocks, options, logos, warnings: list })
+    setWarnings([...new Set(result.warnings)])
+    return result.blob
+  }
+
+  const saveGeneratedBlob = async (blob: Blob) => {
+    if (!source) return
+    const name = safeName(meta.title || source.title || fileName.replace(/\.[^.]+$/, '') || 'NJUST报告')
+    const where = await saveBlob(blob, `${name}_排版.docx`)
+    toast(where ? `已生成：${where}` : '已生成 Word 文档', openSavedAction())
+  }
+
   const generate = () => {
     if (!source) return
     void run(async () => {
       setError('')
       try {
-        const logos = await loadNjustLogos()
-        const list = [...warnings]
-        const blocks = await resolveImages(source.blocks, suppImages, list)
-        const result = await buildReport({ meta, blocks, options, logos, warnings: list })
-        setWarnings([...new Set(result.warnings)])
-        const name = safeName(meta.title || source.title || fileName.replace(/\.[^.]+$/, '') || 'NJUST报告')
-        const where = await saveBlob(result.blob, `${name}_排版.docx`)
-        toast(where ? `已生成：${where}` : '已生成 Word 文档', openSavedAction())
+        const blob = await buildDocxArtifact()
+        await saveGeneratedBlob(blob)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         setError(message)
         throw e
       }
     })
+  }
+
+  const openPreview = async () => {
+    if (!source || previewing) return
+    setPreviewing(true)
+    setError('')
+    try {
+      const blob = await buildDocxArtifact()
+      setPreviewBlob(blob)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
+      toast(message)
+    } finally {
+      setPreviewing(false)
+    }
   }
 
   return (
@@ -395,6 +559,7 @@ export function NjustReportPage() {
               <Option checked={options.reviewBox} onChange={(v) => setOptions({ ...options, reviewBox: v })} label="保留评语栏" hint="正文首页 5cm 高的评语框" />
               <Option checked={options.headerFooter} onChange={(v) => setOptions({ ...options, headerFooter: v })} label="页眉页脚" hint="Logo + 课程报告名，第×页/共×页" />
               <Option checked={options.autoNumberHeadings} onChange={(v) => setOptions({ ...options, autoNumberHeadings: v })} label="自动编号标题" hint="一、 / 1.1 / 1.1.1" />
+              <Option checked={Boolean(options.toc)} onChange={(v) => setOptions({ ...options, toc: v })} label="生成目录页" hint="正文前插入 Word 自动目录（1~3 级）" />
             </div>
           </section>
         </div>
@@ -472,23 +637,42 @@ export function NjustReportPage() {
             </details>
           </section>
 
-          <section className="card p-4">
-            <Button
-              variant="primary"
-              magnetic
-              className="w-full h-11 justify-center text-[14px]"
-              state={state}
-              disabled={!source || parsing}
-              onClick={generate}
-            >
-              生成 Word 文档
-            </Button>
-            <p className="text-[10.5px] text-on-surface-2 text-center mt-2">
+          <section className="card p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="h-11 px-4 justify-center text-[13.5px] shrink-0"
+                disabled={!source || parsing || previewing || state === 'loading'}
+                onClick={() => void openPreview()}
+              >
+                {previewing ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}
+                预览排版
+              </Button>
+              <Button
+                variant="primary"
+                magnetic
+                className="flex-1 h-11 justify-center text-[14px]"
+                state={state}
+                disabled={!source || parsing || previewing}
+                onClick={generate}
+              >
+                生成 Word 文档
+              </Button>
+            </div>
+            <p className="text-[10.5px] text-on-surface-2 text-center mt-0.5">
               生成件会去掉模板里的作业要求页、红色说明字和水印
             </p>
           </section>
         </div>
       </div>
+
+      {previewBlob && (
+        <DocxPreviewModal
+          blob={previewBlob}
+          onClose={() => setPreviewBlob(null)}
+          onSave={saveGeneratedBlob}
+        />
+      )}
     </div>
   )
 }

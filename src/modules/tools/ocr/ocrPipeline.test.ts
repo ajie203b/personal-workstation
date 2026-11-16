@@ -3,8 +3,14 @@ import {
   boxesFromProbMap,
   computeDetSize,
   ctcGreedyDecode,
+  extractRecStrip,
+  formatOcrLines,
+  isVerticalQuad,
+  normalizeCjkSpacing,
+  orderQuad,
   parseCharset,
   recStripSize,
+  rotateRgba90Ccw,
   warpQuadRgba,
   planDetTiles,
   dedupeQuads,
@@ -346,5 +352,166 @@ describe('dedupeQuads（切块重叠去重）', () => {
     expect(r).toHaveLength(2)
     expect(r).toContainEqual(full)
     expect(r).toContainEqual(other)
+  })
+})
+
+describe('orderQuad（45° 菱形与倾斜矩形稳定性）', () => {
+  it('45° 旋转正方形无重复顶点且严格顺时针环序', () => {
+    // 传统 x+y / x-y 极值在这组点上会打结成重复顶点
+    const diamond: Point[] = [
+      { x: 50, y: 100 },
+      { x: 100, y: 50 },
+      { x: 0, y: 50 },
+      { x: 50, y: 0 },
+    ]
+    const q = orderQuad(diamond)
+    const unique = new Set(q.map((p) => `${p.x},${p.y}`))
+    expect(unique.size).toBe(4)
+    expect(q).toEqual([
+      { x: 50, y: 0 },
+      { x: 100, y: 50 },
+      { x: 50, y: 100 },
+      { x: 0, y: 50 },
+    ])
+  })
+
+  it('扁长条倾斜 ±15° 依然保持宽边朝向，不把短边旋成首位', () => {
+    const rad = (15 * Math.PI) / 180
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+    const rot = (x: number, y: number): Point => ({ x: x * cos - y * sin, y: x * sin + y * cos })
+    const q = orderQuad([rot(100, 10), rot(-100, -10), rot(-100, 10), rot(100, -10)])
+    const topEdge = Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y)
+    const sideEdge = Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y)
+    expect(topEdge).toBeGreaterThan(sideEdge * 5)
+  })
+})
+
+describe('竖排文字 90° 逆时针旋转裁剪', () => {
+  it('height > 1.5 * width 识别为竖排并扩展输出宽度而非压扁', () => {
+    const vert = axisQuad(10, 10, 30, 300)
+    expect(isVerticalQuad(vert)).toBe(true)
+    expect(recStripSize(vert)).toEqual({ width: 480, height: 48 })
+
+    const horiz = axisQuad(10, 10, 300, 30)
+    expect(isVerticalQuad(horiz)).toBe(false)
+  })
+
+  it('rotateRgba90Ccw 把顶部边缘旋到左侧、底部边缘旋到右侧', () => {
+    // 2×3 像素：上行 R=10，中行 R=20，下行 R=30
+    const w = 2
+    const h = 3
+    const src = new Uint8ClampedArray(w * h * 4)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4
+        src[o] = (y + 1) * 10
+        src[o + 1] = x * 50
+        src[o + 3] = 255
+      }
+    }
+    const rot = rotateRgba90Ccw(src, w, h)
+    expect(rot.width).toBe(3)
+    expect(rot.height).toBe(2)
+    // 左列 (x=0) 来自原图上行 (y=0, R=10)，右列 (x=2) 来自原图下行 (y=2, R=30)
+    expect(rot.data[0]).toBe(10)
+    expect(rot.data[2 * 4]).toBe(30)
+    // 原右上角 (x=1, y=0) 在左上角 (dx=0, dy=0)
+    expect(rot.data[1]).toBe(50)
+  })
+
+  it('extractRecStrip 自动旋正竖排框成横条（width > height=48）', () => {
+    const sw = 100
+    const sh = 200
+    const src = new Uint8ClampedArray(sw * sh * 4)
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const o = (y * sw + x) * 4
+        src[o] = y // R 记录原图 y
+        src[o + 3] = 255
+      }
+    }
+    const strip = extractRecStrip(src, sw, sh, axisQuad(20, 10, 20, 100))
+    expect(strip.rotated).toBe(true)
+    expect(strip.height).toBe(48)
+    expect(strip.width).toBe(240)
+    // 左侧采样自框顶部 (y≈10)，右侧采样自框底部 (y≈110)
+    expect(strip.data[0]).toBeLessThan(20)
+    expect(strip.data[(strip.width - 1) * 4]).toBeGreaterThan(95)
+  })
+})
+
+describe('多栏阅读顺序与三种格式化模式', () => {
+  it('双栏长截图按先左栏从上到下、再右栏从上到下排序', () => {
+    const l1 = axisQuad(20, 60, 150, 24)
+    const l2 = axisQuad(20, 96, 150, 24)
+    const l3 = axisQuad(20, 132, 150, 24)
+    const r1 = axisQuad(240, 60, 150, 24)
+    const r2 = axisQuad(240, 96, 150, 24)
+    const r3 = axisQuad(240, 132, 150, 24)
+    const sorted = sortByReadingOrder([r2, l3, r1, l1, r3, l2])
+    expect(sorted).toEqual([l1, l2, l3, r1, r2, r3])
+  })
+
+  it('带通栏标题与页脚的双栏版面正确切分，不把标题拆进单栏', () => {
+    const title = axisQuad(20, 10, 370, 28)
+    const l1 = axisQuad(20, 60, 150, 24)
+    const l2 = axisQuad(20, 96, 150, 24)
+    const l3 = axisQuad(20, 132, 150, 24)
+    const r1 = axisQuad(240, 60, 150, 24)
+    const r2 = axisQuad(240, 96, 150, 24)
+    const r3 = axisQuad(240, 132, 150, 24)
+    const footer = axisQuad(20, 180, 370, 24)
+    const sorted = sortByReadingOrder([footer, r3, l2, title, r1, l1, l3, r2])
+    expect(sorted).toEqual([title, l1, l2, l3, r1, r2, r3, footer])
+  })
+
+  it('normalizeCjkSpacing 清除中文误插空格并规范中英边界空格', () => {
+    expect(normalizeCjkSpacing('本 地 OCR 识 别v4版本')).toBe('本地 OCR 识别 v4 版本')
+  })
+
+  it('formatOcrLines 支持智能排版、逐行原文与 Markdown 表格三种模式', () => {
+    const lines = [
+      { text: '项目', box: axisQuad(20, 20, 80, 24) },
+      { text: '数量', box: axisQuad(180, 20, 80, 24) },
+      { text: '备注', box: axisQuad(320, 20, 80, 24) },
+      { text: '苹果', box: axisQuad(20, 60, 80, 24) },
+      { text: '缺货', box: axisQuad(320, 60, 80, 24) },
+    ]
+    expect(formatOcrLines(lines, 'raw')).toBe('项目\n数量\n备注\n苹果\n缺货')
+    expect(formatOcrLines(lines, 'smart')).toBe('项目  数量  备注\n苹果  缺货')
+    // 表格模式空单元格也对齐到正确列槽
+    expect(formatOcrLines(lines, 'table')).toBe(
+      ['| 项目 | 数量 | 备注 |', '| --- | --- | --- |', '| 苹果 |  | 缺货 |'].join('\n'),
+    )
+  })
+
+  it('三行及以上多列表格在智能排版中保持按行阅读，在表格模式对齐输出', () => {
+    const table3 = [
+      { text: '姓名', box: axisQuad(10, 10, 60, 22) },
+      { text: '科目', box: axisQuad(140, 10, 60, 22) },
+      { text: '成绩', box: axisQuad(270, 10, 60, 22) },
+      { text: '张三', box: axisQuad(10, 44, 60, 22) },
+      { text: '数学', box: axisQuad(140, 44, 60, 22) },
+      { text: '98', box: axisQuad(270, 44, 40, 22) },
+      { text: '李四', box: axisQuad(10, 78, 60, 22) },
+      { text: '英语', box: axisQuad(140, 78, 60, 22) },
+      { text: '95', box: axisQuad(270, 78, 40, 22) },
+    ]
+    expect(formatOcrLines(table3, 'smart')).toBe('姓名  科目  成绩\n张三  数学  98\n李四  英语  95')
+    expect(formatOcrLines(table3, 'table')).toBe(
+      ['| 姓名 | 科目 | 成绩 |', '| --- | --- | --- |', '| 张三 | 数学 | 98 |', '| 李四 | 英语 | 95 |'].join('\n'),
+    )
+  })
+
+  it('智能排版自动拼接到达行尾且未句终的自然段折行', () => {
+    const para = [
+      { text: '本地识别全程在浏览器完成，', box: axisQuad(20, 20, 380, 24) },
+      { text: '不会上传任何图片到云端。', box: axisQuad(20, 52, 260, 24) },
+      { text: '第二段独立另起一行。', box: axisQuad(20, 84, 240, 24) },
+    ]
+    expect(formatOcrLines(para, 'smart')).toBe(
+      '本地识别全程在浏览器完成，不会上传任何图片到云端。\n第二段独立另起一行。',
+    )
   })
 })

@@ -15,6 +15,38 @@ export interface PdfJobResult {
 
 export interface PdfProgress { percent: number; label: string }
 
+const CHUNK_SIZE = 512 * 1024
+const CHUNK_OVERLAP = 16 * 1024
+const ENCRYPT_TRAILER_RE = /trailer\s*<<(?:(?!startxref)[\s\S]){0,8192}?\/Encrypt(?=\s*(?:\d+\s+\d+\s+R\b|<<))/
+const ENCRYPT_XREF_BEFORE_RE = /\/Type\s*\/XRef(?:(?!endobj|\bstream\b)[\s\S]){0,4096}?\/Encrypt(?=\s*(?:\d+\s+\d+\s+R\b|<<))/
+const ENCRYPT_XREF_AFTER_RE = /\/Encrypt(?=\s*(?:\d+\s+\d+\s+R\b|<<))(?:(?!endobj|\bstream\b)[\s\S]){0,4096}?\/Type\s*\/XRef/
+const ENCRYPT_ANY_RE = /\/Encrypt(?=\s*(?:\d+\s+\d+\s+R\b|<<))/
+
+function scanPdfLatin1(bytes: Uint8Array, predicate: (chunk: string) => boolean): boolean {
+  const decoder = new TextDecoder('latin1')
+  if (bytes.length <= CHUNK_SIZE) return predicate(decoder.decode(bytes))
+  if (predicate(decoder.decode(bytes.subarray(bytes.length - CHUNK_SIZE)))) return true
+  const step = CHUNK_SIZE - CHUNK_OVERLAP
+  for (let offset = 0; offset < bytes.length - CHUNK_SIZE; offset += step) {
+    const end = Math.min(bytes.length, offset + CHUNK_SIZE)
+    if (predicate(decoder.decode(bytes.subarray(offset, end)))) return true
+  }
+  return false
+}
+
+/** 扫描 trailer / XRef 字典中的 `/Encrypt` 引用，先于 pdf-lib 解析识别加密 PDF（含 `/ObjStm`）。 */
+export function hasPdfEncryptMarker(bytes: Uint8Array): boolean {
+  return scanPdfLatin1(
+    bytes,
+    chunk => ENCRYPT_TRAILER_RE.test(chunk) || ENCRYPT_XREF_BEFORE_RE.test(chunk) || ENCRYPT_XREF_AFTER_RE.test(chunk),
+  )
+}
+
+/** 当 pdf-lib 解析异常时兜底检测原始字节是否含 `/Encrypt` 字典条目。 */
+export function hasEncryptEntry(bytes: Uint8Array): boolean {
+  return scanPdfLatin1(bytes, chunk => ENCRYPT_ANY_RE.test(chunk))
+}
+
 export function validatePdfBytes(bytes: Uint8Array): void {
   if (!bytes.length) throw new Error('文件为空，请重新选择 PDF')
   if (!new TextDecoder('latin1').decode(bytes.subarray(0, 1024)).includes('%PDF-')) throw new Error('文件内容不是 PDF，请检查格式')
@@ -30,7 +62,7 @@ export function validatePdfPassword(password: string): void {
 export function qpdfArguments(job: PdfJob): string[] {
   const args = ['/input.pdf', '--warning-exit-0', '--progress']
   if (job.kind === 'encrypt') {
-    validatePdfPassword(job.password)
+    if (job.password.length) validatePdfPassword(job.password)
     validatePdfPassword(job.ownerPassword)
     if (job.password === job.ownerPassword) throw new Error('管理密码应与打开密码不同')
     if (job.inputPassword !== undefined) args.push(`--password=${job.inputPassword}`)

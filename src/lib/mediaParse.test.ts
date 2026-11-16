@@ -1,11 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   biliMediaFromData,
+  buildCoverAsset,
   detectPlatform,
   douyinMediaFromItem,
   extractBiliRef,
   extractDouyinId,
   extractUrl,
+  parseShareText,
+  WEB_CORS_HINT,
 } from './mediaParse'
 
 describe('extractUrl', () => {
@@ -32,6 +35,7 @@ describe('detectPlatform', () => {
   it('认 B站系域名', () => {
     expect(detectPlatform('https://www.bilibili.com/video/BV1xx411c7mD')).toBe('bilibili')
     expect(detectPlatform('https://b23.tv/abcdef')).toBe('bilibili')
+    expect(detectPlatform('https://bili2233.cn/abcdef')).toBe('bilibili')
   })
   it('别的平台不认', () => {
     expect(detectPlatform('https://v.kuaishou.com/xxxx')).toBeNull()
@@ -58,7 +62,11 @@ describe('extractBiliRef', () => {
     expect(extractBiliRef('https://www.bilibili.com/video/BV1xx411c7mD?p=3&spm=x')).toEqual({ bvid: 'BV1xx411c7mD', page: 3 })
     expect(extractBiliRef('BV1xx411c7mD')).toEqual({ bvid: 'BV1xx411c7mD', page: 1 })
   })
-  it('非 BV 返回 null', () => {
+  it('支持 av 号提取与分 P', () => {
+    expect(extractBiliRef('av170001')).toEqual({ aid: 170001, page: 1 })
+    expect(extractBiliRef('https://www.bilibili.com/video/av170001?p=2')).toEqual({ aid: 170001, page: 2 })
+  })
+  it('非 BV/av 返回 null', () => {
     expect(extractBiliRef('https://www.bilibili.com/')).toBeNull()
   })
 })
@@ -149,5 +157,130 @@ describe('biliMediaFromData（view + playurl → 素材）', () => {
     expect(() =>
       biliMediaFromData(view, { dash: { video: [{ id: 32 }] } }, { bvid: 'BV1xx411c7mD', page: 1 }),
     ).toThrow('音视频分离流')
+  })
+
+  it('开启音频提取或回退时提取 DASH 音频 M4A，并自动升级 http 封面为 https', () => {
+    const media = biliMediaFromData(
+      { ...view, pic: 'http://i0.hdslb.com/cover.jpg' },
+      { dash: { video: [{ id: 32 }], audio: [{ bandwidth: 64000, baseUrl: 'https://cdn/low.m4a' }, { bandwidth: 192000, baseUrl: 'https://cdn/high.m4a' }] } },
+      { bvid: 'BV1xx411c7mD', page: 1 },
+      { audioOnly: true },
+    )
+    expect(media.cover).toBe('https://i0.hdslb.com/cover.jpg')
+    expect(media.assets).toEqual([
+      expect.objectContaining({ kind: 'audio', url: 'https://cdn/high.m4a' }),
+    ])
+  })
+
+  it('抖音图集附带背景音乐时一并输出音频素材', () => {
+    const media = douyinMediaFromItem(
+      {
+        aweme_id: '9',
+        desc: '带BGM图集',
+        image_post_info: { images: [{ origin: { url_list: ['http://img/1.jpg'] } }] },
+        music: { title: '纯音乐', play_url: { url_list: ['http://audio/bgm.mp3'] } },
+      },
+      '9',
+    )
+    expect(media.assets.map((a) => a.kind)).toEqual(['image', 'audio'])
+    expect(media.assets[1].url).toBe('https://audio/bgm.mp3')
+  })
+})
+
+describe('parseShareText 裸号解析、取消与 Web 跨域提示', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('支持裸 BV 号与裸 av 号，不再被无协议链接逻辑拦截', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = new URL(input)
+      if (url.pathname.includes('/x/web-interface/view')) {
+        return Response.json({
+          code: 0,
+          data: {
+            bvid: 'BV1xx411c7mD',
+            aid: 170001,
+            title: '裸号测试',
+            pic: 'http://i0.hdslb.com/pic.jpg',
+            owner: { name: 'UP' },
+            cid: 111,
+            pages: [{ page: 1, cid: 111, part: 'P1' }],
+          },
+        })
+      }
+      return Response.json({ code: 0, data: { durl: [{ url: 'https://cdn/v.mp4' }] } })
+    }))
+
+    const byBv = await parseShareText('BV1xx411c7mD')
+    expect(byBv.platform).toBe('bilibili')
+    expect(byBv.cover).toBe('https://i0.hdslb.com/pic.jpg')
+    expect(byBv.assets[0].filename).toBe('B站-裸号测试.mp4')
+
+    const byAv = await parseShareText('av170001')
+    expect(byAv.platform).toBe('bilibili')
+    expect(byAv.assets[0].url).toBe('https://cdn/v.mp4')
+  })
+
+  it('支持裸抖音作品 ID 直接解析', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      aweme_list: [{
+        aweme_id: '7054761673470594318',
+        desc: '裸ID抖音作品',
+        author: { nickname: '作者' },
+        video: { play_addr: { url_list: ['https://cdn/dy.mp4'] } },
+      }],
+    })))
+    const media = await parseShareText('7054761673470594318')
+    expect(media.platform).toBe('douyin')
+    expect(media.title).toBe('裸ID抖音作品')
+    expect(media.assets[0].filename).toBe('抖音-裸ID抖音作品.mp4')
+  })
+
+  it('网页端网络/跨域失败时给出可操作中文提示，并支持 AbortSignal 取消', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    }))
+    await expect(parseShareText('BV1xx411c7mD')).rejects.toThrow(WEB_CORS_HINT)
+
+    const ctrl = new AbortController()
+    ctrl.abort()
+    await expect(parseShareText('BV1xx411c7mD', { signal: ctrl.signal })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('支持 bili2233.cn 短链、多P全选与封面素材生成', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'bili2233.cn') {
+        const res = new Response('ok', { status: 200 })
+        Object.defineProperty(res, 'url', { value: 'https://www.bilibili.com/video/BV1xx411c7mD' })
+        return res
+      }
+      if (url.pathname.includes('/x/web-interface/view')) {
+        return Response.json({
+          code: 0,
+          data: {
+            bvid: 'BV1xx411c7mD',
+            aid: 170001,
+            title: '多P合集',
+            pic: 'http://i0.hdslb.com/cover.jpg',
+            owner: { name: 'UP' },
+            cid: 111,
+            pages: [{ page: 1, cid: 111, part: '上集' }, { page: 2, cid: 222, part: '下集' }],
+          },
+        })
+      }
+      const cid = url.searchParams.get('cid')
+      return Response.json({ code: 0, data: { durl: [{ url: `https://cdn/p${cid}.mp4` }] } })
+    }))
+
+    const all = await parseShareText('https://bili2233.cn/xyz', { allPages: true })
+    expect(all.assets).toHaveLength(2)
+    expect(all.assets[0].filename).toBe('B站-多P合集-P1-1.mp4')
+    expect(all.assets[1].filename).toBe('B站-多P合集-P2-2.mp4')
+    const coverAsset = buildCoverAsset(all)
+    expect(coverAsset).toMatchObject({
+      kind: 'image',
+      url: 'https://i0.hdslb.com/cover.jpg',
+      filename: 'B站-多P合集-封面.jpg',
+    })
   })
 })

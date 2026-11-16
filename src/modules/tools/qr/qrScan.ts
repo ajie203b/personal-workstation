@@ -41,6 +41,9 @@ export function imageToImageData(img: HTMLImageElement): PixelSource {
   canvas.height = Math.round(h * ratio)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('canvas 不可用')
+  // 先铺白底再画图，防止透明底 PNG 二维码的透明像素被读成纯黑 [0,0,0,0]
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
   return ctx.getImageData(0, 0, canvas.width, canvas.height)
 }

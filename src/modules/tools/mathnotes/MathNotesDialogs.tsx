@@ -6,7 +6,7 @@ import { MathEditorDialog } from './MathEditorDialog'
 import { MODEL_SOURCES, type ModelSourceConfig, type ModelSourceId } from './recognizer'
 import type { ModelState } from './canvasDraw'
 import type { PlotCurve } from './plot'
-import type { BlockResult, NoteGraph } from './types'
+import type { AngleMode, BlockResult, NoteGraph } from './types'
 
 export function MathNotesDialogs({
   editingBlock,
@@ -31,6 +31,8 @@ export function MathNotesDialogs({
   onApplySource,
   resultMode,
   onResultModeChange,
+  angleMode,
+  onAngleModeChange,
   model,
   percent,
   onReloadModel,
@@ -65,6 +67,8 @@ export function MathNotesDialogs({
   onApplySource: (cfg: ModelSourceConfig) => void
   resultMode: 'auto' | 'suggest' | 'off'
   onResultModeChange: (mode: 'auto' | 'suggest' | 'off') => void
+  angleMode: AngleMode
+  onAngleModeChange: (mode: AngleMode) => void
   model: ModelState
   percent: number | null
   onReloadModel: () => void
@@ -143,6 +147,19 @@ export function MathNotesDialogs({
               onChange={onResultModeChange}
               size="sm"
               ariaLabel="计算结果显示方式"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[12.5px] font-medium">三角函数角度单位</p>
+            <Segmented<AngleMode>
+              options={[
+                { value: 'rad', label: '弧度 (RAD)' },
+                { value: 'deg', label: '角度 (DEG)' },
+              ]}
+              value={angleMode}
+              onChange={onAngleModeChange}
+              size="sm"
+              ariaLabel="三角函数角度单位"
             />
           </div>
           <div className="rounded-[12px] bg-surface-2 px-3 py-2 text-[12px] text-on-surface-2 leading-relaxed">

@@ -26,7 +26,7 @@ describe('mapWithConcurrency', () => {
 })
 
 describe('sniffImageMime', () => {
-  it('按魔数认 PNG / JPEG / GIF / WebP', () => {
+  it('按魔数认 PNG / JPEG / GIF / WebP / AVIF / SVG 与空输入', () => {
     const b = (...xs: number[]) => new Uint8Array(xs)
     expect(sniffImageMime(b(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))).toBe('image/png')
     expect(sniffImageMime(b(0xff, 0xd8, 0xff, 0xe0))).toBe('image/jpeg')
@@ -35,6 +35,12 @@ describe('sniffImageMime', () => {
     webp.set(new TextEncoder().encode('RIFF'), 0)
     webp.set(new TextEncoder().encode('WEBP'), 8)
     expect(sniffImageMime(webp)).toBe('image/webp')
+    const avif = new Uint8Array(20)
+    avif.set(new TextEncoder().encode('ftypavif'), 4)
+    expect(sniffImageMime(avif)).toBe('image/avif')
+    expect(sniffImageMime(new TextEncoder().encode('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBe('image/svg+xml')
+    expect(sniffImageMime(new TextEncoder().encode('<svg viewBox="0 0 10 10"></svg>'))).toBe('image/svg+xml')
+    expect(sniffImageMime(new Uint8Array(0))).toBe('')
     expect(sniffImageMime(b(0, 1, 2))).toBe('image/jpeg') // 认不出保底 JPEG
   })
 })

@@ -105,3 +105,30 @@ it('隐藏某条曲线后不再展示其交点', async () => {
   expect(button.getAttribute('aria-pressed')).toBe('false')
   expect(document.querySelector('[aria-label="交点 1，坐标 0，0"]')).toBeNull()
 })
+
+it('支持滚轮缩放、悬停坐标追踪、极坐标参数栏与右对齐刻度标签', async () => {
+  const node = document.createElement('div'); document.body.append(node)
+  const root = createRoot(node); cleanup = () => { act(() => root.unmount()); node.remove() }
+  const plot = vi.fn(async () => [{ kind: 'explicit' as const, label: 'y=x', values: [-10, 0, 10] }])
+  await act(async () => root.render(<FunctionPlotDialog open initial="r=2\cos(\theta)" onOpenChange={() => {}} plot={plot} onInsert={() => {}} />))
+  expect(document.querySelector('input[aria-label="参数起点"]')).not.toBeNull()
+  const maxXText = [...document.querySelectorAll('svg text')].find(t => t.getAttribute('text-anchor') === 'end')
+  expect(maxXText).not.toBeUndefined()
+  expect(maxXText?.textContent).toBe('10')
+
+  const svg = document.querySelector<SVGSVGElement>('svg[role="img"]')!
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 400, right: 400, bottom: 400, x: 0, y: 0, toJSON: () => ({}) })
+  await act(async () => {
+    const mv = new MouseEvent('pointermove', { bubbles: true, clientX: 200, clientY: 200 })
+    svg.dispatchEvent(mv)
+  })
+  expect(document.body.textContent).toContain('(0, 0)')
+
+  await act(async () => {
+    svg.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -120, clientX: 200, clientY: 200 }))
+  })
+  expect(plot.mock.calls.length).toBeGreaterThanOrEqual(2)
+  const lastCall = plot.mock.calls.at(-1) as unknown[] | undefined
+  const lastMin = lastCall?.[1] as number
+  expect(Math.abs(lastMin)).toBeLessThan(10)
+})

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildFqwebUrl,
+  dedupeQueryParams,
   FqwebError,
   parseBingRss,
   parseFqwebCatalog,
@@ -352,5 +354,109 @@ describe('Fanqie requests', () => {
     const { fetchFanqieChapterContent } = await import('./fanqieFqweb')
     await expect(fetchFanqieChapterContent('111')).rejects.toMatchObject({ code: 'RATE_LIMITED' })
     expect(androidGet).toHaveBeenCalledTimes(1)
+  })
+
+  it('deduplicates nt= query parameter across base URLs and redirects', () => {
+    expect(dedupeQueryParams('https://example.com/catalog?book_id=1&nt=2026-01-01&nt=2026-11-16')).toBe(
+      'https://example.com/catalog?book_id=1&nt=2026-11-16',
+    )
+    const built = buildFqwebUrl('https://node.example.com/proxy?nt=2026-01-01&token=abc', '/catalog', { book_id: '7276384138653862966' })
+    const parsed = new URL(built)
+    expect(parsed.pathname).toBe('/proxy/catalog')
+    expect(parsed.searchParams.get('token')).toBe('abc')
+    expect(parsed.searchParams.get('book_id')).toBe('7276384138653862966')
+    expect(parsed.searchParams.getAll('nt')).toHaveLength(1)
+  })
+
+  it('falls back to official book page parser when FQWeb nodes fail', async () => {
+    platform.windows = true
+    const bookState = {
+      page: {
+        bookId: '7276384138653862966',
+        bookName: '官网回退书',
+        authorName: '测试作者',
+        abstract: '官网简介',
+        creationStatus: 0,
+        chapterListWithVolume: [[
+          { itemId: '101', title: '第1章 回退', isChapterLock: false, volume_name: '第一卷' },
+        ]],
+      },
+    }
+    tauriFetch.mockImplementation(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'fanqienovel.com' && url.pathname === '/page/7276384138653862966') {
+        return new Response(`<html><script>window.__INITIAL_STATE__=${JSON.stringify(bookState)};</script></html>`)
+      }
+      throw new Error('FQWeb node down')
+    })
+    const { fetchFanqieBookById } = await import('./fanqieFqweb')
+    const book = await fetchFanqieBookById('7276384138653862966')
+    expect(book.title).toBe('官网回退书')
+    expect(book.chapters).toHaveLength(1)
+    expect(book.chapters[0].title).toBe('第1章 回退')
+  })
+
+  it('falls back to official chapter parser when FQWeb chapter nodes fail and rejects truncated previews', async () => {
+    platform.windows = true
+    tauriFetch.mockImplementation(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'fanqienovel.com' && url.pathname === '/api/reader/full' && url.searchParams.get('itemId') === '555') {
+        return Response.json({
+          data: {
+            chapterData: {
+              itemId: '555',
+              title: '第5章',
+              content: '<p>官网接口正文内容，足够长不会被判定为空。</p>',
+              bookId: '7276384138653862966',
+              isChapterLock: false,
+            },
+          },
+        })
+      }
+      if (url.hostname === 'fanqienovel.com' && url.pathname === '/reader/666') {
+        return new Response(
+          `<html><script>window.__INITIAL_STATE__=${JSON.stringify({
+            reader: {
+              chapterData: {
+                itemId: '666',
+                title: '第6章',
+                content: '<p>只有试读</p>',
+                chapterWordNumber: 2000,
+                isChapterLock: true,
+              },
+            },
+          })};</script></html>`,
+        )
+      }
+      throw new Error('FQWeb down')
+    })
+    const { fetchFanqieChapterContent } = await import('./fanqieFqweb')
+    const okChapter = await fetchFanqieChapterContent('555')
+    expect(okChapter.content).toContain('官网接口正文内容')
+
+    await expect(fetchFanqieChapterContent('666')).rejects.toMatchObject({ code: 'EMPTY' })
+  })
+
+  it('persists custom FQWeb node first and tests node connectivity', async () => {
+    platform.windows = true
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v) },
+      removeItem: (k: string) => { store.delete(k) },
+    })
+    tauriFetch.mockImplementation(async () => Response.json({ data: { code: '0', data: { list: [] } } }))
+    const { getCustomFqwebBase, getFqwebBases, setCustomFqwebBase, testFqwebNode } = await import('./fanqieFqweb')
+    expect(setCustomFqwebBase('https://custom.fq.test/api/catalog')).toBe('https://custom.fq.test/api')
+    expect(getCustomFqwebBase()).toBe('https://custom.fq.test/api')
+    expect(getFqwebBases()[0]).toBe('https://custom.fq.test/api')
+
+    const res = await testFqwebNode()
+    expect(res.ok).toBe(true)
+    expect(res.base).toBe('https://custom.fq.test/api')
+    expect(tauriFetch.mock.calls[0][0]).toContain('https://custom.fq.test/api/search')
+
+    setCustomFqwebBase('')
+    expect(getCustomFqwebBase()).toBe('')
   })
 })

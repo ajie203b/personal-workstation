@@ -1,4 +1,6 @@
+import { sanitizeHtmlBody } from '@/lib/sanitizeHtml'
 import { formatCapturedAt } from './articleMarkdown'
+import { stripDuplicateLeadingHeading } from './articleParse'
 
 /**
  * 单篇文章 → EPUB 3（v3.3 文章离线）。结构对齐 lib/fanqieExport.ts 的 buildFanqieEpub：
@@ -60,6 +62,34 @@ function extOf(mime: string): string {
     'image/svg+xml': 'svg',
   }
   return map[mime] ?? 'img'
+}
+
+interface TocHeading {
+  id: string
+  title: string
+}
+
+function collectHeadingToc(root: Element): TocHeading[] {
+  const usedIds = new Set<string>()
+  for (const el of Array.from(root.querySelectorAll('[id]'))) {
+    const id = el.getAttribute('id')
+    if (id) usedIds.add(id)
+  }
+  const list: TocHeading[] = []
+  let idx = 1
+  for (const h2 of Array.from(root.querySelectorAll('h2'))) {
+    const text = (h2.textContent ?? '').replace(/\s+/g, ' ').trim()
+    if (!text) continue
+    let id = h2.getAttribute('id')?.trim() ?? ''
+    if (!id || !/^[A-Za-z_][\w:-]*$/.test(id)) {
+      while (usedIds.has(`sec-${idx}`)) idx++
+      id = `sec-${idx++}`
+      h2.setAttribute('id', id)
+      usedIds.add(id)
+    }
+    list.push({ id, title: text })
+  }
+  return list
 }
 
 /**
@@ -130,10 +160,14 @@ export async function buildArticleEpub(input: ArticleEpubInput): Promise<Blob> {
 </container>`,
   )
 
-  // 正文片段进 HTML 沙盒文档（innerHTML 解析宽容），图片落地后再把节点搬进 XHTML
+  const title = input.title.trim() || '无标题文章'
+
+  // 正文片段进 HTML 沙盒文档后先做白名单清洗与重复主标题去重，再提取图片与目录锚点
   const scratch = new DOMParser().parseFromString('<html><body></body></html>', 'text/html')
   const scratchBody = scratch.body
   scratchBody.innerHTML = input.contentHtml || ''
+  sanitizeHtmlBody(scratchBody)
+  stripDuplicateLeadingHeading(scratchBody, title)
 
   interface ManifestImage {
     id: string
@@ -154,19 +188,38 @@ export async function buildArticleEpub(input: ArticleEpubInput): Promise<Blob> {
     img.removeAttribute('srcset')
   }
 
+  const tocHeadings = collectHeadingToc(scratchBody)
+
   zip.file('OEBPS/article.xhtml', buildChapterXhtml(input, Array.from(scratchBody.childNodes)))
 
   zip.file(
     'OEBPS/style.css',
-    `body { font-family: "Noto Serif SC", "Songti SC", serif; line-height: 1.85; margin: 1.2em; }
-h1 { font-size: 1.5em; line-height: 1.5; margin: 0 0 0.6em; }
-.meta { color: #666; font-size: 0.85em; }
+    `body { font-family: "Noto Serif SC", "Songti SC", Georgia, serif; line-height: 1.85; margin: 1.2em; }
+h1 { font-size: 1.55em; line-height: 1.4; margin: 0 0 0.55em; }
+h2 { font-size: 1.25em; line-height: 1.45; margin: 1.45em 0 0.5em; }
+h3 { font-size: 1.08em; line-height: 1.5; margin: 1.15em 0 0.45em; }
+.meta { opacity: 0.72; font-size: 0.85em; word-break: break-all; }
 p { margin: 0.75em 0; }
-img { max-width: 100%; height: auto; }
-blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #ddd; color: #444; }`,
+a { color: #2c55b8; text-decoration: underline; }
+hr { border: 0; border-top: 1px solid #d4d4d8; margin: 1em 0; }
+img { max-width: 100%; height: auto; display: block; margin: 0.9em auto; border-radius: 6px; }
+blockquote { margin: 1em 0; padding: 0.25em 0 0.25em 1em; border-left: 3px solid #cbd5e1; opacity: 0.85; }
+pre { margin: 1em 0; padding: 0.8em 1em; background: #f4f4f5; color: #18181b; border-radius: 6px; overflow-x: auto; font-size: 0.86em; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; background: #f4f4f5; color: #18181b; padding: 0.1em 0.3em; border-radius: 4px; }
+pre code { background: transparent; padding: 0; font-size: inherit; }
+ul, ol { margin: 0.75em 0; padding-left: 1.5em; }
+li { margin: 0.3em 0; }
+table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.9em; }
+th, td { border: 1px solid #d4d4d8; padding: 0.45em 0.6em; text-align: left; vertical-align: top; }
+th { font-weight: 600; background: #f4f4f5; color: #18181b; }`,
   )
 
-  const title = input.title.trim() || '无标题文章'
+  const navSublist = tocHeadings.length
+    ? `\n        <ol>\n${tocHeadings
+        .map((h) => `          <li><a href="article.xhtml#${escapeXml(h.id)}">${escapeXml(h.title)}</a></li>`)
+        .join('\n')}\n        </ol>\n      `
+    : ''
+
   zip.file(
     'OEBPS/nav.xhtml',
     `<?xml version="1.0" encoding="utf-8"?>
@@ -177,12 +230,23 @@ blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #ddd; colo
   <nav epub:type="toc" id="toc">
     <h1>目录</h1>
     <ol>
-      <li><a href="article.xhtml">${escapeXml(title)}</a></li>
+      <li><a href="article.xhtml">${escapeXml(title)}</a>${navSublist}</li>
     </ol>
   </nav>
 </body>
 </html>`,
   )
+
+  const ncxSubpoints = tocHeadings.length
+    ? `\n${tocHeadings
+        .map(
+          (h, idx) => `      <navPoint id="np-${idx + 2}" playOrder="${idx + 2}">
+        <navLabel><text>${escapeXml(h.title)}</text></navLabel>
+        <content src="article.xhtml#${escapeXml(h.id)}"/>
+      </navPoint>`,
+        )
+        .join('\n')}`
+    : ''
 
   zip.file(
     'OEBPS/toc.ncx',
@@ -190,7 +254,7 @@ blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #ddd; colo
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head>
     <meta name="dtb:uid" content="urn:article:${escapeXml(String(input.capturedAt))}"/>
-    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:depth" content="${tocHeadings.length ? '2' : '1'}"/>
     <meta name="dtb:totalPageCount" content="0"/>
     <meta name="dtb:maxPageNumber" content="0"/>
   </head>
@@ -198,7 +262,7 @@ blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #ddd; colo
   <navMap>
     <navPoint id="np1" playOrder="1">
       <navLabel><text>${escapeXml(title)}</text></navLabel>
-      <content src="article.xhtml"/>
+      <content src="article.xhtml"/>${ncxSubpoints}
     </navPoint>
   </navMap>
 </ncx>`,
@@ -214,7 +278,7 @@ blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #ddd; colo
   zip.file(
     'OEBPS/content.opf',
     `<?xml version="1.0" encoding="utf-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="zh-CN">
+<package xmlns="http://www.idpf.org/opf" version="3.0" unique-identifier="bookid" xml:lang="zh-CN">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="bookid">urn:article:${escapeXml(String(input.capturedAt))}</dc:identifier>
     <dc:title>${escapeXml(title)}</dc:title>

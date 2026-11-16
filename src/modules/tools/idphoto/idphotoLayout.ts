@@ -16,6 +16,35 @@ export interface SheetSpec {
 
 /** 6 寸横版：6×4 英寸 @300dpi */
 export const SHEET_6IN: SheetSpec = { width: 1800, height: 1200, dpi: 300 }
+/** 5 寸横版（3R）：5×3.5 英寸 @300dpi */
+export const SHEET_5IN: SheetSpec = { width: 1500, height: 1050, dpi: 300 }
+/** A4 竖版：210×297mm @300dpi */
+export const SHEET_A4: SheetSpec = { width: 2480, height: 3508, dpi: 300 }
+
+export type SheetPresetId = '6in' | '5in' | 'a4'
+
+export interface SheetPreset {
+  id: SheetPresetId
+  label: string
+  spec: SheetSpec
+}
+
+export const SHEET_PRESETS: SheetPreset[] = [
+  { id: '6in', label: '6寸', spec: SHEET_6IN },
+  { id: '5in', label: '5寸', spec: SHEET_5IN },
+  { id: 'a4', label: 'A4', spec: SHEET_A4 },
+]
+
+/** 计算指定相纸上最多可放多少张该规格照片 */
+export function maxSheetCount(
+  photo: { width: number; height: number },
+  sheet: SheetSpec = SHEET_6IN,
+  gap = SHEET_GAP,
+): number {
+  const colsMax = Math.max(1, Math.floor((sheet.width + gap) / (photo.width + gap)))
+  const rowsMax = Math.max(1, Math.floor((sheet.height + gap) / (photo.height + gap)))
+  return colsMax * rowsMax
+}
 
 export interface LayoutCell {
   x: number

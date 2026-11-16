@@ -3,11 +3,16 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  applyPortraitBrighten,
+  computeLetterbox,
   estimateBackground,
+  estimateLocalBackground,
   featherAlpha,
+  letterboxToSquareRgba,
   removeColorSpill,
   resizeAlpha,
   resizeRgba,
+  unletterboxAlpha,
 } from './idphotoAlpha'
 
 describe('featherAlpha', () => {
@@ -125,5 +130,97 @@ describe('resizeRgba', () => {
     const out = resizeRgba(src, 2, 1, 1, 1)
     expect(out[0]).toBeGreaterThan(10)
     expect(out[0]).toBeLessThan(20)
+  })
+})
+
+describe('transition-band feather & local background spill', () => {
+  it('featherAlpha 只平滑过渡带，不把实心内部涂糊或把背景涂出雾边', () => {
+    // 软边：左实心(1) → 内部渐变(0.97, 0.7, 0.3, 0.03) → 右背景(0)
+    const src = Float32Array.from([1, 1, 0.97, 0.7, 0.3, 0.03, 0, 0])
+    const out = featherAlpha(src, 8, 1, 2)
+    // 实心与干净背景保持不动
+    expect(out[0]).toBe(1)
+    expect(out[1]).toBe(1)
+    expect(out[2]).toBeCloseTo(0.97, 5)
+    expect(out[5]).toBeCloseTo(0.03, 5)
+    expect(out[6]).toBe(0)
+    expect(out[7]).toBe(0)
+    // 过渡带被平滑
+    expect(out[3]).not.toBeCloseTo(0.7, 4)
+    expect(out[4]).not.toBeCloseTo(0.3, 4)
+  })
+
+  it('estimateLocalBackground 分区域估计背景，深色西装靠暗背景不被顶部亮窗拉出白边', () => {
+    // 16×16 图像：上半部背景是亮窗(250,250,250)，下半部背景是深墙(20,20,20)，中间竖条是人物边缘 a=0.5
+    const w = 16
+    const h = 16
+    const rgba = new Uint8ClampedArray(w * h * 4)
+    const alpha = new Float32Array(w * h)
+    for (let y = 0; y < h; y++) {
+      const bgVal = y < 8 ? 250 : 20
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x
+        const p = i * 4
+        if (x < 6) {
+          // 干净背景
+          alpha[i] = 0
+          rgba[p] = rgba[p + 1] = rgba[p + 2] = bgVal
+        } else if (x === 6) {
+          // 深色西装/发丝边缘：真实前景 f=20，与局部背景混合 c = 0.5*20 + 0.5*bgVal
+          alpha[i] = 0.5
+          const mixed = Math.round(0.5 * 20 + 0.5 * bgVal)
+          rgba[p] = rgba[p + 1] = rgba[p + 2] = mixed
+        } else {
+          // 实心深色西装 f=20
+          alpha[i] = 1
+          rgba[p] = rgba[p + 1] = rgba[p + 2] = 20
+        }
+        rgba[p + 3] = 255
+      }
+    }
+    const localBg = estimateLocalBackground(rgba, alpha, w, h)
+    const out = removeColorSpill(rgba, alpha, w, h, localBg)
+    // 上半部分边缘反解出真前景 ~20（而非保留混进的白窗）
+    expect(out[(2 * w + 6) * 4]).toBeLessThan(40)
+    // 下半部分边缘反解出真前景 ~20（没有被顶部 250 拉偏成负值/错误颜色）
+    expect(out[(13 * w + 6) * 4]).toBeLessThan(40)
+    // 实心部分原封不动
+    expect(out[(13 * w + 10) * 4]).toBe(20)
+  })
+})
+
+describe('letterboxToSquareRgba / unletterboxAlpha', () => {
+  it('竖图 3:4 等比塞进 512×512 不拉伸，裁回后保持原图相对位置', () => {
+    const info = computeLetterbox(300, 400, 512)
+    expect(info.scaledH).toBe(512)
+    expect(info.scaledW).toBe(384)
+    expect(info.padX).toBe(64)
+    expect(info.padY).toBe(0)
+
+    const rgba = new Uint8ClampedArray(300 * 400 * 4).fill(180)
+    const { data } = letterboxToSquareRgba(rgba, 300, 400, 512)
+    expect(data.length).toBe(512 * 512 * 4)
+
+    // 构造只在有效区域（padX..padX+scaledW）上半部为 1、下半部为 0 的 alpha
+    const sqAlpha = new Float32Array(512 * 512)
+    for (let y = 0; y < 256; y++) {
+      for (let x = info.padX; x < info.padX + info.scaledW; x++) {
+        sqAlpha[y * 512 + x] = 1
+      }
+    }
+    const back = unletterboxAlpha(sqAlpha, 512, 300, 400)
+    expect(back.length).toBe(300 * 400)
+    expect(back[50 * 300 + 150]).toBeCloseTo(1, 3)
+    expect(back[350 * 300 + 150]).toBeCloseTo(0, 3)
+  })
+})
+
+describe('applyPortraitBrighten', () => {
+  it('只提亮前景主体像素，不改动纯透明背景', () => {
+    const rgba = new Uint8ClampedArray([100, 100, 100, 255, 100, 100, 100, 255])
+    const alpha = Float32Array.from([1, 0])
+    const out = applyPortraitBrighten(rgba, alpha, 2, 1)
+    expect(out[0]).toBeGreaterThan(100)
+    expect(out[4]).toBe(100)
   })
 })

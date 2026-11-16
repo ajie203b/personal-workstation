@@ -5,7 +5,7 @@
 import { PDFDocument } from 'pdf-lib'
 import type { PhotoSpec } from './idphotoSpec'
 import type { CropBox } from './idphotoCrop'
-import { SHEET_6IN, computeSheetLayout, cutLines } from './idphotoLayout'
+import { SHEET_6IN, computeSheetLayout, cutLines, type SheetSpec } from './idphotoLayout'
 
 export interface ComposeInput {
   /** 去溢出后的 RGBA（工作图） */
@@ -60,31 +60,42 @@ export function composePhotoCanvas(input: ComposeInput, spec: PhotoSpec): HTMLCa
   }
   cutCtx.putImageData(img, 0, 0)
 
-  // 2. 底色 + 抠像缩放铺满
+  // 2. 底色 + 抠像缩放铺满（bg === 'transparent' 时跳过 fillRect 保持透明通道）
   const out = document.createElement('canvas')
   out.width = spec.width
   out.height = spec.height
   const ctx = out.getContext('2d')
   if (!ctx) throw new Error('画布创建失败')
-  ctx.fillStyle = input.bg
-  ctx.fillRect(0, 0, out.width, out.height)
+  if (input.bg !== 'transparent') {
+    ctx.fillStyle = input.bg
+    ctx.fillRect(0, 0, out.width, out.height)
+  }
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(cut, 0, 0, out.width, out.height)
   return out
 }
 
-/** 6 寸排版画布：白底、照片 1:1 排列、四角裁切线 */
-export function composeSheetCanvas(photo: HTMLCanvasElement, spec: PhotoSpec): HTMLCanvasElement {
-  const layout = computeSheetLayout({ width: spec.width, height: spec.height }, SHEET_6IN, spec.sheetCount)
+/** 相纸排版画布：白底、照片 1:1 排列、浅灰裁切细边框 + 四角裁切线 */
+export function composeSheetCanvas(
+  photo: HTMLCanvasElement,
+  spec: PhotoSpec,
+  sheetSpec: SheetSpec = SHEET_6IN,
+  count = spec.sheetCount,
+): HTMLCanvasElement {
+  const layout = computeSheetLayout({ width: spec.width, height: spec.height }, sheetSpec, count)
   const sheet = document.createElement('canvas')
-  sheet.width = SHEET_6IN.width
-  sheet.height = SHEET_6IN.height
+  sheet.width = sheetSpec.width
+  sheet.height = sheetSpec.height
   const ctx = sheet.getContext('2d')
   if (!ctx) throw new Error('画布创建失败')
   ctx.fillStyle = '#FFFFFF'
   ctx.fillRect(0, 0, sheet.width, sheet.height)
   for (const cell of layout.cells) {
     ctx.drawImage(photo, cell.x, cell.y, cell.width, cell.height)
+    // 白底/浅底照片在白相纸上需 1px 浅灰裁切细线才能看清边界
+    ctx.strokeStyle = '#CBD5E1'
+    ctx.lineWidth = 1
+    ctx.strokeRect(cell.x + 0.5, cell.y + 0.5, cell.width - 1, cell.height - 1)
   }
   // 裁切线：细灰线，压在格子外沿
   ctx.strokeStyle = '#999999'
@@ -116,12 +127,12 @@ export function canvasToJpegBytes(canvas: HTMLCanvasElement, quality = 0.92): Pr
 }
 
 /**
- * 6 寸排版的单页 PDF：页面 6×4 英寸（432×288 pt），embedJpg 铺满。
+ * 排版单页 PDF：按相纸英寸尺寸生成（72pt/in），embedJpg 铺满。
  * 冲印店/打印店常要 PDF，一张一页免得再裁。
  */
-export async function composeSheetPdf(jpgBytes: Uint8Array): Promise<Uint8Array> {
+export async function composeSheetPdf(jpgBytes: Uint8Array, sheetSpec: SheetSpec = SHEET_6IN): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
-  const page = pdf.addPage([(SHEET_6IN.width / SHEET_6IN.dpi) * 72, (SHEET_6IN.height / SHEET_6IN.dpi) * 72])
+  const page = pdf.addPage([(sheetSpec.width / sheetSpec.dpi) * 72, (sheetSpec.height / sheetSpec.dpi) * 72])
   const jpg = await pdf.embedJpg(jpgBytes)
   page.drawImage(jpg, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() })
   return pdf.save()

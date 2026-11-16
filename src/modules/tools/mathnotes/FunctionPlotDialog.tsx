@@ -88,6 +88,17 @@ export function surfacePaths(values: (number | null)[][], range: number, yaw: nu
   return paths
 }
 
+function toSvgCoords(svg: SVGSVGElement, clientX: number, clientY: number): { sx: number; sy: number; size: number } | null {
+  const rect = svg.getBoundingClientRect()
+  const size = Math.min(rect.width, rect.height)
+  if (!(size > 0)) return null
+  return {
+    sx: (clientX - rect.left - (rect.width - size) / 2) / size * 400,
+    sy: (clientY - rect.top - (rect.height - size) / 2) / size * 400,
+    size,
+  }
+}
+
 export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert, initialRange = 10, initialCenterX = 0, initialCenterY = 0, initialTMin = 0, initialTMax = Math.PI * 2, initialHidden = '' }: {
   open: boolean; initial: string; onOpenChange: (open: boolean) => void
   onInsert?: (expression: string, range: number, tMin: number, tMax: number, centerX: number, centerY: number, hiddenCurves: number[]) => void
@@ -101,8 +112,12 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
   const [centerY, setCenterY] = useState(initialCenterY)
   const [hidden, setHidden] = useState<Set<number>>(new Set())
   const [inspected, setInspected] = useState<ReturnType<typeof nearestCurvePoint>>(null)
-  const pointers = useRef(new Map<number, {x: number; y: number}>())
+  const [hoverPoint, setHoverPoint] = useState<ReturnType<typeof nearestCurvePoint>>(null)
+  const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null)
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
   const gesture = useRef<{ x: number; y: number; centerX: number; centerY: number; range: number; distance?: number; pinch: boolean } | null>(null)
+  const panRaf = useRef<number | null>(null)
+  const pendingView = useRef<{ centerX: number; centerY: number; range?: number } | null>(null)
   const [tStart, setTStart] = useState('0')
   const [tEnd, setTEnd] = useState('6.283185307')
   const [tRange, setTRange] = useState<[number, number]>([0, Math.PI * 2])
@@ -113,34 +128,97 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [showIntersections, setShowIntersections] = useState(true)
-  useEffect(() => { if (open) { setInput(initial); setExpression(initial); setRange(initialRange); setCenterX(initialCenterX); setCenterY(initialCenterY); setHidden(new Set(initialHidden ? initialHidden.split(',').map(Number).filter(Number.isInteger) : [])); setInspected(null); setTStart(String(initialTMin)); setTEnd(String(initialTMax)); setTRange(previous => previous[0] === initialTMin && previous[1] === initialTMax ? previous : [initialTMin, initialTMax]); setYaw(-0.65); setPitch(0.65) } }, [open, initial, initialRange, initialCenterX, initialCenterY, initialTMin, initialTMax, initialHidden])
+
+  useEffect(() => {
+    if (open) {
+      setInput(initial)
+      setExpression(initial)
+      setRange(initialRange)
+      setCenterX(initialCenterX)
+      setCenterY(initialCenterY)
+      setHidden(new Set(initialHidden ? initialHidden.split(',').map(Number).filter(Number.isInteger) : []))
+      setInspected(null)
+      setHoverPoint(null)
+      setTStart(String(initialTMin))
+      setTEnd(String(initialTMax))
+      setTRange(previous => previous[0] === initialTMin && previous[1] === initialTMax ? previous : [initialTMin, initialTMax])
+      setYaw(-0.65)
+      setPitch(0.65)
+    }
+  }, [open, initial, initialRange, initialCenterX, initialCenterY, initialTMin, initialTMax, initialHidden])
+
   useEffect(() => {
     if (!open || !expression.trim()) { setCurves([]); return }
     let active = true
-    setBusy(true); setError(''); setCurves([]); setInspected(null)
+    setBusy(true); setError(''); setCurves([]); setInspected(null); setHoverPoint(null)
     void plot(expression, -range, range, tRange[0], tRange[1], centerX, centerY).then(result => {
       if (!active) return
       setCurves(result)
-      if (result.every(c => c.kind === 'explicit' ? c.values.every(v => v == null) : c.kind === 'implicit' ? c.segments.length === 0 : (c.kind === 'parametric' || c.kind === 'parametric3d') ? c.points.every(v => v == null) : c.values.every(row => row.every(v => v == null)))) setError('这个范围内没有可显示的曲线')
+      if (result.every(c => c.kind === 'explicit' ? c.values.every(v => v == null) : c.kind === 'implicit' ? c.segments.length === 0 : (c.kind === 'parametric' || c.kind === 'parametric3d') ? c.points.every(v => v == null) : c.values.every(row => row.every(v => v == null)))) {
+        setError('这个范围内没有可显示的曲线')
+      }
     }).catch(e => { if (active) setError(e instanceof Error ? e.message : '无法绘制函数') })
       .finally(() => { if (active) setBusy(false) })
     return () => { active = false }
   }, [open, expression, range, centerX, centerY, tRange, plot])
+
+  useEffect(() => () => {
+    if (panRaf.current != null) cancelAnimationFrame(panRaf.current)
+  }, [])
+
   const is3d = curves.some(c => c.kind === 'surface' || c.kind === 'parametric3d')
   const visibleCurves = useMemo(() => curves.filter((_, index) => !hidden.has(index)), [curves, hidden])
   const intersections = useMemo(() => !is3d && showIntersections && visibleCurves.length > 1 ? findIntersections(visibleCurves, range, centerX, centerY) : { points: [], truncated: false }, [visibleCurves, range, centerX, centerY, is3d, showIntersections])
   const formatCoord = (v: number) => Math.abs(v) < range * 1e-8 ? '0' : Number(v.toPrecision(5)).toString()
-  const isParametric = /(?:^|\n|;|；)\s*\([^\n]*\bt\b/.test(input)
+  const hasParamRange = /(?:^|\n|;|；)\s*(?:\([^\n]*\bt\b|r\s*=)/i.test(input)
   const colors = ['var(--primary)', '#e35b49', '#199b73', '#ac70d4', '#dd9a26']
-  return <Dialog open={open} onOpenChange={onOpenChange} title="函数图像" description="输入函数、隐式方程、参数曲线或三维曲面。二维每行一条；三维单独绘制。" widthClass="w-[min(560px,94vw)]">
+
+  const viewRef = useRef({ range, centerX, centerY, is3d })
+  viewRef.current = { range, centerX, centerY, is3d }
+
+  // 非 passive 滚轮缩放：以指针所在坐标为中心进行缩放（使用 callback ref 以确保 Portal 挂载后立即绑定）
+  useEffect(() => {
+    if (!open || !svgEl) return
+    const onWheel = (e: WheelEvent) => {
+      const { range: r, centerX: cx, centerY: cy, is3d: d3 } = viewRef.current
+      if (d3) return
+      e.preventDefault()
+      e.stopPropagation()
+      const factor = Math.max(0.7, Math.min(1.4, Math.exp(e.deltaY * 0.002)))
+      const nextRange = Math.max(0.01, Math.min(10000, Number((r * factor).toPrecision(5))))
+      const coords = toSvgCoords(svgEl, e.clientX, e.clientY)
+      if (coords) {
+        const wx = cx + (coords.sx - 200) / 200 * r
+        const wy = cy + (200 - coords.sy) / 200 * r
+        setCenterX(Math.max(-1e6, Math.min(1e6, wx - (coords.sx - 200) / 200 * nextRange)))
+        setCenterY(Math.max(-1e6, Math.min(1e6, wy - (200 - coords.sy) / 200 * nextRange)))
+      }
+      setRange(nextRange)
+      setInspected(null)
+      setHoverPoint(null)
+    }
+    svgEl.addEventListener('wheel', onWheel, { passive: false })
+    return () => svgEl.removeEventListener('wheel', onWheel)
+  }, [open, svgEl])
+
+  const activePoint = hoverPoint ?? inspected
+  const axisLabelX = Math.min(352, Math.max(6, 205 - centerX / range * 200))
+  const axisLabelY = Math.min(388, Math.max(18, 215 + centerY / range * 200))
+
+  return <Dialog open={open} onOpenChange={onOpenChange} title="函数图像" description="输入函数、隐式方程、极坐标（r=...）、参数曲线或三维曲面。二维每行一条；三维单独绘制。" widthClass="w-[min(560px,94vw)]">
     <div className="flex flex-col gap-3">
-      <form className="flex gap-2" onSubmit={e => { e.preventDefault(); const a = Number(tStart), b = Number(tEnd); if (isParametric && (!tStart.trim() || !tEnd.trim() || !Number.isFinite(a) || !Number.isFinite(b) || a >= b)) { setError('请填写有效的参数范围，起点须小于终点'); return }; if (isParametric) setTRange([a, b]); setHidden(new Set()); setInspected(null); setExpression(input.trim()) }}>
-        <textarea aria-label="函数表达式" value={input} onChange={e => setInput(e.target.value)} placeholder={'例如：y=x^2、x^2+y^2=25\n参数曲线：(cos(t),sin(t))\n三维：z=sin(x)*cos(y) 或 (cos(t),sin(t),t)'} rows={2} className="min-w-0 flex-1 resize-y rounded-xl border border-outline bg-surface-2 px-3 py-2 text-base outline-none focus:border-primary" />
+      <form className="flex gap-2" onSubmit={e => { e.preventDefault(); const a = Number(tStart), b = Number(tEnd); if (hasParamRange && (!tStart.trim() || !tEnd.trim() || !Number.isFinite(a) || !Number.isFinite(b) || a >= b)) { setError('请填写有效的参数范围，起点须小于终点'); return }; if (hasParamRange) setTRange([a, b]); setHidden(new Set()); setInspected(null); setHoverPoint(null); setExpression(input.trim()) }}>
+        <textarea aria-label="函数表达式" value={input} onChange={e => setInput(e.target.value)} placeholder={'例如：y=x^2、x^2+y^2=25、r=2\\cos(\\theta)\n参数曲线：(cos(t),sin(t))\n三维：z=sin(x)*cos(y) 或 (cos(t),sin(t),t)'} rows={2} className="min-w-0 flex-1 resize-y rounded-xl border border-outline bg-surface-2 px-3 py-2 text-base outline-none focus:border-primary" />
         <Button type="submit" variant="primary" disabled={!input.trim()}>绘制</Button>
       </form>
-      {isParametric && <div className="flex items-center gap-2 text-sm text-on-surface-2"><span>参数 t</span><input aria-label="参数起点" type="number" value={tStart} onChange={e => setTStart(e.target.value)} className="w-24 min-w-0 rounded-lg border border-outline bg-surface px-2 py-1" /><span>至</span><input aria-label="参数终点" type="number" value={tEnd} onChange={e => setTEnd(e.target.value)} className="w-24 min-w-0 rounded-lg border border-outline bg-surface px-2 py-1" /></div>}
-      <div className="rounded-xl border border-outline bg-surface-2 overflow-hidden">
-        <svg viewBox="0 0 400 400" role="img" aria-label={`函数 ${expression} 的图像`} className="w-full max-h-[46vh]" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'none', cursor: 'grab' }}
+      {hasParamRange && <div className="flex items-center gap-2 text-sm text-on-surface-2"><span>参数 t / θ</span><input aria-label="参数起点" type="number" value={tStart} onChange={e => setTStart(e.target.value)} className="w-24 min-w-0 rounded-lg border border-outline bg-surface px-2 py-1" /><span>至</span><input aria-label="参数终点" type="number" value={tEnd} onChange={e => setTEnd(e.target.value)} className="w-24 min-w-0 rounded-lg border border-outline bg-surface px-2 py-1" /></div>}
+      <div className="relative rounded-xl border border-outline bg-surface-2 overflow-hidden">
+        {!is3d && activePoint && (
+          <div className="absolute left-2 top-2 z-10 pointer-events-none rounded-lg bg-surface/90 backdrop-blur border border-outline px-2 py-0.5 text-[11px] font-medium tabular-nums shadow-xs">
+            {activePoint.label}：({formatCoord(activePoint.x)}, {formatCoord(activePoint.y)})
+          </div>
+        )}
+        <svg ref={setSvgEl} viewBox="0 0 400 400" role="img" aria-label={`函数 ${expression} 的图像`} className="w-full max-h-[min(38dvh,300px)]" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'none', cursor: 'grab' }}
           onPointerDown={e => {
             e.currentTarget.setPointerCapture(e.pointerId)
             pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -150,11 +228,60 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             else if (pts.length === 2) gesture.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2, centerX, centerY, range, distance: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), pinch: true }
           }}
           onPointerMove={e => {
-            if (!pointers.current.has(e.pointerId)) return
+            if (!pointers.current.has(e.pointerId)) {
+              if (!is3d && pointers.current.size === 0 && !gesture.current) {
+                const coords = toSvgCoords(e.currentTarget, e.clientX, e.clientY)
+                if (coords) setHoverPoint(nearestCurvePoint(visibleCurves, range, coords.sx, coords.sy, centerX, centerY))
+              }
+              return
+            }
             pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-            if (is3d && drag.current) { const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y; drag.current = { x: e.clientX, y: e.clientY }; setYaw(v => v + dx * 0.01); setPitch(v => Math.max(-1.35, Math.min(1.35, v + dy * 0.01))) }
+            if (is3d && drag.current) {
+              const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y
+              drag.current = { x: e.clientX, y: e.clientY }
+              setYaw(v => v + dx * 0.01)
+              setPitch(v => Math.max(-1.35, Math.min(1.35, v + dy * 0.01)))
+              return
+            }
+            const state = gesture.current
+            const rect = e.currentTarget.getBoundingClientRect()
+            const size = Math.min(rect.width, rect.height)
+            if (!state || !(size > 0)) return
+            const pts = [...pointers.current.values()]
+            if (state.pinch && pts.length >= 2 && state.distance) {
+              const distance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+              const midX = (pts[0].x + pts[1].x) / 2, midY = (pts[0].y + pts[1].y) / 2
+              pendingView.current = {
+                range: distance > 1 ? Math.max(0.01, Math.min(10000, state.range * state.distance / distance)) : state.range,
+                centerX: Math.max(-1e6, Math.min(1e6, state.centerX - (midX - state.x) / size * 2 * state.range)),
+                centerY: Math.max(-1e6, Math.min(1e6, state.centerY + (midY - state.y) / size * 2 * state.range)),
+              }
+            } else if (!state.pinch && Math.hypot(e.clientX - state.x, e.clientY - state.y) > 3) {
+              pendingView.current = {
+                centerX: Math.max(-1e6, Math.min(1e6, state.centerX - (e.clientX - state.x) / size * 2 * state.range)),
+                centerY: Math.max(-1e6, Math.min(1e6, state.centerY + (e.clientY - state.y) / size * 2 * state.range)),
+              }
+            } else {
+              return
+            }
+            if (panRaf.current == null) {
+              panRaf.current = requestAnimationFrame(() => {
+                panRaf.current = null
+                const v = pendingView.current
+                if (!v) return
+                pendingView.current = null
+                if (v.range != null) setRange(v.range)
+                setCenterX(v.centerX)
+                setCenterY(v.centerY)
+                setInspected(null)
+                setHoverPoint(null)
+              })
+            }
           }}
+          onPointerLeave={() => { if (!pointers.current.size) setHoverPoint(null) }}
           onPointerUp={e => {
+            if (panRaf.current != null) { cancelAnimationFrame(panRaf.current); panRaf.current = null }
+            pendingView.current = null
             if (is3d) { pointers.current.delete(e.pointerId); drag.current = null; return }
             const state = gesture.current, rect = e.currentTarget.getBoundingClientRect(), size = Math.min(rect.width, rect.height)
             if (state && size > 0) {
@@ -182,7 +309,14 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             pointers.current.delete(e.pointerId)
             if (!pointers.current.size) gesture.current = null
             else if (gesture.current) gesture.current.pinch = true
-          }} onPointerCancel={e => { pointers.current.delete(e.pointerId); if (!pointers.current.size) gesture.current = null; drag.current = null }}>
+          }}
+          onPointerCancel={e => {
+            if (panRaf.current != null) { cancelAnimationFrame(panRaf.current); panRaf.current = null }
+            pendingView.current = null
+            pointers.current.delete(e.pointerId)
+            if (!pointers.current.size) gesture.current = null
+            drag.current = null
+          }}>
           {!is3d && <>
             {Array.from({ length: 9 }, (_, i) => (i + 1) * 40).map(n => <g key={n} stroke="var(--outline)" strokeWidth="0.6" opacity="0.6"><path d={`M${n} 0V400 M0 ${n}H400`} /></g>)}
             <path d={`M${200 - centerX / range * 200} 0V400 M0 ${200 + centerY / range * 200}H400`} stroke="var(--on-surface-2)" strokeWidth="1.2" />
@@ -203,13 +337,12 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             <circle cx={point.screenX} cy={point.screenY} r="5" fill="var(--surface)" stroke="var(--on-surface)" strokeWidth="2" />
             <text x={Math.min(386, Math.max(8, point.screenX + 7))} y={Math.min(394, Math.max(12, point.screenY - 7))} fill="var(--on-surface)" fontSize="12" fontWeight="700">{i + 1}</text>
           </g>)}
-          {!is3d && inspected && <g aria-label={`曲线坐标 ${formatCoord(inspected.x)}，${formatCoord(inspected.y)}`}><circle cx={inspected.screenX} cy={inspected.screenY} r="5" fill="var(--primary)" stroke="var(--surface)" strokeWidth="2" /></g>}
-          {!is3d && <g fill="var(--on-surface-2)" fontSize="11"><text x="4" y="194">{formatCoord(centerX - range)}</text><text x="350" y="215">{formatCoord(centerX + range)}</text><text x="205" y="15">{formatCoord(centerY + range)}</text><text x="205" y="394">{formatCoord(centerY - range)}</text></g>}
+          {!is3d && activePoint && <g aria-label={`曲线坐标 ${formatCoord(activePoint.x)}，${formatCoord(activePoint.y)}`}><circle cx={activePoint.screenX} cy={activePoint.screenY} r="5" fill="var(--primary)" stroke="var(--surface)" strokeWidth="2" /></g>}
+          {!is3d && <g fill="var(--on-surface-2)" fontSize="11"><text x="4" y={Math.min(392, Math.max(14, axisLabelY - 21))}>{formatCoord(centerX - range)}</text><text x="396" y={axisLabelY} textAnchor="end">{formatCoord(centerX + range)}</text><text x={axisLabelX} y="15">{formatCoord(centerY + range)}</text><text x={axisLabelX} y="394">{formatCoord(centerY - range)}</text></g>}
         </svg>
       </div>
-      {is3d && <div className="flex items-center gap-2 text-xs text-on-surface-2"><span>拖动旋转</span><Button variant="outline" aria-label="向左旋转" onClick={() => setYaw(v => v - Math.PI / 12)}>左转</Button><Button variant="outline" aria-label="向右旋转" onClick={() => setYaw(v => v + Math.PI / 12)}>右转</Button><Button variant="outline" aria-label="重置视角" onClick={() => { setYaw(-0.65); setPitch(0.65) }}>重置视角</Button></div>}
+      {is3d && <div className="flex items-center gap-2 text-xs text-on-surface-2 flex-wrap"><span>拖动旋转</span><Button variant="outline" aria-label="向左旋转" onClick={() => setYaw(v => v - Math.PI / 12)}>左转</Button><Button variant="outline" aria-label="向右旋转" onClick={() => setYaw(v => v + Math.PI / 12)}>右转</Button><Button variant="outline" aria-label="重置视角" onClick={() => { setYaw(-0.65); setPitch(0.65) }}>重置视角</Button></div>}
       {curves.length > 1 && <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">{curves.map((curve, i) => <button type="button" key={i} aria-pressed={!hidden.has(i)} onClick={() => { setHidden(previous => { const next = new Set(previous); if (next.has(i)) next.delete(i); else next.add(i); return next }); setInspected(null) }} style={{ color: colors[i % colors.length], opacity: hidden.has(i) ? .45 : 1 }}>{hidden.has(i) ? '○' : '●'} {curve.label}</button>)}</div>}
-      {!is3d && <p className="text-xs text-on-surface-2">拖动平移，双指缩放，点击曲线查看坐标{inspected ? `：${inspected.label} ≈ (${formatCoord(inspected.x)}, ${formatCoord(inspected.y)})` : ''}</p>}
       {!is3d && curves.length > 1 && <section aria-label="曲线交点" className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-on-surface-2">
         <button type="button" aria-pressed={showIntersections} onClick={() => setShowIntersections(v => !v)} className="font-medium text-on-surface">{showIntersections ? '隐藏交点' : '显示交点'}</button>
         {showIntersections && <>
@@ -217,10 +350,20 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
           {intersections.points.length > 0 ? <ol className="mt-1 max-h-28 overflow-y-auto space-y-1">{intersections.points.map((point, i) => <li key={`${point.first}-${point.second}-${i}`}><span className="font-medium text-on-surface">{i + 1}. ({formatCoord(point.x)}, {formatCoord(point.y)})</span> · {visibleCurves[point.first].label} / {visibleCurves[point.second].label}</li>)}</ol> : <p className="mt-1">未检测到交点</p>}
         </>}
       </section>}
-      <div className="flex items-center gap-2"><Button variant="outline" onClick={() => setRange(r => Math.max(0.01, r / 2))} disabled={busy || range <= 0.01}>放大</Button><Button variant="outline" onClick={() => setRange(r => Math.min(10000, r * 2))} disabled={busy || range >= 10000}>缩小</Button><span className="text-xs text-on-surface-2">范围 ±{range}</span>{!is3d && <Button variant="outline" onClick={() => { setCenterX(0); setCenterY(0); setInspected(null) }}>回到原点</Button>}</div>
-      {onInsert && <div className="flex justify-end"><Button variant="primary" disabled={busy || !!error || !curves.length} onClick={() => onInsert(expression, range, tRange[0], tRange[1], centerX, centerY, [...hidden])}>插入笔记</Button></div>}
       {busy && <p className="text-xs text-on-surface-2" role="status">正在绘图…</p>}
       {error && <p className="text-xs text-danger" role="alert">{error}</p>}
+      <div className="sticky bottom-0 -mx-5 -mb-5 mt-1 px-5 py-2.5 bg-surface border-t border-outline flex flex-col gap-2 z-10">
+        {!is3d && <p className="text-xs text-on-surface-2">拖动平移，滚轮/双指缩放，悬停或点击曲线查看坐标{activePoint ? `：${activePoint.label} ≈ (${formatCoord(activePoint.x)}, ${formatCoord(activePoint.y)})` : ''}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Button variant="outline" className="h-9 px-3" onClick={() => setRange(r => Math.max(0.01, r / 2))} disabled={busy || range <= 0.01}>放大</Button>
+            <Button variant="outline" className="h-9 px-3" onClick={() => setRange(r => Math.min(10000, r * 2))} disabled={busy || range >= 10000}>缩小</Button>
+            <span className="text-xs text-on-surface-2 tabular-nums">范围 ±{Number(range.toPrecision(4))}</span>
+            {!is3d && <Button variant="outline" className="h-9 px-3" onClick={() => { setCenterX(0); setCenterY(0); setInspected(null); setHoverPoint(null) }}>回到原点</Button>}
+          </div>
+          {onInsert && <Button variant="primary" className="h-9 px-4" disabled={busy || !!error || !curves.length} onClick={() => onInsert(expression, range, tRange[0], tRange[1], centerX, centerY, [...hidden])}>插入笔记</Button>}
+        </div>
+      </div>
     </div>
   </Dialog>
 }

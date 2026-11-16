@@ -54,9 +54,10 @@ function seed(s: SpecSeed): PhotoSpec {
 }
 
 /**
- * 内置预设（尺寸都是 300dpi 换算的像素）：
+ * 内置预设（尺寸都是 300dpi 换算的像素，社保卡为 350dpi）：
  * 一寸 25×35mm、二寸 35×49mm、小一寸 22×32mm、小二寸 35×45mm、
- * 大一寸 33×48mm、大二寸 35×53mm、身份证 26×32mm、美国签证 51×51mm。
+ * 大一寸 33×48mm、大二寸 35×53mm、身份证 26×32mm、美国签证 51×51mm、
+ * 大学英语四六级、教师资格证、公务员国考、社保卡、日本签证、申根签证。
  */
 export const BUILTIN_SPECS: PhotoSpec[] = [
   seed({ id: 'yicun', name: '一寸', width: 295, height: 413, minKb: 5, maxKb: 20, sheetCount: 8 }),
@@ -67,6 +68,12 @@ export const BUILTIN_SPECS: PhotoSpec[] = [
   seed({ id: 'daercun', name: '大二寸', width: px(35), height: px(53), minKb: 10, maxKb: 30, sheetCount: 4 }),
   seed({ id: 'shenfenzheng', name: '身份证', width: px(26), height: px(32), minKb: 5, maxKb: 15, sheetCount: 8 }),
   seed({ id: 'meiqian', name: '美国签证', width: px(51), height: px(51), minKb: 10, maxKb: 40, sheetCount: 2 }),
+  seed({ id: 'cet', name: '大学英语四六级', width: 240, height: 320, minKb: 5, maxKb: 30, sheetCount: 8 }),
+  seed({ id: 'jiaoshi', name: '教师资格证', width: 295, height: 413, minKb: 10, maxKb: 100, sheetCount: 8 }),
+  seed({ id: 'gongwuyuan', name: '公务员国考', width: 295, height: 413, minKb: 10, maxKb: 30, sheetCount: 8 }),
+  seed({ id: 'shebaoka', name: '社保卡', width: 358, height: 441, dpi: 350, minKb: 14, maxKb: 40, sheetCount: 6 }),
+  seed({ id: 'ribenqianzheng', name: '日本签证', width: px(45), height: px(45), minKb: 15, maxKb: 100, sheetCount: 2 }),
+  seed({ id: 'shengenqianzheng', name: '申根签证', width: px(35), height: px(45), minKb: 15, maxKb: 100, sheetCount: 4 }),
 ]
 
 /** 校验边界（写死上限是为了 JSON 手改出格时有明确报错而不是画出离谱的图） */

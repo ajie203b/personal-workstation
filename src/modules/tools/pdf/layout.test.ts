@@ -8,6 +8,7 @@ import {
   pageInfo,
   pageNumberRect,
   placementRect,
+  thumbRotScale,
   tileRects,
   visualRectToDraw,
   type VisualRect,
@@ -118,6 +119,49 @@ describe('水印 / 页码布局', () => {
       expect(r.x + r.w).toBeLessThanOrEqual(595.001)
       expect(r.y + r.h).toBeLessThanOrEqual(842.001)
     }
+  })
+
+  it('横屏 / 宽水印平铺不塌缩为 1×1，保持 >=2×2 网格且不越界', () => {
+    for (const [imgW, imgH] of [[390, 225], [500, 140], [320, 260]]) {
+      const rects = tileRects(842, 595, imgW, imgH)
+      expect(rects.length).toBeGreaterThanOrEqual(4)
+      const xs = new Set(rects.map(r => Math.round(r.x * 100)))
+      const ys = new Set(rects.map(r => Math.round(r.y * 100)))
+      expect(xs.size).toBeGreaterThanOrEqual(2)
+      expect(ys.size).toBeGreaterThanOrEqual(2)
+      for (const r of rects) {
+        expect(r.x).toBeGreaterThanOrEqual(-0.001)
+        expect(r.y).toBeGreaterThanOrEqual(-0.001)
+        expect(r.x + r.w).toBeLessThanOrEqual(842.001)
+        expect(r.y + r.h).toBeLessThanOrEqual(595.001)
+        expect(r.w / r.h).toBeCloseTo(imgW / imgH, 3)
+      }
+    }
+  })
+
+  it('超宽居中水印夹在页边距内，不裁切出界', () => {
+    const c = centerRect(595, 842, 900, 200, 18)
+    expect(c.x).toBeCloseTo(18, 3)
+    expect(c.x + c.w).toBeCloseTo(595 - 18, 3)
+    expect(c.w / c.h).toBeCloseTo(900 / 200, 3)
+    expect(c.y).toBeGreaterThanOrEqual(18)
+  })
+
+  it('thumbRotScale：90°/270° 旋转缩略图放进 3:4 容器不裁切斜角', () => {
+    expect(thumbRotScale(300, 400, 0)).toBe(1)
+    expect(thumbRotScale(300, 400, 180)).toBe(1)
+    const portrait90 = thumbRotScale(300, 400, 90, 3 / 4)
+    expect(portrait90).toBeLessThan(0.75)
+    // 旋转后视觉宽 = 1 * portrait90 <= 0.75，高 = 0.75 * portrait90 <= 1
+    expect(1 * portrait90).toBeLessThanOrEqual(0.75)
+    expect(0.75 * portrait90).toBeLessThanOrEqual(1)
+
+    const landFit = Math.min(0.75 / 400, 1 / 300)
+    const landW = 400 * landFit
+    const landH = 300 * landFit
+    const land90 = thumbRotScale(400, 300, 270, 3 / 4)
+    expect(landH * land90).toBeLessThanOrEqual(0.75)
+    expect(landW * land90).toBeLessThanOrEqual(1)
   })
 
   it('居中 / 四角 / 页码矩形', () => {

@@ -1,5 +1,6 @@
 import { compile } from '@cortex-js/compute-engine'
 import { getComputeEngine, normalizeLatex } from './compute'
+import { substituteVarsInLatex } from './latexNormalize'
 
 type BoxedExpr = NonNullable<ReturnType<ReturnType<typeof getComputeEngine>['parse']>>
 
@@ -37,8 +38,14 @@ function compileEvaluator(expr: BoxedExpr): (vars: Record<string, number>) => nu
   }
 }
 
-function prepareExpression(text: string): string {
-  return normalizeLatex(text).replace(/(?<![a-zA-Z\\])(sin|cos|tan|sqrt|ln|log)(?=\s*\()/g, '\\$1')
+function filterVars(variables: Record<string, number>, exclude: string[]): Record<string, number> {
+  return Object.fromEntries(Object.entries(variables).filter(([name]) => !exclude.includes(name)))
+}
+
+function prepareExpression(text: string, variables: Record<string, number> = {}): string {
+  const norm = normalizeLatex(text)
+  const sub = Object.keys(variables).length ? substituteVarsInLatex(norm, variables).latex : norm
+  return sub.replace(/(?<![a-zA-Z\\])(sin|cos|tan|sec|csc|cot|arcsin|arccos|arctan|sqrt|ln|log|abs|exp)(?=\s*\()/g, '\\$1')
 }
 
 /** 把常见的 y= / f(x)= 函数写法转换为表达式；不执行用户提供的代码。 */
@@ -48,10 +55,11 @@ export function sampleFunction(input: string, min: number, max: number, count: n
   if (!text || text.length > 300) throw new Error('请输入不超过 300 个字符的函数')
   text = text.replace(/^\s*(?:y|f\s*\(\s*x\s*\))\s*=/i, '')
   if (text.includes('=')) throw new Error('请输入 y=f(x) 形式的函数')
-  text = prepareExpression(text)
+  const subVars = filterVars(variables, ['x'])
+  text = prepareExpression(text, subVars)
   const ce = getComputeEngine()
   const parsed = ce.parse(text)
-  const expr = parsed?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x')))
+  const expr = parsed?.subs(subVars)
   if (!expr || !expr.isValid || expr.unknowns.some(s => s !== 'x')) throw new Error('无法识别函数，请检查表达式，只支持变量 x')
   const evaluate = compileEvaluator(expr)
   return Array.from({ length: count }, (_, i) => {
@@ -72,8 +80,8 @@ function sampleImplicit(text: string, min: number, max: number, count: number, v
   const parts = text.split('=')
   if (parts.length !== 2 || parts.some(p => !p.trim())) throw new Error('隐式方程需要一个等号，例如 x^2+y^2=25')
   const ce = getComputeEngine()
-  const expr = ce.parse(`(${prepareExpression(parts[0])})-(${prepareExpression(parts[1])})`)
-    ?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x' && name !== 'y')))
+  const subVars = filterVars(variables, ['x', 'y'])
+  const expr = ce.parse(`(${prepareExpression(parts[0], subVars)})-(${prepareExpression(parts[1], subVars)})`)?.subs(subVars)
   if (!expr || !expr.isValid || expr.unknowns.some(v => v !== 'x' && v !== 'y')) throw new Error('无法识别隐式方程，只支持变量 x 和 y')
   const evaluate = compileEvaluator(expr)
   const n = Math.min(72, Math.max(32, count - 1))
@@ -124,8 +132,8 @@ function parametricParts(text: string): string[] | null {
 function sampleParametric(label: string, parts: string[], count: number, tMin: number, tMax: number, variables: Record<string, number>): PlotCurve {
   if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMin >= tMax || Math.abs(tMin) > 1e6 || Math.abs(tMax) > 1e6) throw new Error('参数范围无效，请确保起点小于终点')
   const ce = getComputeEngine()
-  const subVars = Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 't'))
-  const expressions = parts.map(part => ce.parse(prepareExpression(part))?.subs(subVars))
+  const subVars = filterVars(variables, ['t'])
+  const expressions = parts.map(part => ce.parse(prepareExpression(part, subVars))?.subs(subVars))
   if (expressions.some(expr => !expr || !expr.isValid || expr.unknowns.some(v => v !== 't'))) throw new Error('参数方程只支持变量 t，例如 (cos(t), sin(t))')
   const evaluators = expressions.map(expr => compileEvaluator(expr!))
   const points = Array.from({ length: count }, (_, i): number[] | null => {
@@ -138,12 +146,34 @@ function sampleParametric(label: string, parts: string[], count: number, tMin: n
     : { kind: 'parametric', label, points: points as ([number, number] | null)[] }
 }
 
+/** 极坐标方程 r = f(θ) 转为参数点列 [r·cos(θ), r·sin(θ)] */
+function samplePolar(label: string, count: number, tMin: number, tMax: number, variables: Record<string, number>): PlotCurve {
+  if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMin >= tMax || Math.abs(tMin) > 1e6 || Math.abs(tMax) > 1e6) throw new Error('极角范围无效，请确保起点小于终点')
+  const rhs = label.replace(/^\s*r\s*=/i, '').trim()
+  if (!rhs || rhs.includes('=')) throw new Error('极坐标方程请输入 r=f(θ) 形式')
+  const withT = rhs.replace(/\\theta(?![a-zA-Z])|θ|\btheta\b/gi, ' t ')
+  const subVars = filterVars(variables, ['t', 'r', 'theta'])
+  const expr = getComputeEngine().parse(prepareExpression(withT, subVars))?.subs(subVars)
+  if (!expr || !expr.isValid || expr.unknowns.some(v => v !== 't')) throw new Error('极坐标方程只支持变量 θ 或 t，例如 r=2\\cos(\\theta)')
+  const evaluate = compileEvaluator(expr)
+  const points = Array.from({ length: count }, (_, i): [number, number] | null => {
+    const theta = tMin + (tMax - tMin) * i / (count - 1)
+    const radius = evaluate({ t: theta })
+    if (radius == null || !Number.isFinite(radius)) return null
+    const x = radius * Math.cos(theta)
+    const y = radius * Math.sin(theta)
+    return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null
+  })
+  return { kind: 'parametric', label, points }
+}
+
 function sampleSurface(label: string, min: number, max: number, variables: Record<string, number>): PlotCurve {
   const source = label.replace(/^\s*z\s*=/i, '')
   if (!source.trim() || source.includes('=')) throw new Error('三维曲面请输入 z=f(x,y)')
+  const subVars = filterVars(variables, ['x', 'y'])
   const expr = getComputeEngine()
-    .parse(prepareExpression(source))
-    ?.subs(Object.fromEntries(Object.entries(variables).filter(([name]) => name !== 'x' && name !== 'y')))
+    .parse(prepareExpression(source, subVars))
+    ?.subs(subVars)
   if (!expr || !expr.isValid || expr.unknowns.some(v => v !== 'x' && v !== 'y')) throw new Error('三维曲面只支持变量 x 和 y')
   const evaluate = compileEvaluator(expr)
   const n = 30
@@ -160,7 +190,7 @@ function sampleSurface(label: string, min: number, max: number, variables: Recor
   return { kind: 'surface', label, values }
 }
 
-/** 每行一条曲线：显函数或含 x、y 的隐式方程。 */
+/** 每行一条曲线：显函数、极坐标、参数曲线、隐式方程或三维曲面。 */
 export function sampleCurves(input: string, min: number, max: number, count: number, tMin = -Math.PI * 2, tMax = Math.PI * 2, variables: Record<string, number> = {}, centerX = 0, centerY = 0): PlotCurve[] {
   if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max || !Number.isInteger(count) || count < 2 || count > 1000) throw new Error('绘图范围无效')
   if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) throw new Error('绘图中心无效')
@@ -170,6 +200,7 @@ export function sampleCurves(input: string, min: number, max: number, count: num
   const curves = lines.map(label => {
     if (label.length > 300) throw new Error('每条曲线最多 300 个字符')
     if (/^\s*z\s*=/i.test(label)) return sampleSurface(label, min, max, variables)
+    if (/^\s*r\s*=/i.test(label)) return samplePolar(label, count, tMin, tMax, variables)
     const parts = parametricParts(label)
     if (parts) return sampleParametric(label, parts, count, tMin, tMax, variables)
     const prefix = label.match(/^\s*(?:y|f\s*\(\s*x\s*\))\s*=/i)

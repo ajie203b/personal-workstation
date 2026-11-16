@@ -9,7 +9,7 @@
  *   竖式（列竖式加减）笔画挨得近，会整体成一块交给识别模型。
  * 字高取全页笔画尺寸的中位数，避免受个别长横线（分数线、等号）影响。
  */
-import type { Box, InkBlock, InkPoint, Stroke } from './types'
+import type { Box, InkBlock, InkPoint, NoteGraph, Stroke } from './types'
 
 export const EMPTY_BOX: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
 
@@ -397,4 +397,206 @@ export function smoothAppend(points: InkPoint[], next: InkPoint, minDist = 0.8, 
 /** 笔宽随压感变化：0.6×~1.4× */
 export function pressureWidth(base: number, p: number): number {
   return base * (0.6 + 0.8 * Math.max(0, Math.min(1, p)))
+}
+
+export function boxesOverlap(a: Box, b: Box, pad = 2): boolean {
+  return a.minX < b.maxX + pad && a.maxX + pad > b.minX && a.minY < b.maxY + pad && a.maxY + pad > b.minY
+}
+
+export interface OverlayLayoutInput {
+  key: string
+  block: InkBlock
+  x: number
+  y: number
+  fontSize: number
+  placement: 'inline' | 'below'
+  answerWidth: number
+  hasChip: boolean
+  chipWidth: number
+}
+
+export interface OverlayLayoutOutput {
+  x: number
+  y: number
+  chipPos?: { x: number; y: number; above: boolean; maxWidth?: number }
+}
+
+/**
+ * 为多个算式块的「below」答案与 LaTeX 识别原文标签（chip）避让裁剪和重叠：
+ * - block.minY < 40 时 chip 不再向上溢出，改放到算式下方 / 右侧 / 左上内角；
+ * - 相邻块的 below 答案与下一块的 chip 碰撞时自动错位避让。
+ */
+export function layoutOverlayItems(
+  items: OverlayLayoutInput[],
+  viewWidth: number,
+  margin = 8,
+): Map<string, OverlayLayoutOutput> {
+  const out = new Map<string, OverlayLayoutOutput>()
+  if (!items.length) return out
+
+  const rightBound = viewWidth > 0 ? Math.max(160, viewWidth - margin) : Infinity
+  const chipH = 26
+  const strokeBoxes = items.map((it) => it.block.box)
+  const placedBoxes: Box[] = []
+  const collidesExtras = (box: Box) => placedBoxes.some((p) => boxesOverlap(box, p, 3))
+  const collidesOtherStrokes = (box: Box, self: Box) =>
+    strokeBoxes.some((s) => s !== self && boxesOverlap(box, s, 2))
+
+  for (const item of items) {
+    let ansX = item.x
+    let ansY = item.y
+    const ansW = Math.max(24, item.answerWidth)
+    const ansH = Math.max(24, item.fontSize * 1.15)
+    const ansBox = (cx: number, cy: number): Box => ({
+      minX: cx,
+      minY: item.placement === 'inline' ? cy - ansH / 2 : cy - item.fontSize / 2,
+      maxX: cx + Math.min(ansW, rightBound - cx),
+      maxY: (item.placement === 'inline' ? cy + ansH / 2 : cy - item.fontSize / 2 + ansH),
+    })
+
+    // 若 below 答案撞到前方已摆放的答案或 chip，适当错位
+    if (item.placement === 'below') {
+      let box = ansBox(ansX, ansY)
+      const hit = placedBoxes.find((p) => boxesOverlap(box, p, 3))
+      if (hit) {
+        const shiftedY = hit.maxY + 6 + item.fontSize / 2
+        const shiftedBox = ansBox(ansX, shiftedY)
+        if (!collidesOtherStrokes(shiftedBox, item.block.box)) {
+          ansY = shiftedY
+          box = shiftedBox
+        } else if (Number.isFinite(rightBound) && hit.maxX + 10 + ansW <= rightBound) {
+          ansX = hit.maxX + 10
+          box = ansBox(ansX, ansY)
+        }
+      }
+      placedBoxes.push(box)
+    } else {
+      placedBoxes.push(ansBox(ansX, ansY))
+    }
+
+    let chipPos: OverlayLayoutOutput['chipPos']
+    if (item.hasChip) {
+      const chipW = Math.min(Number.isFinite(rightBound) ? Math.max(80, rightBound - margin) : 260, Math.max(52, item.chipWidth))
+      const clampX = (rawX: number) =>
+        Number.isFinite(rightBound) ? Math.max(margin, Math.min(rawX, Math.max(margin, rightBound - chipW))) : Math.max(4, rawX)
+      const candidates: { x: number; y: number; above: boolean; box: Box }[] = []
+      const pushCand = (cx: number, cy: number, above: boolean) => {
+        const x = clampX(cx)
+        const y = Math.max(4, cy)
+        const box: Box = above
+          ? { minX: x, minY: Math.max(4, y - chipH), maxX: x + chipW, maxY: y }
+          : { minX: x, minY: y, maxX: x + chipW, maxY: y + chipH }
+        candidates.push({ x, y, above, box })
+      }
+
+      if (item.block.box.minY >= 40) {
+        pushCand(item.block.box.minX, item.block.box.minY - 6, true)
+      }
+      // 块右侧（非 inline 时通常空闲）
+      if (item.placement !== 'inline' && (!Number.isFinite(rightBound) || item.block.box.maxX + 10 + Math.min(chipW, 120) <= rightBound)) {
+        pushCand(item.block.box.maxX + 10, Math.max(4, item.block.box.minY), false)
+      }
+      // 块下方（非 below 时通常空闲）
+      if (item.placement !== 'below') {
+        pushCand(item.block.box.minX, item.block.box.maxY + 6, false)
+      }
+      // 水平错位（当上方与上一块 below 答案/chip 碰撞时）
+      if (item.block.box.minY >= 40) {
+        const baseAboveBox: Box = {
+          minX: clampX(item.block.box.minX),
+          minY: item.block.box.minY - 6 - chipH,
+          maxX: clampX(item.block.box.minX) + chipW,
+          maxY: item.block.box.minY - 6,
+        }
+        const hit = placedBoxes.find((p) => boxesOverlap(baseAboveBox, p, 3))
+        if (hit && (!Number.isFinite(rightBound) || hit.maxX + 10 + 72 <= rightBound)) {
+          pushCand(hit.maxX + 10, item.block.box.minY - 6, true)
+        }
+      }
+      // 紧邻右下错位或左上角兜底（绝不超出 top < 4）
+      pushCand(item.block.box.maxX + 10, item.block.box.maxY + 6, false)
+      pushCand(Math.max(4, item.block.box.minX), Math.max(4, item.block.box.minY), false)
+
+      const chosen =
+        candidates.find((c) => !collidesExtras(c.box) && !collidesOtherStrokes(c.box, item.block.box)) ??
+        candidates.find((c) => !collidesExtras(c.box)) ??
+        candidates[0]
+      placedBoxes.push(chosen.box)
+      chipPos = {
+        x: chosen.x,
+        y: chosen.y,
+        above: chosen.above,
+        maxWidth: Number.isFinite(rightBound) ? Math.max(96, rightBound - chosen.x) : undefined,
+      }
+    }
+
+    out.set(item.key, { x: ansX, y: ansY, chipPos })
+  }
+
+  return out
+}
+
+/**
+ * 为新插入的函数图像寻找不遮挡已有笔迹与图像的空位（优先源算式旁/下方，否则放在已有笔迹下方）。
+ */
+export function findGraphPlacement(
+  blocks: InkBlock[],
+  graphs: Pick<NoteGraph, 'x' | 'y' | 'width' | 'height'>[],
+  opts: { width: number; height: number; viewWidth: number; scrollY: number; sourceKey?: string },
+): { x: number; y: number } {
+  const margin = 16
+  const viewW = opts.viewWidth > 0 ? Math.max(opts.width + margin * 2, opts.viewWidth) : 1024
+  const obstacles: Box[] = [
+    ...blocks.map((b) => ({
+      minX: b.box.minX - 8,
+      minY: b.box.minY - 8,
+      maxX: b.box.maxX + 16,
+      maxY: b.box.maxY + 48,
+    })),
+    ...graphs.map((g) => ({
+      minX: g.x - 8,
+      minY: g.y - 8,
+      maxX: g.x + g.width + 8,
+      maxY: g.y + g.height + 8,
+    })),
+  ]
+
+  const isFree = (x: number, y: number) => {
+    const box: Box = { minX: x, minY: y, maxX: x + opts.width, maxY: y + opts.height }
+    return !obstacles.some((o) => boxesOverlap(box, o, 4))
+  }
+
+  if (opts.sourceKey) {
+    const src = blocks.find((b) => b.key === opts.sourceKey)
+    if (src) {
+      const rightX = src.box.maxX + 24
+      const rightY = Math.max(margin, src.box.minY)
+      if (rightX + opts.width <= viewW - margin && isFree(rightX, rightY)) {
+        return { x: rightX, y: rightY }
+      }
+      const belowX = Math.max(margin, Math.min(src.box.minX, viewW - opts.width - margin))
+      const belowY = src.box.maxY + 48
+      if (isFree(belowX, belowY)) return { x: belowX, y: belowY }
+    }
+  }
+
+  const baseY = Math.max(margin, opts.scrollY + margin)
+  if (!obstacles.length || isFree(margin, baseY)) return { x: margin, y: baseY }
+
+  const candidateYs = [...new Set([baseY, ...obstacles.map((o) => Math.max(margin, o.maxY + 12))])].sort((a, b) => a - b)
+  const candidateXs = [
+    margin,
+    ...graphs
+      .map((g) => g.x + g.width + 16)
+      .filter((x) => x + opts.width <= viewW - margin),
+  ]
+
+  for (const y of candidateYs) {
+    for (const x of candidateXs) {
+      if (isFree(x, y)) return { x, y }
+    }
+  }
+
+  const lowest = obstacles.reduce((m, o) => Math.max(m, o.maxY), baseY)
+  return { x: margin, y: Math.max(baseY, lowest + 16) }
 }

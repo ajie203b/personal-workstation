@@ -10,14 +10,14 @@ describe('NJUST 报告输入解析', () => {
     expect(parsed.blocks.some((b) => b.type === 'heading' && b.level === 2)).toBe(true)
   })
 
-  it('解析 GFM 表格、公式、图片和列表', () => {
+  it('解析 GFM 表格（含富文本/公式单元格）、公式、图片和列表', () => {
     const parsed = parseMarkdownSource([
       '# 题目',
       '段落里有 $x_i^2$ 和 **加粗**。',
       '',
       '| 项目 | 数值 |',
       '| --- | --- |',
-      '| A | 1 |',
+      '| **A** | `k` = $x^2$ |',
       '',
       '$$\\frac{a}{b}=c$$',
       '',
@@ -28,12 +28,44 @@ describe('NJUST 报告输入解析', () => {
     ].join('\n'))
     expect(parsed.stats.tables).toBe(1)
     expect(parsed.stats.images).toBe(1)
-    expect(parsed.stats.formulas).toBe(2)
+    expect(parsed.stats.formulas).toBe(3)
     expect(parsed.stats.lists).toBe(1)
-    const table = parsed.blocks.find((b) => b.type === 'table')
-    expect(table && table.type === 'table' ? table.rows[0] : null).toEqual(['A', '1'])
+    const table = parsed.blocks.find((b): b is Extract<Block, { type: 'table' }> => b.type === 'table')
+    expect(table?.rows[0]?.[0]).toEqual([{ type: 'text', text: 'A', bold: true }])
+    expect(table?.rows[0]?.[1]).toEqual([
+      { type: 'text', text: 'k', code: true },
+      { type: 'text', text: ' = ' },
+      { type: 'math', latex: 'x^2' },
+    ])
     const image = parsed.blocks.find((b) => b.type === 'image')
     expect(image && image.type === 'image' ? image.caption : null).toBe('图1-1 示例')
+  })
+
+  it('递归解析 Markdown 与纯文本嵌套列表（含 depth 与有序/无序混合）', () => {
+    const md = parseMarkdownSource([
+      '1. 一级有序',
+      '   - 二级无序甲',
+      '   - 二级无序乙',
+      '     1. 三级有序',
+      '2. 一级有序二',
+    ].join('\n'))
+    const mdList = md.blocks.find((b): b is Extract<Block, { type: 'list' }> => b.type === 'list')
+    expect(mdList?.items).toHaveLength(5)
+    expect(mdList?.items.map((i) => ({ depth: i.depth, ordered: i.ordered }))).toEqual([
+      { depth: 0, ordered: true },
+      { depth: 1, ordered: false },
+      { depth: 1, ordered: false },
+      { depth: 2, ordered: true },
+      { depth: 0, ordered: true },
+    ])
+
+    const txt = parseTextSource('1. 主条目\n  - 子条目\n    1. 孙条目')
+    const txtList = txt.blocks.find((b): b is Extract<Block, { type: 'list' }> => b.type === 'list')
+    expect(txtList?.items.map((i) => ({ depth: i.depth, ordered: i.ordered }))).toEqual([
+      { depth: 0, ordered: true },
+      { depth: 1, ordered: false },
+      { depth: 2, ordered: true },
+    ])
   })
 
   it('把表格前的表题移作题注', () => {

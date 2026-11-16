@@ -13,11 +13,15 @@ export interface InkPoint {
   t: number
 }
 
+export type AngleMode = 'rad' | 'deg'
+
 export interface Stroke {
   id: string
   points: InkPoint[]
   /** 笔宽基准（CSS 像素），压感在此基础上缩放 */
   width: number
+  /** 墨迹颜色标识（auto / blue / red / green 或 CSS 颜色；缺省为自适应主题前景色） */
+  color?: string
 }
 
 export interface Box {
@@ -60,6 +64,8 @@ export interface ComputeResult {
   alt?: string
   /** 失败原因（kind=error 时） */
   message?: string
+  /** 变量赋值已注册时展示的轻量标识（如 ✓ = 10） */
+  assigned?: { name: string; value: string }
 }
 
 /** 一个块的识别状态（存盘时一起存，下次打开不必重跑模型） */

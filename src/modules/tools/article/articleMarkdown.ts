@@ -1,5 +1,6 @@
 import TurndownService from 'turndown'
 import { gfm } from 'turndown-plugin-gfm'
+import { stripDuplicateLeadingHeading } from './articleParse'
 
 /**
  * 正文 HTML → Markdown（v3.3 文章离线）。
@@ -40,10 +41,17 @@ function buildTurndown(): TurndownService {
 
 /** 文首信息块 + 正文 */
 export function buildArticleMarkdown(input: MarkdownInput): string {
+  const title = input.title.trim() || '无标题文章'
   const td = buildTurndown()
-  const body = td.turndown(input.contentHtml || '').trim()
+  let html = input.contentHtml || ''
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    stripDuplicateLeadingHeading(doc.body, title)
+    html = doc.body.innerHTML
+  }
+  const body = td.turndown(html).trim()
 
-  const header: string[] = [`# ${input.title.trim() || '无标题文章'}`, '']
+  const header: string[] = [`# ${title}`, '']
   header.push(`> 来源：${input.sourceUrl || '（粘贴内容，无来源链接）'}`)
   if (input.byline) header.push(`> 作者：${input.byline}`)
   header.push(`> 抓取时间：${formatCapturedAt(input.capturedAt)}`)

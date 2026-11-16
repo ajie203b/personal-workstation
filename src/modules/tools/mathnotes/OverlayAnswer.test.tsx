@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OverlayAnswer } from './MathNotesPage'
+import { LassoSelectionOverlay, ModelStatusBanner } from './MathNotesOverlay'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -103,4 +104,117 @@ it('按需显示模式不提前展示答案，点击后请求显示；关闭模�
   act(() => btn.click()); expect(reveal).toHaveBeenCalledOnce()
   act(() => root!.render(<OverlayAnswer item={item} showLatex={false} mode="off" onOpen={() => {}} onRetry={() => {}} onMeasure={() => {}} />))
   expect(el.textContent).not.toContain('3')
+})
+
+describe('OverlayAnswer / LassoSelectionOverlay / ModelStatusBanner P0-P1 升级', () => {
+  it('计算结果使用暖琥珀色对比色，识别原文显示规范化后的 LaTeX', () => {
+    const el = render(
+      <OverlayAnswer
+        item={{
+          key: 'k1',
+          block,
+          res: { key: 'k1', recognized: '3\\textsc x+1=7', result: { kind: 'inline', latex: '2', text: '2' } },
+          x: 210,
+          y: 40,
+          fontSize: 38,
+          placement: 'inline',
+        }}
+        showLatex
+        onOpen={() => {}}
+        onRetry={() => {}}
+        onMeasure={() => {}}
+      />,
+    )
+    const answerBtn = el.querySelector<HTMLButtonElement>('button[title="点击修改"]')!
+    expect(answerBtn.className).toContain('text-[#B45309]')
+    expect(answerBtn.className).toContain('dark:text-[#FBBF24]')
+    const chipBtn = el.querySelector<HTMLButtonElement>('button[title="点击修改识别结果"]')!
+    expect(chipBtn.textContent).not.toContain('\\textsc')
+    expect(chipBtn.textContent).toContain('3x')
+  })
+
+  it('顶部块（minY < 40）的 latexChip 与套索工具栏均向下展示以免被裁剪', () => {
+    const topBlock = { key: 'top', strokeIds: ['a'], box: { minX: 20, minY: 12, maxX: 180, maxY: 48 } }
+    const el = render(
+      <>
+        <OverlayAnswer
+          item={{
+            key: 'top',
+            block: topBlock,
+            res: { key: 'top', recognized: '1+2=', result: { kind: 'inline', latex: '3', text: '3' } },
+            x: 190,
+            y: 30,
+            fontSize: 36,
+            placement: 'inline',
+          }}
+          showLatex
+          onOpen={() => {}}
+          onRetry={() => {}}
+          onMeasure={() => {}}
+        />
+        <LassoSelectionOverlay
+          selectionBox={topBlock.box}
+          strokesRef={{ current: [] }}
+          selectionDrag={{ current: null }}
+          selected={[]}
+          pushAction={() => {}}
+          afterChange={() => {}}
+          bump={() => {}}
+          onScale={() => {}}
+          onCopy={() => {}}
+          onDelete={() => {}}
+        />
+      </>,
+    )
+    const chipBtn = el.querySelector<HTMLButtonElement>('button[title="点击修改识别结果"]')!
+    expect(parseFloat(chipBtn.style.top)).toBeGreaterThan(topBlock.box.maxY)
+    const lassoBar = el.querySelector<HTMLButtonElement>('button[aria-label="缩小选中笔迹"]')!.parentElement!
+    expect(lassoBar.style.top).toBe('calc(100% + 8px)')
+  })
+
+  it('待识别块在模型加载期间直接显示「手动输入」入口，变量定义展示 ✓=val 徽标，模型条可收起', () => {
+    const manual = vi.fn()
+    const el = render(
+      <>
+        <OverlayAnswer
+          item={{ key: 'p1', block, res: null, pending: true, x: 210, y: 40, fontSize: 36, placement: 'inline' }}
+          showLatex={false}
+          onOpen={() => {}}
+          onRetry={() => {}}
+          onManual={manual}
+          onMeasure={() => {}}
+        />
+        <OverlayAnswer
+          item={{
+            key: 'v1',
+            block,
+            res: { key: 'v1', recognized: 'price=10', result: { kind: 'none', latex: '', text: '', assigned: { name: 'price', value: '10' } } },
+            x: 210,
+            y: 100,
+            fontSize: 36,
+            placement: 'inline',
+          }}
+          showLatex={false}
+          onOpen={() => {}}
+          onRetry={() => {}}
+          onMeasure={() => {}}
+        />
+        <ModelStatusBanner
+          model={{ phase: 'loading', ratio: 0.4, file: 'encoder.onnx' }}
+          percent={40}
+          recognizing={0}
+          onOpenSettings={() => {}}
+          onRetryModel={() => {}}
+        />
+      </>,
+    )
+    const manualBtn = el.querySelector<HTMLButtonElement>('button[aria-label="手动输入算式"]')!
+    act(() => manualBtn.click())
+    expect(manual).toHaveBeenCalledOnce()
+    expect(el.textContent).toContain('✓ = 10')
+
+    const closeBtn = el.querySelector<HTMLButtonElement>('button[aria-label="收起模型下载提示"]')!
+    act(() => closeBtn.click())
+    expect(el.textContent).not.toContain('正在下载识别模型')
+  })
 })

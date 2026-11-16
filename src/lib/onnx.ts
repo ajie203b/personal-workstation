@@ -130,6 +130,7 @@ class InlineOnnxRunner {
     if (!this.ort) {
       const ort = await import('onnxruntime-web')
       ort.env.wasm.numThreads = 1
+      ort.env.logLevel = 'error'
       this.ort = ort
     }
     return this.ort

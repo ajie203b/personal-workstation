@@ -64,3 +64,24 @@ it('选中易混淆字符时提供候选并只替换该字符', async () => {
   await act(async () => candidate!.click())
   expect(input.value).toBe('10+2=')
 })
+
+it('提供快捷 LaTeX 模板芯片并支持 Ctrl/Cmd + Enter 提交', async () => {
+  const host = document.createElement('div'); document.body.appendChild(host)
+  const root = createRoot(host); cleanup = () => { act(() => root.unmount()); host.remove() }
+  const submit = vi.fn()
+  const block = { key: 'a', recognized: '', result: { kind: 'none' as const, latex: '', text: '' } }
+  await act(async () => root.render(<MathEditorDialog open block={block} busy={false} onOpenChange={() => {}} onSubmit={submit} onReset={() => {}} />))
+  const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="识别结果"]')!
+
+  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="插入分数"]')!.click())
+  expect(input.value).toBe('\\frac{}{}')
+  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="插入圆周率"]')!.click())
+  expect(input.value).toContain('\\pi')
+  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="插入矩阵"]')!.click())
+  expect(input.value).toContain('\\begin{pmatrix}')
+
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', ctrlKey: true }))
+  })
+  expect(submit).toHaveBeenCalledTimes(1)
+})

@@ -12,7 +12,7 @@ export async function fileToDataUrl(file: File, maxEdge = 1600): Promise<string>
       r.readAsDataURL(file)
     })
 
-  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml' || file.size <= 300 * 1024) {
+  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml' || (file.type === 'image/gif' && file.size <= 5 * 1024 * 1024) || file.size <= 300 * 1024) {
     return readAsDataUrl()
   }
 

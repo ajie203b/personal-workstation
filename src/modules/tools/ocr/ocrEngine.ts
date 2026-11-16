@@ -5,7 +5,7 @@
  * 模型走 lib/modelCache 的镜像回退与 Cache Storage 缓存，推理走 lib/onnx 的
  * WebGPU→WASM 降级 Worker。
  */
-import { getModel, type ModelSpec } from '@/lib/modelCache'
+import { deleteModel, getModel, type ModelSpec } from '@/lib/modelCache'
 import { getOnnxRunner, type TensorData } from '@/lib/onnx'
 import {
   DEFAULT_DB_OPTIONS,
@@ -13,15 +13,14 @@ import {
   cropRgba,
   ctcGreedyDecode,
   dedupeQuads,
+  extractRecStrip,
   parseCharset,
   planDetTiles,
-  recStripSize,
   resizeRgba,
   scaleQuad,
   sortByReadingOrder,
   toDetTensor,
   toRecTensor,
-  warpQuadRgba,
   type DbPostOptions,
   type Quad,
 } from './ocrPipeline'
@@ -103,6 +102,14 @@ export interface OcrResult {
   height: number
 }
 
+let cachedCharset: string[] | null = null
+
+function looksCorruptedOnnx(buf: ArrayBuffer): boolean {
+  if (buf.byteLength < 10_000) return true
+  const head = new Uint8Array(buf, 0, Math.min(8, buf.byteLength))
+  return head[0] === 0x3c || head[0] === 0x7b
+}
+
 /** 下载 det/rec/字典三个资产，进度归一到 0~1 */
 async function loadAssets(onProgress?: (ratio: number) => void): Promise<{ det: ArrayBuffer; rec: ArrayBuffer; charset: string[] }> {
   const specs = [MODEL_SPEC.det, MODEL_SPEC.rec, MODEL_SPEC.dict]
@@ -115,8 +122,38 @@ async function loadAssets(onProgress?: (ratio: number) => void): Promise<{ det: 
     buffers.push(buf)
     onProgress?.((i + 1) / specs.length)
   }
-  const charset = parseCharset(new TextDecoder().decode(buffers[2]))
+  let charset = parseCharset(new TextDecoder().decode(buffers[2]))
+  if (charset.length < 100) {
+    await deleteModel(MODEL_SPEC.dict.id, MODEL_SPEC.dict.version).catch(() => undefined)
+    const freshDict = await getModel({ ...MODEL_SPEC.dict })
+    charset = parseCharset(new TextDecoder().decode(freshDict))
+  }
+  cachedCharset = charset
   return { det: buffers[0], rec: buffers[1], charset }
+}
+
+async function prepareWithRecovery(
+  runner: ReturnType<typeof getOnnxRunner>,
+  key: string,
+  spec: Omit<ModelSpec, 'onProgress'>,
+  buf: ArrayBuffer,
+): Promise<void> {
+  if (!looksCorruptedOnnx(buf)) {
+    try {
+      await runner.prepare(key, buf)
+      return
+    } catch {
+      // 建会话失败，往下清理坏缓存后重拉
+    }
+  }
+  if ('drop' in runner && typeof runner.drop === 'function') {
+    await runner.drop(key).catch(() => undefined)
+  } else {
+    runner.dispose()
+  }
+  await deleteModel(spec.id, spec.version).catch(() => undefined)
+  const fresh = await getModel({ ...spec })
+  await runner.prepare(key, fresh)
 }
 
 function firstOutput(outputs: Record<string, TensorData>): TensorData {
@@ -126,18 +163,31 @@ function firstOutput(outputs: Record<string, TensorData>): TensorData {
 }
 
 /**
- * OCR 主管线：预处理 → 检测 → DB 后处理 → 阅读顺序 → 逐框透视裁剪 → 识别 → CTC 解码。
- * 输入是 RGBA 像素（主线程解码好传进来），输出每行文本 + 四点框 + 置信度。
+ * OCR 主管线：预处理 → 检测 → DB 后处理 → 阅读顺序 → 逐框透视裁剪（竖排自动 90° 转正）→ 识别 → CTC 解码。
+ * 复用热 Worker 内的已准备会话；建会话失败时自动清坏缓存重试。
  */
 export async function runOcr(image: { data: Uint8ClampedArray; width: number; height: number }, options: RunOcrOptions = {}): Promise<OcrResult> {
   const { onProgress, signal } = options
-  onProgress?.({ phase: 'download', ratio: 0 })
-  const assets = await loadAssets((ratio) => onProgress?.({ phase: 'download', ratio }))
-  if (signal?.aborted) throw new DOMException('已取消', 'AbortError')
-
   const runner = getOnnxRunner()
-  await runner.prepare('ppocr-det', assets.det)
-  await runner.prepare('ppocr-rec', assets.rec)
+  const hasWarmSessions =
+    'provider' in runner &&
+    typeof runner.provider === 'function' &&
+    Boolean(runner.provider('ppocr-det')) &&
+    Boolean(runner.provider('ppocr-rec')) &&
+    Boolean(cachedCharset)
+
+  let charset: string[]
+  if (hasWarmSessions && cachedCharset) {
+    charset = cachedCharset
+  } else {
+    onProgress?.({ phase: 'download', ratio: 0 })
+    const assets = await loadAssets((ratio) => onProgress?.({ phase: 'download', ratio }))
+    if (signal?.aborted) throw new DOMException('已取消', 'AbortError')
+    await prepareWithRecovery(runner, 'ppocr-det', MODEL_SPEC.det, assets.det)
+    await prepareWithRecovery(runner, 'ppocr-rec', MODEL_SPEC.rec, assets.rec)
+    charset = assets.charset
+  }
+
   onProgress?.({ phase: 'infer', ratio: 0.05 })
   if (signal?.aborted) throw new DOMException('已取消', 'AbortError')
 
@@ -168,26 +218,25 @@ export async function runOcr(image: { data: Uint8ClampedArray; width: number; he
   }
   const quads = tiles.length > 1 ? dedupeQuads(allQuads) : allQuads
 
-  // 3. 阅读顺序：按 y 分行、行内按 x
+  // 3. 阅读顺序：多栏 XY-cut + 按 y 分行、行内按 x
   const ordered = sortByReadingOrder(quads)
 
-  // 4. 逐框透视裁剪 → 识别 → CTC 贪心解码
+  // 4. 逐框透视裁剪（竖排框逆时针旋转 90°）→ 识别 → CTC 贪心解码
   const lines: OcrLine[] = []
   for (let i = 0; i < ordered.length; i++) {
     if (signal?.aborted) throw new DOMException('已取消', 'AbortError')
     const quad = ordered[i]
-    const size = recStripSize(quad)
-    const strip = warpQuadRgba(image.data, image.width, image.height, quad, size.width, size.height)
-    const recInput = toRecTensor(strip, size.width, size.height)
+    const strip = extractRecStrip(image.data, image.width, image.height, quad)
+    const recInput = toRecTensor(strip.data, strip.width, strip.height)
     const recOut = await runner.run('ppocr-rec', {
-      x: { type: 'float32', data: recInput, dims: [1, 3, size.height, size.width] },
+      x: { type: 'float32', data: recInput, dims: [1, 3, strip.height, strip.width] },
     })
     const recMap = firstOutput(recOut)
     const probs = recMap.data as Float32Array
     // rec 输出 [1, T, classes]
     const classes = recMap.dims[recMap.dims.length - 1] ?? probs.length
     const timeSteps = recMap.dims[recMap.dims.length - 2] ?? Math.floor(probs.length / classes)
-    const { text, confidence } = ctcGreedyDecode(probs, timeSteps, classes, assets.charset)
+    const { text, confidence } = ctcGreedyDecode(probs, timeSteps, classes, charset)
     if (text.trim()) lines.push({ text, box: quad, confidence })
     onProgress?.({ phase: 'infer', ratio: 0.25 + (0.75 * (i + 1)) / ordered.length })
   }

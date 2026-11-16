@@ -149,9 +149,15 @@ export interface InkContext {
 
 export const INK_COLOR = '#1c1c1e'
 
+export const INK_COLORS = [
+  { value: '#1c1c1e', label: '黑色' },
+  { value: '#1D4ED8', label: '蓝色' },
+  { value: '#DC2626', label: '红色' },
+] as const
+
 /** 画一段 */
-export function drawSegment(ctx: InkContext, seg: WidthSegment): void {
-  ctx.strokeStyle = INK_COLOR
+export function drawSegment(ctx: InkContext, seg: WidthSegment, color = INK_COLOR): void {
+  ctx.strokeStyle = color
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   ctx.lineWidth = seg.width
@@ -162,18 +168,18 @@ export function drawSegment(ctx: InkContext, seg: WidthSegment): void {
 }
 
 /** 画一个落笔点 */
-export function drawDot(ctx: InkContext, p: { x: number; y: number }): void {
-  ctx.fillStyle = INK_COLOR
+export function drawDot(ctx: InkContext, p: { x: number; y: number }, color = INK_COLOR): void {
+  ctx.fillStyle = color
   ctx.beginPath()
   ctx.arc(p.x, p.y, PEN_DOT_RADIUS, 0, Math.PI * 2)
   ctx.fill()
 }
 
 /** 整笔重绘（导出 / 画板尺寸变化后重绘用），坐标系由调用方的 transform 决定 */
-export function drawStrokes(ctx: InkContext, strokes: StrokePoint[][]): void {
+export function drawStrokes(ctx: InkContext, strokes: StrokePoint[][], color = INK_COLOR): void {
   for (const s of strokes) {
     if (!s.length) continue
-    drawDot(ctx, s[0])
-    for (const seg of strokeSegments(s)) drawSegment(ctx, seg)
+    drawDot(ctx, s[0], color)
+    for (const seg of strokeSegments(s)) drawSegment(ctx, seg, color)
   }
 }

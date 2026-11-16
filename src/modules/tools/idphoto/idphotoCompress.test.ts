@@ -48,12 +48,14 @@ describe('compressJpegToKb', () => {
     expect(res.bytes).toBeLessThanOrEqual(20 * 1024)
     expect(res.bytes).toBeGreaterThanOrEqual(5 * 1024)
     expect(res.quality).toBeGreaterThanOrEqual(0.4)
-    expect(res.quality).toBeLessThanOrEqual(0.95)
+    expect(res.quality).toBeLessThanOrEqual(1.0)
     expect(res.shrinks).toBe(0)
+    expect(res.belowMinKb).toBe(false)
+    expect(res.shrunkSize).toBe(false)
     expect(res.width).toBe(295)
   })
 
-  it('质量到下限仍超 maxKb → 缩尺寸再来', async () => {
+  it('质量到下限仍超 maxKb → 缩尺寸再来，并标记 shrunkSize', async () => {
     // 0.4 质量就 100KB，上限 20KB：必须缩尺寸
     const res = await compressJpegToKb(mockEncoder(200 * 1024), {
       minKb: 5,
@@ -62,20 +64,23 @@ describe('compressJpegToKb', () => {
       height: 413,
     })
     expect(res.shrinks).toBeGreaterThan(0)
+    expect(res.shrunkSize).toBe(true)
     expect(res.width).toBeLessThan(295)
     expect(res.height).toBeLessThan(413)
     expect(res.bytes).toBeLessThanOrEqual(20 * 1024)
   })
 
-  it('低于下限会提高质量（0.8 基准太小 → 顶到 0.95）', async () => {
-    // 0.8 质量才 2KB，远低于下限 5KB → 质量拉满也进不了下限，但应返回最高质量
+  it('低于下限会提高质量（0.8 基准太小 → 顶到 1.0，并诚实标记 belowMinKb）', async () => {
+    // 0.8 质量才 2KB，远低于下限 5KB → 质量拉满 1.0 也进不了下限，返回最高质量并诚实标出
     const res = await compressJpegToKb(mockEncoder(2 * 1024), {
       minKb: 5,
       maxKb: 20,
       width: 295,
       height: 413,
     })
-    expect(res.quality).toBe(0.95)
+    expect(res.quality).toBe(1.0)
+    expect(res.belowMinKb).toBe(true)
+    expect(res.shrunkSize).toBe(false)
     expect(res.bytes).toBeLessThanOrEqual(20 * 1024)
   })
 

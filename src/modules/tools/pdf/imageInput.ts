@@ -77,16 +77,51 @@ function tiffOrientation(t: Uint8Array, base: number): number {
   return 0
 }
 
-async function bitmapToJpeg(bitmap: ImageBitmap, quality = 0.92): Promise<Uint8Array> {
+const EXT_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+}
+
+/** 优先读 file.type，为空时按文件扩展名回退推断 MIME 类型。 */
+export function inferImageMime(file: Pick<File, 'type' | 'name'>): string {
+  const mime = file.type.trim().toLowerCase()
+  if (mime) return mime
+  const ext = /\.([a-z0-9]+)$/i.exec(file.name)?.[1]?.toLowerCase()
+  return ext ? EXT_MIME[ext] ?? '' : ''
+}
+
+/** 将位图按指定 90° 倍数顺时针旋转后绘制到 canvas 并导出为 PNG 或白底 JPEG。 */
+export async function renderBitmapToBytes(
+  bitmap: ImageBitmap,
+  opts: { kind: 'jpeg' | 'png'; rotation?: number; quality?: number },
+): Promise<{ bytes: Uint8Array; width: number; height: number }> {
+  const rot = (((opts.rotation ?? 0) % 360) + 360) % 360
+  const swapped = rot === 90 || rot === 270
+  const width = swapped ? bitmap.height : bitmap.width
+  const height = swapped ? bitmap.width : bitmap.height
   const canvas = document.createElement('canvas')
-  canvas.width = bitmap.width
-  canvas.height = bitmap.height
+  canvas.width = width
+  canvas.height = height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('当前环境不支持 canvas，无法转换图片')
-  ctx.drawImage(bitmap, 0, 0)
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
-  if (!blob) throw new Error('图片转 JPEG 失败')
-  return new Uint8Array(await blob.arrayBuffer())
+  if (opts.kind === 'jpeg') {
+    // 非 PNG 透明图（WebP/GIF/SVG）转 JPEG 时先铺白底，防止透明区域变黑
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
+  }
+  ctx.translate(width / 2, height / 2)
+  if (rot) ctx.rotate((rot * Math.PI) / 180)
+  ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2)
+  const mime = opts.kind === 'png' ? 'image/png' : 'image/jpeg'
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, opts.quality ?? 0.92))
+  if (!blob) throw new Error(`图片转 ${opts.kind.toUpperCase()} 失败`)
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), width, height }
 }
 
 async function decode(file: File, imageOrientation: 'from-image' | 'none'): Promise<ImageBitmap> {
@@ -98,29 +133,36 @@ async function decode(file: File, imageOrientation: 'from-image' | 'none'): Prom
   }
 }
 
-/** 单张图片 → 嵌入素材（转正 + 必要时重编码） */
-export async function fileToEmbeddedImage(file: File): Promise<EmbeddedImage> {
+/** 单张图片 → 嵌入素材（转正 + 按需旋转 + 必要时白底重编码） */
+export async function fileToEmbeddedImage(file: File, rotation = 0): Promise<EmbeddedImage> {
   const raw = new Uint8Array(await file.arrayBuffer())
-  const type = file.type.toLowerCase()
+  const type = inferImageMime(file)
+  const rot = (((rotation % 360) + 360) % 360)
 
   if (type === 'image/png') {
     const bmp = await decode(file, 'from-image')
-    const size = { width: bmp.width, height: bmp.height }
-    bmp.close?.()
-    return { bytes: raw, kind: 'png', ...size }
+    try {
+      if (rot === 0) return { bytes: raw, kind: 'png', width: bmp.width, height: bmp.height }
+      const rendered = await renderBitmapToBytes(bmp, { kind: 'png', rotation: rot })
+      return { ...rendered, kind: 'png' }
+    } finally {
+      bmp.close?.()
+    }
   }
 
   const oriented = await decode(file, 'from-image')
-  const width = oriented.width
-  const height = oriented.height
+  try {
+    const width = oriented.width
+    const height = oriented.height
 
-  if (type === 'image/jpeg' && readJpegOrientation(raw) <= 1) {
-    // 没有方向信息：原图直贴保画质
+    if (type === 'image/jpeg' && rot === 0 && readJpegOrientation(raw) <= 1) {
+      // 没有方向信息且未手动旋转：原图直贴保画质
+      return { bytes: raw, kind: 'jpeg', width, height }
+    }
+
+    const rendered = await renderBitmapToBytes(oriented, { kind: 'jpeg', rotation: rot })
+    return { ...rendered, kind: 'jpeg' }
+  } finally {
     oriented.close?.()
-    return { bytes: raw, kind: 'jpeg', width, height }
   }
-
-  const bytes = await bitmapToJpeg(oriented)
-  oriented.close?.()
-  return { bytes, kind: 'jpeg', width, height }
 }

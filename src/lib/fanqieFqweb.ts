@@ -1,20 +1,32 @@
 import { isNative, isTauri } from './native'
 import { BROWSER_UA, LOCAL_PROXY, httpText } from './http'
 import type { FanqieBookInfo, FanqieChapterMeta, FanqieRef } from './fanqie'
-import { chapterHtmlToText, decodeHtmlEntities } from './fanqie'
+import {
+  chapterHtmlToText,
+  decodeHtmlEntities,
+  parseBookPage,
+  parseChapterJson,
+  parseChapterPage,
+  parseDirectoryJson,
+} from './fanqie'
 import { decodeFanqieText, hasUnknownFanqieGlyphs } from './fanqieFont'
 
 /**
- * 正文/目录来自公开的 FQWeb 节点（番茄 App 协议服务）。
- * 公共节点可用性会变化。搜索同时参考 FQWeb 和 Bing 对番茄书籍页面的索引。
+ * 正文/目录优先来自公开的 FQWeb 节点（番茄 App 协议服务），失败时回退官网 SSR / 目录接口。
+ * 公共节点可用性会变化，用户也可配置自定义 FQWeb 节点；搜索同时参考 FQWeb 与搜索引擎索引。
  */
-const FQWEB_BASES = [
+export const FQWEB_BASES = [
   'https://fq-book.nat.netsite.cc:8043',
   'https://fq-book.netsite.cc',
-]
+] as const
+
+const CUSTOM_NODE_KEY = 'kairos:fqweb-node-url'
 const BING_SEARCH = 'https://cn.bing.com/search'
 const FANQIE_SITE = 'https://fanqienovel.com'
 const SEARCH_TIMEOUT = 5_000
+
+export const FANQIE_WEB_CORS_HINT =
+  '网页版受浏览器跨域限制，请使用 Kairos 桌面/安卓版，或在本机运行跨域代理 127.0.0.1:8787'
 
 export type FqwebErrorCode =
   | 'UNAVAILABLE'
@@ -51,17 +63,99 @@ export interface FqwebChapterContent {
   unknownGlyphs: boolean
 }
 
-/* ---------------- 基础请求 ---------------- */
+export interface FqwebNodeTestResult {
+  ok: boolean
+  base: string
+  latencyMs: number
+  message: string
+}
+
+/* ---------------- 自定义节点管理 ---------------- */
+
+export function normalizeFqwebBase(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  let url: URL
+  try {
+    url = new URL(withScheme)
+  } catch {
+    throw new Error('请输入有效的 HTTP(S) 节点地址')
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error('节点地址仅支持 http 或 https')
+  }
+  url.search = ''
+  url.hash = ''
+  url.pathname = url.pathname.replace(/\/(?:catalog|content|search|info)\/?$/i, '').replace(/\/+$/, '')
+  return url.toString().replace(/\/+$/, '')
+}
+
+export function getCustomFqwebBase(): string {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOM_NODE_KEY) : null
+    return raw ? normalizeFqwebBase(raw) : ''
+  } catch {
+    return ''
+  }
+}
+
+export function setCustomFqwebBase(raw: string): string {
+  const normalized = normalizeFqwebBase(raw)
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (normalized) localStorage.setItem(CUSTOM_NODE_KEY, normalized)
+      else localStorage.removeItem(CUSTOM_NODE_KEY)
+    }
+  } catch {
+    /* ignore storage failures */
+  }
+  return normalized
+}
+
+export function getFqwebBases(): string[] {
+  const custom = getCustomFqwebBase()
+  if (!custom) return [...FQWEB_BASES]
+  return [custom, ...FQWEB_BASES.filter((b) => b !== custom)]
+}
+
+/* ---------------- 基础请求与 URL 去重 ---------------- */
 
 function chinaDate(): string {
   return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
 }
 
-function buildUrl(base: string, path: string, params?: Record<string, string | number>): string {
-  const url = new URL(path.replace(/^\//, ''), base.endsWith('/') ? base : `${base}/`)
-  for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, String(v))
-  url.searchParams.set('nt', chinaDate())
+/** 去重 URL 查询参数（防止重定向或拼接后出现重复 nt= 参数） */
+export function dedupeQueryParams(rawUrl: string): string {
+  const url = new URL(rawUrl)
+  const deduped = new URLSearchParams()
+  for (const [k, v] of url.searchParams.entries()) {
+    deduped.set(k, v)
+  }
+  url.search = deduped.toString()
   return url.toString()
+}
+
+export function buildFqwebUrl(base: string, path: string, params?: Record<string, string | number>): string {
+  const url = new URL(base)
+  const cleanBasePath = url.pathname.replace(/\/+$/, '')
+  const cleanPath = path.replace(/^\/+/, '')
+  url.pathname = cleanPath ? `${cleanBasePath}/${cleanPath}` : cleanBasePath || '/'
+  // 先去重（例如自定义节点或跳转前已附带 nt=），再按最新参数覆盖
+  const merged = new URLSearchParams()
+  for (const [k, v] of url.searchParams.entries()) {
+    if (k !== 'nt') merged.set(k, v)
+  }
+  for (const [k, v] of Object.entries(params ?? {})) merged.set(k, String(v))
+  merged.set('nt', chinaDate())
+  url.search = merged.toString()
+  return url.toString()
+}
+
+function isWebCorsFailure(err: unknown): boolean {
+  if (isNative() || isTauri()) return false
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  return /failed to fetch|networkerror|load failed|network request failed|cors/i.test(msg)
 }
 
 function checkStatus(status: number) {
@@ -69,18 +163,25 @@ function checkStatus(status: number) {
   if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
 }
 
-async function fetchText(url: string, timeoutMs: number, accept = 'application/json, text/plain, */*') {
+async function fetchText(
+  url: string,
+  timeoutMs: number,
+  accept = 'application/json, text/plain, */*',
+  proxyFallback = !url.startsWith(LOCAL_PROXY),
+) {
+  const target = dedupeQueryParams(url)
   const headers: Record<string, string> = isNative() ? { 'User-Agent': BROWSER_UA, Accept: accept } : { Accept: accept }
-  const { body } = await httpText(url, {
+  const { body } = await httpText(target, {
     headers,
     timeoutMs,
     connectTimeoutMs: Math.min(timeoutMs, 5_000),
+    proxyFallback,
     onStatus: checkStatus,
   })
   return body
 }
 
-let chapterBase = FQWEB_BASES[0]
+let chapterBase = ''
 
 async function fqwebRequest<T>(
   path: string,
@@ -88,12 +189,14 @@ async function fqwebRequest<T>(
   timeoutMs: number,
   parse: (raw: unknown) => T,
 ): Promise<T> {
-  const preferred = path === '/content' ? chapterBase : FQWEB_BASES[0]
-  const bases = [preferred, ...FQWEB_BASES.filter((base) => base !== preferred)]
+  const allBases = getFqwebBases()
+  const preferred = path === '/content' && chapterBase && allBases.includes(chapterBase) ? chapterBase : allBases[0]
+  const bases = [preferred, ...allBases.filter((base) => base !== preferred)]
   let dataError: FqwebError | undefined
+  let sawWebCors = false
   for (const base of bases) {
     try {
-      const text = await fetchText(buildUrl(base, path, params), timeoutMs)
+      const text = await fetchText(buildFqwebUrl(base, path, params), timeoutMs)
       let raw: unknown
       try {
         raw = JSON.parse(text)
@@ -107,10 +210,44 @@ async function fqwebRequest<T>(
       if (e instanceof FqwebError) {
         if (e.code === 'RATE_LIMITED') throw e
         if (!dataError || e.code === 'NOT_FOUND') dataError = e
+      } else if (isWebCorsFailure(e)) {
+        sawWebCors = true
       }
     }
   }
-  throw dataError ?? new FqwebError('UNAVAILABLE', '书源暂时连不上')
+  if (dataError) throw dataError
+  if (sawWebCors) throw new FqwebError('UNAVAILABLE', FANQIE_WEB_CORS_HINT)
+  throw new FqwebError('UNAVAILABLE', '书源暂时连不上')
+}
+
+/** 测试单个 FQWeb 节点连通性 */
+export async function testFqwebNode(baseInput?: string): Promise<FqwebNodeTestResult> {
+  const base = baseInput?.trim() ? normalizeFqwebBase(baseInput) : getFqwebBases()[0]
+  const started = Date.now()
+  try {
+    const url = buildFqwebUrl(base, '/search', { query: '戏神', page: 1 })
+    const text = await fetchText(url, 6_000)
+    const raw = JSON.parse(text) as unknown
+    const outer = obj(obj(raw)?.data)
+    if (!outer) throw new Error('返回结构异常')
+    if (String(outer.code) === '429') {
+      return { ok: false, base, latencyMs: Date.now() - started, message: '节点触发限流（HTTP/Code 429）' }
+    }
+    return {
+      ok: true,
+      base,
+      latencyMs: Date.now() - started,
+      message: `节点可用 · ${Date.now() - started}ms`,
+    }
+  } catch (e) {
+    const latencyMs = Date.now() - started
+    const message = isWebCorsFailure(e)
+      ? FANQIE_WEB_CORS_HINT
+      : e instanceof Error
+        ? e.message
+        : '连接失败'
+    return { ok: false, base, latencyMs, message }
+  }
 }
 
 function obj(v: unknown): Record<string, unknown> | null {
@@ -218,8 +355,37 @@ export function parseFqwebCatalog(raw: unknown): FanqieBookInfo {
   return bookFromRaw(infoRaw, chapters)
 }
 
+async function fetchOfficialBookById(bookId: string): Promise<FanqieBookInfo> {
+  const html = await fetchText(`${FANQIE_SITE}/page/${bookId}`, 15_000, 'text/html,*/*')
+  const info = parseBookPage(html)
+  if (!info.chapters.length) {
+    try {
+      const dirRaw = JSON.parse(
+        await fetchText(`${FANQIE_SITE}/api/reader/directory/detail?bookId=${bookId}`, 15_000),
+      ) as unknown
+      const chapters = parseDirectoryJson(dirRaw)
+      if (chapters.length) {
+        info.chapters = chapters
+        info.chapterCount = chapters.length
+      }
+    } catch {
+      /* 保留已解析到的书籍元信息 */
+    }
+  }
+  if (!info.chapters.length) throw new FqwebError('NOT_FOUND', '官网书籍页没有返回章节目录')
+  return info
+}
+
 export async function fetchFanqieBookById(bookId: string): Promise<FanqieBookInfo> {
-  return fqwebRequest('/catalog', { book_id: bookId }, 30_000, parseFqwebCatalog)
+  try {
+    return await fqwebRequest('/catalog', { book_id: bookId }, 30_000, parseFqwebCatalog)
+  } catch (fqErr) {
+    try {
+      return await fetchOfficialBookById(bookId)
+    } catch {
+      throw fqErr
+    }
+  }
 }
 
 function cleanContent(raw: string, title: string): string {
@@ -255,8 +421,49 @@ export function parseFqwebContent(raw: unknown): FqwebChapterContent {
   }
 }
 
+async function fetchOfficialChapterContent(itemId: string): Promise<FqwebChapterContent> {
+  try {
+    const jsonText = await fetchText(`${FANQIE_SITE}/api/reader/full?itemId=${itemId}`, 12_000)
+    const parsed = parseChapterJson(JSON.parse(jsonText))
+    if (parsed && !parsed.truncated && parsed.content.trim()) {
+      return {
+        title: parsed.title,
+        content: parsed.content,
+        bookId: parsed.bookId,
+        unknownGlyphs: parsed.unknownGlyphs,
+      }
+    }
+  } catch {
+    /* 继续回退到 SSR 阅读页 */
+  }
+  const html = await fetchText(`${FANQIE_SITE}/reader/${itemId}`, 12_000, 'text/html,*/*')
+  const pageData = parseChapterPage(html)
+  if (pageData.truncated) {
+    throw new FqwebError('EMPTY', '该章节在官网仅提供试读片段，且 FQWeb 节点暂不可用')
+  }
+  if (!pageData.content.trim()) {
+    throw new FqwebError('EMPTY', '官网章节正文为空')
+  }
+  return {
+    title: pageData.title,
+    content: pageData.content,
+    bookId: pageData.bookId,
+    unknownGlyphs: pageData.unknownGlyphs,
+  }
+}
+
 export async function fetchFanqieChapterContent(itemId: string): Promise<FqwebChapterContent> {
-  return fqwebRequest('/content', { item_id: itemId }, 12_000, parseFqwebContent)
+  try {
+    return await fqwebRequest('/content', { item_id: itemId }, 12_000, parseFqwebContent)
+  } catch (fqErr) {
+    if (fqErr instanceof FqwebError && fqErr.code === 'RATE_LIMITED') throw fqErr
+    try {
+      return await fetchOfficialChapterContent(itemId)
+    } catch (officialErr) {
+      if (officialErr instanceof FqwebError && officialErr.code === 'EMPTY') throw officialErr
+      throw fqErr
+    }
+  }
 }
 
 /** 把章节链接解析成书籍：先查章节的 novel_data.book_id，再拉目录 */
@@ -367,7 +574,7 @@ export function fanqieWebSearchUrl(query: string): string {
 async function fetchBingRss(url: URL): Promise<string> {
   url.searchParams.set('format', 'rss')
   const target = isNative() || isTauri() ? url.href : LOCAL_PROXY + encodeURIComponent(url.href)
-  const xml = await fetchText(target, SEARCH_TIMEOUT, 'application/rss+xml, application/xml, text/xml, */*')
+  const xml = await fetchText(target, SEARCH_TIMEOUT, 'application/rss+xml, application/xml, text/xml, */*', false)
   if (!/<rss[\s>]/i.test(xml)) throw new FqwebError('BAD_DATA', '网页索引暂时不可用')
   return xml
 }
@@ -550,6 +757,10 @@ export async function searchFanqieBooks(
   if (sources.every((source) => source.status === 'rejected')) {
     const limited = sources.find((source) => source.status === 'rejected' && source.reason instanceof FqwebError && source.reason.code === 'RATE_LIMITED')
     if (limited?.status === 'rejected') throw limited.reason
+    const corsErr = sources.find((source) => source.status === 'rejected' && (
+      isWebCorsFailure(source.reason) || (source.reason instanceof FqwebError && source.reason.message === FANQIE_WEB_CORS_HINT)
+    ))
+    if (corsErr) throw new FqwebError('UNAVAILABLE', FANQIE_WEB_CORS_HINT)
     throw new FqwebError('UNAVAILABLE', '在线搜索暂时不可用')
   }
   const byId = new Map<string, FanqieSearchItem>()

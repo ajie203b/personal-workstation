@@ -3,6 +3,85 @@ const FN_NAMES = [
   'sinh', 'cosh', 'tanh', 'ln', 'log', 'exp', 'det', 'lim', 'max', 'min', 'gcd',
 ]
 
+/** 数学保留函数名与常量名，不可作为页面变量名赋值 */
+export const RESERVED_CONSTANTS = new Set(['i', 'e', 'pi', '\\pi'])
+export const RESERVED_VAR_NAMES = new Set([
+  ...FN_NAMES,
+  'lg',
+  'sqrt',
+  'abs',
+  'pi',
+  'i',
+  'e',
+  'inf',
+  'infty',
+  'nan',
+])
+
+/** 归一化变量名（如 v_{0} -> v_0） */
+export function canonicalVarName(name: string): string {
+  return name.trim().replace(/_\{\s*([a-zA-Z0-9]+)\s*\}/g, '_$1')
+}
+
+export function isReservedVarName(rawName: string): boolean {
+  const c = canonicalVarName(rawName)
+  if (RESERVED_CONSTANTS.has(c)) return true
+  if (c === 'i' || c === 'e') return true
+  if (RESERVED_VAR_NAMES.has(c.toLowerCase()) && c.length > 1) return true
+  return false
+}
+
+function formatVarNumberForLatex(n: number): string {
+  if (!Number.isFinite(n)) return '0'
+  if (Object.is(n, -0)) return '0'
+  const abs = Math.abs(n)
+  if (abs === 0) return '0'
+  if (abs >= 1e-8 && abs < 1e15) {
+    // 避免 JS 输出 1e-7 被 LaTeX 解析成 1 * e - 7
+    const fixed = Number(n.toPrecision(12))
+    const str = fixed.toString()
+    if (!/[eE]/.test(str)) return str
+    return fixed.toFixed(12).replace(/\.?0+$/, '')
+  }
+  const [mant, exp] = n.toExponential(10).split('e')
+  return `${mant.replace(/\.?0+$/, '')}\\times 10^{${Number(exp)}}`
+}
+
+/**
+ * 在规范化后的 LaTeX 中替换已定义的多字符 / 下标 / 单字符独立变量，并检测引用到的错误变量。
+ * 保留 \sin、\frac、\begin{...} 等 LaTeX 命令不被误伤。
+ */
+export function substituteVarsInLatex(
+  normalizedLatex: string,
+  variables: Record<string, number>,
+  invalidVariables?: Set<string>,
+): { latex: string; invalidRef?: string; replaced: boolean } {
+  const hasVars = Object.keys(variables).length > 0
+  const hasInvalid = Boolean(invalidVariables?.size)
+  if (!hasVars && !hasInvalid) return { latex: normalizedLatex, replaced: false }
+
+  const tokenRe = /(\\(?:begin|end)\s*\{[^{}]*\})|(\\[a-zA-Z]+)|([a-zA-Z][a-zA-Z0-9]*(?:_(?:\{[a-zA-Z0-9]+\}|[a-zA-Z0-9]+))?)/g
+  let invalidRef: string | undefined
+  let replaced = false
+  const latex = normalizedLatex.replace(tokenRe, (full, env: string | undefined, cmd: string | undefined, ident: string | undefined, offset: number, src: string) => {
+    if (env || cmd || !ident) return full
+    const canon = canonicalVarName(ident)
+    if (invalidVariables?.has(canon)) {
+      invalidRef ??= canon
+      return full
+    }
+    if (Object.prototype.hasOwnProperty.call(variables, canon)) {
+      replaced = true
+      const valStr = formatVarNumberForLatex(variables[canon])
+      const prev = offset > 0 ? src[offset - 1] : ''
+      if (prev === '^' || prev === '_') return `{(${valStr})}`
+      return `(${valStr})`
+    }
+    return full
+  })
+  return { latex, invalidRef, replaced }
+}
+
 /** 取一个 LaTeX 参数：{...} 或单个字符；返回 [内容, 结束下标] */
 function readArg(s: string, i: number): [string, number] | null {
   while (s[i] === ' ') i++
@@ -83,13 +162,17 @@ export function normalizeLatex(raw: string): string {
   s = s.replace(/\\displaystyle|\\textstyle/g, '')
   // 全角 / Unicode 运算符
   s = s.replace(/×/g, '\\times ').replace(/÷/g, '\\div ').replace(/（/g, '(').replace(/）/g, ')').replace(/＝/g, '=')
-  // \mathrm{sin} → \sin；\mathrm{d} → d；其余 \mathrm{X} → X
-  s = s.replace(/\\(?:mathrm|operatorname|textrm|mathit|mathbf|boldsymbol|text)\s*\{\s*([^{}]*?)\s*\}/g, (_, inner: string) => {
+  // \mathrm{sin} → \sin；\textsc{x} / \textsc x → x；\operatorname*{lim} → \lim
+  const bracedWrapRe = /\\(?:mathrm|operatorname\s*\*?|textrm|textit|textbf|textsc|mathsf|texttt|textnormal|mathit|mathbf|boldsymbol|text)\s*\{\s*([^{}]*?)\s*\}/g
+  const unwrapInner = (_: string, inner: string) => {
     const name = inner.replace(/\s+/g, '')
     if (FN_NAMES.includes(name)) return `\\${name} `
     if (name === 'lg') return '\\log_{10} '
     return name
-  })
+  }
+  s = s.replace(bracedWrapRe, unwrapInner).replace(bracedWrapRe, unwrapInner)
+  s = s.replace(/\\(?:mathrm|textrm|textit|textbf|textsc|mathsf|texttt|textnormal|mathit|mathbf|boldsymbol|text)\s+(\\[a-zA-Z]+|[a-zA-Z0-9])/g, '$1')
+  s = s.replace(/\\(lim|max|min|log)\s+(?=[_^])/g, '\\$1')
   s = s.replace(/\\lg(?![a-zA-Z])/g, '\\log_{10}')
   // \dfrac / \tfrac
   s = s.replace(/\\[dt]frac/g, '\\frac')
@@ -108,5 +191,7 @@ export function normalizeLatex(raw: string): string {
   s = s.replace(/\\times\s*(?=[+\-=)]|\\right|$)/g, 'x')
   // \left. \right. 之类空定界
   s = s.replace(/\\left\s*\.|\\right\s*\./g, '')
+  // 手写或识别紧连单位的 \tom / \tokm 补空格，避免 KaTeX 把 \tom 当成未定义宏
+  s = s.replace(/\\to(?=(?:km|cm|mm|dm|um|nm|m|kg|mg|g|ml|l|ms|s|min|h|kb|mb|gb|tb|b)\b)/gi, '\\to ')
   return s.replace(/\s{2,}/g, ' ').trim()
 }

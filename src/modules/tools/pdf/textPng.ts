@@ -13,23 +13,26 @@ export interface TextPng {
 }
 
 export interface TextPngOptions {
-  /** 字号（px，贴进 PDF 时 1px = 1pt） */
+  /** 字号（逻辑 pt，贴进 PDF 时按 1:1 pt 定位） */
   fontSize?: number
   /** 旋转角度（度，逆时针）；已烘进 PNG，贴的时候就不用再转 */
   angle?: number
   /** 文字颜色（canvas fillStyle），默认深灰 */
   color?: string
-  /** 四周留白（px），免得斜字被裁 */
+  /** 四周留白（pt），免得斜字被裁 */
   padding?: number
   /** 粗体（水印默认粗） */
   bold?: boolean
+  /** 光栅缩放倍率（默认 2× Retina，打印与缩放更清晰，返回的 width/height 仍为逻辑 pt） */
+  scale?: number
 }
 
-/** 文字渲染成透明 PNG（浏览器 canvas；测试请勿在 node 里调） */
+/** 文字渲染成透明 PNG（浏览器 canvas；2× 高清光栅输出 + 逻辑 pt 尺寸） */
 export async function renderTextPng(text: string, opts: TextPngOptions = {}): Promise<TextPng> {
   const fontSize = opts.fontSize ?? 32
   const angle = ((opts.angle ?? 0) * Math.PI) / 180
   const padding = opts.padding ?? Math.ceil(fontSize * 0.35)
+  const scale = Math.max(1, opts.scale ?? 2)
   const font = `${opts.bold === false ? '' : 'bold '}${fontSize}px system-ui, sans-serif`
 
   // 先量文字盒
@@ -48,10 +51,11 @@ export async function renderTextPng(text: string, opts: TextPngOptions = {}): Pr
   const boxH = Math.ceil(textW * sin + textH * cos) + padding * 2
 
   const canvas = document.createElement('canvas')
-  canvas.width = boxW
-  canvas.height = boxH
+  canvas.width = Math.max(1, Math.round(boxW * scale))
+  canvas.height = Math.max(1, Math.round(boxH * scale))
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('当前环境不支持 canvas，无法生成水印')
+  ctx.scale(scale, scale)
   ctx.translate(boxW / 2, boxH / 2)
   ctx.rotate(-angle) // 视觉上「逆时针」旋转（canvas y 向下，取负）
   ctx.font = font

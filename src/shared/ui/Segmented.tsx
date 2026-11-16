@@ -41,22 +41,30 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
     const btn = btnRefs.current.get(value)
     const wrap = wrapRef.current
     if (!btn || !wrap) return
+    let raf = 0
     const measure = () => {
       // 弹层入场时可能在缩放，直接读布局尺寸以免滑块跟着缩小。
       const width = btn.offsetWidth
       if (!width) return
       const left = btn.offsetLeft
-      setThumb((prev) =>
-        prev.ready && Math.abs(prev.left - left) < 0.5 && Math.abs(prev.width - width) < 0.5
-          ? prev
-          : { left, width, ready: true },
-      )
+      setThumb((prev) => {
+        if (prev.width === 0) {
+          // 首次挂载直接落位，不在下一帧才展开动画（避免从 0px 滑出宽度）
+          raf = requestAnimationFrame(() => setThumb((cur) => (cur.ready ? cur : { ...cur, ready: true })))
+          return { left, width, ready: false }
+        }
+        if (prev.ready && Math.abs(prev.left - left) < 0.5 && Math.abs(prev.width - width) < 0.5) return prev
+        return { left, width, ready: true }
+      })
     }
     measure()
     const ro = new ResizeObserver(measure)
     btnRefs.current.forEach((button) => ro.observe(button))
     ro.observe(wrap)
-    return () => ro.disconnect()
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+    }
   }, [value, options.length, size])
 
   return (

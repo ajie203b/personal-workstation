@@ -1,20 +1,22 @@
-import { useState } from 'react'
-import { Image as ImageIcon, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { RotateCw, X } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
+import { formatBytes } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { uid } from '@/lib/id'
 import { fileToEmbeddedImage } from './imageInput'
 import { imagesToPdf } from './pdfOps'
 import type { ImagePageSize } from './layout'
 import { yieldToUi, type ToolOutput } from './output'
-import { Field, FilePicker, OutputBar, Panel, pdfBlob } from './parts'
+import { FIELD_INPUT, Field, FilePicker, OutputBar, Panel, pdfBlob } from './parts'
 import { arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 
 interface Item {
   id: string
   file: File
+  rot: number
 }
 
 const SIZE_OPTIONS: { value: ImagePageSize; label: string }[] = [
@@ -25,7 +27,29 @@ const SIZE_OPTIONS: { value: ImagePageSize; label: string }[] = [
 
 const MARGINS = [0, 12, 24, 36]
 
-/** 图片转 PDF：JPG/PNG 直贴，其他格式转 JPEG；EXIF 方向解码时转正 */
+function ImageThumb({ file, rot }: { file: File; rot: number }) {
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    const objUrl = URL.createObjectURL(file)
+    setUrl(objUrl)
+    return () => URL.revokeObjectURL(objUrl)
+  }, [file])
+  return (
+    <span className="grid place-items-center w-10 h-10 rounded-[8px] border border-outline bg-white overflow-hidden shrink-0">
+      {url && (
+        <img
+          src={url}
+          alt=""
+          className="max-w-full max-h-full object-contain transition-transform duration-150 pointer-events-none select-none"
+          style={{ transform: rot ? `rotate(${rot}deg)` : undefined }}
+          draggable={false}
+        />
+      )}
+    </span>
+  )
+}
+
+/** 图片转 PDF：JPG/PNG 直贴，其他格式白底转 JPEG；EXIF 方向解码时转正 */
 export function ImagesToPdfPanel() {
   const [items, setItems] = useState<Item[]>([])
   const [size, setSize] = useState<ImagePageSize>('a4')
@@ -36,7 +60,7 @@ export function ImagesToPdfPanel() {
     if (!items.length) throw new Error('先选几张图片')
     const images = []
     for (const it of items) {
-      images.push(await fileToEmbeddedImage(it.file))
+      images.push(await fileToEmbeddedImage(it.file, it.rot))
       await yieldToUi()
     }
     const m = Number(margin)
@@ -54,13 +78,13 @@ export function ImagesToPdfPanel() {
     : undefined
 
   return (
-    <Panel title="图片转 PDF" desc="每张图一页；照片的 EXIF 方向会自动转正，截图/PNG 保留透明底。">
+    <Panel title="图片转 PDF" desc="每张图一页；支持拖拽排序与单图 90° 旋转，照片 EXIF 自动转正。">
       <FilePicker
         accept="image/*"
         multiple
         label="添加图片"
-        hint="JPG / PNG 直贴，其他格式自动转 JPEG"
-        onPick={(files) => setItems((list) => [...list, ...files.map((file) => ({ id: uid(), file }))])}
+        hint="JPG / PNG 直贴，WebP / GIF / SVG 自动白底转换"
+        onPick={(files) => setItems((list) => [...list, ...files.map((file) => ({ id: uid(), file, rot: 0 }))])}
       />
 
       {items.length > 0 && (
@@ -68,19 +92,31 @@ export function ImagesToPdfPanel() {
         <ul className="flex flex-col gap-1.5">
           {items.map((it, index) => (
             <DragSortItem as="li" id={it.id} key={it.id} className="flex items-center gap-2 rounded-[10px] border border-outline bg-surface-2 px-2 py-1.5">
-              <span className="grid place-items-center w-7 h-7 rounded-[8px] bg-primary-soft text-primary shrink-0">
-                <ImageIcon size={14} />
-              </span>
+              <ImageThumb file={it.file} rot={it.rot} />
               <div className="min-w-0 flex-1">
                 <p className="text-[12.5px] leading-5 truncate">{it.file.name}</p>
-                <p className="text-[11px] text-on-surface-2">
-                  第 {index + 1} 页 · {(it.file.size / 1024).toFixed(0)} KB
+                <p className="text-[11px] text-on-surface-2 tabular-nums">
+                  第 {index + 1} 页 · {formatBytes(it.file.size)}{it.rot ? ` · ${it.rot}°` : ''}
                 </p>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
+                className="w-8 h-8 shrink-0"
+                aria-label={`顺时针旋转 ${it.file.name} 90°`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                onClick={() => setItems((list) => list.map((item) => (item.id === it.id ? { ...item, rot: (item.rot + 90) % 360 } : item)))}
+              >
+                <RotateCw size={14} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-8 h-8 shrink-0"
                 aria-label="移除"
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
                 onClick={() => setItems((list) => list.filter((i) => i.id !== it.id))}
               >
                 <X size={15} />
@@ -118,7 +154,7 @@ export function ImagesToPdfPanel() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="图片"
-          className="w-40 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60 text-right"
+          className={FIELD_INPUT}
         />
       </Field>
 

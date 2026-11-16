@@ -89,7 +89,7 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
     await c.delete(key)
   }
 
-  let lastError = '所有镜像都下载失败'
+  const errors: string[] = []
   for (const raw of spec.urls) {
     let url = raw
     let host = raw
@@ -113,7 +113,7 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
         clearTimeout(timer)
       }
       if (!res.ok) {
-        lastError = `${host} HTTP ${res.status}`
+        errors.push(`${host} HTTP ${res.status}`)
         continue
       }
       const body = res.body
@@ -138,7 +138,7 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
           at += ch.length
         }
         if (!(await acceptDownload(buf.buffer, spec.sha256))) {
-          lastError = `${host} 返回的文件校验不符（可能是错误页或被截断）`
+          errors.push(`${host} 返回的文件校验不符（可能是错误页或被截断）`)
           continue
         }
         await c.put(key, verifiedResponse(buf.buffer, spec.sha256))
@@ -146,7 +146,7 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
       }
       const buf = await res.arrayBuffer()
       if (!(await acceptDownload(buf, spec.sha256))) {
-        lastError = `${host} 返回的文件校验不符（可能是错误页或被截断）`
+        errors.push(`${host} 返回的文件校验不符（可能是错误页或被截断）`)
         continue
       }
       await c.put(key, verifiedResponse(buf, spec.sha256))
@@ -154,10 +154,11 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
       return buf
     } catch (e) {
       const msg = e instanceof Error ? (e.name === 'AbortError' ? '连接超时' : e.message) : '下载失败'
-      lastError = `${host} ${msg}`
+      errors.push(`${host} ${msg}`)
     }
   }
-  throw new Error(`模型 ${spec.id} 下载失败：${lastError}`)
+  const summary = errors.length ? errors.join('；') : '所有镜像都下载失败'
+  throw new Error(`模型 ${spec.id} 下载失败：${summary}`)
 }
 
 async function acceptDownload(buf: ArrayBuffer, sha256?: string): Promise<boolean> {

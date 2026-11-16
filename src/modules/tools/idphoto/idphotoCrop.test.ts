@@ -9,6 +9,7 @@ import {
   facePointsFromNormalized,
   fallbackCropBox,
   fitAndClamp,
+  refineCropWithAlpha,
 } from './idphotoCrop'
 
 const ASPECT = 295 / 413 // 一寸
@@ -190,5 +191,33 @@ describe('cropGuides', () => {
     expect(g.eyeLineY).toBeCloseTo(168, 5)
     expect(g.thirdLinesY[0]).toBeCloseTo(400 / 3, 5)
     expect(g.thirdLinesY[1]).toBeCloseTo(800 / 3, 5)
+  })
+})
+
+describe('refineCropWithAlpha（发际安全裁剪）', () => {
+  it('蓬松头发超出框顶时自动向上抬框，保证头发不被削顶', () => {
+    const w = 200
+    const h = 300
+    const alpha = new Float32Array(w * h)
+    // 头发从 y = 30 开始一直往下覆盖中间区域
+    for (let y = 30; y < 260; y++) {
+      for (let x = 60; x < 140; x++) alpha[y * w + x] = 1
+    }
+    const raw = { x: 40, y: 45, width: 120, height: 170 }
+    const refined = refineCropWithAlpha(raw, alpha, w, h, 0.1)
+    expect(refined.y).toBeLessThan(raw.y)
+    expect(refined.y).toBeLessThanOrEqual(30 - refined.height * 0.08)
+  })
+
+  it('发顶已有足够留白时保持原框不变', () => {
+    const w = 200
+    const h = 300
+    const alpha = new Float32Array(w * h)
+    for (let y = 80; y < 260; y++) {
+      for (let x = 60; x < 140; x++) alpha[y * w + x] = 1
+    }
+    const raw = { x: 40, y: 40, width: 120, height: 170 }
+    const refined = refineCropWithAlpha(raw, alpha, w, h, 0.1)
+    expect(refined).toEqual(raw)
   })
 })

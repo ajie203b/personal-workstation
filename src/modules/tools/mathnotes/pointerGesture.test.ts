@@ -105,4 +105,23 @@ describe('PointerGesture（双指滚动后画布不卡死，回归）', () => {
     expect(g.down({ id: 2, kind: 'mouse', x: 0, y: 0, t: 0, button: 2 })).toEqual({ action: 'ignore' })
     expect(g.down({ id: 3, kind: 'mouse', x: 0, y: 0, t: 0, button: 0 })).toEqual({ action: 'draw' })
   })
+
+  it('双指平移同时跟踪横向中心 X 与纵向中心 Y，并可重置 penSeen 允许手指书写', () => {
+    const g = new PointerGesture()
+    g.down(touch(1, 100, 100, 0))
+    g.down(touch(2, 200, 300, 10))
+    expect(g.panCenter()).toEqual({ x: 150, y: 200 })
+    g.move(1, 140, 120)
+    expect(g.panCenter()).toEqual({ x: 170, y: 210 })
+    g.up(1)
+    g.up(2)
+
+    g.down({ id: 9, kind: 'pen', x: 0, y: 0, t: 20 })
+    g.up(9)
+    expect(g.penSeen).toBe(true)
+    expect(g.down(touch(3, 10, 10, 30))).toMatchObject({ action: 'pan' })
+    g.up(3)
+    g.penSeen = false
+    expect(g.down(touch(4, 10, 10, 40))).toEqual({ action: 'draw' })
+  })
 })

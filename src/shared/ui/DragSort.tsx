@@ -50,16 +50,24 @@ export function DragSort({ ids, strategy, onMove, renderOverlay, children }: {
     )
     animation.finished.then(() => animation.cancel()).catch(() => {})
   }, [ids])
-  // 拖拽松手后浏览器仍会补一个 click；在 document 捕获阶段吞掉，桌面端才不会「拖完就进工具」。
+  // 拖拽松手后浏览器仍会补一个 click；在捕获阶段吞掉列表内的误点击，桌面端才不会「拖完就进工具」。
+  // 同时任何新一次 pointerdown（包括列表外按钮）立即放行，避免误吞「存到下载」等外部按钮的点击。
   useEffect(() => {
+    const resetOnPointerDown = () => {
+      if (suppressUntil.current !== Infinity) suppressUntil.current = 0
+    }
     const swallow = (e: MouseEvent) => {
-      if (Date.now() < suppressUntil.current) {
+      if (Date.now() < suppressUntil.current && e.target instanceof Node && listRef.current?.contains(e.target)) {
         e.preventDefault()
         e.stopPropagation()
       }
     }
+    document.addEventListener('pointerdown', resetOnPointerDown, true)
     document.addEventListener('click', swallow, true)
-    return () => document.removeEventListener('click', swallow, true)
+    return () => {
+      document.removeEventListener('pointerdown', resetOnPointerDown, true)
+      document.removeEventListener('click', swallow, true)
+    }
   }, [])
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),

@@ -36,6 +36,17 @@ describe('BUILTIN_SPECS', () => {
     expect(yi?.sheetCount).toBe(8)
     expect(er?.sheetCount).toBe(4)
   })
+
+  it('包含常用考试与签证预设（四六级 / 教资 / 国考 / 社保卡 / 日签 / 申根）', () => {
+    const ids = new Set(BUILTIN_SPECS.map((s) => s.id))
+    for (const id of ['cet', 'jiaoshi', 'gongwuyuan', 'shebaoka', 'ribenqianzheng', 'shengenqianzheng']) {
+      expect(ids.has(id)).toBe(true)
+    }
+    const sbk = BUILTIN_SPECS.find((s) => s.id === 'shebaoka')
+    expect(sbk?.width).toBe(358)
+    expect(sbk?.height).toBe(441)
+    expect(sbk?.dpi).toBe(350)
+  })
 })
 
 describe('validateSpec', () => {

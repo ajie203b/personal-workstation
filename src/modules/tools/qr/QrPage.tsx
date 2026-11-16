@@ -6,6 +6,7 @@ import { IconToolQr } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Segmented, type SegmentOption } from '@/shared/ui/Segmented'
 import { db, type QrHistoryRow } from '@/db/db'
+import type { QrKind } from './qrTemplates'
 import { QrGenerateTab } from './QrGenerateTab'
 import { QrScanTab } from './QrScanTab'
 import { QrHistoryList } from './QrHistoryList'
@@ -28,7 +29,7 @@ export function QrPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<'generate' | 'scan'>('generate')
   const seqRef = useRef(0)
-  const [genPrefill, setGenPrefill] = useState<{ value: string; seq: number } | null>(null)
+  const [genPrefill, setGenPrefill] = useState<{ value: string; kind?: QrKind; seq: number } | null>(null)
   const [scanPrefill, setScanPrefill] = useState<{ value: string; seq: number } | null>(null)
 
   const history = useLiveQuery(() => db.qrHistory.orderBy('createdAt').reverse().limit(12).toArray(), []) ?? []
@@ -40,9 +41,8 @@ export function QrPage() {
       setScanPrefill({ value: row.content, seq })
       return
     }
-    // 生成记录回填进文本框——内容串不变，重新生成的就是同一张码
     setTab('generate')
-    setGenPrefill({ value: row.content, seq })
+    setGenPrefill({ value: row.content, kind: row.kind, seq })
   }
 
   const removeHistory = (id: string) => {

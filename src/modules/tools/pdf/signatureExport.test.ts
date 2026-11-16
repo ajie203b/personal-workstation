@@ -72,10 +72,12 @@ describe('strokeSegments / drawStrokes（画什么存什么）', () => {
     }
   })
 
-  it('重绘覆盖全部笔画：每笔一个落笔点 + 全部线段，坐标都落在包围盒内', () => {
+  it('重绘覆盖全部笔画并支持自定义墨水色', () => {
     const strokes = [line(20, 30, 120, 40, 5), line(200, 100, 300, 150, 7), [{ x: 50, y: 160, t: 0 }]]
     const f = fakeCtx()
-    drawStrokes(f.ctx, strokes)
+    drawStrokes(f.ctx, strokes, '#1D4ED8')
+    expect(f.ctx.strokeStyle).toBe('#1D4ED8')
+    expect(f.ctx.fillStyle).toBe('#1D4ED8')
     expect(f.dots).toBe(3)
     expect(f.strokes).toBe(strokeSegments(strokes[0]).length + strokeSegments(strokes[1]).length)
     const b = strokesBounds(strokes, 400, 180)!

@@ -3,7 +3,7 @@ import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import type { Root, RootContent, PhrasingContent } from 'mdast'
-import type { Block, Inline, ParsedSource, SourceStats } from './types'
+import type { Block, Inline, ListItem, ParsedSource, SourceStats } from './types'
 
 /**
  * 输入解析：txt / Markdown / docx → 中间文档模型。
@@ -24,6 +24,12 @@ function pushText(out: Inline[], text: string, style: Style = {}) {
     return
   }
   out.push({ type: 'text', text, ...style })
+}
+
+export function inlinesPlain(inlines: readonly Inline[]): string {
+  return inlines
+    .map((i) => (i.type === 'text' ? i.text : i.type === 'math' ? `$${i.latex}$` : ' '))
+    .join('')
 }
 
 function inlineFromPhrasing(nodes: readonly PhrasingContent[], style: Style = {}, images: { src: string; alt: string }[] = []): Inline[] {
@@ -60,19 +66,17 @@ function inlineFromPhrasing(nodes: readonly PhrasingContent[], style: Style = {}
 }
 
 function plainText(nodes: readonly PhrasingContent[]): string {
-  return inlineFromPhrasing(nodes)
-    .map((i) => (i.type === 'text' ? i.text : i.type === 'math' ? `$${i.latex}$` : ' '))
-    .join('')
+  return inlinesPlain(inlineFromPhrasing(nodes))
 }
 
 function blockText(block: Block): string {
   if (block.type === 'heading') return block.text
-  if (block.type === 'paragraph') return block.inlines.map((i) => (i.type === 'text' ? i.text : i.type === 'math' ? `$${i.latex}$` : ' ')).join('')
-  if (block.type === 'table') return [block.headers, ...block.rows].flat().join(' ')
+  if (block.type === 'paragraph') return inlinesPlain(block.inlines)
+  if (block.type === 'table') return [block.headers, ...block.rows].flat().map(inlinesPlain).join(' ')
   if (block.type === 'image') return block.alt
   if (block.type === 'code') return block.text
   if (block.type === 'math') return block.latex
-  return block.items.flat().map((i) => (i.type === 'text' ? i.text : '')).join(' ')
+  return block.items.map((item) => inlinesPlain(item.inlines)).join(' ')
 }
 
 function captionLike(text: string): boolean {
@@ -103,18 +107,70 @@ function calcStats(blocks: Block[]): SourceStats {
   const stats: SourceStats = { headings: 0, paragraphs: 0, lists: 0, tables: 0, images: 0, formulas: 0, words: 0 }
   for (const b of blocks) {
     if (b.type === 'heading') stats.headings++
-    else if (b.type === 'paragraph') stats.paragraphs++
-    else if (b.type === 'list') stats.lists++
-    else if (b.type === 'table') stats.tables++
-    else if (b.type === 'image') stats.images++
+    else if (b.type === 'paragraph') {
+      stats.paragraphs++
+      stats.formulas += b.inlines.filter((i) => i.type === 'math').length
+    } else if (b.type === 'list') {
+      stats.lists++
+      for (const item of b.items) stats.formulas += item.inlines.filter((i) => i.type === 'math').length
+    } else if (b.type === 'table') {
+      stats.tables++
+      for (const cell of [...b.headers, ...b.rows.flat()]) {
+        stats.formulas += cell.filter((i) => i.type === 'math').length
+      }
+    } else if (b.type === 'image') stats.images++
     else if (b.type === 'math') stats.formulas++
-    if (b.type === 'paragraph') stats.formulas += b.inlines.filter((i) => i.type === 'math').length
   }
   const all = blocks.map(blockText).join('\n')
   const cjk = (all.match(/[\u4e00-\u9fff]/g) ?? []).length
   const latin = (all.match(/[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*/g) ?? []).length
   stats.words = cjk + latin
   return stats
+}
+
+function extractMdList(listNode: Record<string, unknown>, depth = 0): ListItem[] {
+  const ordered = Boolean(listNode.ordered)
+  const out: ListItem[] = []
+  for (const item of (listNode.children as unknown as Record<string, unknown>[]) ?? []) {
+    const itemChildren = (item.children as unknown as Record<string, unknown>[]) ?? []
+    const inlines: Inline[] = []
+    if (typeof item.checked === 'boolean') {
+      pushText(inlines, item.checked ? '☑ ' : '☐ ')
+    }
+    for (const child of itemChildren) {
+      if (child.type === 'paragraph' || child.type === 'heading') {
+        if (inlines.length && !(inlines.length === 1 && inlines[0].type === 'text' && (inlines[0].text === '☑ ' || inlines[0].text === '☐ '))) {
+          inlines.push({ type: 'break' })
+        }
+        inlines.push(...inlineFromPhrasing((child.children as PhrasingContent[]) ?? []))
+      }
+    }
+    if (inlines.length) out.push({ inlines, depth, ordered })
+    for (const child of itemChildren) {
+      if (child.type === 'list') out.push(...extractMdList(child, depth + 1))
+    }
+  }
+  return out
+}
+
+function trimCellInlines(inlines: Inline[]): Inline[] {
+  const copy = inlines.map((i) => ({ ...i }))
+  while (copy.length) {
+    const first = copy[0]
+    if (first.type !== 'text' || first.text.trim()) break
+    copy.shift()
+  }
+  if (copy.length && copy[0].type === 'text') copy[0].text = copy[0].text.replace(/^\s+/, '')
+  while (copy.length) {
+    const last = copy[copy.length - 1]
+    if (last.type !== 'text' || last.text.trim()) break
+    copy.pop()
+  }
+  if (copy.length) {
+    const last = copy[copy.length - 1]
+    if (last.type === 'text') last.text = last.text.replace(/\s+$/, '')
+  }
+  return copy
 }
 
 function extractMd(children: readonly RootContent[], warnings: string[]): { blocks: Block[]; title?: string } {
@@ -142,12 +198,7 @@ function extractMd(children: readonly RootContent[], warnings: string[]): { bloc
       }
       for (const image of images) if (image.src) blocks.push({ type: 'image', src: image.src, alt: image.alt })
     } else if (type === 'list') {
-      const items: Inline[][] = []
-      for (const item of (node.children as unknown as Record<string, unknown>[]) ?? []) {
-        const firstParagraph = ((item.children as unknown as Record<string, unknown>[]) ?? []).find((c) => c.type === 'paragraph')
-        const inlines = firstParagraph ? inlineFromPhrasing(firstParagraph.children as PhrasingContent[]) : []
-        if (inlines.length) items.push(inlines)
-      }
+      const items = extractMdList(node, 0)
       if (items.length) blocks.push({ type: 'list', ordered: Boolean(node.ordered), items })
     } else if (type === 'code') {
       blocks.push({ type: 'code', text: String(node.value ?? ''), lang: typeof node.lang === 'string' ? node.lang : undefined })
@@ -161,7 +212,11 @@ function extractMd(children: readonly RootContent[], warnings: string[]): { bloc
       }
     } else if (type === 'table') {
       const rows = (node.children as unknown as Record<string, unknown>[]) ?? []
-      const cells = rows.map((row) => (((row.children as unknown as Record<string, unknown>[]) ?? []).map((cell) => plainText(cell.children as PhrasingContent[]).trim())))
+      const cells: Inline[][][] = rows.map((row) =>
+        ((row.children as unknown as Record<string, unknown>[]) ?? []).map((cell) =>
+          trimCellInlines(inlineFromPhrasing((cell.children as PhrasingContent[]) ?? [])),
+        ),
+      )
       if (cells.length) {
         blocks.push({ type: 'table', headers: cells[0], rows: cells.slice(1) })
       }
@@ -191,13 +246,14 @@ const TEXT_HEADING = /^(?:#{1,6}\s+|([一二三四五六七八九十百]+)[、.�
 
 function inlineFromPlain(text: string): Inline[] {
   const out: Inline[] = []
-  const re = /(\$[^$\n]+\$|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g
+  const re = /(\$[^$\n]+\$|\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/g
   let last = 0
   for (const m of text.matchAll(re)) {
     if (m.index > last) pushText(out, text.slice(last, m.index))
     const token = m[0]
     if (token.startsWith('$')) out.push({ type: 'math', latex: token.slice(1, -1) })
     else if (token.startsWith('**')) pushText(out, token.slice(2, -2), { bold: true })
+    else if (token.startsWith('`')) pushText(out, token.slice(1, -1), { code: true })
     else pushText(out, token.slice(1, -1), { italic: true })
     last = m.index + token.length
   }
@@ -211,7 +267,7 @@ export function parseTextSource(text: string): ParsedSource {
   const blocks: Block[] = []
   let title: string | undefined
   let sawContent = false
-  let list: { ordered: boolean; items: Inline[][] } | null = null
+  let list: { ordered: boolean; items: ListItem[] } | null = null
 
   const flushList = () => {
     if (list?.items.length) blocks.push({ type: 'list', ordered: list.ordered, items: list.items })
@@ -222,6 +278,24 @@ export function parseTextSource(text: string): ParsedSource {
     const line = raw.trimEnd()
     if (!line.trim()) {
       flushList()
+      continue
+    }
+    const bulletMatch = /^(\s*)[-*+]\s+(.+)$/.exec(line)
+    if (bulletMatch) {
+      const depth = Math.min(4, Math.floor(bulletMatch[1].replace(/\t/g, '  ').length / 2))
+      if (depth === 0 && list && list.ordered) flushList()
+      list ??= { ordered: false, items: [] }
+      list.items.push({ inlines: inlineFromPlain(bulletMatch[2]), depth, ordered: false })
+      sawContent = true
+      continue
+    }
+    const orderedMatch = /^(\s*)\d+[.)、]\s+(.+)$/.exec(line)
+    if (orderedMatch) {
+      const depth = Math.min(4, Math.floor(orderedMatch[1].replace(/\t/g, '  ').length / 2))
+      if (depth === 0 && list && !list.ordered) flushList()
+      list ??= { ordered: true, items: [] }
+      list.items.push({ inlines: inlineFromPlain(orderedMatch[2]), depth, ordered: true })
+      sawContent = true
       continue
     }
     const heading = TEXT_HEADING.exec(line.trim())
@@ -244,18 +318,6 @@ export function parseTextSource(text: string): ParsedSource {
       continue
     }
     sawContent = true
-    if (/^[-*+]\s+/.test(line)) {
-      if (list && list.ordered) flushList()
-      list ??= { ordered: false, items: [] }
-      list.items.push(inlineFromPlain(line.replace(/^[-*+]\s+/, '')))
-      continue
-    }
-    if (/^\d+[.)、]\s+/.test(line)) {
-      if (list && !list.ordered) flushList()
-      list ??= { ordered: true, items: [] }
-      list.items.push(inlineFromPlain(line.replace(/^\d+[.)、]\s+/, '')))
-      continue
-    }
     flushList()
     const math = /^\$\$(.+)\$\$$/.exec(line.trim())
     if (math) {
@@ -271,7 +333,7 @@ export function parseTextSource(text: string): ParsedSource {
 
 /* ---------------- DOCX ---------------- */
 
-function inlineFromElement(el: Element, images: { src: string; alt: string }[]): Inline[] {
+function inlineFromElement(el: Element, images: { src: string; alt: string }[], skipNestedLists = false): Inline[] {
   const out: Inline[] = []
   for (const node of Array.from(el.childNodes)) {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -281,20 +343,36 @@ function inlineFromElement(el: Element, images: { src: string; alt: string }[]):
     if (node.nodeType !== Node.ELEMENT_NODE) continue
     const child = node as Element
     const tag = child.tagName.toLowerCase()
-    if (tag === 'strong' || tag === 'b') out.push(...inlineFromElement(child, images).map((i) => i.type === 'text' ? { ...i, bold: true } : i))
-    else if (tag === 'em' || tag === 'i') out.push(...inlineFromElement(child, images).map((i) => i.type === 'text' ? { ...i, italic: true } : i))
+    if (skipNestedLists && (tag === 'ul' || tag === 'ol')) continue
+    if (tag === 'strong' || tag === 'b') out.push(...inlineFromElement(child, images, skipNestedLists).map((i) => i.type === 'text' ? { ...i, bold: true } : i))
+    else if (tag === 'em' || tag === 'i') out.push(...inlineFromElement(child, images, skipNestedLists).map((i) => i.type === 'text' ? { ...i, italic: true } : i))
     else if (tag === 'code') pushText(out, child.textContent ?? '', { code: true })
     else if (tag === 'br') out.push({ type: 'break' })
     else if (tag === 'img') {
       const src = child.getAttribute('src') ?? ''
       if (src) images.push({ src, alt: child.getAttribute('alt') ?? '' })
-    } else if (tag === 'a' || tag === 'span' || tag === 'sup' || tag === 'sub' || tag === 'u') {
-      out.push(...inlineFromElement(child, images))
+    } else if (tag === 'p' && skipNestedLists) {
+      if (out.length) out.push({ type: 'break' })
+      out.push(...inlineFromElement(child, images, skipNestedLists))
     } else {
-      out.push(...inlineFromElement(child, images))
+      out.push(...inlineFromElement(child, images, skipNestedLists))
     }
   }
   return out
+}
+
+function extractHtmlList(listEl: Element, depth = 0): ListItem[] {
+  const ordered = listEl.tagName.toLowerCase() === 'ol'
+  const items: ListItem[] = []
+  for (const li of Array.from(listEl.children).filter((n) => n.tagName.toLowerCase() === 'li')) {
+    const inlines = trimCellInlines(inlineFromElement(li, [], true))
+    if (inlines.length) items.push({ inlines, depth, ordered })
+    for (const child of Array.from(li.children)) {
+      const tag = child.tagName.toLowerCase()
+      if (tag === 'ul' || tag === 'ol') items.push(...extractHtmlList(child, depth + 1))
+    }
+  }
+  return items
 }
 
 function elementText(el: Element): string {
@@ -338,11 +416,7 @@ function parseHtmlBody(body: Element, warnings: string[]): { blocks: Block[]; ti
         if (inlines.some((i) => i.type === 'math' || (i.type === 'text' && i.text.trim()))) blocks.push({ type: 'paragraph', inlines })
         for (const image of images) if (image.src) blocks.push({ type: 'image', src: image.src, alt: image.alt })
       } else if (tag === 'ul' || tag === 'ol') {
-        const items: Inline[][] = []
-        for (const li of Array.from(node.children).filter((n) => n.tagName.toLowerCase() === 'li')) {
-          const inlines = inlineFromElement(li, [])
-          if (inlines.length) items.push(inlines)
-        }
+        const items = extractHtmlList(node, 0)
         if (items.length) blocks.push({ type: 'list', ordered: tag === 'ol', items })
         first = false
       } else if (tag === 'pre') {
@@ -353,23 +427,22 @@ function parseHtmlBody(body: Element, warnings: string[]): { blocks: Block[]; ti
         for (const b of inner.blocks) blocks.push(b.type === 'paragraph' ? { ...b, quote: true } : b)
         first = false
       } else if (tag === 'table') {
-        const rows = Array.from(node.querySelectorAll('tr')).map((tr) =>
-          Array.from(tr.querySelectorAll('th,td')).map((cell) => elementText(cell)),
+        const rows: Inline[][][] = Array.from(node.querySelectorAll('tr')).map((tr) =>
+          Array.from(tr.querySelectorAll('th,td')).map((cell) => trimCellInlines(inlineFromElement(cell, []))),
         ).filter((row) => row.length)
+        const plainRows = rows.map((row) => row.map((c) => inlinesPlain(c).replace(/\s+/g, ' ').trim()))
         // 生成件/模板里的封面信息表和评语框不是正文表格，导入时跳过
-        const isReviewBox = rows.length === 1 && rows[0].length === 1 && /^评\s*语/.test(rows[0][0])
-        const isCoverFields = rows.length === 6 && rows[0].length === 2
-          && /姓\s*名/.test(rows[0][0])
-          && rows.some((r) => /学\s*号/.test(r[0]))
+        const isReviewBox = plainRows.length === 1 && plainRows[0].length === 1 && /^评\s*语/.test(plainRows[0][0])
+        const isCoverFields = plainRows.length === 6 && plainRows[0].length === 2
+          && /姓\s*名/.test(plainRows[0][0])
+          && plainRows.some((r) => /学\s*号/.test(r[0]))
         if (rows.length && !isReviewBox && !isCoverFields) blocks.push({ type: 'table', headers: rows[0], rows: rows.slice(1) })
         first = false
       } else if (tag === 'img') {
         const src = node.getAttribute('src') ?? ''
         if (src) blocks.push({ type: 'image', src, alt: node.getAttribute('alt') ?? '' })
         first = false
-      } else if (tag === 'div' || tag === 'section' || tag === 'article' || tag === 'body') {
-        walk(node)
-      } else if (tag === 'figure') {
+      } else if (tag === 'div' || tag === 'section' || tag === 'article' || tag === 'body' || tag === 'figure') {
         walk(node)
       } else {
         const text = elementText(node)

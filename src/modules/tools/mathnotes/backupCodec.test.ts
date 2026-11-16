@@ -50,3 +50,8 @@ it('插入的图像配置随笔记备份并恢复', () => {
   const page = { id: 'p', title: '笔记', strokes: [], results: [], graphs, createdAt: 1, updatedAt: 2 }
   expect(unpackMathNote(packMathNote(page)).graphs).toEqual(graphs)
 })
+
+it('带自定义墨迹颜色的笔画打包与解包保持不变', () => {
+  const colored: Stroke = { ...stroke, color: 'blue' }
+  expect(unpackStroke(packStroke(colored)).color).toBe('blue')
+})

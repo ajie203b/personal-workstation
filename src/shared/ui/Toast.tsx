@@ -99,7 +99,7 @@ function ToastCard({ toast: t, onDismiss }: { toast: ToastItem; onDismiss: () =>
       <button
         type="button"
         aria-label="关闭提示"
-        className="opacity-50 hover:opacity-100 p-1.5 rounded-lg"
+        className="grid size-8 shrink-0 place-items-center opacity-55 hover:opacity-100 rounded-lg transition-opacity"
         onClick={onDismiss}
       >
         <X size={14} />

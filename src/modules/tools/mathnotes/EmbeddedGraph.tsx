@@ -15,7 +15,7 @@ export function EmbeddedGraph({ graph, expression, plot, onOpen }: {
     return () => { live = false }
   }, [expression, graph.range, graph.tMin, graph.tMax, graph.centerX, graph.centerY, plot])
   const colors = ['var(--primary)', '#e35b49', '#199b73', '#ac70d4', '#dd9a26']
-  return <button type="button" onClick={onOpen} aria-label={`编辑图像 ${expression}`} className="w-full h-full overflow-hidden rounded-lg bg-surface-2 text-left">
+  return <button type="button" onClick={onOpen} aria-label={`编辑图像 ${expression}`} className="relative w-full h-full overflow-hidden rounded-lg bg-surface-2 text-left cursor-pointer">
     <svg viewBox="0 0 400 400" className="w-full h-full" preserveAspectRatio="xMidYMid meet" aria-hidden>
       <path d={`M${200 - (graph.centerX ?? 0) / graph.range * 200} 0V400 M0 ${200 + (graph.centerY ?? 0) / graph.range * 200}H400`} stroke="var(--outline)" />
       <svg x="0" y="0" width="400" height="400" viewBox="0 0 400 400" overflow="hidden">{curves.map((curve, i) => {
@@ -24,6 +24,6 @@ export function EmbeddedGraph({ graph, expression, plot, onOpen }: {
         return <g key={i} fill="none" stroke={colors[i % colors.length]} strokeWidth="2">{paths.map((d, j) => <path key={j} d={d} />)}</g>
       })}</svg>
     </svg>
-    {error && <span className="absolute left-2 top-8 text-xs text-danger">{error}</span>}
+    {error && <span className="absolute left-2 top-2 text-xs text-danger">{error}</span>}
   </button>
 }

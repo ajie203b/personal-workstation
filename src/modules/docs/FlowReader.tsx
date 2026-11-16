@@ -42,6 +42,24 @@ interface Props {
   onFindState?: (state: { total: number; searching: boolean }) => void
 }
 
+function startsWithTitleHeading(html: string, title: string): boolean {
+  if (!title) return false
+  let body = html.trimStart()
+  // 跳过封面 / 卷扉页外层的 <div class="cover"> 等包装标签后再检视首标题
+  for (let i = 0; i < 4; i++) {
+    const wrap = /^<(?:div|section|header)\b[^>]*>\s*/i.exec(body)
+    if (!wrap) break
+    body = body.slice(wrap[0].length)
+  }
+  const m = /^<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/i.exec(body)
+  if (!m) return false
+  const plain = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, ' ')
+    .trim()
+  return plain === title.replace(/\s+/g, ' ').trim()
+}
+
 /**
  * 流式阅读器（v1.3）：EPUB / DOCX / PPTX / TXT 统一滚动阅读。
  * 复用沉浸排版设置与批注体系（v1.3.1：划词高亮按章节/片定位，文本 mark 包裹）。
@@ -458,7 +476,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       ref={(el) => { segRefs.current[i] = el }}
       className={cn('flow-doc flow-seg', i > 0 && 'mt-10 pt-8 border-t border-outline/60')}
     >
-      {flow.unit !== 'doc' && (
+      {flow.unit !== 'doc' && !startsWithTitleHeading(seg.html, seg.title ?? '') && (
         <h2 className="flow-seg-title">{seg.title}</h2>
       )}
       {/* seg.html 在 flowDoc 解析阶段已过 sanitizeHtml 白名单清洗（事件属性 / 脚本 / 危险协议都会被摘掉），

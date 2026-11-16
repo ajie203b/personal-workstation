@@ -5,13 +5,19 @@ export type Inline =
   | { type: 'math'; latex: string }
   | { type: 'break' }
 
+export interface ListItem {
+  inlines: Inline[]
+  depth: number
+  ordered: boolean
+}
+
 export type Block =
   | { type: 'heading'; level: 1 | 2 | 3; text: string }
   | { type: 'paragraph'; inlines: Inline[]; quote?: boolean }
-  | { type: 'list'; ordered: boolean; items: Inline[][] }
+  | { type: 'list'; ordered: boolean; items: ListItem[] }
   | { type: 'code'; text: string; lang?: string }
   | { type: 'image'; src: string; alt: string; caption?: string }
-  | { type: 'table'; headers: string[]; rows: string[][]; caption?: string }
+  | { type: 'table'; headers: Inline[][]; rows: Inline[][][]; caption?: string }
   | { type: 'math'; latex: string }
 
 export interface SourceStats {
@@ -47,6 +53,7 @@ export interface ReportMeta {
 
 export interface ReportOptions {
   cover: boolean
+  toc?: boolean
   reviewBox: boolean
   headerFooter: boolean
   autoNumberHeadings: boolean

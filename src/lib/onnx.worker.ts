@@ -19,6 +19,7 @@ async function getOrt(): Promise<OrtModule> {
   if (!ortPromise) {
     ortPromise = import('onnxruntime-web').then((ort) => {
       ort.env.wasm.numThreads = 1
+      ort.env.logLevel = 'error'
       return ort
     })
   }

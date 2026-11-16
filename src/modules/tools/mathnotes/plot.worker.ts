@@ -10,9 +10,18 @@ self.onmessage = (event: MessageEvent<WorkerIn>) => {
   if (msg.type !== 'compute' && msg.type !== 'plot' && msg.type !== 'evaluatePage') return
   try {
     if (msg.type === 'compute') {
-      self.postMessage({ type: 'computed', id: msg.id, key: msg.key, result: computeLatex(msg.latex) } satisfies WorkerOut)
+      self.postMessage({
+        type: 'computed',
+        id: msg.id,
+        key: msg.key,
+        result: computeLatex(msg.latex, { angleMode: msg.angleMode, variables: msg.variables }),
+      } satisfies WorkerOut)
     } else if (msg.type === 'evaluatePage') {
-      self.postMessage({ type: 'pageEvaluated', id: msg.id, evaluation: evaluatePage(msg.entries) } satisfies WorkerOut)
+      self.postMessage({
+        type: 'pageEvaluated',
+        id: msg.id,
+        evaluation: evaluatePage(msg.entries, { angleMode: msg.angleMode }),
+      } satisfies WorkerOut)
     } else {
       self.postMessage({
         type: 'plotted',

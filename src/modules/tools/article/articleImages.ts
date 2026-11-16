@@ -47,6 +47,7 @@ export async function mapWithConcurrency<T, R>(
 
 /** 魔数嗅探图片 MIME（fetchBytes 拿不到响应头，只能看字节） */
 export function sniffImageMime(bytes: Uint8Array): string {
+  if (!bytes || bytes.length === 0) return ''
   const head = (len: number) => Array.from(bytes.subarray(0, len))
   if (head(8).join(',') === '137,80,78,71,13,10,26,10') return 'image/png'
   if (head(3).join(',') === '255,216,255') return 'image/jpeg'
@@ -55,6 +56,20 @@ export function sniffImageMime(bytes: Uint8Array): string {
     return 'image/webp'
   }
   if (String.fromCharCode(...bytes.subarray(0, 2)) === 'BM') return 'image/bmp'
+  if (bytes.length >= 12 && String.fromCharCode(...bytes.subarray(4, 8)) === 'ftyp') {
+    for (let off = 8; off + 4 <= Math.min(bytes.length, 64); off += 4) {
+      if (off === 12) continue // 跳过 minor_version
+      const brand = String.fromCharCode(...bytes.subarray(off, off + 4))
+      if (brand === 'avif' || brand === 'avis') return 'image/avif'
+    }
+  }
+  const textHead = new TextDecoder('utf-8', { fatal: false })
+    .decode(bytes.subarray(0, Math.min(bytes.length, 512)))
+    .replace(/^\uFEFF/, '')
+    .trimStart()
+  if (/^(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!doctype\s+svg\b|<svg[\s>])/i.test(textHead)) {
+    return 'image/svg+xml'
+  }
   // 嗅不出来按 JPEG 处理：保底仍是 image/*，能过 URL 白名单
   return 'image/jpeg'
 }
@@ -91,7 +106,8 @@ async function fetchImageBytes(url: string, referer?: string): Promise<ArrayBuff
 
 /** 字节 → dataURL；≤300KB 原样，大图画布缩到最长边 1600 */
 async function bytesToDataUrl(bytes: ArrayBuffer, mime: string): Promise<string> {
-  const file = new File([bytes], 'img', { type: mime })
+  const safeMime = mime.trim() || 'image/jpeg'
+  const file = new File([bytes], 'img', { type: safeMime })
   return fileToDataUrl(file, 1600)
 }
 
@@ -113,7 +129,9 @@ export async function localizeImages(
   await mapWithConcurrency(urls, opts.concurrency ?? 4, async (url) => {
     try {
       const bytes = await fetchImageBytes(url, opts.referer)
+      if (!bytes.byteLength) throw new Error('图片响应为空')
       const mime = sniffImageMime(new Uint8Array(bytes))
+      if (!mime) throw new Error('无法识别图片格式')
       byUrl.set(url, await bytesToDataUrl(bytes, mime))
     } catch (e) {
       failed.push({ src: url, reason: e instanceof Error ? e.message : '网络错误' })

@@ -42,13 +42,23 @@ describe('buildQrOptions', () => {
     expect(o.data).toBe('hello')
   })
 
-  it('加 Logo：强制容错 H，Logo 面积不超过 20%', () => {
-    const o = buildQrOptions('hello', { ...baseStyle, logo: 'data:image/png;base64,xxxx' }, 280)
-    expect(o.qrOptions?.errorCorrectionLevel).toBe('H')
-    expect(o.image).toBe('data:image/png;base64,xxxx')
+  it('加 Logo 或圆点样式：强制容错 H 且保留充足静区', () => {
+    const withLogo = buildQrOptions('hello', { ...baseStyle, logo: 'data:image/png;base64,xxxx' }, 280)
+    expect(withLogo.qrOptions?.errorCorrectionLevel).toBe('H')
+    expect(withLogo.image).toBe('data:image/png;base64,xxxx')
     // imageSize 是边长占比：0.2 的边长 → 面积 4%；即便按面积口径读也 ≤ 20%
-    expect(o.imageOptions?.imageSize ?? 0).toBeLessThanOrEqual(0.2)
-    expect(o.imageOptions?.hideBackgroundDots).toBe(true)
+    expect(withLogo.imageOptions?.imageSize ?? 0).toBeLessThanOrEqual(0.2)
+    expect(withLogo.imageOptions?.hideBackgroundDots).toBe(true)
+
+    const withDots = buildQrOptions('hello', { ...baseStyle, dotType: 'dots' }, 280)
+    expect(withDots.qrOptions?.errorCorrectionLevel).toBe('H')
+    expect(withDots.margin).toBeGreaterThanOrEqual(16)
+  })
+
+  it('支持自定义容错等级与透明背景', () => {
+    const o = buildQrOptions('hello', { ...baseStyle, errorCorrectionLevel: 'Q', transparentBg: true }, 512)
+    expect(o.qrOptions?.errorCorrectionLevel).toBe('Q')
+    expect(o.backgroundOptions?.color).toBe('transparent')
   })
 
   it('渐变开：两点渐变，首尾色一致', () => {
@@ -75,14 +85,18 @@ describe('颜色工具', () => {
     expect(relativeLuminance('不是颜色')).toBe(0)
   })
 
-  it('qrSafeColor：深色原样，浅色压暗到可扫亮度', () => {
+  it('qrSafeColor：深色原样，浅色压暗到 <=0.15 亮度（>= 5.2:1 对比度）', () => {
     expect(qrSafeColor('#2C55B8')).toBe('#2C55B8')
     const darkened = qrSafeColor('#9FB6E8') // 深色主题的浅蓝
-    expect(relativeLuminance(darkened)).toBeLessThanOrEqual(0.36)
+    expect(relativeLuminance(darkened)).toBeLessThanOrEqual(0.15)
     // 保色相：仍是蓝色系（蓝通道不小于红绿）
     const [r, g, b] = hexToRgb(darkened)
     expect(b).toBeGreaterThan(r)
     expect(b).toBeGreaterThanOrEqual(g)
+    // 深色主题所有浅强调色都压暗到可扫区间
+    for (const c of ['#C4A4EC', '#F191B6', '#F08085', '#F2AC60', '#5FC78C']) {
+      expect(relativeLuminance(qrSafeColor(c))).toBeLessThanOrEqual(0.15)
+    }
     // 非 hex 原样返回，交给自检兜底
     expect(qrSafeColor('rgb(1 2 3)')).toBe('rgb(1 2 3)')
   })

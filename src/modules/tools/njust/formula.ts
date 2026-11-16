@@ -14,12 +14,13 @@ import {
   MathSuperScript,
   type MathComponent,
 } from 'docx'
+import { MathAccent, MathBar, MathLargeOperator, type MathAccentName } from 'docx/math'
 import type { BinaryImage } from './types'
 
 /**
  * LaTeX → Word 原生公式（OMML）的轻量解析器。
- * 覆盖报告里常见的分式、上下标、根式、求和/积分、希腊字母和括号；
- * 遇到 cases / matrix / 复杂宏时返回 null，由调用方用 KaTeX 截图兜底。
+ * 覆盖报告里常见的分式、上下标、根式、重音修饰（hat/bar/vec/dot/ddot/tilde）、求和/积分/连乘、
+ * 希腊字母和括号；遇到 cases / matrix / 复杂宏时返回 null，由调用方用 KaTeX 截图兜底。
  */
 
 class UnsupportedFormula extends Error {}
@@ -38,6 +39,18 @@ const GREEK: Record<string, string> = {
   leftarrow: '←', Rightarrow: '⇒', Leftarrow: '⇐', forall: '∀', exists: '∃',
   in: '∈', notin: '∉', subset: '⊂', subseteq: '⊆', cup: '∪', cap: '∩',
   angle: '∠', perp: '⊥', parallel: '∥', degree: '°', prime: '′',
+}
+
+const ACCENTS: Record<string, MathAccentName> = {
+  hat: 'hat',
+  widehat: 'hat',
+  bar: 'bar',
+  vec: 'rightArrow',
+  overrightarrow: 'rightArrow',
+  dot: 'dot',
+  ddot: 'doubleDot',
+  tilde: 'tilde',
+  widetilde: 'tilde',
 }
 
 const SPACES: Record<string, string> = {
@@ -86,13 +99,19 @@ class LatexParser {
     return out
   }
 
-  private peek(): string | undefined { return this.tokens[this.i] }
+  private peek(): string | undefined {
+    while (this.tokens[this.i] === ' ') this.i++
+    return this.tokens[this.i]
+  }
+
   private next(): string | undefined { return this.tokens[this.i++] }
 
   private group(): MathComponent[] {
-    if (this.next() !== '{') throw new UnsupportedFormula()
+    if (this.peek() !== '{') throw new UnsupportedFormula()
+    this.next()
     const out = this.sequence(false)
-    if (this.next() !== '}') throw new UnsupportedFormula()
+    if (this.peek() !== '}') throw new UnsupportedFormula()
+    this.next()
     return out
   }
 
@@ -100,17 +119,17 @@ class LatexParser {
     const out: MathComponent[] = []
     while (this.i < this.tokens.length) {
       const token = this.peek()
-      if (token === '}' || token === ']' || token === ')') break
+      if (token === '}' || token === ']' || token === ')' || token === undefined) break
       if (stopAtRight && token === '\\right') break
       if (token === '&' || token === '\\\\' || token === '\\right') throw new UnsupportedFormula()
-      if (token === ' ') { this.next(); continue }
       out.push(...this.atomWithScripts())
     }
     return out
   }
 
   private rawGroupText(): string {
-    if (this.next() !== '{') throw new UnsupportedFormula()
+    if (this.peek() !== '{') throw new UnsupportedFormula()
+    this.next()
     let depth = 1
     let text = ''
     while (this.i < this.tokens.length) {
@@ -131,8 +150,7 @@ class LatexParser {
     return text
   }
 
-  private atomWithScripts(): MathComponent[] {
-    const base = this.atom()
+  private readScripts(): { sub?: MathComponent[]; sup?: MathComponent[] } {
     let sub: MathComponent[] | undefined
     let sup: MathComponent[] | undefined
     while (this.peek() === '_' || this.peek() === '^') {
@@ -141,6 +159,12 @@ class LatexParser {
       if (op === '_') sub = arg
       else sup = arg
     }
+    return { sub, sup }
+  }
+
+  private atomWithScripts(): MathComponent[] {
+    const base = this.atom()
+    const { sub, sup } = this.readScripts()
     if (sub && sup) return [new MathSubSuperScript({ children: base, subScript: sub, superScript: sup })]
     if (sub) return [new MathSubScript({ children: base, subScript: sub })]
     if (sup) return [new MathSuperScript({ children: base, superScript: sup })]
@@ -155,16 +179,21 @@ class LatexParser {
   private bracket(open: string, close: string): MathComponent[] {
     this.next()
     const inner = this.sequence(false)
-    if (this.next() !== close) throw new UnsupportedFormula()
+    if (this.peek() !== close) throw new UnsupportedFormula()
+    this.next()
     if (open === '[') return [new MathSquareBrackets({ children: inner })]
     if (open === '(') return [new MathRoundBrackets({ children: inner })]
     return inner
   }
 
+  private hasOperand(): boolean {
+    const t = this.peek()
+    return Boolean(t && t !== '}' && t !== ']' && t !== ')' && t !== '\\right')
+  }
+
   private atom(): MathComponent[] {
-    let token = this.next()
-    if (!token) throw new UnsupportedFormula()
-    while (token === ' ') token = this.next()
+    this.peek()
+    const token = this.next()
     if (!token) throw new UnsupportedFormula()
     if (token === '{') {
       this.i--
@@ -187,30 +216,35 @@ class LatexParser {
       if (this.peek() === '[') {
         this.next()
         degree = this.sequence(false)
-        if (this.next() !== ']') throw new UnsupportedFormula()
+        if (this.peek() !== ']') throw new UnsupportedFormula()
+        this.next()
       }
       return [new MathRadical({ children: this.group(), ...(degree ? { degree } : {}) })]
     }
-    if (cmd === 'sum' || cmd === 'prod') {
-      const sub = this.peek() === '_' ? (this.next(), this.scriptArgument()) : undefined
-      const sup = this.peek() === '^' ? (this.next(), this.scriptArgument()) : undefined
-      const body = this.atomWithScripts()
+    if (ACCENTS[cmd]) {
+      return [new MathAccent({ accent: ACCENTS[cmd], children: this.scriptArgument() }) as unknown as MathComponent]
+    }
+    if (cmd === 'overline' || cmd === 'underline') {
+      return [new MathBar({ position: cmd === 'underline' ? 'below' : 'above', children: this.scriptArgument() }) as unknown as MathComponent]
+    }
+    if (cmd === 'sum' || cmd === 'prod' || cmd === 'int') {
+      // 不分顺序地读取上下限（支持 \sum_{i=1}^{n} 与 \sum^{n}_{i=1}）
+      const { sub, sup } = this.readScripts()
+      const body = this.hasOperand() ? this.atomWithScripts() : []
       if (cmd === 'prod') {
-        return [new MathSubSuperScript({ children: [new MathRun('∏')], subScript: sub ?? [], superScript: sup ?? [] }), ...body]
+        return [new MathLargeOperator({ operator: 'product', children: body, ...(sub ? { subScript: sub } : {}), ...(sup ? { superScript: sup } : {}) }) as unknown as MathComponent]
+      }
+      if (cmd === 'int') {
+        return [new MathIntegral({ children: body, ...(sub ? { subScript: sub } : {}), ...(sup ? { superScript: sup } : {}) })]
       }
       return [new MathSum({ children: body, ...(sub ? { subScript: sub } : {}), ...(sup ? { superScript: sup } : {}) })]
-    }
-    if (cmd === 'int') {
-      const sub = this.peek() === '_' ? (this.next(), this.scriptArgument()) : undefined
-      const sup = this.peek() === '^' ? (this.next(), this.scriptArgument()) : undefined
-      const body = this.atomWithScripts()
-      return [new MathIntegral({ children: body, ...(sub ? { subScript: sub } : {}), ...(sup ? { superScript: sup } : {}) })]
     }
     if (cmd === 'left') {
       const open = this.next()
       if (!open) throw new UnsupportedFormula()
       const inner = this.sequence(true)
-      if (this.next() !== '\\right') throw new UnsupportedFormula()
+      if (this.peek() !== '\\right') throw new UnsupportedFormula()
+      this.next()
       const close = this.next()
       if (!close) throw new UnsupportedFormula()
       if (open === '(' && close === ')') return [new MathRoundBrackets({ children: inner })]
@@ -238,7 +272,7 @@ class LatexParser {
     }
     if (SPACES[cmd] !== undefined) return SPACES[cmd] ? [new MathRun(SPACES[cmd])] : []
     if (GREEK[cmd]) return [new MathRun(GREEK[cmd])]
-    if (cmd === 'begin' || cmd === 'end' || cmd === 'overline' || cmd === 'underline' || cmd === 'hat' || cmd === 'vec' || cmd === 'bar' || cmd === 'matrix') {
+    if (cmd === 'begin' || cmd === 'end' || cmd === 'matrix') {
       throw new UnsupportedFormula()
     }
     // 未知命令交给图片兜底，避免把公式吞成半截
@@ -268,7 +302,7 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes
 }
 
-/** 不支持的公式用 KaTeX 渲染成 PNG；离线、WebView 内也能跑。 */
+/** 不支持的公式用 KaTeX 渲染成 PNG；行内公式收紧边距与字号，避免被行高裁切。 */
 export async function renderFormulaPng(latex: string, display: boolean): Promise<BinaryImage | null> {
   if (typeof document === 'undefined') return null
   try {
@@ -277,7 +311,9 @@ export async function renderFormulaPng(latex: string, display: boolean): Promise
     const holder = document.createElement('div')
     // html-to-image 会克隆节点；节点在视口外时克隆内容会落到画布外，截出白图。
     // 放到原点、压到背景层下面，截图期间不可见，但克隆坐标有效。
-    holder.style.cssText = 'position:fixed;left:0;top:0;z-index:-1;display:inline-block;padding:8px;background:#fff;color:#000;font-size:18px;line-height:1.25;pointer-events:none;'
+    holder.style.cssText = display
+      ? 'position:fixed;left:0;top:0;z-index:-1;display:inline-block;padding:8px;background:#fff;color:#000;font-size:18px;line-height:1.25;pointer-events:none;'
+      : 'position:fixed;left:0;top:0;z-index:-1;display:inline-block;padding:2px;background:#fff;color:#000;font-size:14px;line-height:1.15;pointer-events:none;'
     holder.innerHTML = katex.renderToString(latex, { displayMode: display, throwOnError: false, strict: false, output: 'html' })
     document.body.appendChild(holder)
     await document.fonts?.ready

@@ -8,6 +8,7 @@ import {
   escapeVCardValue,
   escapeWifiValue,
   isWebUrl,
+  parseQrTemplate,
 } from './qrTemplates'
 
 describe('escapeWifiValue / buildWifiContent', () => {
@@ -112,3 +113,66 @@ function toContainIndex(lines: string[], prefix: string): number {
   expect(i).toBeGreaterThanOrEqual(0)
   return i
 }
+
+describe('parseQrTemplate', () => {
+  it('往返解析 WiFi（含转义字符与无密码）', () => {
+    const raw = buildWifiContent({ ssid: '我家的;网:1', password: 'p:w\\,x', encryption: 'WPA' })
+    expect(parseQrTemplate(raw)).toEqual({
+      kind: 'wifi',
+      fields: { ssid: '我家的;网:1', password: 'p:w\\,x', encryption: 'WPA' },
+    })
+    const open = buildWifiContent({ ssid: 'Guest', encryption: 'nopass' })
+    expect(parseQrTemplate(open)).toEqual({
+      kind: 'wifi',
+      fields: { ssid: 'Guest', encryption: 'nopass' },
+    })
+  })
+
+  it('往返解析 vCard 3.0（含多行备注、转义与折叠行）', () => {
+    const raw = buildVCardContent({
+      name: '张三;测试',
+      org: 'ACME, Inc.',
+      title: '工程师',
+      phone: '13800000000',
+      email: 'a@b.com',
+      url: 'https://example.com',
+      note: '第一行\n第二行',
+    })
+    expect(parseQrTemplate(raw)).toEqual({
+      kind: 'vcard',
+      fields: {
+        name: '张三;测试',
+        org: 'ACME, Inc.',
+        title: '工程师',
+        phone: '13800000000',
+        email: 'a@b.com',
+        url: 'https://example.com',
+        note: '第一行\n第二行',
+      },
+    })
+  })
+
+  it('往返解析邮件 mailto: 与短信 SMSTO:', () => {
+    const mail = buildEmailContent({ to: 'a@b.com', subject: '主题', body: '正文\n二行' })
+    expect(parseQrTemplate(mail)).toEqual({
+      kind: 'email',
+      fields: { to: 'a@b.com', subject: '主题', body: '正文\n二行' },
+    })
+    const sms = buildSmsContent({ phone: '10086', message: '14:00 查话费' })
+    expect(parseQrTemplate(sms)).toEqual({
+      kind: 'sms',
+      fields: { phone: '10086', message: '14:00 查话费' },
+    })
+  })
+
+  it('区分网址与纯文本', () => {
+    expect(parseQrTemplate('https://example.com/a?x=1')).toEqual({
+      kind: 'url',
+      fields: { url: 'https://example.com/a?x=1' },
+    })
+    expect(parseQrTemplate('普通备忘内容')).toEqual({
+      kind: 'text',
+      fields: { text: '普通备忘内容' },
+    })
+  })
+})

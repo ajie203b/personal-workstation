@@ -1,14 +1,15 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { FileText, X } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { Segmented } from '@/shared/ui/Segmented'
 import { useUi } from '@/stores/ui'
 import { PDFDocument } from 'pdf-lib'
+import { usePdfHandoff } from './handoff'
 import { parsePageExpr, parsePageGroups } from './pdfPages'
 import { extractPages, splitByGroups } from './pdfOps'
 import { zipFiles, type ToolOutput } from './output'
-import { Field, FilePicker, OutputBar, Panel, fileBytes, pdfBlob } from './parts'
+import { FIELD_INPUT, Field, FilePicker, OutputBar, Panel, fileBytes, pdfBlob } from './parts'
 
 type Mode = 'extract' | 'groups' | 'per-page'
 
@@ -28,7 +29,7 @@ export function SplitPanel() {
   const [name, setName] = useState('拆分')
   const [everyN, setEveryN] = useState('2')
 
-  const pick = async (f: File) => {
+  const pick = useCallback(async (f: File) => {
     setFile(f)
     setTotal(0)
     try {
@@ -38,7 +39,9 @@ export function SplitPanel() {
       toast('打不开这份 PDF（可能已损坏或格式特殊）')
       setFile(null)
     }
-  }
+  }, [toast])
+
+  usePdfHandoff('split', (incoming) => void pick(incoming))
 
   let singlePdf = mode === 'extract'
   try {
@@ -101,10 +104,10 @@ export function SplitPanel() {
           </Button>
         </div>
       ) : (
-        <FilePicker accept="application/pdf" label="选择 PDF" onPick={(files) => void pick(files[0])} />
+        <FilePicker accept="application/pdf,.pdf" label="选择 PDF" onPick={(files) => void pick(files[0])} />
       )}
 
-      <Segmented options={MODES} value={mode} onChange={setMode} ariaLabel="拆分方式" className="self-start" />
+      <Segmented asRadio options={MODES} value={mode} onChange={setMode} ariaLabel="拆分方式" className="self-start" />
 
       {mode === 'extract' && (
         <Field label="提取页码">
@@ -112,7 +115,7 @@ export function SplitPanel() {
             value={expr}
             onChange={(e) => setExpr(e.target.value)}
             placeholder="如 1-3,5,8-"
-            className="w-52 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60 text-right"
+            className={FIELD_INPUT}
           />
         </Field>
       )}
@@ -122,7 +125,7 @@ export function SplitPanel() {
             value={expr}
             onChange={(e) => setExpr(e.target.value)}
             placeholder="如 1-3;4-6;7-"
-            className="w-52 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60 text-right"
+            className={FIELD_INPUT}
           />
         </Field>
       )}
@@ -148,11 +151,11 @@ export function SplitPanel() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="拆分"
-          className="w-40 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60 text-right"
+          className={FIELD_INPUT}
         />
       </Field>
 
-      <OutputBar make={make} action="拆分" disabled={!file || !total} allowLibrary={singlePdf} />
+      <OutputBar make={make} action="拆分" disabled={!file || !total} allowLibrary={singlePdf} allowHandoff={singlePdf} />
     </Panel>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BookOpen, Pause, Play, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, BookOpen, Pause, Play, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import type { FanqieJob } from '@/stores/fanqie'
 import type { FanqieBook } from '@/db/db'
@@ -68,10 +68,25 @@ export function SearchResultCard({ item, onClick }: { item: FanqieSearchItem; on
   )
 }
 
-export function BookCard({ book, downloaded }: { book: FanqieBookInfo; downloaded: number }) {
+export function BookCard({
+  book,
+  downloaded,
+  lastError,
+  onResumeMissing,
+  resumeDisabled,
+}: {
+  book: FanqieBookInfo
+  downloaded: number
+  lastError?: string
+  onResumeMissing?: () => void
+  resumeDisabled?: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
   const words = formatWordCount(book.wordCount)
   const updated = formatDate(book.updatedAt)
+  const totalChapters = book.chapters.length || book.chapterCount
+  const missingCount = Math.max(0, totalChapters - downloaded)
+
   return (
     <section className="card p-4">
       <div className="flex gap-3.5">
@@ -84,7 +99,7 @@ export function BookCard({ book, downloaded }: { book: FanqieBookInfo; downloade
           <p className="text-[12.5px] text-on-surface-2 mt-1 truncate">{book.author}</p>
           <p className="text-[11.5px] text-on-surface-2 mt-1.5 tabular-nums">
             {words && <>{words} · </>}
-            {book.chapters.length || book.chapterCount} 章
+            {totalChapters} 章
             {updated && <> · {updated}</>}
           </p>
           {book.tags.length > 0 && (
@@ -97,10 +112,30 @@ export function BookCard({ book, downloaded }: { book: FanqieBookInfo; downloade
             </div>
           )}
           {downloaded > 0 && (
-            <p className="text-[11.5px] text-primary mt-2 tabular-nums">本地已存 {downloaded} 章</p>
+            <p className="text-[11.5px] text-primary mt-2 tabular-nums">
+              本地已存 {downloaded} 章{missingCount > 0 ? ` · 缺 ${missingCount} 章` : ' · 已齐'}
+            </p>
           )}
         </div>
       </div>
+
+      {book.fontChanged && (
+        <div className="mt-3 rounded-[10px] border border-p1/30 bg-p1/10 px-3 py-2 flex items-start gap-2 text-[11.5px] text-p1 leading-relaxed">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <span>检测到番茄官网字体映射已更新，直连官网正文可能出现未识别字符；建议优先通过 FQWeb 节点或自定义节点下载。</span>
+        </div>
+      )}
+
+      {lastError && (
+        <div className="mt-3 rounded-[10px] border border-danger/25 bg-danger/5 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
+          <span className="text-danger leading-relaxed min-w-0 flex-1">上次下载错误：{lastError}</span>
+          {missingCount > 0 && onResumeMissing && (
+            <Button size="sm" variant="outline" disabled={resumeDisabled} onClick={onResumeMissing} className="shrink-0">
+              <RotateCcw size={13} /> 续传缺失章节（{missingCount}）
+            </Button>
+          )}
+        </div>
+      )}
 
       {book.abstract && (
         <div className="mt-3">
@@ -161,6 +196,9 @@ export function ProgressCard({
         <span className="tabular-nums">完成 {job.done}</span>
         {job.failed > 0 && <span className="text-danger tabular-nums">失败 {job.failed}</span>}
         {job.skipped > 0 && <span className="text-p1 tabular-nums">跳过 {job.skipped}</span>}
+        {job.unknownGlyphs > 0 && (
+          <span className="text-p1 tabular-nums">含 {job.unknownGlyphs} 章未识别字形</span>
+        )}
         <span className="tabular-nums">共 {job.total}</span>
         {job.current && <span className="truncate max-w-[220px]">{job.current}</span>}
         <span className="flex-1" />
@@ -171,7 +209,7 @@ export function ProgressCard({
         )}
         {(job.phase === 'paused' || job.phase === 'error') && (
           <Button size="sm" variant="outline" onClick={onResume}>
-            <Play size={13} /> {job.phase === 'error' ? '重试未完成章节' : '继续'}
+            <Play size={13} /> {job.phase === 'error' ? '续传缺失章节' : '继续'}
           </Button>
         )}
         {!running && (
@@ -180,6 +218,11 @@ export function ProgressCard({
           </Button>
         )}
       </div>
+      {job.unknownGlyphs > 0 && job.phase === 'done' && (
+        <p className="text-[11.5px] text-p1 mt-1.5 leading-relaxed">
+          有 {job.unknownGlyphs} 章正文含少量未映射字形（可能来自字体更新或生僻字），阅读或导出前可留意核对。
+        </p>
+      )}
       {job.error && <p className="text-[11.5px] text-danger mt-1.5 leading-relaxed">{job.error}</p>}
     </section>
   )
@@ -191,6 +234,7 @@ export function LibraryRow({
   onOpen,
   onRead,
   onExport,
+  onResume,
   onDelete,
 }: {
   book: FanqieBook
@@ -198,6 +242,7 @@ export function LibraryRow({
   onOpen: () => void
   onRead: () => void
   onExport: (format: 'txt' | 'epub') => void
+  onResume?: () => void
   onDelete: () => void
 }) {
   const pct = book.chapterCount ? Math.min(100, Math.round((book.downloadedCount / book.chapterCount) * 100)) : 0
@@ -205,6 +250,8 @@ export function LibraryRow({
   const txtBusy = busyAction === `txt:${book.id}`
   const epubBusy = busyAction === `epub:${book.id}`
   const delBusy = busyAction === `del:${book.id}`
+  const hasMissing = book.chapters.length > 0 && book.downloadedCount < book.chapterCount
+
   return (
     <div className="flex gap-3 py-3">
       <button type="button" onClick={onOpen} className="shrink-0 cursor-pointer" aria-label={`查看《${book.title}》`}>
@@ -212,7 +259,14 @@ export function LibraryRow({
       </button>
       <div className="min-w-0 flex-1">
         <button type="button" onClick={onOpen} className="text-left max-w-full cursor-pointer">
-          <p className="text-[13px] font-medium truncate hover:text-primary transition-colors">{book.title}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-[13px] font-medium truncate hover:text-primary transition-colors">{book.title}</p>
+            {book.lastError && (
+              <span className="px-1.5 py-0.5 rounded-[5px] bg-danger/10 text-danger text-[10px] leading-none shrink-0">
+                中断
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-on-surface-2 mt-0.5 truncate">
             {book.author} · {book.downloadedCount} / {book.chapterCount} 章
           </p>
@@ -224,6 +278,11 @@ export function LibraryRow({
           <Button size="sm" variant="outline" state={readBusy ? 'loading' : 'idle'} disabled={!book.downloadedCount || Boolean(busyAction)} onClick={onRead}>
             阅读
           </Button>
+          {hasMissing && onResume && (
+            <Button size="sm" variant="outline" disabled={Boolean(busyAction)} onClick={onResume}>
+              <RotateCcw size={12} /> 续传
+            </Button>
+          )}
           <Button size="sm" variant="ghost" state={txtBusy ? 'loading' : 'idle'} disabled={!book.downloadedCount || Boolean(busyAction)} onClick={() => onExport('txt')}>
             TXT
           </Button>

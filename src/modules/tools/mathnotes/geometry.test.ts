@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { answerAnchor, columnRows, systemRows, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, strokesHitBy } from './geometry'
+import { answerAnchor, boxesOverlap, columnRows, systemRows, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, findGraphPlacement, fitAnswer, layoutOverlayItems, strokesHitBy } from './geometry'
 import { rasterizeStrokes, toPixelValues, MFR_INPUT_SIZE } from './preprocess'
 import { writeText } from './testInk'
 import type { Stroke } from './types'
@@ -222,4 +222,35 @@ it('左侧大括号将两行手写方程组合为一个识别块', () => {
   expect(systemRows(all, 35)?.rows).toHaveLength(2)
   expect(clusterStrokes(all, { charHeight: 35 })).toHaveLength(1)
   expect(systemRows(rows, 35)).toBeNull()
+})
+
+describe('layoutOverlayItems / findGraphPlacement', () => {
+  it('算式靠近顶部时 chip 不被裁剪且不与相邻块重叠', () => {
+    const b1 = { key: 'b1', strokeIds: ['s1'], box: { minX: 20, minY: 12, maxX: 160, maxY: 50 } }
+    const b2 = { key: 'b2', strokeIds: ['s2'], box: { minX: 20, minY: 96, maxX: 160, maxY: 136 } }
+    const layout = layoutOverlayItems(
+      [
+        { key: 'b1', block: b1, x: 170, y: 31, fontSize: 36, placement: 'inline', answerWidth: 50, hasChip: true, chipWidth: 80 },
+        { key: 'b2', block: b2, x: 170, y: 116, fontSize: 36, placement: 'inline', answerWidth: 50, hasChip: true, chipWidth: 80 },
+      ],
+      390,
+    )
+    const c1 = layout.get('b1')!.chipPos!
+    const c2 = layout.get('b2')!.chipPos!
+    expect(c1.above).toBe(false)
+    expect(c1.y).toBeGreaterThanOrEqual(4)
+    const r1 = c1.above ? { minX: c1.x, minY: c1.y - 26, maxX: c1.x + 80, maxY: c1.y } : { minX: c1.x, minY: c1.y, maxX: c1.x + 80, maxY: c1.y + 26 }
+    const r2 = c2.above ? { minX: c2.x, minY: c2.y - 26, maxX: c2.x + 80, maxY: c2.y } : { minX: c2.x, minY: c2.y, maxX: c2.x + 80, maxY: c2.y + 26 }
+    expect(boxesOverlap(r1, r2, 0)).toBe(false)
+  })
+
+  it('插入图像避开已有笔迹与图像，不再重叠', () => {
+    const b1 = { key: 'b1', strokeIds: ['s1'], box: { minX: 20, minY: 20, maxX: 240, maxY: 100 } }
+    const p1 = findGraphPlacement([b1], [], { width: 280, height: 220, viewWidth: 390, scrollY: 0 })
+    expect(p1.y).toBeGreaterThanOrEqual(100)
+    expect(boxesOverlap({ minX: p1.x, minY: p1.y, maxX: p1.x + 280, maxY: p1.y + 220 }, b1.box, 0)).toBe(false)
+
+    const p2 = findGraphPlacement([b1], [{ x: p1.x, y: p1.y, width: 280, height: 220 }], { width: 280, height: 220, viewWidth: 390, scrollY: 0 })
+    expect(boxesOverlap({ minX: p2.x, minY: p2.y, maxX: p2.x + 280, maxY: p2.y + 220 }, { minX: p1.x, minY: p1.y, maxX: p1.x + 280, maxY: p1.y + 220 }, 0)).toBe(false)
+  })
 })

@@ -1,21 +1,37 @@
 import { pressureWidth } from './geometry'
 import type { BlockResult, InkBlock, NoteGraph, Stroke } from './types'
 
-/** 答案颜色：苹果数学笔记那种暖黄/橙，深浅色模式下都醒目 */
-export const ANSWER_COLOR = '#F29D0B'
+/** 答案颜色：苹果数学笔记那种暖琥珀色，浅色 / 深色网格下都醒目 */
+export const ANSWER_COLOR = '#D97706'
+export const ANSWER_COLOR_LIGHT = '#B45309'
+export const ANSWER_COLOR_DARK = '#FBBF24'
 /** 手写风格字体：各平台自带的手写体，最后退到系统 cursive（安卓是 Dancing Script） */
 export const HAND_FONT = '"Bradley Hand", "Segoe Print", "Chalkboard SE", "Comic Sans MS", "Kaiti SC", STKaiti, KaiTi, cursive'
 export const PEN_WIDTH = 2.6
+export const PEN_WIDTHS = [
+  { id: 'thin', label: '细', value: 1.8 },
+  { id: 'medium', label: '中', value: 2.6 },
+  { id: 'bold', label: '粗', value: 4.0 },
+] as const
+export type PenColorId = 'auto' | 'blue' | 'red' | 'green'
+export const PEN_COLORS: { id: PenColorId; label: string; light: string; dark: string }[] = [
+  { id: 'auto', label: '自适应墨迹', light: '#252B36', dark: '#E9EDF5' },
+  { id: 'blue', label: '蓝色', light: '#2563EB', dark: '#60A5FA' },
+  { id: 'red', label: '红色', light: '#DC2626', dark: '#F87171' },
+  { id: 'green', label: '绿色', light: '#16A34A', dark: '#4ADE80' },
+]
 export const ERASER_RADIUS = 12
 /** 停笔多久自动识别（毫秒） */
 export const IDLE_MS = 1000
 export const GRID = 28
+export const MIN_ZOOM = 0.5
+export const MAX_ZOOM = 2.0
 
 /** 识别失败标记 / 「?」标记的宽度 */
 export const MARK_WIDTH = 26
 export const FAIL_MARK_WIDTH = 184
 
-export type Tool = 'pen' | 'eraser' | 'lasso'
+export type Tool = 'pen' | 'eraser' | 'lasso' | 'hand'
 export type Action =
   | { type: 'add'; strokes: Stroke[] }
   | { type: 'erase'; strokes: Stroke[] }
@@ -28,12 +44,21 @@ export type ModelState =
   | { phase: 'ready'; backend: string }
   | { phase: 'error'; message: string }
 
+export interface ChipPosition {
+  x: number
+  y: number
+  above: boolean
+  maxWidth?: number
+}
+
 export interface OverlayItem {
   key: string
   block: InkBlock
-  /** 识别结果；识别失败时为空，此时 failed 是失败原因 */
+  /** 识别结果；识别失败或尚未识别时为空 */
   res: BlockResult | null
   failed?: string
+  /** 尚未识别完成（模型下载中 / 排队中 / 离线），允许直接点「手动输入」 */
+  pending?: boolean
   x: number
   y: number
   fontSize: number
@@ -42,6 +67,8 @@ export interface OverlayItem {
   canCorrect?: boolean
   /** 答案比可视宽度还宽时限宽（答案自身横向滚动） */
   maxWidth?: number
+  /** 识别原文 chip 的防裁剪/防重叠位置 */
+  chipPos?: ChipPosition
 }
 
 export interface RecognizeJob {
@@ -55,6 +82,14 @@ export function cssVar(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   return v || fallback
+}
+
+export function resolveStrokeColor(color?: string): string {
+  if (!color || color === 'auto') return cssVar('--on-surface', '#1d1d1f')
+  const preset = PEN_COLORS.find((c) => c.id === color)
+  if (!preset) return color
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  return isDark ? preset.dark : preset.light
 }
 
 /** 画一笔：中点二次曲线平滑，线宽随压感逐段变化 */

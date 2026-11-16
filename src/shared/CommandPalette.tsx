@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router'
 import {
-  CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun,
+  CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun, Wrench,
 } from 'lucide-react'
 import { db, type Doc, type DocKind, type DocText, type Task } from '@/db/db'
 import { useUi, togglePalette } from '@/stores/ui'
@@ -11,12 +11,15 @@ import { docHitPath } from '@/shared/DeepLink'
 import { Skeleton } from '@/shared/ui/Skeleton'
 import { cn } from '@/lib/cn'
 import { guardNavigation } from '@/lib/unsavedGuard'
+import { isNative, isTauri } from '@/lib/native'
+import { TOOL_CATALOG } from '@/modules/tools/toolCatalog'
 
 interface PaletteItem {
   id: string
-  group: '动作' | '任务' | '文档' | '全文'
+  group: '动作' | '工具' | '任务' | '文档' | '全文'
   label: string
   hint?: string
+  keywords?: string
   icon: React.ReactNode
   run: () => void
 }
@@ -120,6 +123,7 @@ export function CommandPalette() {
       { id: 'a-today', group: '动作', label: '今日', icon: <CalendarCheck size={15} />, run: () => go('/today') },
       { id: 'a-tasks', group: '动作', label: '任务清单', icon: <ListTodo size={15} />, run: () => go('/tasks') },
       { id: 'a-docs', group: '动作', label: '文档工作站', icon: <FileText size={15} />, run: () => go('/docs') },
+      { id: 'a-tools', group: '动作', label: '工具箱', keywords: 'tools utilities 小工具', icon: <Wrench size={15} />, run: () => go('/tools') },
       { id: 'a-settings', group: '动作', label: '设置', icon: <Settings2 size={15} />, run: () => go('/settings') },
       {
         id: 'a-theme', group: '动作',
@@ -128,6 +132,16 @@ export function CommandPalette() {
         run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
       },
     ]
+    const nativeClient = isNative() || isTauri()
+    const toolItems: PaletteItem[] = TOOL_CATALOG.map((t) => ({
+      id: `tool-${t.to}`,
+      group: '工具',
+      label: t.title,
+      hint: t.nativeOnly && !nativeClient ? '仅客户端' : (t.badge ?? t.sub),
+      keywords: `${t.sub} ${t.keywords}`,
+      icon: <t.icon size={15} />,
+      run: () => go(t.to),
+    }))
     const taskItems: PaletteItem[] = (tasks ?? []).map((t) => ({
       id: `t-${t.id}`, group: '任务', label: t.title, hint: t.tier === 'today' ? '今日' : t.tier === 'upcoming' ? '近期' : t.tier === 'anytime' ? '随时' : '将来',
       icon: <ListTodo size={15} />, run: () => openTask(t.id, t.tier),
@@ -144,7 +158,7 @@ export function CommandPalette() {
       icon: <Search size={15} />,
       run: () => guardNavigation(() => navigate(docHitPath({ id: h.docId, kind: h.kind }, h.seg, kw))),
     }))
-    return [...actions, ...taskItems, ...docItems, ...fulltextItems]
+    return [...actions, ...toolItems, ...taskItems, ...docItems, ...fulltextItems]
   }, [tasks, docs, fulltextHits, kw, theme, navigate, setTheme])
 
   // 拼音搜索：惰性加载 pinyin-pro
@@ -159,7 +173,7 @@ export function CommandPalette() {
     const q = query.trim().toLowerCase()
     if (!q) {
       const byGroup = (g: string, n: number) => items.filter((i) => i.group === g).slice(0, n)
-      return [...byGroup('动作', 6), ...byGroup('任务', 4), ...byGroup('文档', 4)]
+      return [...byGroup('动作', 5), ...byGroup('工具', 4), ...byGroup('任务', 3), ...byGroup('文档', 3)]
     }
     // 拼音匹配：把中文标题转拼音后比对
     const match = (text: string) => {
@@ -172,7 +186,7 @@ export function CommandPalette() {
       }
       return false
     }
-    return items.filter((i) => i.group === '全文' || match(i.label) || (i.hint ?? '').toLowerCase().includes(q)).slice(0, 24)
+    return items.filter((i) => i.group === '全文' || match(i.label) || (i.hint ?? '').toLowerCase().includes(q) || (i.keywords ?? '').toLowerCase().includes(q)).slice(0, 24)
   }, [items, query, pinyinFn])
 
   // 打开时重置

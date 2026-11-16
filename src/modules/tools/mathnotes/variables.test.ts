@@ -38,3 +38,44 @@ it('单位算式不被同名变量错误替换', () => {
   const page = evaluatePage([{ key: 'v', latex: 'm=5' }, { key: 'u', latex: '2m+30cm=' }])
   expect(page.results.u.text).toBe('2.3 m')
 })
+
+it('支持多字符与下标变量名，并返回 ✓=val 注册徽标信息', () => {
+  const page = evaluatePage([
+    { key: 'p', latex: 'price = 10' },
+    { key: 'v', latex: 'v_0 = 5' },
+    { key: 'q', latex: '2price + v_{0} =' },
+  ])
+  expect(page.variables.price).toBe(10)
+  expect(page.variables.v_0).toBe(5)
+  expect(page.results.p.assigned).toEqual({ name: 'price', value: '10' })
+  expect(page.results.v.assigned).toEqual({ name: 'v_0', value: '5' })
+  expect(page.results.q.text).toBe('25')
+})
+
+it('保留数学常量 i / e 与函数名禁止作为变量赋值并给出明确提示', () => {
+  const res = evaluatePage([
+    { key: 'iAssign', latex: 'i = 1' },
+    { key: 'eAssign', latex: 'e = 2.7' },
+    { key: 'sinAssign', latex: 'sin = 3' },
+    { key: 'piAssign', latex: '\\pi = 3' },
+    { key: 'expr', latex: '1+i=' },
+  ])
+  expect(res.variables.i).toBeUndefined()
+  expect(res.variables.e).toBeUndefined()
+  expect(res.results.iAssign.kind).toBe('error')
+  expect(res.results.iAssign.message).toContain('保留')
+  expect(res.results.eAssign.kind).toBe('error')
+  expect(res.results.sinAssign.kind).toBe('error')
+  expect(res.results.piAssign.kind).toBe('error')
+  expect(res.results.expr.text).toBe('1+i')
+})
+
+it('非结尾等号方程也代换已定义变量（如 x^2 - a^2 = 0）', () => {
+  const page = evaluatePage([
+    { key: 'a', latex: 'a = 2' },
+    { key: 'eq', latex: 'x^2 - a^2 = 0' },
+  ])
+  expect(page.results.eq.kind).toBe('solutions')
+  expect(page.results.eq.latex).toContain('2')
+  expect(page.results.eq.latex).toContain('-2')
+})

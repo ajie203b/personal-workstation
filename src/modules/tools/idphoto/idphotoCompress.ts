@@ -2,8 +2,8 @@
  * 体积压缩与 JPEG 头（v3.3）：压到指定 KB、写 JFIF APP0 的 DPI 字段。纯函数/可注入编码器，
  * 二分逻辑可单测（mock toBlob）。
  *
- * - compressJpegToKb：quality 0.4~0.95 二分（质量越高文件越大，单调）；
- *   质量压到下限仍超 maxKb → 缩尺寸重来；低于 minKb → 提质量（已到 0.95 顶就认了）。
+ * - compressJpegToKb：quality 0.4~1.0 二分（质量越高文件越大，单调）；
+ *   质量压到下限仍超 maxKb → 缩尺寸重来；低于 minKb → 提质量（已到 1.0 顶就诚实标出 belowMinKb）。
  * - canvas.toBlob('image/jpeg') 产出的是无 EXIF 的新 JPEG（自然去掉了方向/相机信息），
  *   但 DPI 会被写成 72，所以再用 setJpegDpi 改写 APP0 的 X/Y density（units=1 即 dpi）。
  */
@@ -27,6 +27,10 @@ export interface CompressResult {
   bytes: number
   /** 尺寸被缩过几轮（0 = 原尺寸） */
   shrinks: number
+  /** 质量已拉到 1.0 仍未达到 minKb 下限 */
+  belowMinKb: boolean
+  /** 为压进 maxKb 不得不缩小了像素尺寸 */
+  shrunkSize: boolean
 }
 
 /** 编码器：给定质量与尺寸产出 JPEG blob（页面里包 canvas.toBlob，测试里 mock） */
@@ -34,7 +38,7 @@ export type JpegEncoder = (quality: number, width: number, height: number) => Pr
 
 /** 以整数百分比搜索，避免浮点舍入使区间不再收缩 */
 const QUALITY_MIN = 0.4
-const QUALITY_MAX = 0.95
+const QUALITY_MAX = 1.0
 /** 超大时每次缩到 0.85，最多缩 6 轮（约 0.38 倍边长） */
 const SHRINK_FACTOR = 0.85
 const MAX_SHRINKS = 6
@@ -43,13 +47,14 @@ const MAX_SHRINKS = 6
  * 二分压到 [minKb, maxKb]。
  *
  * 1. q=0.4 就超 maxKb → 缩尺寸再试（"到下限仍超大再缩尺寸"）；
- * 2. 否则二分出不超过 maxKb 的最大质量；结果低于 minKb 说明 0.95 也不够大，
- *    质量已到顶，直接返回（"低于下限提高质量"，能提的都提了）。
+ * 2. 否则二分出不超过 maxKb 的最大质量；结果低于 minKb 说明 1.0 也不够大，
+ *    质量已到顶，返回并标明 belowMinKb=true。
  */
 export async function compressJpegToKb(
   encode: JpegEncoder,
   target: CompressTarget,
 ): Promise<CompressResult> {
+  const minBytes = Math.max(0, target.minKb * 1024)
   const maxBytes = Math.max(1024, target.maxKb * 1024)
   let width = Math.max(1, Math.round(target.width))
   let height = Math.max(1, Math.round(target.height))
@@ -82,7 +87,16 @@ export async function compressJpegToKb(
       }
     }
 
-    return { blob: best, quality: bestQ, width, height, bytes: best.size, shrinks }
+    return {
+      blob: best,
+      quality: bestQ,
+      width,
+      height,
+      bytes: best.size,
+      shrinks,
+      belowMinKb: best.size < minBytes,
+      shrunkSize: shrinks > 0,
+    }
   }
 }
 

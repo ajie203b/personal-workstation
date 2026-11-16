@@ -1,5 +1,54 @@
-import { describe, expect, it } from 'vitest'
-import { readJpegOrientation } from './imageInput'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { inferImageMime, readJpegOrientation, renderBitmapToBytes } from './imageInput'
+
+afterEach(() => { vi.unstubAllGlobals() })
+
+describe('inferImageMime / renderBitmapToBytes', () => {
+  it('file.type 为空时回退到文件名扩展名', () => {
+    expect(inferImageMime({ type: '', name: 'scan.PNG' })).toBe('image/png')
+    expect(inferImageMime({ type: '', name: 'photo.jpg' })).toBe('image/jpeg')
+    expect(inferImageMime({ type: '', name: 'clip.webp' })).toBe('image/webp')
+    expect(inferImageMime({ type: '', name: 'logo.svg' })).toBe('image/svg+xml')
+    expect(inferImageMime({ type: 'image/gif', name: 'x.bin' })).toBe('image/gif')
+  })
+
+  it('非 PNG 转 JPEG 时先铺 #ffffff 白底再绘制，避免透明变黑；90° 旋转对换宽高', async () => {
+    const calls: string[] = []
+    const fakeCtx = {
+      fillStyle: '',
+      fillRect(x: number, y: number, w: number, h: number) { calls.push(`fillRect:${this.fillStyle}:${x},${y},${w},${h}`) },
+      translate(x: number, y: number) { calls.push(`translate:${x},${y}`) },
+      rotate(rad: number) { calls.push(`rotate:${rad.toFixed(4)}`) },
+      drawImage(_b: unknown, x: number, y: number) { calls.push(`drawImage:${x},${y}`) },
+    }
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: () => fakeCtx,
+      toBlob: (cb: (b: Blob | null) => void, mime: string) => {
+        calls.push(`toBlob:${mime}`)
+        cb(new Blob([new Uint8Array([1, 2, 3])], { type: mime }))
+      },
+    }
+    vi.stubGlobal('document', { createElement: () => fakeCanvas })
+    const bitmap = { width: 120, height: 80 } as ImageBitmap
+
+    const jpegRes = await renderBitmapToBytes(bitmap, { kind: 'jpeg', rotation: 90 })
+    expect(jpegRes.width).toBe(80)
+    expect(jpegRes.height).toBe(120)
+    expect(fakeCanvas.width).toBe(80)
+    expect(fakeCanvas.height).toBe(120)
+    expect(calls[0]).toBe('fillRect:#ffffff:0,0,80,120')
+    expect(calls).toContain('toBlob:image/jpeg')
+
+    calls.length = 0
+    const pngRes = await renderBitmapToBytes(bitmap, { kind: 'png', rotation: 90 })
+    expect(pngRes.width).toBe(80)
+    expect(pngRes.height).toBe(120)
+    expect(calls.some(c => c.startsWith('fillRect'))).toBe(false)
+    expect(calls).toContain('toBlob:image/png')
+  })
+})
 
 /** 拼一段带 EXIF Orientation 的最小 JPEG（APP1 + TIFF IFD0 单条目） */
 function jpegWithOrientation(orientation: number, bigEndian = false): Uint8Array {

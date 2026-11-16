@@ -71,4 +71,58 @@ describe('jsQR 解码往返', () => {
     const long = '很长的内容。'.repeat(40) + 'https://example.com/' + 'x'.repeat(80)
     expect(roundTrip(long)).toBe(long)
   })
+
+  it('圆点（dots）+ 高容错 + 充足静区在标准尺寸下可被 jsQR 稳定解码', () => {
+    const dotsStyle: QrStyle = {
+      ...style,
+      dotType: 'dots',
+      eyeType: 'extra-rounded',
+      eyeDotType: 'dot',
+    }
+    const payloads = [
+      'hello world',
+      'https://example.com/article?id=42',
+      '中文圆点码测试',
+      buildWifiContent({ ssid: 'Lab-5G', password: 'secret;password', encryption: 'WPA' }),
+    ]
+    for (const content of payloads) {
+      const size = 512
+      const options = buildQrOptions(content, dotsStyle, size)
+      expect(options.qrOptions?.errorCorrectionLevel).toBe('H')
+      const qr = new QRCodeStyling({ ...options, type: 'svg' })
+      void qr._svgDrawingPromise?.catch(() => {})
+      void qr._canvasDrawingPromise?.catch(() => {})
+      const matrix = qr._qr as QrModuleMatrix | undefined
+      if (!matrix) throw new Error('QR 模型未生成')
+
+      const count = matrix.getModuleCount()
+      const margin = options.margin ?? 20
+      const dotSize = Math.floor((size - 2 * margin) / count)
+      const actual = dotSize * count
+      const off = Math.floor((size - actual) / 2)
+      const data = new Uint8ClampedArray(size * size * 4).fill(255)
+      for (let r = 0; r < count; r++) {
+        for (let c = 0; c < count; c++) {
+          if (!matrix.isDark(r, c)) continue
+          const inFinder = (r < 7 && c < 7) || (r < 7 && c >= count - 7) || (r >= count - 7 && c < 7)
+          const x0 = off + c * dotSize
+          const y0 = off + r * dotSize
+          const cx = x0 + dotSize / 2
+          const cy = y0 + dotSize / 2
+          const rad = dotSize / 2
+          for (let py = y0; py < y0 + dotSize; py++) {
+            for (let px = x0; px < x0 + dotSize; px++) {
+              const hit = inFinder || Math.hypot(px + 0.5 - cx, py + 0.5 - cy) <= rad
+              if (!hit) continue
+              const i = (py * size + px) * 4
+              data[i] = 0
+              data[i + 1] = 0
+              data[i + 2] = 0
+            }
+          }
+        }
+      }
+      expect(jsQR(data, size, size)?.data).toBe(content)
+    }
+  })
 })

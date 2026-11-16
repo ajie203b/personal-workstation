@@ -1,24 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import {
   Camera,
   ClipboardCopy,
   Copy,
+  FilePlus2,
   FileText,
   ImagePlus,
   ListTodo,
   Loader2,
+  RefreshCw,
+  Search,
   X,
 } from 'lucide-react'
 import { IconToolOcr } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
-import { Button } from '@/shared/ui/Button'
+import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
+import { Segmented } from '@/shared/ui/Segmented'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { importDoc } from '@/db/docs'
 import { addTask } from '@/db/tasks'
-import { LOW_CONFIDENCE, type Quad } from './ocrPipeline'
+import {
+  LOW_CONFIDENCE,
+  formatOcrLines,
+  type OcrFormatMode,
+  type Quad,
+} from './ocrPipeline'
 import type { OcrLine, OcrProgress } from './ocrEngine'
 
 /** 送进 Worker 的像素与尺寸 */
@@ -27,6 +36,20 @@ interface RgbaImage {
   width: number
   height: number
 }
+
+interface OcrPageResult {
+  id: string
+  objectUrl: string
+  width: number
+  height: number
+  lines: OcrLine[]
+}
+
+const FORMAT_OPTIONS: { value: OcrFormatMode; label: string }[] = [
+  { value: 'smart', label: '智能排版' },
+  { value: 'raw', label: '逐行原文' },
+  { value: 'table', label: 'Markdown 表格' },
+]
 
 /**
  * 图片文件 → RGBA 像素 + 预览 URL。
@@ -90,11 +113,20 @@ function polygonPoints(box: Quad): string {
   return box.map((p) => `${p.x},${p.y}`).join(' ')
 }
 
-/** 进度条：下载模型与推理各一段 */
-function OcrProgressBar({ progress, onCancel }: { progress: OcrProgress | null; onCancel: () => void }) {
+/** 进度条：下载模型与推理各一段，多图队列显示当前张数 */
+function OcrProgressBar({
+  progress,
+  queuePos,
+  onCancel,
+}: {
+  progress: OcrProgress | null
+  queuePos: { current: number; total: number } | null
+  onCancel: () => void
+}) {
   if (!progress) return null
   const percent = progress.ratio < 0 ? 0 : Math.round(progress.ratio * 100)
-  const label = progress.phase === 'download' ? '下载模型' : '本地识别'
+  const baseLabel = progress.phase === 'download' ? '下载模型' : '本地识别'
+  const label = queuePos && queuePos.total > 1 ? `${baseLabel}（第 ${queuePos.current}/${queuePos.total} 张）` : baseLabel
   return (
     <section className="card p-4 flex flex-col gap-2.5">
       <div className="flex items-center gap-3">
@@ -122,31 +154,51 @@ function OcrProgressBar({ progress, onCancel }: { progress: OcrProgress | null; 
 }
 
 /**
- * 本地 OCR（v3.3）：拍照 / 相册 / 粘贴截图取文字。
+ * 本地 OCR（v3.3）：拍照 / 相册 / 粘贴截图取文字（支持多图队列追加与分栏/表格排版）。
  *
  * 模型（PP-OCRv4 mobile det+rec + ppocr 字典）首次使用时下载并缓存在本机，
- * 之后全程离线：检测出文本框 → 图上叠框（点框复制该行、低置信度标黄）→
- * 右侧全文可编辑 → 复制 / 存为 MD 文档 / 转任务。识别在本地完成，图片不上传。
+ * 之后复用常驻热 Worker 与 ONNX 会话全程离线识别：图上叠框可键盘/点击复制该行、
+ * 支持关键词检索高亮、三种排版切换、复制 / 存为 MD 文档 / 转任务。图片不上传。
  */
 export function OcrPage() {
   const navigate = useNavigate()
   const toast = useUi((s) => s.toast)
 
-  const [pixels, setPixels] = useState<RgbaImage | null>(null)
-  const [objectUrl, setObjectUrl] = useState('')
-  const [lines, setLines] = useState<OcrLine[]>([])
+  const [pages, setPages] = useState<OcrPageResult[]>([])
+  const [activePageIdx, setActivePageIdx] = useState(0)
+  const [formatMode, setFormatMode] = useState<OcrFormatMode>('smart')
   const [text, setText] = useState('')
+  const [appendNext, setAppendNext] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedBoxIdx, setSelectedBoxIdx] = useState<number | null>(null)
+
   const [progress, setProgress] = useState<OcrProgress | null>(null)
+  const [queuePos, setQueuePos] = useState<{ current: number; total: number } | null>(null)
   const [error, setError] = useState('')
-  const [saving, setSaving] = useState('')
+  const [savingTask, setSavingTask] = useState(false)
+
+  const saveDocBtn = useAsyncButton({ successHoldMs: 900 })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const appendInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const workerRef = useRef<Worker | null>(null)
   const runIdRef = useRef(0)
+  const batchTokenRef = useRef(0)
+  const pagesRef = useRef<OcrPageResult[]>([])
+  const formatModeRef = useRef<OcrFormatMode>(formatMode)
+  const lastInputRef = useRef<{ files: Blob[]; append: boolean } | null>(null)
 
-  /** 停掉进行中的识别：先协作取消，再兜底 terminate（模型缓存不受影响） */
-  const stopWorker = useCallback(() => {
+  useEffect(() => {
+    pagesRef.current = pages
+  }, [pages])
+
+  useEffect(() => {
+    formatModeRef.current = formatMode
+  }, [formatMode])
+
+  /** 显式销毁后台 Worker（仅用于用户点击「取消」或组件卸载） */
+  const terminateWorker = useCallback(() => {
     const w = workerRef.current
     if (w) {
       try {
@@ -158,28 +210,46 @@ export function OcrPage() {
     }
     workerRef.current = null
     setProgress(null)
+    setQueuePos(null)
   }, [])
 
-  useEffect(() => () => stopWorker(), [stopWorker])
+  /** 取消当前进行中的识别批次 */
+  const cancelActiveRun = useCallback(() => {
+    batchTokenRef.current++
+    terminateWorker()
+  }, [terminateWorker])
 
-  /** 图片来源（相册/拍照/粘贴）统一入口：解码 → 建 Worker → 跑管线 */
-  const handleImageSource = useCallback(
-    async (file: Blob) => {
-      stopWorker()
-      setError('')
-      setLines([])
-      setText('')
-      setProgress({ phase: 'download', ratio: 0 })
-      try {
-        const { pixels: px, objectUrl: url } = await fileToRgba(file)
-        if (objectUrl) URL.revokeObjectURL(objectUrl)
-        setObjectUrl(url)
-        setPixels(px)
+  // 组件卸载时释放热 Worker 及所有图片 Blob URL
+  useEffect(() => {
+    return () => {
+      terminateWorker()
+      for (const p of pagesRef.current) URL.revokeObjectURL(p.objectUrl)
+    }
+  }, [terminateWorker])
 
-        const id = ++runIdRef.current
-        const worker = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' })
-        workerRef.current = worker
-        worker.onmessage = (e: MessageEvent) => {
+  const revokePages = useCallback((list: OcrPageResult[]) => {
+    for (const p of list) URL.revokeObjectURL(p.objectUrl)
+  }, [])
+
+  /** 获取或懒创建常驻热 Worker，跨图片复用 ppocr-det / ppocr-rec ONNX 会话 */
+  const getWarmWorker = useCallback((): Worker => {
+    if (!workerRef.current) {
+      workerRef.current = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' })
+    }
+    return workerRef.current
+  }, [])
+
+  /** 在热 Worker 上执行单张像素识别 */
+  const recognizePixelsOnWarmWorker = useCallback(
+    (px: RgbaImage): Promise<OcrLine[]> => {
+      const id = ++runIdRef.current
+      const worker = getWarmWorker()
+      return new Promise<OcrLine[]>((resolve, reject) => {
+        const cleanup = () => {
+          worker.removeEventListener('message', onMessage)
+          worker.removeEventListener('error', onError)
+        }
+        const onMessage = (e: MessageEvent) => {
           const msg = e.data as
             | { type: 'progress'; id: number; progress: OcrProgress }
             | { type: 'done'; id: number; lines: OcrLine[] }
@@ -189,60 +259,155 @@ export function OcrPage() {
             setProgress(msg.progress)
             return
           }
+          cleanup()
           if (msg.type === 'done') {
-            setLines(msg.lines)
-            setText(msg.lines.map((l) => l.text).join('\n'))
-            setProgress(null)
-            workerRef.current = null
-            if (msg.lines.length) toast(`识别到 ${msg.lines.length} 行文字`)
-            else toast('没有识别到文字，换一张更清晰的图再试')
+            resolve(msg.lines)
             return
           }
-          // error
-          setProgress(null)
-          workerRef.current = null
-          if (msg.aborted) return
-          setError(msg.message || '识别失败')
-          toast(msg.message || '识别失败')
+          if (msg.aborted) {
+            reject(new DOMException('已取消', 'AbortError'))
+            return
+          }
+          reject(new Error(msg.message || '识别失败'))
         }
-        worker.onerror = () => {
-          if (runIdRef.current !== id) return
-          setProgress(null)
-          workerRef.current = null
-          const msg = '识别进程异常退出，请重试'
-          setError(msg)
-          toast(msg)
+        const onError = () => {
+          cleanup()
+          if (workerRef.current === worker) {
+            worker.terminate()
+            workerRef.current = null
+          }
+          reject(new Error('识别进程异常退出，请重试'))
         }
-        // 像素 buffer 传给 Worker（transfer，主线程这份不再用）
+        worker.addEventListener('message', onMessage)
+        worker.addEventListener('error', onError)
         worker.postMessage({ type: 'run', id, width: px.width, height: px.height, rgba: px.data.buffer }, [px.data.buffer])
+      })
+    },
+    [getWarmWorker],
+  )
+
+  /** 图片队列统一入口：单张替换或多张顺序识别追加，全程复用热 Worker */
+  const handleFiles = useCallback(
+    async (fileList: Blob[], append: boolean) => {
+      if (!fileList.length) return
+      const token = ++batchTokenRef.current
+      lastInputRef.current = { files: fileList, append }
+
+      // 若上一批还在跑，发送协作取消，让 Worker 排空后接新批次
+      if (progress && workerRef.current) {
+        try {
+          workerRef.current.postMessage({ type: 'cancel', id: runIdRef.current })
+        } catch {
+          /* ignore */
+        }
+      }
+
+      setError('')
+      setSearchQuery('')
+      setSelectedBoxIdx(null)
+
+      if (!append) {
+        revokePages(pagesRef.current)
+        setPages([])
+        setActivePageIdx(0)
+        setText('')
+      }
+
+      let totalNewLines = 0
+      try {
+        for (let i = 0; i < fileList.length; i++) {
+          if (batchTokenRef.current !== token) return
+          setQueuePos({ current: i + 1, total: fileList.length })
+          setProgress({ phase: 'infer', ratio: 0 })
+
+          const { pixels: px, objectUrl } = await fileToRgba(fileList[i])
+          if (batchTokenRef.current !== token) {
+            URL.revokeObjectURL(objectUrl)
+            return
+          }
+
+          const pageId = `${Date.now()}-${i}`
+          // 先把当前图预览摆出来（即便多图排队也能实时看见正在识别哪一张）
+          const pendingPage: OcrPageResult = { id: pageId, objectUrl, width: px.width, height: px.height, lines: [] }
+          setPages((prev) => {
+            const next = [...prev, pendingPage]
+            setActivePageIdx(next.length - 1)
+            return next
+          })
+
+          try {
+            const recognized = await recognizePixelsOnWarmWorker(px)
+            if (batchTokenRef.current !== token) return
+
+            totalNewLines += recognized.length
+            setPages((prev) => prev.map((p) => (p.id === pageId ? { ...p, lines: recognized } : p)))
+
+            const formatted = formatOcrLines(recognized, formatModeRef.current)
+            if (formatted) {
+              setText((prev) => (prev.trim() ? `${prev.trimEnd()}\n\n${formatted}` : formatted))
+            }
+          } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') return
+            throw err
+          }
+        }
+
+        if (batchTokenRef.current !== token) return
+        if (totalNewLines > 0) {
+          toast(
+            fileList.length > 1
+              ? `已完成 ${fileList.length} 张图片识别，共 ${totalNewLines} 行文字`
+              : `识别到 ${totalNewLines} 行文字`,
+          )
+        } else {
+          toast('没有识别到文字，换一张更清晰的图再试')
+        }
       } catch (e) {
-        setProgress(null)
-        const msg = e instanceof Error ? e.message : '图片读取失败'
+        if (batchTokenRef.current !== token) return
+        const msg = e instanceof Error ? e.message : '识别失败'
         setError(msg)
         toast(msg)
+      } finally {
+        if (batchTokenRef.current === token) {
+          setProgress(null)
+          setQueuePos(null)
+        }
       }
     },
-    [objectUrl, stopWorker, toast],
+    [progress, recognizePixelsOnWarmWorker, revokePages, toast],
   )
 
   // 粘贴图片识别（ref 转发最新处理函数，监听只挂一次）
-  const imageHandlerRef = useRef(handleImageSource)
+  const pasteHandlerRef = useRef<(files: Blob[]) => void>(() => {})
   useEffect(() => {
-    imageHandlerRef.current = handleImageSource
-  })
+    pasteHandlerRef.current = (files: Blob[]) => {
+      void handleFiles(files, appendNext && pagesRef.current.length > 0)
+    }
+  }, [appendNext, handleFiles])
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const img = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'))
-      if (!img) return
+      const imgs = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'))
+      if (!imgs.length) return
       e.preventDefault()
-      void imageHandlerRef.current(img)
+      pasteHandlerRef.current(imgs)
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
   }, [])
 
-  /** 点框复制该行 */
-  const onBoxClick = async (line: OcrLine) => {
+  const onChangeFormatMode = (nextMode: OcrFormatMode) => {
+    setFormatMode(nextMode)
+    if (!pages.length) return
+    const combined = pages
+      .map((p) => formatOcrLines(p.lines, nextMode))
+      .filter(Boolean)
+      .join('\n\n')
+    setText(combined)
+  }
+
+  /** 点框 / 键盘回车复制该行 */
+  const onBoxClick = async (line: OcrLine, idx: number) => {
+    setSelectedBoxIdx(idx)
     try {
       await copyText(line.text)
       toast('已复制该行')
@@ -261,10 +426,9 @@ export function OcrPage() {
     }
   }
 
-  /** 存为 MD 文档（v1 只做「存为新文档」） */
+  /** 存为 MD 文档（配 useAsyncButton 状态流转） */
   const doSaveDoc = async () => {
-    if (!text.trim() || saving) return
-    setSaving('doc')
+    if (!text.trim()) return
     try {
       const title = safeName(text.trim().split('\n')[0] ?? '')
       const file = new File([text], `${title}.md`, { type: 'text/markdown' })
@@ -272,15 +436,14 @@ export function OcrPage() {
       toast(duplicated ? `内容已存在《${doc.title}》` : '已存入文档库')
     } catch (e) {
       toast(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving('')
+      throw e
     }
   }
 
   /** 转任务：标题取前 30 字 */
   const doAddTask = async () => {
-    if (!text.trim() || saving) return
-    setSaving('task')
+    if (!text.trim() || savingTask) return
+    setSavingTask(true)
     try {
       const title = text.replace(/\s+/g, ' ').trim().slice(0, 30)
       await addTask({ title, tier: 'today', notes: text })
@@ -288,11 +451,32 @@ export function OcrPage() {
     } catch (e) {
       toast(e instanceof Error ? e.message : '转任务失败')
     } finally {
-      setSaving('')
+      setSavingTask(false)
     }
   }
 
-  const lowConfidence = lines.filter((l) => l.confidence < LOW_CONFIDENCE).length
+  const clearAll = () => {
+    cancelActiveRun()
+    revokePages(pagesRef.current)
+    setPages([])
+    setActivePageIdx(0)
+    setError('')
+    setText('')
+    setSearchQuery('')
+    setSelectedBoxIdx(null)
+    setAppendNext(false)
+  }
+
+  const activePage = pages[activePageIdx] ?? pages[pages.length - 1] ?? null
+  const activeLines = useMemo(() => activePage?.lines ?? [], [activePage])
+  const totalLinesCount = pages.reduce((s, p) => s + p.lines.length, 0)
+  const lowConfidence = activeLines.filter((l) => l.confidence < LOW_CONFIDENCE).length
+
+  const needle = searchQuery.trim().toLowerCase()
+  const matchCount = useMemo(() => {
+    if (!needle) return 0
+    return activeLines.filter((l) => l.text.toLowerCase().includes(needle)).length
+  }, [activeLines, needle])
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
@@ -305,7 +489,7 @@ export function OcrPage() {
         <div className="min-w-0">
           <h1 className="hidden md:block text-[22px] font-bold leading-7">本地 OCR</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
-            拍照 / 截图取文字，点框复制、存为文档，识别在本地完成
+            拍照 / 截图取文字，支持分栏与表格排版、多图连续识别追加，点框复制、存为文档
           </p>
         </div>
       </header>
@@ -318,11 +502,24 @@ export function OcrPage() {
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0]
+              const files = Array.from(e.target.files ?? [])
               e.target.value = ''
-              if (f) void handleImageSource(f)
+              if (files.length) void handleFiles(files, false)
+            }}
+          />
+          <input
+            ref={appendInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              e.target.value = ''
+              if (files.length) void handleFiles(files, true)
             }}
           />
           <input
@@ -332,83 +529,173 @@ export function OcrPage() {
             capture="environment"
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0]
+              const files = Array.from(e.target.files ?? [])
               e.target.value = ''
-              if (f) void handleImageSource(f)
+              if (files.length) void handleFiles(files, appendNext && pages.length > 0)
             }}
           />
-          <Button onClick={() => fileInputRef.current?.click()} variant="primary" className="h-9 px-4">
-            <ImagePlus size={15} /> 相册
+          <Button onClick={() => fileInputRef.current?.click()} variant="primary" className="h-9 px-4" disabled={Boolean(progress)}>
+            <ImagePlus size={15} /> 相册（可多选）
           </Button>
-          <Button onClick={() => cameraInputRef.current?.click()} className="h-9 px-4">
+          <Button onClick={() => cameraInputRef.current?.click()} className="h-9 px-4" disabled={Boolean(progress)}>
             <Camera size={15} /> 拍照
           </Button>
-          {objectUrl && (
-            <Button
-              onClick={() => {
-                stopWorker()
-                setError('')
-                setLines([])
-                setText('')
-                if (objectUrl) URL.revokeObjectURL(objectUrl)
-                setObjectUrl('')
-                setPixels(null)
-              }}
-              variant="ghost"
-              className="h-9 px-3"
-            >
-              <X size={15} /> 清除
-            </Button>
+          {pages.length > 0 && (
+            <>
+              <Button onClick={() => appendInputRef.current?.click()} variant="outline" className="h-9 px-3" disabled={Boolean(progress)}>
+                <FilePlus2 size={15} /> 追加图片继续识别
+              </Button>
+              <button
+                type="button"
+                aria-pressed={appendNext}
+                onClick={() => setAppendNext((v) => !v)}
+                className={cn(
+                  'h-9 px-3 rounded-[10px] border text-[12px] cursor-pointer transition-colors',
+                  appendNext ? 'border-primary bg-primary-soft text-primary' : 'border-outline text-on-surface-2',
+                )}
+              >
+                粘贴/拍照追加：{appendNext ? '开' : '关'}
+              </button>
+              <Button onClick={clearAll} variant="ghost" className="h-9 px-3">
+                <X size={15} /> 清除
+              </Button>
+            </>
           )}
           <p className="hidden md:block text-[11.5px] text-on-surface-2 leading-relaxed">也可以直接 Ctrl+V 粘贴截图</p>
         </div>
       </section>
 
-      <OcrProgressBar progress={progress} onCancel={stopWorker} />
+      <OcrProgressBar progress={progress} queuePos={queuePos} onCancel={cancelActiveRun} />
 
       {error && (
-        <section className="card p-4 border-danger/40">
-          <p className="text-[13px] text-danger leading-relaxed">{error}</p>
-          <p className="text-[11.5px] text-on-surface-2 mt-1 leading-relaxed">
-            模型下载或识别失败时会保留已下载的部分缓存，网络恢复后重试即可。
-          </p>
+        <section className="card p-4 border-danger/40 flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] text-danger leading-relaxed">{error}</p>
+            <p className="text-[11.5px] text-on-surface-2 mt-1 leading-relaxed">
+              请检查网络连接或图片是否完整，异常模型缓存会自动清理重拉。
+            </p>
+          </div>
+          {lastInputRef.current && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={Boolean(progress)}
+              onClick={() => {
+                const last = lastInputRef.current
+                if (last) void handleFiles(last.files, last.append)
+              }}
+              className="shrink-0"
+            >
+              <RefreshCw size={14} /> 重试识别
+            </Button>
+          )}
         </section>
       )}
 
-      {pixels && objectUrl ? (
+      {activePage ? (
         <div className="grid md:grid-cols-2 gap-4 items-start">
           {/* 图 + 叠加识别框 */}
-          <section className="card p-3 flex flex-col gap-2">
+          <section className="card p-3 flex flex-col gap-2.5">
+            {pages.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5" role="tablist" aria-label="已识别图片列表">
+                {pages.map((p, idx) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={idx === activePageIdx}
+                    onClick={() => {
+                      setActivePageIdx(idx)
+                      setSelectedBoxIdx(null)
+                    }}
+                    className={cn(
+                      'shrink-0 h-7 px-2.5 rounded-[8px] border text-[11.5px] cursor-pointer transition-colors',
+                      idx === activePageIdx
+                        ? 'border-primary bg-primary-soft text-primary font-medium'
+                        : 'border-outline bg-surface-2 text-on-surface-2',
+                    )}
+                  >
+                    图 {idx + 1}（{p.lines.length}行）
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeLines.length > 0 && (
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-2 pointer-events-none" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索本图文字，高亮定位框…"
+                  aria-label="搜索识别结果"
+                  className="w-full h-8 rounded-[9px] border border-outline bg-surface-2 pl-8 pr-20 text-[12px] outline-none focus:border-primary/60"
+                />
+                {needle && (
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-primary font-medium tabular-nums">
+                    命中 {matchCount} 处
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="relative rounded-[10px] overflow-hidden bg-surface-2">
-              <img src={objectUrl} alt="待识别图片" className="block w-full h-auto select-none" draggable={false} />
-              {lines.length > 0 && (
+              <img src={activePage.objectUrl} alt="待识别图片" className="block w-full h-auto select-none" draggable={false} />
+              {activeLines.length > 0 && (
                 <svg
                   className="absolute inset-0 w-full h-full"
-                  viewBox={`0 0 ${pixels.width} ${pixels.height}`}
+                  viewBox={`0 0 ${activePage.width} ${activePage.height}`}
                   preserveAspectRatio="xMidYMid meet"
                 >
-                  {lines.map((line, i) => (
-                    <polygon
-                      key={i}
-                      points={polygonPoints(line.box)}
-                      fill={line.confidence < LOW_CONFIDENCE ? 'rgba(250, 204, 21, 0.22)' : 'rgba(44, 85, 184, 0.16)'}
-                      stroke={line.confidence < LOW_CONFIDENCE ? '#EAB308' : '#2C55B8'}
-                      strokeWidth={2}
-                      strokeLinejoin="round"
-                      className="cursor-pointer"
-                      onClick={() => void onBoxClick(line)}
-                    >
-                      <title>{line.text}</title>
-                    </polygon>
-                  ))}
+                  {activeLines.map((line, i) => {
+                    const isLow = line.confidence < LOW_CONFIDENCE
+                    const isMatch = needle ? line.text.toLowerCase().includes(needle) : false
+                    const isDimmed = Boolean(needle) && !isMatch
+                    const isActive = selectedBoxIdx === i
+                    const stroke = isMatch ? '#10B981' : isLow ? '#EAB308' : '#2C55B8'
+                    const fill = isMatch
+                      ? 'rgba(16, 185, 129, 0.28)'
+                      : isActive
+                        ? 'rgba(44, 85, 184, 0.30)'
+                        : isLow
+                          ? 'rgba(250, 204, 21, 0.22)'
+                          : 'rgba(44, 85, 184, 0.14)'
+
+                    return (
+                      <polygon
+                        key={i}
+                        points={polygonPoints(line.box)}
+                        vectorEffect="non-scaling-stroke"
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`复制第 ${i + 1} 行：${line.text}`}
+                        fill={fill}
+                        stroke={stroke}
+                        strokeWidth={isMatch || isActive ? 3 : 2}
+                        strokeLinejoin="round"
+                        opacity={isDimmed ? 0.25 : 1}
+                        className="cursor-pointer outline-none transition-[fill,opacity,stroke-width] duration-150 hover:opacity-100 focus-visible:stroke-[3]"
+                        onClick={() => void onBoxClick(line, i)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            void onBoxClick(line, i)
+                          }
+                        }}
+                      >
+                        <title>{line.text}</title>
+                      </polygon>
+                    )
+                  })}
                 </svg>
               )}
             </div>
             <p className="text-[11px] text-on-surface-2 leading-relaxed px-1">
-              {lines.length > 0 ? (
+              {activeLines.length > 0 ? (
                 <>
-                  点识别框复制该行；黄色为低置信度（&lt; 0.75）建议核对
-                  {lowConfidence > 0 && <span className="text-warning"> · {lowConfidence} 行偏低</span>}
+                  点击或键盘聚焦识别框回车复制该行；黄色为低置信度（&lt; 0.75）建议核对
+                  {lowConfidence > 0 && <span className="text-amber-600 dark:text-amber-400"> · {lowConfidence} 行偏低</span>}
                 </>
               ) : (
                 '识别完成后，文本框会叠加在图上'
@@ -416,16 +703,31 @@ export function OcrPage() {
             </p>
           </section>
 
-          {/* 全文编辑 + 出口 */}
+          {/* 全文编辑 + 排版模式 + 出口 */}
           <section className="card p-4 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-[13.5px] font-semibold">识别结果</h2>
-              {lines.length > 0 && <span className="text-[11px] text-on-surface-2">{lines.length} 行</span>}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <h2 className="text-[13.5px] font-semibold">识别结果</h2>
+                {totalLinesCount > 0 && (
+                  <span className="text-[11px] text-on-surface-2 tabular-nums">
+                    {pages.length > 1 ? `${pages.length} 张 · ` : ''}{totalLinesCount} 行
+                  </span>
+                )}
+              </div>
+              <Segmented<OcrFormatMode>
+                size="sm"
+                ariaLabel="识别结果排版模式"
+                value={formatMode}
+                onChange={onChangeFormatMode}
+                options={FORMAT_OPTIONS}
+              />
             </div>
+
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={14}
+              aria-label="识别结果文本编辑器"
               placeholder={progress ? '识别中…' : '识别出的文字会出现在这里，可直接编辑'}
               className="w-full rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 text-[13px] leading-relaxed outline-none focus:border-primary/60 resize-y min-h-[220px]"
             />
@@ -433,15 +735,21 @@ export function OcrPage() {
               <Button onClick={() => void doCopyAll()} disabled={!text.trim()} variant="outline" className="h-9 px-4">
                 <Copy size={15} /> 复制全文
               </Button>
-              <Button onClick={() => void doSaveDoc()} disabled={!text.trim() || Boolean(saving)} variant="primary" className="h-9 px-4">
-                {saving === 'doc' ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />} 存为 MD 文档
+              <Button
+                state={saveDocBtn.state}
+                onClick={() => void saveDocBtn.run(doSaveDoc)}
+                disabled={!text.trim() || savingTask}
+                variant="primary"
+                className="h-9 px-4"
+              >
+                <FileText size={15} /> 存为 MD 文档
               </Button>
-              <Button onClick={() => void doAddTask()} disabled={!text.trim() || Boolean(saving)} variant="outline" className="h-9 px-4">
-                {saving === 'task' ? <Loader2 size={15} className="animate-spin" /> : <ListTodo size={15} />} 转任务
+              <Button onClick={() => void doAddTask()} disabled={!text.trim() || savingTask || saveDocBtn.state === 'loading'} variant="outline" className="h-9 px-4">
+                {savingTask ? <Loader2 size={15} className="animate-spin" /> : <ListTodo size={15} />} 转任务
               </Button>
             </div>
             <p className="text-[11px] text-on-surface-2 leading-relaxed">
-              「转任务」把前 30 字作为标题、全文写进备注；「存为 MD 文档」进文档库，可继续编辑或加入阅读流程。
+              「智能排版」自动分栏并合并自然段折行；「Markdown 表格」对齐多列成表；「转任务」把前 30 字作标题、全文写入备注。
             </p>
           </section>
         </div>
@@ -451,7 +759,7 @@ export function OcrPage() {
           <EmptyState
             icon={ClipboardCopy}
             title="还没有待识别的图片"
-            hint="拍照或从相册选图，识别框和文字会显示在这里。"
+            hint="拍照、多选相册图片或直接 Ctrl+V 粘贴截图，识别框和文字会显示在这里。"
           />
         )
       )}

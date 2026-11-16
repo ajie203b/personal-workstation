@@ -4,18 +4,19 @@ import { liveQuery } from 'dexie'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/db'
 import { useUi } from '@/stores/ui'
-import { clusterStrokes, columnRows, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, fitAnswer, strokeBox, unionBox } from './geometry'
+import { clusterStrokes, columnRows, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, findGraphPlacement, fitAnswer, layoutOverlayItems, strokeBox, unionBox } from './geometry'
 import { transformStrokes } from './lasso'
+import { normalizeLatex } from './latexNormalize'
 import { manualExpression } from './mathText'
 import { createPage, deletePage, getLastPageId, listPages, newPage, setLastPageId } from './store'
 import { NoteSession, type EditKind } from './noteSession'
-import { FAIL_MARK_WIDTH, GRID, HAND_FONT, MARK_WIDTH, plainOf, type Action, type OverlayItem, type Tool } from './canvasDraw'
+import { FAIL_MARK_WIDTH, GRID, HAND_FONT, MARK_WIDTH, PEN_WIDTH, plainOf, type Action, type OverlayItem, type PenColorId, type Tool } from './canvasDraw'
 import { EmbeddedGraphLayer, LassoSelectionOverlay, ModelStatusBanner, OverlayAnswer } from './MathNotesOverlay'
 import { MathNotesToolbar } from './MathNotesToolbar'
 import { MathNotesDialogs } from './MathNotesDialogs'
 import { useCanvasPointer } from './useCanvasPointer'
 import { useMathRecognition } from './useMathRecognition'
-import type { BlockResult, MathNotePage, NoteGraph, Stroke } from './types'
+import type { AngleMode, BlockResult, MathNotePage, NoteGraph, Stroke } from './types'
 import { uid } from '@/lib/id'
 
 export { OverlayAnswer }
@@ -57,10 +58,24 @@ export function MathNotesPage() {
   const [tool, setTool] = useState<Tool>('pen')
   const toolRef = useRef<Tool>('pen')
   toolRef.current = tool
+  const [penColor, setPenColor] = useState<PenColorId>('auto')
+  const penColorRef = useRef<string>('auto')
+  penColorRef.current = penColor
+  const [penWidth, setPenWidth] = useState<number>(PEN_WIDTH)
+  const penWidthRef = useRef<number>(PEN_WIDTH)
+  penWidthRef.current = penWidth
+  const [zoom, setZoom] = useState(1)
+  const zoomRef = useRef(1)
+  zoomRef.current = zoom
+  const [penLocked, setPenLocked] = useState(false)
   const [showLatex, setShowLatex] = useState(false)
   const [resultMode, setResultMode] = useState<'auto' | 'suggest' | 'off'>('auto')
+  const [angleMode, setAngleMode] = useState<AngleMode>('rad')
   const [revealed, setRevealed] = useState<Set<string>>(new Set())
-  useEffect(() => { void db.settings.get('mathNotesResultMode').then(row => { if (row?.value === 'auto' || row?.value === 'suggest' || row?.value === 'off') setResultMode(row.value) }) }, [])
+  useEffect(() => {
+    void db.settings.get('mathNotesResultMode').then(row => { if (row?.value === 'auto' || row?.value === 'suggest' || row?.value === 'off') setResultMode(row.value) })
+    void db.settings.get('mathNotesAngleMode').then(row => { if (row?.value === 'rad' || row?.value === 'deg') setAngleMode(row.value) })
+  }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
   const [plotInput, setPlotInput] = useState('y=x^2')
@@ -74,6 +89,7 @@ export function MathNotesPage() {
   /** 答案元素实测宽度（key → CSS 像素），用于判断等号右侧放不放得下 */
   const [answerWidths, setAnswerWidths] = useState<Map<string, number>>(() => new Map())
 
+  const scrollXRef = useRef(0)
   const scrollYRef = useRef(0)
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
   const idleTimer = useRef<number | undefined>(undefined)
@@ -120,6 +136,7 @@ export function MathNotesPage() {
     source,
     setSourceState,
     recognizing,
+    evaluateEntriesNow,
     plotFunction,
     loadModel,
     getQueue,
@@ -130,6 +147,7 @@ export function MathNotesPage() {
   } = useMathRecognition({
     pageId,
     version,
+    angleMode,
     pageRef,
     strokesRef,
     graphsRef,
@@ -153,7 +171,10 @@ export function MathNotesPage() {
       // 撤销栈指向的是旧内容，换了内容就作废
       undoRef.current = []
       redoRef.current = []
-      if (!opts.keepScroll) scrollYRef.current = 0
+      if (!opts.keepScroll) {
+        scrollXRef.current = 0
+        scrollYRef.current = 0
+      }
       bump()
     },
     [bump, resetEvaluation],
@@ -312,19 +333,25 @@ export function MathNotesPage() {
 
   /* ---------- 指针输入 ---------- */
 
-  const { onPointerDown, onPointerMove, onPointerEnd, onWheel } = useCanvasPointer({
+  const { zoomAt, unlockFinger, onPointerDown, onPointerMove, onPointerEnd } = useCanvasPointer({
     containerRef,
     canvasRef,
     overlayRef,
     strokesRef,
     graphsRef,
     lassoRef,
+    scrollXRef,
     scrollYRef,
+    zoomRef,
+    penColorRef,
+    penWidthRef,
     sizeRef,
     idleTimer,
     toolRef,
     setSelected,
     setViewW,
+    onZoomChange: setZoom,
+    onPenLockChange: setPenLocked,
     version,
     pushAction,
     afterChange,
@@ -357,31 +384,78 @@ export function MathNotesPage() {
     const h = estimateCharHeight(strokes)
     const blocks = clusterStrokes(strokes, { charHeight: h })
     const queue = queueRef.current
+    const worldViewW = viewW > 0 ? viewW / zoom : 0
     const items: OverlayItem[] = []
+    const widths: number[] = []
     for (const block of blocks) {
       const res = resultsRef.current.get(block.key) ?? null
       const failed = res ? undefined : queue?.failureOf(block.key)
-      if (!res && !failed) continue
+      const pending = !res && !failed
       const blockStrokes = strokes.filter((s) => block.strokeIds.includes(s.id))
       const blockHeight = estimateCharHeight(blockStrokes, h)
       const column = columnRows(blockStrokes, blockHeight)
       const eq = column ? null : detectTrailingEquals(blockStrokes, blockHeight)
       const r = res?.result
-      const canCorrect = r?.kind === 'none' && Boolean(eq || column)
-      const isMark = !r || r.kind === 'error' || canCorrect
+      const isAssigned = r?.kind === 'none' && Boolean(r.assigned)
+      const canCorrect = r?.kind === 'none' && !isAssigned && Boolean(eq || column)
+      const isMark = !r || r.kind === 'error' || canCorrect || isAssigned
       const inline = r?.kind === 'inline' || (isMark && eq)
-      // 标记（? / ⚠）没有尾部等号时放在块右侧中线；放不下同样换到下方
-      const anchorEq = inline ? eq : isMark ? { box: { ...block.box, maxX: block.box.maxX + 10 - h * 0.3 }, midY: (block.box.minY + block.box.maxY) / 2 } : null
+      // 标记（? / ⚠ / 手动输入 / ✓=val）没有尾部等号时放在块右侧中线；放不下同样换到下方
+      const anchorEq = inline
+        ? eq
+        : isMark
+          ? { box: { ...block.box, maxX: block.box.maxX + 10 - h * 0.3 }, midY: (block.box.minY + block.box.maxY) / 2 }
+          : null
       const fontSize = Math.round(Math.min(96, Math.max(18, blockHeight * 0.95)))
       const measured = answerWidths.get(block.key)
-      const width = !r ? FAIL_MARK_WIDTH : r.kind === 'error' ? MARK_WIDTH : (measured ?? estimateAnswerWidth(plainOf(r.text || r.latex), anchorEq ? fontSize : Math.round(fontSize * 0.75), r.alt))
-      const a = fitAnswer(block, anchorEq, blockHeight, { answerWidth: width, viewWidth: viewW, alignRight: Boolean(column) && !isMark })
-      const penWidth = blockStrokes.reduce((sum, stroke) => sum + stroke.width, 0) / Math.max(1, blockStrokes.length)
-      const fontWeight = Math.max(400, Math.min(600, Math.round((penWidth / blockHeight) * 3000 / 100) * 100 + 300))
-      items.push({ key: block.key, block, res, failed, x: a.x, y: a.y, fontSize: a.fontSize, fontWeight, canCorrect, placement: a.placement, maxWidth: a.maxWidth })
+      const width = !r
+        ? failed
+          ? FAIL_MARK_WIDTH
+          : 92
+        : r.kind === 'error'
+          ? MARK_WIDTH
+          : isAssigned
+            ? Math.max(68, (r.assigned!.value.length + 4) * 9)
+            : (measured ?? estimateAnswerWidth(plainOf(r.text || r.latex), anchorEq ? fontSize : Math.round(fontSize * 0.75), r.alt))
+      const a = fitAnswer(block, anchorEq, blockHeight, { answerWidth: width, viewWidth: worldViewW, alignRight: Boolean(column) && !isMark })
+      const blockPenWidth = blockStrokes.reduce((sum, stroke) => sum + stroke.width, 0) / Math.max(1, blockStrokes.length)
+      const fontWeight = Math.max(400, Math.min(600, Math.round((blockPenWidth / blockHeight) * 3000 / 100) * 100 + 300))
+      widths.push(width)
+      items.push({
+        key: block.key,
+        block,
+        res,
+        failed,
+        pending,
+        x: a.x,
+        y: a.y,
+        fontSize: a.fontSize,
+        fontWeight,
+        canCorrect,
+        placement: a.placement,
+        maxWidth: a.maxWidth,
+      })
     }
-    return items
-  }, [version, viewW, answerWidths, queueRef])
+
+    const laidOut = layoutOverlayItems(
+      items.map((it, idx) => ({
+        key: it.key,
+        block: it.block,
+        x: it.x,
+        y: it.y,
+        fontSize: it.fontSize,
+        placement: it.placement,
+        answerWidth: widths[idx],
+        hasChip: showLatex && Boolean(it.res),
+        chipWidth: it.res ? Math.min(280, Math.max(64, plainOf(normalizeLatex(it.res.edited ?? it.res.recognized)).length * 8 + 20)) : 0,
+      })),
+      worldViewW,
+    )
+    return items.map((it) => {
+      const pos = laidOut.get(it.key)
+      return pos ? { ...it, x: pos.x, y: pos.y, chipPos: pos.chipPos } : it
+    })
+  }, [version, viewW, zoom, showLatex, answerWidths, queueRef])
 
   const onMeasure = useCallback((key: string, width: number) => {
     setAnswerWidths((prev) => {
@@ -398,7 +472,17 @@ export function MathNotesPage() {
   const editingBlock = editing ? (resultsRef.current.get(editing) ?? (manualFallback?.key === editing ? manualFallback : null)) : null
 
   const openManual = (key: string) => {
-    setManualFallback({ key, recognized: '', result: { kind: 'error', latex: '', text: '', message: '未能识别，请直接输入算式' } })
+    const failed = queueRef.current?.failureOf(key)
+    setManualFallback({
+      key,
+      recognized: '',
+      result: {
+        kind: 'error',
+        latex: '',
+        text: '',
+        message: failed ? '未能识别，请直接输入算式' : '可直接输入算式并点「重新计算」，无需等待模型加载',
+      },
+    })
     setEditing(key)
   }
 
@@ -412,17 +496,31 @@ export function MathNotesPage() {
     setEditBusy(true)
     try {
       // 画布上写了尾部等号、但编辑时把「=」删了：补回去，答案仍写在等号后
-      const block = clusterStrokes(strokesRef.current).find((b) => b.key === key)
+      const blocks = clusterStrokes(strokesRef.current)
+      const block = blocks.find((b) => b.key === key)
       const h = estimateCharHeight(strokesRef.current)
       const eq = block ? detectTrailingEquals(strokesRef.current.filter((s) => block.strokeIds.includes(s.id)), h) : null
       const column = block ? columnRows(strokesRef.current.filter((s) => block.strokeIds.includes(s.id)), h) : null
       const input = manualExpression(latex, Boolean(eq || column))
-      const result = await engine.compute(key, input)
-      if (pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== original) return
+      const entries = blocks.flatMap((b) => {
+        if (b.key === key) return [{ key, latex: input }]
+        const row = resultsRef.current.get(b.key)
+        if (!row || (row.edited == null && row.result.message?.includes('方程组未识别完整'))) return []
+        return [{ key: b.key, latex: row.edited ?? row.recognized }]
+      })
+      const evaluation = await evaluateEntriesNow(entries)
+      if (!evaluation || pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== original) return
+      const result = evaluation.results[key] ?? (await engine.compute(key, input, { angleMode, variables: evaluation.variables }))
       getQueue().retry(key)
-      resultsRef.current.set(key, { ...current, edited: latex, result })
+      resultsRef.current.set(key, { ...current, edited: input, result })
+      for (const entry of entries) {
+        if (entry.key === key) continue
+        const old = resultsRef.current.get(entry.key)
+        const next = evaluation.results[entry.key]
+        if (old && next) resultsRef.current.set(entry.key, { ...old, result: next })
+      }
       setRevealed(previous => { const next = new Set(previous); next.delete(key); return next })
-      graphsRef.current = graphsRef.current.map(graph => graph.sourceKey === key ? { ...graph, expression: latex } : graph)
+      graphsRef.current = graphsRef.current.map(graph => graph.sourceKey === key ? { ...graph, expression: input } : graph)
       bump()
       markEdited('user')
       setEditing(null)
@@ -441,9 +539,23 @@ export function MathNotesPage() {
     const editingPage = pageRef.current?.id
     setEditBusy(true)
     try {
-      const result = await engine.compute(key, current.recognized)
-      if (pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== current) return
+      const blocks = clusterStrokes(strokesRef.current)
+      const entries = blocks.flatMap((b) => {
+        if (b.key === key) return [{ key, latex: current.recognized }]
+        const row = resultsRef.current.get(b.key)
+        if (!row || (row.edited == null && row.result.message?.includes('方程组未识别完整'))) return []
+        return [{ key: b.key, latex: row.edited ?? row.recognized }]
+      })
+      const evaluation = await evaluateEntriesNow(entries)
+      if (!evaluation || pageRef.current?.id !== editingPage || !clusterStrokes(strokesRef.current).some(b => b.key === key) || resultsRef.current.get(key) !== current) return
+      const result = evaluation.results[key] ?? (await engine.compute(key, current.recognized, { angleMode, variables: evaluation.variables }))
       resultsRef.current.set(key, { key, recognized: current.recognized, result })
+      for (const entry of entries) {
+        if (entry.key === key) continue
+        const old = resultsRef.current.get(entry.key)
+        const next = evaluation.results[entry.key]
+        if (old && next) resultsRef.current.set(entry.key, { ...old, result: next })
+      }
       graphsRef.current = graphsRef.current.map(graph => graph.sourceKey === key ? { ...graph, expression: current.recognized } : graph)
       bump()
       markEdited('user')
@@ -510,20 +622,36 @@ export function MathNotesPage() {
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       <MathNotesToolbar
+        pages={pages}
         pageIndex={pageIndex}
         pageCount={pages.length}
         canUndo={undoRef.current.length > 0}
         canRedo={redoRef.current.length > 0}
         tool={tool}
+        penColor={penColor}
+        penWidth={penWidth}
+        zoom={zoom}
+        angleMode={angleMode}
+        penLocked={penLocked}
         showLatex={showLatex}
         onBack={() => navigate('/tools')}
         onGoPage={goPage}
+        onSelectPage={openPage}
         onUndo={undo}
         onRedo={redo}
         onSelectTool={(t) => {
           setTool(t)
           setSelected([])
         }}
+        onSelectPenColor={setPenColor}
+        onSelectPenWidth={setPenWidth}
+        onZoomChange={(nextZoom) => zoomAt(nextZoom)}
+        onToggleAngleMode={() => {
+          const next: AngleMode = angleMode === 'rad' ? 'deg' : 'rad'
+          setAngleMode(next)
+          void db.settings.put({ key: 'mathNotesAngleMode', value: next })
+        }}
+        onUnlockFinger={unlockFinger}
         onToggleLatex={() => setShowLatex((v) => !v)}
         onAddPage={() => void addPage()}
         onClearAll={clearAll}
@@ -544,13 +672,12 @@ export function MathNotesPage() {
         style={{
           backgroundImage:
             'linear-gradient(color-mix(in srgb, var(--outline) 55%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--outline) 55%, transparent) 1px, transparent 1px)',
-          backgroundSize: `${GRID}px ${GRID}px`,
+          backgroundSize: `${GRID * zoom}px ${GRID * zoom}px`,
         }}
-        onWheel={onWheel}
       >
         <canvas
           ref={canvasRef}
-          className={`absolute inset-0 touch-none ${tool === 'eraser' ? 'cursor-cell' : 'cursor-crosshair'}`}
+          className={`absolute inset-0 touch-none ${tool === 'eraser' ? 'cursor-cell' : tool === 'hand' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerEnd}
@@ -558,8 +685,8 @@ export function MathNotesPage() {
           onLostPointerCapture={onPointerEnd}
           onContextMenu={(e) => e.preventDefault()}
         />
-        {/* 答案层：世界坐标，随滚动整体平移；只有答案本身可点 */}
-        <div ref={overlayRef} className="absolute inset-0 pointer-events-none" aria-live="polite">
+        {/* 答案层：世界坐标，随滚动与缩放整体变换；只有答案本身可点 */}
+        <div ref={overlayRef} className="absolute inset-0 pointer-events-none" style={{ transformOrigin: '0 0' }} aria-live="polite">
           {overlay.map((it) => (
             <OverlayAnswer
               key={it.key}
@@ -579,6 +706,7 @@ export function MathNotesPage() {
             graphsRef={graphsRef}
             resultsRef={resultsRef}
             graphDrag={graphDrag}
+            zoom={zoom}
             pushAction={pushAction}
             bump={bump}
             markEdited={markEdited}
@@ -596,6 +724,7 @@ export function MathNotesPage() {
               strokesRef={strokesRef}
               selectionDrag={selectionDrag}
               selected={selected}
+              zoom={zoom}
               pushAction={pushAction}
               afterChange={afterChange}
               bump={bump}
@@ -605,6 +734,17 @@ export function MathNotesPage() {
             />
           )}
         </div>
+
+        {penLocked && (
+          <button
+            type="button"
+            onClick={unlockFinger}
+            aria-label="允许手指书写"
+            className="md:hidden absolute top-2.5 left-1/2 -translate-x-1/2 z-20 inline-flex items-center h-8 px-3 rounded-full border border-primary/40 bg-surface/95 backdrop-blur text-primary text-xs font-medium shadow-sm whitespace-nowrap cursor-pointer"
+          >
+            允许手指书写
+          </button>
+        )}
 
         {!strokesRef.current.length && pageId && (
           <div className="absolute inset-x-0 top-[28%] text-center pointer-events-none px-6">
@@ -654,16 +794,25 @@ export function MathNotesPage() {
               graph.id === existing.id ? { ...graph, expression, sourceKey, range, tMin, tMax, centerX, centerY, hiddenCurves } : graph,
             )
           } else {
+            const width = Math.min(280, Math.max(180, viewW - 32))
+            const height = 220
+            const pos = findGraphPlacement(clusterStrokes(strokesRef.current), graphsRef.current, {
+              width,
+              height,
+              viewWidth: viewW > 0 ? viewW / zoom : 0,
+              scrollY: scrollYRef.current,
+              sourceKey,
+            })
             graphsRef.current = [
               ...graphsRef.current,
               {
                 id: uid(),
                 expression,
                 sourceKey,
-                x: 16,
-                y: scrollYRef.current + 36,
-                width: Math.min(280, Math.max(180, viewW - 32)),
-                height: 220,
+                x: pos.x,
+                y: pos.y,
+                width,
+                height,
                 range,
                 tMin,
                 tMax,
@@ -691,6 +840,11 @@ export function MathNotesPage() {
           setResultMode(value)
           setRevealed(new Set())
           void db.settings.put({ key: 'mathNotesResultMode', value })
+        }}
+        angleMode={angleMode}
+        onAngleModeChange={(value) => {
+          setAngleMode(value)
+          void db.settings.put({ key: 'mathNotesAngleMode', value })
         }}
         model={model}
         percent={percent}

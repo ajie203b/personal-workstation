@@ -32,6 +32,11 @@ export function escapeWifiValue(value: string): string {
   return value.replace(/([\\;:,])/g, '\\$1')
 }
 
+/** 还原 WiFi 串里转义的语法字符（单趟匹配避免二次反转义） */
+export function unescapeWifiValue(value: string): string {
+  return value.replace(/\\([\\;:,"])/g, '$1')
+}
+
 export interface WifiFields {
   ssid: string
   password?: string
@@ -57,6 +62,11 @@ export function escapeVCardValue(value: string): string {
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\r?\n/g, '\\n')
+}
+
+/** 还原 vCard 转义（单趟处理 `\\` `\;` `\,` `\n`，防止 `\\n` 被误折行） */
+export function unescapeVCardValue(value: string): string {
+  return value.replace(/\\([\\;,nN])/g, (_, ch: string) => (ch === 'n' || ch === 'N' ? '\n' : ch))
 }
 
 export interface VCardFields {
@@ -127,4 +137,142 @@ export function buildUrlContent(raw: string): string {
 /** 识别结果是否算「网址」（只有 http/https 才给「打开链接」按钮） */
 export function isWebUrl(content: string): boolean {
   return /^https?:\/\//i.test(content.trim())
+}
+
+/* ---------------- 解析还原（历史回填 + 扫码结构化卡片） ---------------- */
+
+export type ParsedQrPayload =
+  | { kind: 'wifi'; fields: WifiFields }
+  | { kind: 'vcard'; fields: VCardFields }
+  | { kind: 'email'; fields: EmailFields }
+  | { kind: 'sms'; fields: SmsFields }
+  | { kind: 'url'; fields: { url: string } }
+  | { kind: 'text'; fields: { text: string } }
+
+function splitUnescapedSegments(body: string, sep: string): string[] {
+  const parts: string[] = []
+  let cur = ''
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (ch === '\\' && i + 1 < body.length) {
+      cur += ch + body[i + 1]
+      i++
+      continue
+    }
+    if (ch === sep) {
+      parts.push(cur)
+      cur = ''
+      continue
+    }
+    cur += ch
+  }
+  if (cur) parts.push(cur)
+  return parts
+}
+
+function parseWifiPayload(raw: string): WifiFields | null {
+  if (!/^WIFI:/i.test(raw)) return null
+  const body = raw.slice(5)
+  const segments = splitUnescapedSegments(body, ';').filter(Boolean)
+  let ssid = ''
+  let password = ''
+  let rawEnc = ''
+  let sawKey = false
+  for (const seg of segments) {
+    const colon = seg.indexOf(':')
+    if (colon <= 0) continue
+    const key = seg.slice(0, colon).trim().toUpperCase()
+    const val = unescapeWifiValue(seg.slice(colon + 1))
+    if (key === 'S') { ssid = val; sawKey = true }
+    else if (key === 'P') { password = val; sawKey = true }
+    else if (key === 'T') { rawEnc = val.trim().toUpperCase(); sawKey = true }
+  }
+  if (!sawKey) return null
+  const encryption: WifiFields['encryption'] =
+    rawEnc === 'NOPASS' || (!rawEnc && !password) ? 'nopass'
+      : rawEnc === 'WEP' ? 'WEP'
+        : 'WPA'
+  return { ssid, ...(encryption !== 'nopass' && password ? { password } : {}), encryption }
+}
+
+function parseVCardPayload(raw: string): VCardFields | null {
+  const unfolded = raw.trim().replace(/\r?\n[ \t]/g, '')
+  if (!/^BEGIN:VCARD\b/i.test(unfolded)) return null
+  const fields: VCardFields = { name: '' }
+  let fallbackN = ''
+  for (const line of unfolded.split(/\r?\n/)) {
+    const colon = line.indexOf(':')
+    if (colon <= 0) continue
+    const rawProp = line.slice(0, colon).split(';')[0].trim().toUpperCase()
+    const prop = rawProp.includes('.') ? rawProp.slice(rawProp.indexOf('.') + 1) : rawProp
+    const val = line.slice(colon + 1)
+    if (prop === 'FN') fields.name = unescapeVCardValue(val).trim()
+    else if (prop === 'N' && !fallbackN) {
+      const parts = splitUnescapedSegments(val, ';').map((p) => unescapeVCardValue(p).trim()).filter(Boolean)
+      fallbackN = parts.join(' ')
+    } else if (prop === 'ORG' && !fields.org) fields.org = unescapeVCardValue(val).trim()
+    else if (prop === 'TITLE' && !fields.title) fields.title = unescapeVCardValue(val).trim()
+    else if (prop === 'TEL' && !fields.phone) fields.phone = unescapeVCardValue(val).trim()
+    else if (prop === 'EMAIL' && !fields.email) fields.email = unescapeVCardValue(val).trim()
+    else if (prop === 'URL' && !fields.url) fields.url = unescapeVCardValue(val).trim()
+    else if (prop === 'NOTE' && !fields.note) fields.note = unescapeVCardValue(val)
+  }
+  if (!fields.name) fields.name = fallbackN
+  if (!fields.name && !fields.phone && !fields.email && !fields.org) return null
+  return fields
+}
+
+function safeDecodeQueryValue(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+function parseEmailPayload(raw: string): EmailFields | null {
+  if (!/^mailto:/i.test(raw)) return null
+  const rest = raw.slice(7)
+  const qIdx = rest.indexOf('?')
+  const to = safeDecodeQueryValue((qIdx >= 0 ? rest.slice(0, qIdx) : rest).trim())
+  const query = qIdx >= 0 ? rest.slice(qIdx + 1) : ''
+  const params = new URLSearchParams(query)
+  const subject = params.get('subject') ?? undefined
+  const body = params.get('body') ?? undefined
+  return { to, ...(subject ? { subject } : {}), ...(body ? { body } : {}) }
+}
+
+function parseSmsPayload(raw: string): SmsFields | null {
+  if (/^SMSTO:/i.test(raw)) {
+    const rest = raw.slice(6)
+    const colon = rest.indexOf(':')
+    if (colon < 0) return { phone: rest.trim() }
+    const phone = rest.slice(0, colon).trim()
+    const message = rest.slice(colon + 1)
+    return { phone, ...(message ? { message } : {}) }
+  }
+  if (/^sms:/i.test(raw)) {
+    const rest = raw.slice(4)
+    const qIdx = rest.indexOf('?')
+    const phone = (qIdx >= 0 ? rest.slice(0, qIdx) : rest).trim()
+    const params = qIdx >= 0 ? new URLSearchParams(rest.slice(qIdx + 1)) : null
+    const message = params?.get('body') ?? undefined
+    return { phone, ...(message ? { message } : {}) }
+  }
+  return null
+}
+
+/** 把二维码内容串解析回结构化模板字段（历史回填与扫码结果卡片共用） */
+export function parseQrTemplate(raw: string): ParsedQrPayload {
+  const trimmed = raw.trim()
+  const wifi = parseWifiPayload(trimmed)
+  if (wifi) return { kind: 'wifi', fields: wifi }
+  const vcard = parseVCardPayload(trimmed)
+  if (vcard) return { kind: 'vcard', fields: vcard }
+  const email = parseEmailPayload(trimmed)
+  if (email) return { kind: 'email', fields: email }
+  const sms = parseSmsPayload(trimmed)
+  if (sms) return { kind: 'sms', fields: sms }
+  if (isWebUrl(trimmed)) return { kind: 'url', fields: { url: trimmed } }
+  return { kind: 'text', fields: { text: raw } }
 }

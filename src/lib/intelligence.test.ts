@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeIntel } from './intelligence'
+import { INTEL_CHART_URLS, INTEL_JSON_URLS } from './intelSources'
 
 describe('normalizeIntel', () => {
   it('官方 API 形态：data 数组 + evaluations 字段', () => {
@@ -45,5 +46,14 @@ describe('normalizeIntel', () => {
   it('最多保留 30 个', () => {
     const models = Array.from({ length: 50 }, (_, i) => ({ name: `M${i}`, score: 100 - i }))
     expect(normalizeIntel({ models })?.models).toHaveLength(30)
+  })
+})
+
+describe('intelSources ordering', () => {
+  it('prioritizes domestic-reachable github.io before raw.githubusercontent.com', () => {
+    expect(INTEL_JSON_URLS[0]).toContain('ajie203b.github.io')
+    expect(INTEL_JSON_URLS[1]).toContain('raw.githubusercontent.com')
+    expect(INTEL_CHART_URLS[0]).toContain('ajie203b.github.io')
+    expect(INTEL_CHART_URLS[1]).toContain('raw.githubusercontent.com')
   })
 })

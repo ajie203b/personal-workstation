@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileText, X } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { Segmented } from '@/shared/ui/Segmented'
 import { PDFDocument } from 'pdf-lib'
+import { usePdfHandoff } from './handoff'
 import { rasterizePdf } from './pdfRender'
 import { zipFiles, type ToolOutput } from './output'
-import { Field, FilePicker, OutputBar, Panel, fileBytes } from './parts'
+import { FIELD_INPUT, Field, FilePicker, OutputBar, Panel, fileBytes } from './parts'
 import { parsePageExpr } from './pdfPages'
 import { useUi } from '@/stores/ui'
 
@@ -26,7 +27,7 @@ export function PdfToImagesPanel() {
   useEffect(() => () => controller.current?.abort(), [])
   const cancel = () => { controller.current?.abort(); setProgress('') }
 
-  const pick = async (f: File) => {
+  const pick = useCallback(async (f: File) => {
     setFile(f)
     setTotal(0)
     try {
@@ -37,7 +38,9 @@ export function PdfToImagesPanel() {
       setFile(null)
       setTotal(0)
     }
-  }
+  }, [])
+
+  usePdfHandoff('pdf2img', (incoming) => void pick(incoming))
 
   const make = async (): Promise<ToolOutput> => {
     if (!file) throw new Error('先选一份 PDF')
@@ -86,7 +89,7 @@ export function PdfToImagesPanel() {
           </Button>
         </div>
       ) : (
-        <FilePicker accept="application/pdf" label="选择 PDF" onPick={(files) => void pick(files[0])} />
+        <FilePicker accept="application/pdf,.pdf" label="选择 PDF" onPick={(files) => void pick(files[0])} />
       )}
 
       <fieldset disabled={!!progress} className="contents">
@@ -104,9 +107,10 @@ export function PdfToImagesPanel() {
           triggerClassName="w-36"
         />
       </Field>
-      <Field label="导出页码"><input aria-label="导出页码" value={expr} disabled={!!progress} onChange={e => setExpr(e.target.value)} placeholder="留空为全部，如 1-3,5" className="w-48 max-w-full h-9 px-3 rounded-[10px] bg-surface-2 border border-outline text-[12px]" /></Field>
+      <Field label="导出页码"><input aria-label="导出页码" value={expr} disabled={!!progress} onChange={e => setExpr(e.target.value)} placeholder="留空为全部，如 1-3,5" className={FIELD_INPUT} /></Field>
       <Field label="格式">
         <Segmented
+          asRadio
           options={[
             { value: 'png', label: 'PNG' },
             { value: 'jpeg', label: 'JPEG' },
@@ -127,13 +131,13 @@ export function PdfToImagesPanel() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="导出"
-          className="w-40 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60 text-right"
+          className={FIELD_INPUT}
         />
       </Field>
 
       </fieldset>
       {progress && <Button size="sm" onClick={cancel}>取消导出</Button>}
-      <OutputBar make={make} action="导出" disabled={!file || !total} allowLibrary={false} />
+      <OutputBar make={make} action="导出" disabled={!file || !total} allowLibrary={false} allowHandoff={false} />
     </Panel>
   )
 }

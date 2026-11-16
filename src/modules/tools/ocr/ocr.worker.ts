@@ -30,41 +30,46 @@ type OutMsg =
   | { type: 'error'; id: number; message: string; aborted: boolean }
 
 const abortedIds = new Set<number>()
+/** 串行化 Worker 内推理任务，避免并发抢占同一个 ONNX 会话 */
+let runQueue: Promise<void> = Promise.resolve()
 
-self.onmessage = async (e: MessageEvent<InMsg>) => {
+self.onmessage = (e: MessageEvent<InMsg>) => {
   const msg = e.data
   if (msg.type === 'cancel') {
     abortedIds.add(msg.id)
     return
   }
-  const { id, width, height, rgba } = msg
-  const signal = {
-    get aborted() {
-      return abortedIds.has(id)
-    },
-  }
-  try {
-    const result = await runOcr(
-      { data: new Uint8ClampedArray(rgba), width, height },
-      {
-        signal,
-        onProgress: (progress) => {
-          const out: OutMsg = { type: 'progress', id, progress }
-          self.postMessage(out)
-        },
+  runQueue = runQueue.then(async () => {
+    const { id, width, height, rgba } = msg
+    const signal = {
+      get aborted() {
+        return abortedIds.has(id)
       },
-    )
-    const out: OutMsg = { type: 'done', id, lines: result.lines, width, height }
-    self.postMessage(out)
-  } catch (err) {
-    abortedIds.delete(id)
-    const isAbort = err instanceof DOMException && err.name === 'AbortError'
-    const out: OutMsg = {
-      type: 'error',
-      id,
-      message: err instanceof Error ? err.message : String(err),
-      aborted: isAbort,
     }
-    self.postMessage(out)
-  }
+    try {
+      const result = await runOcr(
+        { data: new Uint8ClampedArray(rgba), width, height },
+        {
+          signal,
+          onProgress: (progress) => {
+            const out: OutMsg = { type: 'progress', id, progress }
+            self.postMessage(out)
+          },
+        },
+      )
+      const out: OutMsg = { type: 'done', id, lines: result.lines, width, height }
+      self.postMessage(out)
+    } catch (err) {
+      const isAbort = err instanceof DOMException && err.name === 'AbortError'
+      const out: OutMsg = {
+        type: 'error',
+        id,
+        message: err instanceof Error ? err.message : String(err),
+        aborted: isAbort,
+      }
+      self.postMessage(out)
+    } finally {
+      abortedIds.delete(id)
+    }
+  })
 }

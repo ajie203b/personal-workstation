@@ -1,6 +1,6 @@
 import type { FanqieBook } from '@/db/db'
 import type { FanqieBookInfo } from '@/lib/fanqie'
-import { FqwebError } from '@/lib/fanqieFqweb'
+import { FANQIE_WEB_CORS_HINT, FqwebError } from '@/lib/fanqieFqweb'
 
 export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
@@ -32,7 +32,7 @@ export function searchErrorMessage(e: unknown): string {
       case 'NOT_FOUND':
         return '没搜到这本书，换个书名或作者试试。'
       case 'UNAVAILABLE':
-        return '在线服务暂时连不上，请稍后再试。'
+        return e.message === FANQIE_WEB_CORS_HINT ? e.message : '在线服务暂时连不上，请稍后再试。'
       default:
         return e.message
     }
@@ -42,7 +42,9 @@ export function searchErrorMessage(e: unknown): string {
 
 export function bookErrorMessage(e: unknown): string {
   if (e instanceof FqwebError) {
-    if (e.code === 'UNAVAILABLE') return '正文接口暂时连不上，稍后重试。'
+    if (e.code === 'UNAVAILABLE') {
+      return e.message === FANQIE_WEB_CORS_HINT ? e.message : '正文接口暂时连不上，稍后重试。'
+    }
     if (e.code === 'NOT_FOUND') return '没有拿到这本书的目录。'
     return e.message
   }

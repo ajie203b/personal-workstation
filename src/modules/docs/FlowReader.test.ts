@@ -68,4 +68,18 @@ describe('FlowReader legacy annotation replay', () => {
     expect(highlighted).toBe('起点正文第二章末尾正文')
     expect(container.querySelectorAll('.flow-body > p')).toHaveLength(2)
   })
+
+  it('omits duplicate .flow-seg-title when chapter HTML begins with a bare or div-wrapped matching heading', () => {
+    renderLegacyAnnotation({
+      unit: 'chapter',
+      segments: [
+        { title: '第一卷', html: '<div class="volume-page"><h1>第一卷</h1><p>共 2 章</p></div>', text: '第一卷\n共 2 章' },
+        { title: '第1章', html: '<h1>第1章</h1><p>正文</p>', text: '第1章\n正文' },
+      ],
+      text: '第一卷\n共 2 章\n第1章\n正文',
+    }, '正文')
+
+    expect(container.querySelectorAll('.flow-seg-title')).toHaveLength(0)
+    expect(container.querySelectorAll('.flow-body h1')).toHaveLength(2)
+  })
 })

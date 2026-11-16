@@ -9,14 +9,14 @@
  * 下载 / 推理失败都抛中文错误（「模型没拉下来，换个网络再试」），由页面展示，不白屏。
  */
 import { FilesetResolver, FaceDetector, ImageSegmenter } from '@mediapipe/tasks-vision'
-import { getModel, type ModelSpec } from '@/lib/modelCache'
+import { deleteModel, getModel, type ModelSpec } from '@/lib/modelCache'
 import { getOnnxRunner } from '@/lib/onnx'
 import {
-  estimateBackground,
+  estimateLocalBackground,
   featherAlpha,
+  letterboxToSquareRgba,
   removeColorSpill,
-  resizeAlpha,
-  resizeRgba,
+  unletterboxAlpha,
 } from './idphotoAlpha'
 import { facePointsFromNormalized, type FacePoints } from './idphotoCrop'
 import { planFaceSearchWindows, windowToImageNormalized, type SearchWindow } from './idphotoFaceSearch'
@@ -232,25 +232,36 @@ export async function detectFacePoints(image: RgbaImage): Promise<FacePoints | n
 
 // ---------- 抠图 ----------
 
-/** MODNet 预处理：缩到 512×512，RGB + (v/255-0.5)/0.5，NCHW */
+/** MODNet 预处理：等比 letterbox 填进 512×512，RGB + (v/255-0.5)/0.5，NCHW */
 function toModnetTensor(image: RgbaImage): { data: Float32Array; size: number } {
   const size = MODNET_INPUT_SIZE
-  const small = resizeRgba(image.data, image.width, image.height, size, size)
+  const { data: square } = letterboxToSquareRgba(image.data, image.width, image.height, size)
   const data = new Float32Array(3 * size * size)
   for (let i = 0; i < size * size; i++) {
-    data[i] = (small[i * 4] / 255 - 0.5) / 0.5
-    data[size * size + i] = (small[i * 4 + 1] / 255 - 0.5) / 0.5
-    data[2 * size * size + i] = (small[i * 4 + 2] / 255 - 0.5) / 0.5
+    data[i] = (square[i * 4] / 255 - 0.5) / 0.5
+    data[size * size + i] = (square[i * 4 + 1] / 255 - 0.5) / 0.5
+    data[2 * size * size + i] = (square[i * 4 + 2] / 255 - 0.5) / 0.5
   }
   return { data, size }
 }
 
-async function runModnet(
+/** 快速检查模型字节是否为截断或 HTML 错误页 */
+function looksCorruptedOnnx(buf: ArrayBuffer): boolean {
+  if (buf.byteLength < 100_000) return true
+  const head = new Uint8Array(buf, 0, Math.min(8, buf.byteLength))
+  // '<' (HTML/XML 错误页) 或 '{' (JSON 错误)
+  return head[0] === 0x3c || head[0] === 0x7b
+}
+
+async function runModnetOnce(
   image: RgbaImage,
   onProgress?: (ratio: number) => void,
 ): Promise<Float32Array> {
   onProgress?.(0)
   const buf = await getModel({ ...MODNET_SPEC, onProgress: (r) => onProgress?.(Math.max(0, r) * 0.6) })
+  if (looksCorruptedOnnx(buf)) {
+    throw new Error('模型缓存文件损坏或为错误页')
+  }
   const runner = getOnnxRunner()
   // prepare 会 transfer buffer，留副本，缓存里的原件才能继续用
   await runner.prepare('modnet', buf.slice(0))
@@ -271,7 +282,21 @@ async function runModnet(
     smallAlpha[i] = v < 0 ? 0 : v > 1 ? 1 : v
   }
   onProgress?.(0.9)
-  return resizeAlpha(smallAlpha, size, size, image.width, image.height)
+  return unletterboxAlpha(smallAlpha, size, image.width, image.height)
+}
+
+async function runModnet(
+  image: RgbaImage,
+  onProgress?: (ratio: number) => void,
+): Promise<Float32Array> {
+  try {
+    return await runModnetOnce(image, onProgress)
+  } catch {
+    // 坏缓存 / 推理建会话失败时清理缓存并释放受损会话，重下一次再试
+    await deleteModel(MODNET_SPEC.id, MODNET_SPEC.version).catch(() => undefined)
+    getOnnxRunner().dispose()
+    return runModnetOnce(image, onProgress)
+  }
 }
 
 /** 降级路径：ImageSegmenter 自拍分割，人物置信度当 alpha（边缘较粗） */
@@ -305,7 +330,7 @@ async function runSelfieSegmenter(image: RgbaImage): Promise<Float32Array> {
 
 /**
  * 人像抠图：MODNet 优先，全挂降级自拍分割。
- * 输出已 1.5px 羽化，并按原背景色去溢出（去发丝白边），页面直接拿 cleaned 合成。
+ * 过渡带羽化并按局部背景色去溢出（去发丝白边），页面直接拿 cleaned 合成。
  */
 export async function runMatting(
   image: RgbaImage,
@@ -329,9 +354,9 @@ export async function runMatting(
     }
   }
 
-  const feathered = featherAlpha(alpha, image.width, image.height, 1.5)
-  const bg = estimateBackground(image.data, feathered, image.width, image.height)
-  const cleaned = removeColorSpill(image.data, feathered, image.width, image.height, bg)
+  const feathered = featherAlpha(alpha, image.width, image.height, engine === 'modnet' ? 1 : 1.5)
+  const localBg = estimateLocalBackground(image.data, feathered, image.width, image.height)
+  const cleaned = removeColorSpill(image.data, feathered, image.width, image.height, localBg)
   onProgress?.(1)
   return { alpha: feathered, cleaned, width: image.width, height: image.height, engine }
 }

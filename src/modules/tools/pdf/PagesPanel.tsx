@@ -3,10 +3,12 @@ import { FileText, RotateCw, Trash2, X } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
+import { usePdfHandoff } from './handoff'
+import { thumbRotScale } from './layout'
 import { applyPageOps } from './pdfOps'
 import { openPdfDocument, renderPageThumb, type PDFDocumentProxy } from './pdfRender'
 import { type ToolOutput } from './output'
-import { FilePicker, OutputBar, Panel, fileBytes, pdfBlob } from './parts'
+import { FIELD_INPUT, Field, FilePicker, OutputBar, Panel, fileBytes, pdfBlob } from './parts'
 import { arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 
@@ -33,7 +35,7 @@ export function PagesPanel() {
   // 换文件 / 卸载时释放 pdf.js 文档
   useEffect(() => () => void doc?.destroy(), [doc])
 
-  const pick = async (f: File) => {
+  const pick = useCallback(async (f: File) => {
     const request = ++loadId.current
     setFile(f)
     setDoc(null)
@@ -49,7 +51,9 @@ export function PagesPanel() {
       toast('打不开这份 PDF（可能已损坏或格式特殊）')
       setFile(null)
     }
-  }
+  }, [toast])
+
+  usePdfHandoff('pages', (incoming) => void pick(incoming))
 
   const clear = () => {
     loadId.current++
@@ -80,6 +84,24 @@ export function PagesPanel() {
     setPages((list) => list.map((p) => (selected.has(p.no) ? { ...p, rot: (p.rot + 90) % 360 } : p)))
   }
 
+  const rotateOne = (no: number) => {
+    setPages((list) => list.map((p) => (p.no === no ? { ...p, rot: (p.rot + 90) % 360 } : p)))
+  }
+
+  const removeOne = (no: number) => {
+    if (pages.filter(p => !p.removed && p.no !== no).length === 0) {
+      toast('至少保留一页，不能删掉全部页面')
+      return
+    }
+    setPages((list) => list.map((p) => (p.no === no ? { ...p, removed: true } : p)))
+    setSelected((prev) => {
+      if (!prev.has(no)) return prev
+      const next = new Set(prev)
+      next.delete(no)
+      return next
+    })
+  }
+
   const reset = () => {
     setPages((list) => list.map((p) => ({ ...p, removed: false, rot: 0 })).sort((a, b) => a.no - b.no))
     setSelected(new Set())
@@ -96,9 +118,10 @@ export function PagesPanel() {
   }, [file, pages, name, selected])
 
   const alive = pages.filter((p) => !p.removed)
+  const isReordered = alive.some((p, idx) => p.no !== idx + 1)
 
   return (
-    <Panel title="页面整理" desc="长按缩略图拖动页序，点选后批量旋转或删除；可单独导出选中页。">
+    <Panel title="页面整理" desc="拖动卡片调整页序，点选或使用卡片快捷按钮旋转、删除页面；可单独导出选中页。">
       {file ? (
         <div className="flex items-center gap-2 rounded-[12px] border border-outline bg-surface-2 px-3 py-2">
           <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-primary-soft text-primary shrink-0">
@@ -115,7 +138,7 @@ export function PagesPanel() {
           </Button>
         </div>
       ) : (
-        <FilePicker accept="application/pdf" label="选择 PDF" onPick={(files) => void pick(files[0])} />
+        <FilePicker accept="application/pdf,.pdf" label="选择 PDF" onPick={(files) => void pick(files[0])} />
       )}
 
       {pages.length > 0 && (
@@ -128,8 +151,8 @@ export function PagesPanel() {
               清空选择
             </Button>
             <Button size="sm" onClick={() => setSelected(new Set(alive.filter(p => !selected.has(p.no)).map(p => p.no)))}>反选</Button>
-            <Button size="sm" onClick={() => setSelected(new Set(alive.filter(p => p.no % 2 === 1).map(p => p.no)))}>奇数页</Button>
-            <Button size="sm" onClick={() => setSelected(new Set(alive.filter(p => p.no % 2 === 0).map(p => p.no)))}>偶数页</Button>
+            <Button size="sm" onClick={() => setSelected(new Set(alive.filter((_, idx) => (idx + 1) % 2 === 1).map(p => p.no)))}>奇数页</Button>
+            <Button size="sm" onClick={() => setSelected(new Set(alive.filter((_, idx) => (idx + 1) % 2 === 0).map(p => p.no)))}>偶数页</Button>
             <Button size="sm" onClick={rotateSelected} disabled={!selected.size}>
               <RotateCw size={14} /> 旋转选中 90°
             </Button>
@@ -144,14 +167,18 @@ export function PagesPanel() {
 
           <DragSort ids={alive.map(p => String(p.no))} strategy={rectSortingStrategy} onMove={(active, over) => setPages(list => arrayMove(list, list.findIndex(p => String(p.no) === active), list.findIndex(p => String(p.no) === over)))}>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-            {alive.map((p) => (
-              <DragSortItem id={String(p.no)} key={p.no}>
-              <ThumbCell
-                doc={doc}
-                page={p}
-                selected={selected.has(p.no)}
-                onToggle={() => toggle(p.no)}
-              />
+            {alive.map((p, idx) => (
+              <DragSortItem id={String(p.no)} key={p.no} label={`第 ${idx + 1} 页（原第 ${p.no} 页）`}>
+                <ThumbCell
+                  doc={doc}
+                  page={p}
+                  displayIndex={idx}
+                  isReordered={isReordered}
+                  selected={selected.has(p.no)}
+                  onToggle={() => toggle(p.no)}
+                  onRotate={() => rotateOne(p.no)}
+                  onRemove={() => removeOne(p.no)}
+                />
               </DragSortItem>
             ))}
           </div>
@@ -159,15 +186,14 @@ export function PagesPanel() {
         </>
       )}
 
-      <div className="flex items-center gap-2">
-        <span className="text-[12.5px] text-on-surface-2">文件名</span>
+      <Field label="文件名">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="整理"
-          className="w-36 h-9 rounded-[10px] border border-outline bg-surface-2 px-3 text-[13px] outline-none focus:border-primary/60"
+          className={FIELD_INPUT}
         />
-      </div>
+      </Field>
 
       <OutputBar make={make} action="导出" disabled={!file || !pages.length || !alive.length} />
       {selected.size > 0 && <OutputBar make={() => make(true)} allowLibrary={false} downloadLabel={`导出选中 ${selected.size} 页`} />}
@@ -179,16 +205,25 @@ export function PagesPanel() {
 function ThumbCell({
   doc,
   page,
+  displayIndex,
+  isReordered,
   selected,
   onToggle,
+  onRotate,
+  onRemove,
 }: {
   doc: PDFDocumentProxy | null
   page: PageItem
+  displayIndex: number
+  isReordered: boolean
   selected: boolean
   onToggle: () => void
+  onRotate: () => void
+  onRemove: () => void
 }) {
-  const ref = useRef<HTMLButtonElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
   const [url, setUrl] = useState<string>()
+  const [imgSize, setImgSize] = useState({ w: 3, h: 4 })
 
   useEffect(() => {
     setUrl(undefined)
@@ -216,38 +251,74 @@ function ThumbCell({
     }
   }, [doc, page.no])
 
+  const rotScale = thumbRotScale(imgSize.w, imgSize.h, page.rot, 3 / 4)
+  const transform = page.rot
+    ? rotScale !== 1
+      ? `rotate(${page.rot}deg) scale(${rotScale})`
+      : `rotate(${page.rot}deg)`
+    : undefined
+
   return (
-    <button
+    <div
       ref={ref}
-      type="button"
-      onClick={onToggle}
-      aria-label={`第 ${page.no} 页`}
-      aria-pressed={selected}
       className={cn(
-        'relative w-full aspect-[3/4] rounded-[10px] overflow-hidden border bg-surface-2 transition-colors',
+        'group/card relative w-full aspect-[3/4] rounded-[10px] overflow-hidden border bg-white transition-colors',
         selected ? 'border-primary ring-2 ring-primary/40' : 'border-outline',
       )}
     >
-      {url ? (
-        <img
-          src={url}
-          alt={`第 ${page.no} 页`}
-          className="w-full h-full object-contain transition-transform duration-150"
-          style={{ transform: page.rot ? `rotate(${page.rot}deg)` : undefined }}
-          draggable={false}
-        />
-      ) : (
-        <span className="absolute inset-0 animate-pulse bg-surface-3/60" />
-      )}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={`选择第 ${displayIndex + 1} 页（原第 ${page.no} 页）`}
+        aria-pressed={selected}
+        className="absolute inset-0 w-full h-full p-1 bg-white cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+      >
+        {url ? (
+          <img
+            src={url}
+            alt={`第 ${page.no} 页`}
+            className="w-full h-full object-contain transition-transform duration-150 pointer-events-none select-none"
+            style={{ transform }}
+            onLoad={(e) => setImgSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+            draggable={false}
+          />
+        ) : (
+          <span className="absolute inset-0 animate-pulse bg-surface-3/60" />
+        )}
+      </button>
+
+      <div className="absolute top-1 right-1 z-10 flex items-center gap-1 md:opacity-0 md:group-hover/card:opacity-100 md:group-focus-within/card:opacity-100 transition-opacity">
+        <button
+          type="button"
+          aria-label={`旋转第 ${page.no} 页 90°`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onClick={onRotate}
+          className="grid place-items-center w-6 h-6 rounded-full bg-surface/90 border border-outline text-on-surface-2 hover:text-primary shadow-xs cursor-pointer"
+        >
+          <RotateCw size={12} />
+        </button>
+        <button
+          type="button"
+          aria-label={`删除第 ${page.no} 页`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onClick={onRemove}
+          className="grid place-items-center w-6 h-6 rounded-full bg-surface/90 border border-outline text-on-surface-2 hover:text-danger shadow-xs cursor-pointer"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+
       <span
         className={cn(
-          'absolute left-1 bottom-1 px-1.5 py-0.5 rounded-full text-[10px] leading-none',
-          selected ? 'bg-primary text-on-primary' : 'bg-surface/85 text-on-surface-2',
+          'pointer-events-none absolute left-1 bottom-1 px-1.5 py-0.5 rounded-full text-[10px] leading-none shadow-xs tabular-nums',
+          selected ? 'bg-primary text-on-primary' : 'bg-surface/90 text-on-surface-2 border border-outline/60',
         )}
       >
-        {page.no}
+        {isReordered ? `#${displayIndex + 1} · 原${page.no}` : page.no}
         {page.rot ? ` · ${page.rot}°` : ''}
       </span>
-    </button>
+    </div>
   )
 }

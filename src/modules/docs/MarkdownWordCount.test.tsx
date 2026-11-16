@@ -5,10 +5,11 @@ import { describe, expect, it } from 'vitest'
 import { countMarkdownCharacters, MarkdownWordCount } from './MarkdownWordCount'
 
 describe('Markdown 总字数', () => {
-  it('排除空白，中文、英文、标点及 Unicode 字符各计一个字符', () => {
+  it('排除空白，中文、英文、标点及 Unicode 字符各计一个字符，且忽略内嵌 base64 图片', () => {
     expect(countMarkdownCharacters(' \n\t\r\u3000')).toBe(0)
     expect(countMarkdownCharacters('你好，Kairos！\n📝')).toBe(11)
     expect(countMarkdownCharacters('# 标题\n\n**正文**')).toBe(9)
+    expect(countMarkdownCharacters('正文\n![图](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk)')).toBe(8)
   })
 
   it('显示总数，并在切换文章或编辑后更新', () => {

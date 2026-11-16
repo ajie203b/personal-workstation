@@ -82,3 +82,23 @@ it('平移后按新的 x 和 y 范围采样', () => {
   if (curves[1].kind !== 'implicit') throw new Error('expected implicit')
   expect(curves[1].segments).toHaveLength(0)
 })
+
+it('支持极坐标曲线 r = f(θ) 与多字符变量代入', () => {
+  const circle = sampleCurves('r=2', -5, 5, 5, 0, Math.PI * 2)[0]
+  expect(circle.kind).toBe('parametric')
+  if (circle.kind !== 'parametric') throw new Error('expected parametric')
+  expect(circle.points[0]?.[0]).toBeCloseTo(2)
+  expect(circle.points[0]?.[1]).toBeCloseTo(0)
+  expect(circle.points[1]?.[0]).toBeCloseTo(0)
+  expect(circle.points[1]?.[1]).toBeCloseTo(2)
+
+  const cardioid = sampleCurves('r=1+\\cos(\\theta)', -5, 5, 5, 0, Math.PI * 2)[0]
+  expect(cardioid.kind).toBe('parametric')
+  if (cardioid.kind !== 'parametric') throw new Error('expected parametric')
+  expect(cardioid.points[0]?.[0]).toBeCloseTo(2)
+  expect(cardioid.points[2]?.[0]).toBeCloseTo(0)
+
+  const line = sampleCurves('y=price*x', -1, 1, 3, 0, 1, { price: 10 })[0]
+  expect(line.kind).toBe('explicit')
+  if (line.kind === 'explicit') expect(line.values).toEqual([-10, 0, 10])
+})

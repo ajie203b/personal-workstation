@@ -79,6 +79,15 @@ export class PointerGesture {
     return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 0
   }
 
+  private touchCenterX(): number {
+    const xs = [...this.active.values()].filter((p) => p.kind === 'touch').map((p) => p.x)
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0
+  }
+
+  panCenter(): { x: number; y: number } {
+    return { x: this.touchCenterX(), y: this.touchCenterY() }
+  }
+
   private touchCount(): number {
     let n = 0
     for (const p of this.active.values()) if (p.kind === 'touch') n++

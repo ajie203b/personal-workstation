@@ -173,5 +173,67 @@ it('无解和无穷多解不误报成唯一数值解', () => {
   const none = computeLatex('x+y=2\nx+y=3')
   expect(none.kind === 'error' || none.latex.includes('无解')).toBe(true)
   const many = computeLatex('x+y=2\n2x+2y=4')
-  expect(many.kind === 'error' || many.latex.includes('无穷') || many.latex.includes('参数')).toBe(true)
+  expect(many.kind).toBe('solutions')
+  expect(many.latex).toContain('无穷多解')
+  const idEq = computeLatex('2x+1=2x+1')
+  expect(idEq.kind).toBe('solutions')
+  expect(idEq.latex).toContain('无穷多解')
+})
+
+describe('P0/P1 计算与规范化增强', () => {
+  it('清理 \\textsc / \\mathsf / \\texttt / \\textnormal（带或不带花括号）与 \\operatorname*', () => {
+    expect(normalizeLatex('\\textsc{x}+1=2')).toBe('x+1=2')
+    expect(normalizeLatex('3\\textsc x+1=7')).toBe('3x+1=7')
+    expect(normalizeLatex('\\mathrm x+\\mathsf{y}+\\texttt z+\\textnormal{w}=0')).toBe('x+y+z+w=0')
+    expect(normalizeLatex('\\operatorname * { sin } (x)')).toBe('\\sin (x)')
+    expect(normalizeLatex('\\operatorname*{lim}_{x\\to 0} x')).toBe('\\lim_{x\\to 0} x')
+    expect(computeLatex('3\\textsc x+1=7').latex).toBe('x=2')
+  })
+
+  it('奇异矩阵不可逆与非方阵不可逆给出明确中文提示', () => {
+    const singular = computeLatex('\\begin{pmatrix}1&2\\\\2&4\\end{pmatrix}^{-1}=')
+    expect(singular.kind).toBe('error')
+    expect(singular.message).toContain('奇异矩阵不可逆')
+
+    const nonSquare = computeLatex('\\begin{pmatrix}1&2&3\\\\4&5&6\\end{pmatrix}^{-1}=')
+    expect(nonSquare.kind).toBe('error')
+    expect(nonSquare.message).toContain('仅方阵可求逆')
+  })
+
+  it('除数为 0 与 0/0 不定式返回清晰中文提示而非 \\text{NaN}', () => {
+    const div0 = computeLatex('1/0=')
+    expect(div0.kind).toBe('error')
+    expect(div0.message).toContain('除数不能为 0')
+    expect(div0.latex).not.toContain('NaN')
+
+    const exprDiv0 = computeLatex('\\frac{1}{2-2}=')
+    expect(exprDiv0.kind).toBe('error')
+    expect(exprDiv0.message).toContain('除数不能为 0')
+
+    const indet = computeLatex('0/0=')
+    expect(indet.kind).toBe('error')
+    expect(indet.message).toContain('不定式')
+    expect(indet.latex).not.toContain('NaN')
+  })
+
+  it('支持 DEG / RAD 角度模式切换', () => {
+    const degSin = computeLatex('\\sin(30)=', { angleMode: 'deg' })
+    expect(degSin.kind).toBe('inline')
+    expect(degSin.latex).toBe('\\frac{1}{2}')
+
+    const degCos = computeLatex('\\cos(60)=', { angleMode: 'deg' })
+    expect(degCos.latex).toBe('\\frac{1}{2}')
+
+    const degTan = computeLatex('\\tan(45)=', { angleMode: 'deg' })
+    expect(degTan.text).toBe('1')
+
+    const degArc = computeLatex('\\arcsin(0.5)=', { angleMode: 'deg' })
+    expect(degArc.text).toBe('30')
+
+    const radSin = computeLatex('\\sin(\\frac{\\pi}{6})=', { angleMode: 'rad' })
+    expect(radSin.latex).toBe('\\frac{1}{2}')
+
+    const radSin30 = computeLatex('\\sin(30)=', { angleMode: 'rad' })
+    expect(Number(radSin30.text || radSin30.alt)).toBeCloseTo(Math.sin(30), 6)
+  })
 })

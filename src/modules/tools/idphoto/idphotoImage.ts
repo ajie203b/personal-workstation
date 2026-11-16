@@ -72,25 +72,48 @@ export async function loadOrientedImage(file: Blob, maxEdge: number): Promise<Rg
 
 /**
  * 绕 (cx, cy) 旋转整张图 angle 弧度（正值视觉上顺时针），尺寸不变。
- * 旋转后露出的角先铺一层原图（角落离人脸很远，比黑角好看），再画旋转后的图。
+ * 用逆向仿射 + 双线性插值 + 边缘像素 clamp 外延填充角落，
+ * 避免“原图垫底 + 旋转图叠上”留下的斜向拼接缝。
  */
 export function rotateRgba(image: RgbaImage, angle: number, cx: number, cy: number): RgbaImage {
-  const src = document.createElement('canvas')
-  src.width = image.width
-  src.height = image.height
-  const sctx = src.getContext('2d')
-  if (!sctx) throw new Error('画布创建失败')
-  sctx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0)
-  const out = document.createElement('canvas')
-  out.width = image.width
-  out.height = image.height
-  const ctx = out.getContext('2d')
-  if (!ctx) throw new Error('画布创建失败')
-  ctx.drawImage(src, 0, 0)
-  ctx.imageSmoothingQuality = 'high'
-  ctx.translate(cx, cy)
-  ctx.rotate(angle)
-  ctx.translate(-cx, -cy)
-  ctx.drawImage(src, 0, 0)
-  return { data: ctx.getImageData(0, 0, image.width, image.height).data, width: image.width, height: image.height }
+  const { data, width, height } = image
+  if (width <= 0 || height <= 0) return { data: new Uint8ClampedArray(data), width, height }
+  if (!Number.isFinite(angle) || angle === 0) return { data: new Uint8ClampedArray(data), width, height }
+
+  const out = new Uint8ClampedArray(width * height * 4)
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  const maxX = width - 1
+  const maxY = height - 1
+
+  for (let y = 0; y < height; y++) {
+    const dy = y - cy
+    const rowOff = y * width
+    for (let x = 0; x < width; x++) {
+      const dx = x - cx
+      const rx = cx + dx * cos + dy * sin
+      const ry = cy - dx * sin + dy * cos
+      const sx = rx < 0 ? 0 : rx > maxX ? maxX : rx
+      const sy = ry < 0 ? 0 : ry > maxY ? maxY : ry
+      const x0 = Math.floor(sx)
+      const y0 = Math.floor(sy)
+      const x1 = x0 < maxX ? x0 + 1 : maxX
+      const y1 = y0 < maxY ? y0 + 1 : maxY
+      const fx = sx - x0
+      const fy = sy - y0
+      const w00 = (1 - fx) * (1 - fy)
+      const w01 = fx * (1 - fy)
+      const w10 = (1 - fx) * fy
+      const w11 = fx * fy
+      const p00 = (y0 * width + x0) * 4
+      const p01 = (y0 * width + x1) * 4
+      const p10 = (y1 * width + x0) * 4
+      const p11 = (y1 * width + x1) * 4
+      const dst = (rowOff + x) * 4
+      for (let c = 0; c < 4; c++) {
+        out[dst + c] = Math.round(data[p00 + c] * w00 + data[p01 + c] * w01 + data[p10 + c] * w10 + data[p11 + c] * w11)
+      }
+    }
+  }
+  return { data: out, width, height }
 }

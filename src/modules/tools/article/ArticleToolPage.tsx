@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Pencil,
   RefreshCw,
   Search,
 } from 'lucide-react'
@@ -21,7 +22,15 @@ import { openExternal } from '@/lib/links'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { importDoc, saveMarkdownDoc } from '@/db/docs'
 import { db, type Doc } from '@/db/db'
-import { PASTE_FALLBACK_HINT, extractArticle, extractPastedContent, type ParsedArticle } from './articleParse'
+import {
+  PASTE_FALLBACK_HINT,
+  extractArticle,
+  extractPastedContent,
+  extractVisibleText,
+  htmlImageCount,
+  normalizeArticleUrl,
+  type ParsedArticle,
+} from './articleParse'
 import { localizeImages, type ImageFailure } from './articleImages'
 import { buildArticleMarkdown } from './articleMarkdown'
 import { buildArticleEpub } from './articleEpub'
@@ -59,7 +68,7 @@ export function ArticleToolPage() {
 
   const autoFetched = useRef(false)
 
-  /** 一条解析结果的落地：图片本地化 → 预览 → 重复检测 */
+  /** 一条解析结果的落地：图片本地化 → 白名单清洗 → 预览 → 重复检测 */
   const settle = async (parsed: ParsedArticle, referer: string) => {
     if (!parsed.contentHtml) {
       toast(parsed.hint ?? PASTE_FALLBACK_HINT)
@@ -71,11 +80,21 @@ export function ArticleToolPage() {
       referer,
       onProgress: (done, total) => setStatus(`正在本地化图片 ${done}/${total}`),
     })
-    setArticle({ ...parsed, contentHtml: loc.html })
-    setPreviewHtml(sanitizeHtml(loc.html))
+    const cleanHtml = sanitizeHtml(loc.html)
+    const cleanText = extractVisibleText(cleanHtml)
+    const cleanCount = cleanText.replace(/\s+/g, '').length
+    setArticle({
+      ...parsed,
+      contentHtml: cleanHtml,
+      textContent: cleanText.trim(),
+      charCount: cleanCount,
+      imageCount: htmlImageCount(cleanHtml),
+    })
+    setPreviewHtml(cleanHtml)
+    setShowPaste(false)
     setImageFailures(loc.failed)
     if (loc.failed.length) toast(`${loc.failed.length} 张图片下载失败，已保留原链接并标注`)
-    const dup = await db.docs.where('sourceUrl').equals(referer).filter(d => !d.deletedAt).first()
+    const dup = referer ? await db.docs.where('sourceUrl').equals(referer).filter(d => !d.deletedAt).first() : undefined
     setExisting(dup ?? null)
     if (dup) toast(`已存在《${dup.title}》，是否更新？`, { label: '更新', run: () => void doSave(true) })
   }
@@ -84,23 +103,27 @@ export function ArticleToolPage() {
     if (!article || action) return
     setAction('save')
     try {
+      const title = article.title.trim() || '无标题文章'
+      const byline = article.byline.trim()
       const md = buildArticleMarkdown({
-        title: article.title,
-        byline: article.byline,
+        title,
+        byline,
         sourceUrl,
         capturedAt,
         contentHtml: article.contentHtml,
       })
       if (update && existing) {
         // 更新 = 重新抓取后替换该文档本体与标题（saveMarkdownDoc 连 hash/批注一起迁）
-        const doc = await saveMarkdownDoc({ doc: existing, title: article.title, markdown: md })
+        const doc = await saveMarkdownDoc({ doc: existing, title, markdown: md })
         await db.docs.update(doc.id, { sourceUrl })
-        toast(`已更新《${doc.title}》`)
+        setExisting({ ...doc, sourceUrl })
+        toast(`已更新《${doc.title}》`, { label: '立即阅读', run: () => navigate(`/docs/${doc.id}`) })
       } else {
-        const file = new File([md], `${safeName(article.title)}.md`, { type: 'text/markdown' })
+        const file = new File([md], `${safeName(title)}.md`, { type: 'text/markdown' })
         const { doc } = await importDoc(file)
         await db.docs.update(doc.id, { sourceUrl })
-        toast('已存入文档库')
+        setExisting({ ...doc, sourceUrl })
+        toast('已存入文档库', { label: '立即阅读', run: () => navigate(`/docs/${doc.id}`) })
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : '保存失败')
@@ -113,14 +136,16 @@ export function ArticleToolPage() {
     if (!article || action) return
     setAction('export')
     try {
+      const title = article.title.trim() || '无标题文章'
+      const byline = article.byline.trim()
       const blob = await buildArticleEpub({
-        title: article.title,
-        byline: article.byline || undefined,
+        title,
+        byline: byline || undefined,
         sourceUrl: sourceUrl || undefined,
         capturedAt,
         contentHtml: article.contentHtml,
       })
-      const where = await saveBlob(blob, `${safeName(article.title)}.epub`)
+      const where = await saveBlob(blob, `${safeName(title)}.epub`)
       toast(`EPUB 已导出 → ${where}`, openSavedAction())
     } catch (e) {
       toast(e instanceof Error ? e.message : '导出失败')
@@ -130,11 +155,20 @@ export function ArticleToolPage() {
   }
 
   async function doFetch(rawUrl?: string) {
-    const target = (rawUrl ?? url).trim()
-    if (!target || busy) {
-      if (!target) toast('先粘贴文章链接')
+    const raw = (rawUrl ?? url).trim()
+    if (!raw || busy) {
+      if (!raw) toast('先粘贴文章链接')
       return
     }
+    let target: string
+    try {
+      target = normalizeArticleUrl(raw)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '请输入有效的网页链接')
+      return
+    }
+    if (!rawUrl && target !== url) setUrl(target)
+
     setBusy(true)
     setArticle(null)
     setPreviewHtml('')
@@ -163,13 +197,19 @@ export function ArticleToolPage() {
 
   /** 粘贴兜底：优先解析剪贴板里的 text/html（全选复制带格式），否则纯文本 */
   const applyPasted = (html: string | null, text: string) => {
-    const parsed = extractPastedContent(html, text, url)
+    let ref = ''
+    try {
+      ref = normalizeArticleUrl(url)
+    } catch {
+      ref = url.trim()
+    }
+    const parsed = extractPastedContent(html, text, ref)
     setCapturedAt(Date.now())
-    setSourceUrl(url.trim())
+    setSourceUrl(ref)
     void (async () => {
       setBusy(true)
       try {
-        await settle(parsed, url.trim())
+        await settle(parsed, ref)
       } finally {
         setBusy(false)
         setStatus('')
@@ -222,13 +262,15 @@ export function ArticleToolPage() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') void doFetch()
           }}
-          type="url"
+          type="text"
           inputMode="url"
-          placeholder="https://…（微信公众号 / 博客 / 知乎等文章链接）"
+          autoCapitalize="off"
+          spellCheck={false}
+          placeholder="https://…（支持微信 / 掘金 / CSDN / 博客园 / 简书 / GitHub / 知乎专栏 / B站专栏）"
           className="w-full rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 text-[13.5px] leading-relaxed outline-none focus:border-primary/60"
         />
         <div className="flex items-center gap-2 flex-wrap">
-          <Button onClick={() => void doFetch()} disabled={busy} className="h-9 px-4">
+          <Button variant="primary" onClick={() => void doFetch()} disabled={busy} className="h-9 px-4">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />} 抓取
           </Button>
           <Button variant="outline" onClick={() => setShowPaste((v) => !v)} className="h-9 px-3">
@@ -242,7 +284,7 @@ export function ArticleToolPage() {
         </div>
         {!busy && !status && (
           <p className="text-[11.5px] text-on-surface-2 leading-relaxed">
-            微信公众号 / CSDN 有专门适配；知乎、小红书等登录墙站点抽不出正文时，请用下面的粘贴兜底。
+            已适配微信公众号、掘金、CSDN、博客园、简书、GitHub、知乎专栏、B站专栏；登录墙抽不出正文时可用粘贴兜底。
           </p>
         )}
       </section>
@@ -260,7 +302,7 @@ export function ArticleToolPage() {
             placeholder="粘贴到这里…"
             className="w-full rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 text-[13.5px] leading-relaxed outline-none focus:border-primary/60 resize-y min-h-[120px]"
           />
-          <Button onClick={() => applyPasted(null, pasteText)} disabled={!pasteText.trim() || busy} className="h-9 px-4 w-fit">
+          <Button variant="primary" onClick={() => applyPasted(null, pasteText)} disabled={!pasteText.trim() || busy} className="h-9 px-4 w-fit">
             解析纯文本
           </Button>
         </section>
@@ -269,24 +311,36 @@ export function ArticleToolPage() {
       {article ? (
         <>
           <section className="card p-4 flex flex-col gap-3">
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-semibold leading-6">{article.title}</p>
-                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                  {article.byline && (
-                    <span className="text-[10.5px] px-1.5 py-0.5 rounded-full bg-primary-soft text-primary font-medium">
-                      {article.byline}
-                    </span>
-                  )}
-                  <span className="text-[11px] text-on-surface-2">{article.charCount} 字</span>
-                  <span className="text-[11px] text-on-surface-2">{article.imageCount} 图</span>
-                  {article.usedReadability && <span className="text-[11px] text-on-surface-2">Readability 抽取</span>}
-                  {imageFailures.length > 0 && (
-                    <span className="text-[11px] text-danger inline-flex items-center gap-1">
-                      <AlertTriangle size={11} /> {imageFailures.length} 图未下载
-                    </span>
-                  )}
-                </div>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 rounded-[10px] border border-outline/70 bg-surface-2/60 px-2.5 py-1.5 focus-within:border-primary/60">
+                <Pencil size={13} className="text-on-surface-2 shrink-0" aria-hidden />
+                <input
+                  value={article.title}
+                  onChange={(e) => setArticle((prev) => (prev ? { ...prev, title: e.target.value } : null))}
+                  aria-label="文章标题"
+                  placeholder="输入文章标题"
+                  className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold leading-6 outline-none"
+                />
+              </label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="inline-flex items-center gap-1.5 rounded-full border border-outline/70 bg-surface-2 px-2.5 py-0.5 text-[11px] focus-within:border-primary/60">
+                  <span className="text-on-surface-2">作者</span>
+                  <input
+                    value={article.byline}
+                    onChange={(e) => setArticle((prev) => (prev ? { ...prev, byline: e.target.value } : null))}
+                    aria-label="作者"
+                    placeholder="可选"
+                    className="w-28 bg-transparent text-[11px] font-medium text-primary outline-none placeholder:text-on-surface-2/60"
+                  />
+                </label>
+                <span className="text-[11px] text-on-surface-2">{article.charCount} 字</span>
+                <span className="text-[11px] text-on-surface-2">{article.imageCount} 图</span>
+                {article.usedReadability && <span className="text-[11px] text-on-surface-2">Readability 抽取</span>}
+                {imageFailures.length > 0 && (
+                  <span className="text-[11px] text-danger inline-flex items-center gap-1">
+                    <AlertTriangle size={11} /> {imageFailures.length} 图未下载
+                  </span>
+                )}
               </div>
             </div>
 
@@ -298,11 +352,11 @@ export function ArticleToolPage() {
 
             <div className="flex items-center gap-2 flex-wrap">
               {existing ? (
-                <Button onClick={() => void doSave(true)} disabled={Boolean(action)} className="h-9 px-4">
+                <Button variant="primary" onClick={() => void doSave(true)} disabled={Boolean(action)} className="h-9 px-4">
                   {action === 'save' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} 更新旧文档
                 </Button>
               ) : null}
-              <Button onClick={() => void doSave(false)} disabled={Boolean(action)} className="h-9 px-4">
+              <Button variant={existing ? 'outline' : 'primary'} onClick={() => void doSave(false)} disabled={Boolean(action)} className="h-9 px-4">
                 {action === 'save' ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
                 {existing ? '另存为新文档' : '存入文档库'}
               </Button>
@@ -324,6 +378,7 @@ export function ArticleToolPage() {
                 [&_img]:max-w-full [&_img]:rounded-[10px] [&_img]:my-2
                 [&_p]:my-2 [&_h1]:text-[17px] [&_h2]:text-[15.5px] [&_h3]:text-[14px]
                 [&_a]:text-primary [&_blockquote]:border-l-2 [&_blockquote]:border-outline [&_blockquote]:pl-3 [&_blockquote]:text-on-surface-2
+                [&_pre]:rounded-[10px] [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:text-[12.5px]
                 [&_table]:text-[12.5px] [&_td]:border [&_td]:border-outline [&_td]:px-2 [&_td]:py-1
                 [&_th]:border [&_th]:border-outline [&_th]:px-2 [&_th]:py-1"
               dangerouslySetInnerHTML={{ __html: previewHtml }}

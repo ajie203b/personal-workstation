@@ -2,7 +2,8 @@
  * 主线程侧的识别/计算客户端：把 Worker 消息包装成 Promise。
  * 一个页面一个实例；离开页面时 dispose（终止 Worker，模型缓存保留在 Cache Storage）。
  */
-import type { ComputeResult, Stroke } from './types'
+import type { AngleMode, ComputeResult, Stroke } from './types'
+import type { ComputeOptions } from './compute'
 import type { ModelSourceConfig } from './recognizer'
 import type { WorkerIn, WorkerOut } from './workerProtocol'
 import type { PlotCurve } from './plot'
@@ -78,17 +79,17 @@ export class MathEngine {
     return this.backend
   }
 
-  async recognize(key: string, strokes: Stroke[], charHeight: number, onProgress?: (ratio: number, file: string) => void): Promise<RecognizedBlock> {
+  async recognize(key: string, strokes: Stroke[], charHeight: number, onProgress?: (ratio: number, file: string) => void, opts?: ComputeOptions): Promise<RecognizedBlock> {
     const out = await this.request({ type: 'recognize', id: this.nextId++, key, strokes, charHeight }, onProgress)
     if (out.type !== 'recognizedRaw') throw new Error('识别返回异常')
     const result: ComputeResult = out.incompleteSystem
       ? { kind: 'error', latex: '', text: '', message: '方程组未识别完整，点击后按行修改各个等式' }
-      : await this.compute(out.key, out.latex)
+      : await this.compute(out.key, out.latex, opts)
     return { key: out.key, latex: out.latex, confidence: out.confidence, ms: out.ms, result }
   }
 
-  async compute(key: string, latex: string): Promise<ComputeResult> {
-    const out = await this.secondaryRequest(id => ({ type: 'compute', id, key, latex }))
+  async compute(key: string, latex: string, opts?: ComputeOptions): Promise<ComputeResult> {
+    const out = await this.secondaryRequest(id => ({ type: 'compute', id, key, latex, angleMode: opts?.angleMode, variables: opts?.variables }))
     if (out.type !== 'computed') throw new Error('计算返回异常')
     return out.result
   }
@@ -122,8 +123,8 @@ export class MathEngine {
   }
 
 
-  async evaluatePage(entries: PageEntry[]): Promise<PageEvaluation> {
-    const out = await this.secondaryRequest(id => ({ type: 'evaluatePage', id, entries }))
+  async evaluatePage(entries: PageEntry[], angleMode?: AngleMode): Promise<PageEvaluation> {
+    const out = await this.secondaryRequest(id => ({ type: 'evaluatePage', id, entries, angleMode }))
     if (out.type !== 'pageEvaluated') throw new Error('变量计算失败')
     return out.evaluation
   }

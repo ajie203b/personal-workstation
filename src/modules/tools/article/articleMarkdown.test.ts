@@ -69,4 +69,14 @@ describe('buildArticleMarkdown', () => {
     })
     expect(md).toContain('![图](data:image/png;base64,iVBORw0KGgo=)')
   })
+
+  it('去除正文开头与文章标题重复的 H1/H2 并保留代码块语言', () => {
+    const md = buildArticleMarkdown({
+      title: '重复标题测试',
+      capturedAt: CAPTURED_AT,
+      contentHtml: '<div id="readability-page-1"><h2>重复标题测试</h2><p>正文内容。</p><pre><code class="language-ts">const a = 1</code></pre></div>',
+    })
+    expect(md.match(/重复标题测试/g)).toHaveLength(1)
+    expect(md).toContain('```ts')
+  })
 })
