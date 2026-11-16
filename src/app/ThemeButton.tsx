@@ -33,8 +33,8 @@ export function ThemeButton({ compact = false }: { compact?: boolean }) {
           aria-label={`主题：${label}`}
           title={`主题：${label}`}
           className={cn(
-            'press relative overflow-hidden flex items-center gap-2 h-10 rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer',
-            compact ? 'w-10 justify-center max-lg:px-0' : 'w-full px-2.5 text-[13px]',
+            'chrome-button press flex items-center gap-2 h-10 rounded-xl text-on-surface-2 cursor-pointer shrink-0',
+            compact ? 'w-10 justify-center' : 'w-10 justify-center lg:w-auto lg:px-2.5 text-[13px]',
           )}
         >
           <Icon size={18} strokeWidth={1.9} />

@@ -1,13 +1,13 @@
 import { Outlet, useLocation, useSearchParams } from 'react-router'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { Suspense, useLayoutEffect, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
 import { TopBar } from './TopBar'
-import { NAV_ITEMS, PAGE_TITLE } from './nav'
+import { PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
-import { RouteProgress } from '@/shared/ui/RouteProgress'
-import { FocusMiniBar, useFocusActive } from '@/shared/FocusMiniBar'
+import { PageSkeleton } from '@/shared/ui/Skeleton'
+import { FocusMiniBar } from '@/shared/FocusMiniBar'
 import { useUi } from '@/stores/ui'
 import { TIERS, type Tier } from '@/db/db'
 import { haptic } from '@/lib/haptics'
@@ -34,40 +34,23 @@ export function AppShell() {
   const { pathname } = useLocation()
   const [params] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
-  const focusActive = useFocusActive()
   const section = `/${pathname.split('/')[1] || ''}`
   const title = PAGE_TITLE[pathname] ?? PAGE_TITLE[section] ?? 'Kairos'
 
   // 同一会话内重复进入某视图时不再重放入场动画（P0：去掉反复切页的「晃」）
   const seen = useRef(new Set<string>())
   const revisiting = seen.current.has(section)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const prevSection = useRef(section)
+  const mainRef = useRef<HTMLElement>(null)
 
-  // 底栏切页时让内容从切换方向轻轻流进来；同页刷新/深链不做
+  // 在新视图绘制前复位，避免继承上一页的滚动位置。
   useLayoutEffect(() => {
-    const from = prevSection.current
-    prevSection.current = section
-    if (from === section) return
-    const fromIdx = NAV_ITEMS.findIndex((item) => item.path === from)
-    const toIdx = NAV_ITEMS.findIndex((item) => item.path === section)
-    if (fromIdx < 0 || toIdx < 0) return
-    const el = contentRef.current
-    if (!el) return
-    el.style.setProperty('--flow-x', `${toIdx > fromIdx ? 6 : -6}px`)
-    el.classList.remove('page-flow-in')
-    void el.offsetWidth
-    el.classList.add('page-flow-in')
-  }, [section])
-
-  // 路由切换回顶部
-  useEffect(() => {
     seen.current.add(section)
-    document.getElementById('main-scroll')?.scrollTo({ top: 0 })
+    if (mainRef.current) mainRef.current.scrollTop = 0
   }, [pathname, section])
 
   const selfScrolling = SELF_SCROLLING.test(pathname)
   const immersive = IMMERSIVE.some((re) => re.test(pathname))
+  const showTopBar = !immersive && pathname !== '/docs'
   // 设置页 / 工具页是配置与工具页，不摆「加任务」的悬浮按钮
   const showFab = !immersive && (section === '/today' || section === '/tasks')
 
@@ -89,32 +72,36 @@ export function AppShell() {
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-4 focus:py-3 focus:text-on-surface"
         onClick={(e) => {
           e.preventDefault()
-          const main = document.getElementById('main-scroll')
+          const main = mainRef.current
           const target = main?.querySelector<HTMLElement>('[data-main-start]') ?? main
           target?.focus()
         }}
       >跳到主内容</a>
-      <RouteProgress />
       <Sidebar />
-      <div className={cn('flex-1 flex flex-col min-w-0', !immersive && 'md:pt-[env(safe-area-inset-top,0px)]')}>
-        {!immersive && pathname !== '/docs' && <TopBar title={title} />}
+      <div className={cn('workspace-column relative flex-1 flex flex-col min-w-0', !immersive && 'md:pt-[env(safe-area-inset-top,0px)]')}>
+        {showTopBar && <TopBar title={title} />}
         <main
           id="main-scroll"
+          ref={mainRef}
           tabIndex={-1}
           className={cn(
-            'flex-1 min-h-0',
+            'workspace-scroll flex-1 min-h-0',
+            showTopBar && 'has-mobile-toolbar',
+            !immersive && 'has-mobile-tabs',
             selfScrolling ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain',
           )}
         >
-          <div ref={contentRef} className={cn('page-flow', selfScrolling && 'h-full', revisiting && 'enter-once')}>
-            <Outlet />
+          <div className={cn('min-w-0', selfScrolling && 'h-full', revisiting && 'enter-once')}>
+            <Suspense key={section} fallback={<PageSkeleton />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
         {!immersive && <BottomNav />}
       </div>
 
       {/* 计时中：迷你条目常驻底栏上方，切到任何页都看得到 */}
-      {!immersive && <FocusMiniBar />}
+      {!immersive && <FocusMiniBar besideAddButton={section === '/tasks' || pathname === '/docs'} />}
 
       {/* 手机统一添加入口：右下角、底栏上方，拇指够得着；桌面用输入框与 N 快捷键 */}
       {showFab && (
@@ -125,13 +112,11 @@ export function AppShell() {
           aria-label="添加任务"
           title="添加任务"
           className={cn(
-            'md:hidden fixed right-[calc(1rem+env(safe-area-inset-right))] z-30 grid place-items-center w-14 h-14 rounded-full cursor-pointer',
-            'bg-primary-action text-on-primary-action shadow-lg shadow-primary/25',
-            'active:scale-95 transition-[transform,bottom] duration-200',
+            'mobile-actions-offset press md:hidden fixed right-[calc(.75rem+env(safe-area-inset-right))] z-30 grid place-items-center size-12 rounded-full cursor-pointer',
+            'bg-primary-action text-on-primary-action shadow-md shadow-primary/20',
           )}
-          style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${focusActive ? '8.25rem' : '4.25rem'})` }}
         >
-          <Plus size={26} strokeWidth={2.4} />
+          <Plus size={24} strokeWidth={2.2} />
         </button>
       )}
     </div>

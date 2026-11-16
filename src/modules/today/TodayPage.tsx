@@ -3,14 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronRight, Clock3, History, Keyboard, Plus, X } from 'lucide-react'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
-import { addDaysStr, isThisWeek, fmtWeekdayLong, greeting, todayStr } from '@/lib/date'
+import { addDaysStr, isThisWeek, fmtWeekdayLong, todayStr } from '@/lib/date'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { useUi } from '@/stores/ui'
 import { docPath } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { GettingStarted } from './GettingStarted'
 import { prefersReducedMotion } from '@/lib/motion'
-import { useMagnetic } from '@/lib/useMagnetic'
 import { cn } from '@/lib/cn'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
@@ -21,11 +20,8 @@ export function TodayPage() {
   const [params, setParams] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
   const toast = useUi((s) => s.toast)
-  const addRef = useRef<HTMLButtonElement>(null)
   const focusRef = useRef<HTMLDivElement>(null)
-  const jumpRaf = useRef(0)
   const [rolling, setRolling] = useState(false)
-  useMagnetic(addRef)
   // 任务「开始专注」深链：/today?focus-task=<id> → 番茄钟自动绑定
   const focusTaskParam = params.get('focus-task') ?? undefined
   useEffect(() => {
@@ -67,8 +63,6 @@ export function TodayPage() {
     return new Date()
   }, [today])
 
-  useEffect(() => () => cancelAnimationFrame(jumpRaf.current), [])
-
   const roll = async () => {
     if (rolling || !todayTasks.length) return
     setRolling(true)
@@ -82,76 +76,43 @@ export function TodayPage() {
     }
   }
 
-  /**
-   * 圆环 → 番茄钟。番茄钟已完整在视口里就不动；
-   * 否则用缓出曲线滚过去，接近手指下滑的节奏，不瞬移。
-   */
+  // 使用浏览器的滚动曲线，用户划动时可以直接接管。
   const jumpToFocus = () => {
-    const el = focusRef.current
-    const scroller = document.getElementById('main-scroll')
-    if (!el || !scroller) return
-    const er = el.getBoundingClientRect()
-    const sr = scroller.getBoundingClientRect()
-    if (er.top >= sr.top && er.bottom <= sr.bottom) return
-    const centered = scroller.scrollTop + (er.top - sr.top) - Math.max(12, (scroller.clientHeight - er.height) / 2)
-    const target = Math.max(0, er.height < scroller.clientHeight ? centered : scroller.scrollTop + (er.top - sr.top) - 12)
-    const start = scroller.scrollTop
-    const delta = target - start
-    cancelAnimationFrame(jumpRaf.current)
-    if (prefersReducedMotion()) { scroller.scrollTop = target; return }
-    const duration = Math.min(860, Math.max(460, Math.abs(delta) * 0.72))
-    const t0 = performance.now()
-    const ease = (t: number) => 1 - Math.pow(1 - t, 3)
-    const step = (now: number) => {
-      const p = Math.min(1, (now - t0) / duration)
-      scroller.scrollTop = start + delta * ease(p)
-      if (p < 1) jumpRaf.current = requestAnimationFrame(step)
-    }
-    jumpRaf.current = requestAnimationFrame(step)
+    focusRef.current?.scrollIntoView({
+      block: 'nearest',
+      behavior: prefersReducedMotion() ? 'instant' : 'smooth',
+    })
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-2 pb-24 md:pb-14 flex flex-col gap-2.5 md:gap-4 cascade">
+    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 md:pt-6 pb-24 md:pb-14 flex flex-col gap-4 md:gap-5">
       <Milestone total={todayTasks.length} done={todayDone.length} />
-      <header className="pt-0.5">
+      <header>
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[12.5px] text-on-surface-2">{greeting(date)}</p>
-            <h1 className="text-[24px] md:text-[32px] font-semibold leading-[30px] md:leading-[40px] tracking-tight mt-0.5">
+            <h1 className="text-[28px] md:text-[34px] font-semibold leading-tight tracking-tight">
               {fmtWeekdayLong(date)}
             </h1>
           </div>
           {/* 手机：一枚小进度环顶替原来那 4 张数字卡（完成 3/8 一眼可见，不占一屏） */}
           <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} onClick={jumpToFocus} className="md:hidden shrink-0 mb-0.5" />
           <button
-            ref={addRef}
+            type="button"
             aria-label="添加任务"
             title="添加任务（单次 / 打卡）"
             onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
-            className={cn(
-              'group hidden md:grid relative place-items-center w-12 h-12 rounded-full border border-primary/20 bg-primary-soft text-primary shadow-sm shrink-0 mb-1 cursor-pointer',
-              'active:scale-[0.98] transition-transform',
-              '[--magnet-glow:color-mix(in_srgb,var(--primary)_22%,transparent)]',
-            )}
-            style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--surface))', color: 'var(--primary)' }}
+            className="press hidden md:grid place-items-center size-11 rounded-full bg-primary-soft text-primary border border-primary/15 shrink-0 cursor-pointer"
           >
-            <span aria-hidden className="magnet-glow absolute inset-0 rounded-full" />
-            <Plus size={24} strokeWidth={2.4} className="relative z-10" />
+            <Plus size={22} strokeWidth={2.2} />
           </button>
         </div>
-        {/* 手机空态时收起重复说明，把首屏让给专注控件 */}
-        <p className={cn('text-[13px] text-on-surface-2 mt-1', todayTasks.length === 0 && 'hidden md:block')}>
-          {todayTasks.length > 0
-            ? `今天有 ${todayTasks.length} 件事等你处理，一件件来。`
-            : '今天的清单已清空，享受此刻。'}
-        </p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 md:gap-4 items-start">
         {/* 今日任务 */}
         <section className="md:col-span-3 min-w-0">
           <div className="flex items-baseline gap-2 px-1 mb-2">
-            <h2 className="text-[15px] font-semibold">今日任务</h2>
+            <h2 className="text-[16px] font-semibold">今日任务</h2>
             {todayDone.length > 0 && (
               <span className="text-[12px] text-ok font-medium">已完成 {todayDone.length}</span>
             )}
@@ -254,7 +215,7 @@ function ProgressRing({ done, total, onClick, className }: {
       onClick={onClick}
       aria-label={`今日完成 ${done} / ${total}，跳到番茄钟`}
       title="跳到番茄钟"
-      className={cn(className, 'cursor-pointer active:scale-95 transition-transform')}
+      className={cn(className, 'press cursor-pointer rounded-full')}
     >
       <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90" aria-hidden>
         <circle cx="18" cy="18" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="3.2" />

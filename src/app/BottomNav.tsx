@@ -1,82 +1,32 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { NavLink, useLocation } from 'react-router'
 import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
+import { durMs, prefersReducedMotion } from '@/lib/motion'
 
-/** 手机/平板竖屏底部导航：玻璃材质 + 安全区适配 + 会流过去的水滴胶囊 */
+/** 手机底栏的选中背景和标签共用等宽列，切换时只移动背景。 */
 export function BottomNav() {
   const all = useAllTasks()
   const counts = countByTier(all)
   const { pathname } = useLocation()
   const section = `/${pathname.split('/')[1] || ''}`
   const activeIndex = NAV_ITEMS.findIndex((item) => item.path === section)
-  const navRef = useRef<HTMLElement>(null)
-  const pillRef = useRef<HTMLSpanElement>(null)
-  const prevIndex = useRef(activeIndex)
-  const moveTimer = useRef(0)
-  const [ready, setReady] = useState(false)
-  const [pill, setPill] = useState({ left: 0, right: 0 })
-  // 渲染时读上一帧的下标来决定「哪条边先走」，不能用 effect 里的新值
-  const dir = activeIndex >= prevIndex.current ? 'right' : 'left'
-
-  // 胶囊左右边缘分别落位；宽度随两边的差值实时拉伸，不做整块平移
-  useLayoutEffect(() => {
-    const nav = navRef.current
-    if (!nav) return
-    const measure = () => {
-      const slot = nav.clientWidth / NAV_ITEMS.length
-      const i = Math.max(0, activeIndex)
-      const center = (i + 0.5) * slot
-      const half = 32 // 胶囊底宽 w-16
-      setPill({ left: center - half, right: center + half })
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(nav)
-    return () => ro.disconnect()
-  }, [activeIndex])
-
-  // 首帧只落位不播放：稍后打开过渡，避免胶囊从 0 宽度长出来
-  useEffect(() => {
-    if (ready) return
-    const t = window.setTimeout(() => setReady(true), 80)
-    return () => window.clearTimeout(t)
-  }, [ready])
-
-  useLayoutEffect(() => {
-    if (prevIndex.current === activeIndex) return
-    prevIndex.current = activeIndex
-    const el = pillRef.current
-    if (!el) return
-    el.dataset.moving = 'true'
-    window.clearTimeout(moveTimer.current)
-    moveTimer.current = window.setTimeout(() => { delete el.dataset.moving }, 260)
-    return () => window.clearTimeout(moveTimer.current)
-  }, [activeIndex])
-
   return (
     <nav
-      ref={navRef}
-      className="glass md:hidden sticky bottom-0 z-20 flex border-t border-outline/70 pb-[env(safe-area-inset-bottom)] relative"
+      aria-label="主导航"
+      className="mobile-tab-bar glass absolute inset-x-0 bottom-0 z-20 grid md:hidden"
+      style={{ '--tab-count': NAV_ITEMS.length } as CSSProperties}
     >
       <span
-        ref={pillRef}
         aria-hidden
-        data-ready={ready || undefined}
         className="tab-pill"
         style={{
-          '--pill-l': pill.left,
-          '--pill-r': pill.right,
-          // 往右切：左沿先走、右沿晚 60ms；往左切反之。差值把胶囊自然拉长再收回
-          '--pill-dl': dir === 'right' ? '0ms' : '32ms',
-          '--pill-dr': dir === 'right' ? '32ms' : '0ms',
-          opacity: activeIndex < 0 ? 0 : 1,
-        } as React.CSSProperties}
-      >
-        <span className="tab-pill-fill" />
-      </span>
+          transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
+          opacity: activeIndex < 0 ? 0 : undefined,
+        }}
+      />
       {NAV_ITEMS.map((item) => {
         // 今日待办数挂在「任务清单」上：底栏原来完全没有角标，得点进去才知道有多少
         const badge = item.path === '/tasks' ? counts.today : 0
@@ -84,24 +34,22 @@ export function BottomNav() {
           <NavLink
             key={item.path}
             to={item.path}
-            onClick={() => haptic('selection')}
+            aria-label={item.label}
+            onClick={() => { if (item.path !== section) haptic('selection') }}
             className={({ isActive }) =>
               cn(
-                'relative overflow-hidden flex-1 flex flex-col items-center justify-center gap-0.5 h-14 min-h-[56px] select-none pt-1.5',
-                'transition-colors duration-150',
+                'mobile-tab-link relative flex min-w-0 h-14 flex-col items-center justify-center gap-0.5 rounded-full select-none',
                 isActive ? 'text-primary' : 'text-on-surface-2',
               )
             }
           >
             {({ isActive }) => (
               <>
-                <span className="relative z-[1] grid place-items-center w-16 h-8 rounded-full">
-                  <span className="grid place-items-center">
-                    <item.icon size={22} strokeWidth={isActive ? 2 : 1.8} aria-hidden />
-                  </span>
+                <span className="mobile-tab-icon relative grid place-items-center size-7">
+                  <item.icon size={21} strokeWidth={isActive ? 2 : 1.8} aria-hidden />
                   {item.path === '/tasks' && <NavBadge value={badge} />}
                 </span>
-                <span className={cn('relative z-[1] text-[12px] leading-none mt-0.5 transition-colors duration-150', isActive && 'font-medium text-primary')}>{item.path === '/docs' ? '文档' : item.path === '/tasks' ? '任务' : item.label}</span>
+                <span className="text-[12px] font-medium leading-none">{item.path === '/docs' ? '文档' : item.path === '/tasks' ? '任务' : item.label}</span>
               </>
             )}
           </NavLink>
@@ -123,11 +71,16 @@ function NavBadge({ value }: { value: number }) {
       return
     }
     if (shown <= 0) return
+    if (prefersReducedMotion()) {
+      setShown(0)
+      setLeaving(false)
+      return
+    }
     setLeaving(true)
     const t = window.setTimeout(() => {
       setShown(0)
       setLeaving(false)
-    }, 220)
+    }, durMs('--dur-2', 220))
     return () => window.clearTimeout(t)
   }, [value, shown])
 
@@ -139,7 +92,7 @@ function NavBadge({ value }: { value: number }) {
       role="status"
       aria-label={`今日待办 ${shown} 件`}
       className={cn(
-        'nav-badge absolute -top-0.5 right-2.5 grid place-items-center min-w-[15px] h-[15px] px-0.5 rounded-full bg-primary text-on-primary text-[10px] font-medium tabular-nums leading-none overflow-hidden',
+        'nav-badge absolute -top-0.5 left-[calc(100%-5px)] grid place-items-center min-w-[15px] h-[15px] px-0.5 rounded-full bg-primary text-on-primary text-[10px] font-medium tabular-nums leading-none overflow-hidden',
         leaving && 'nav-badge-out',
       )}
     >

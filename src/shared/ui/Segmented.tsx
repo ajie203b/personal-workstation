@@ -29,10 +29,7 @@ interface Props<T extends string> {
   asRadio?: boolean
 }
 
-/**
- * 分段控件（v1.4 动效升级）：MD3 segmented button 气质 + 滑块跟随。
- * 滑块按 left/width 过渡（--ease-emph），切换时平滑滑动而非瞬切。
- */
+/** 分段控件：滑块对齐选中项，宽度随标签和角标变化。 */
 export function Segmented<T extends string>({ options, value, onChange, className, size = 'md', ariaLabel, touchSized, disabled, showLabels, asRadio }: Props<T>) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRefs = useRef(new Map<string, HTMLButtonElement>())
@@ -45,9 +42,10 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
     const wrap = wrapRef.current
     if (!btn || !wrap) return
     const measure = () => {
-      if (!btn.offsetWidth) return
-      const left = btn.getBoundingClientRect().left - wrap.getBoundingClientRect().left
-      const width = btn.getBoundingClientRect().width
+      // 弹层入场时可能在缩放，直接读布局尺寸以免滑块跟着缩小。
+      const width = btn.offsetWidth
+      if (!width) return
+      const left = btn.offsetLeft
       setThumb((prev) =>
         prev.ready && Math.abs(prev.left - left) < 0.5 && Math.abs(prev.width - width) < 0.5
           ? prev
@@ -56,13 +54,9 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
     }
     measure()
     const ro = new ResizeObserver(measure)
-    ro.observe(btn)
-    if (wrap) ro.observe(wrap)
-    window.addEventListener('resize', measure)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', measure)
-    }
+    btnRefs.current.forEach((button) => ro.observe(button))
+    ro.observe(wrap)
+    return () => ro.disconnect()
   }, [value, options.length, size])
 
   return (
@@ -81,14 +75,13 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
       } : undefined}
       className={cn('relative inline-flex items-center gap-0.5 p-[3px] rounded-[12px] bg-surface-3/70', className)}
     >
-      {/* 滑块：left/width 相对 tablist 边框测量 */}
       <span
         aria-hidden
         className={cn(
-          'absolute top-[3px] bottom-[3px] rounded-[10px] bg-surface shadow-sm pointer-events-none',
-          thumb.ready && 'transition-[left,width] ease-emph',
+          'segmented-thumb absolute left-0 top-[3px] bottom-[3px] rounded-[10px] bg-surface shadow-sm pointer-events-none',
+          thumb.ready && 'transition-[transform,width] ease-standard',
         )}
-        style={{ left: thumb.left, width: thumb.width, transitionDuration: thumb.ready ? 'var(--dur-2)' : undefined }}
+        style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width, transitionDuration: thumb.ready ? 'var(--dur-2)' : undefined }}
       />
       {options.map((o) => {
         const active = o.value === value
@@ -109,7 +102,7 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
             onClick={() => onChange(o.value)}
             className={cn(
               'relative z-[1] inline-flex items-center gap-1.5 rounded-[10px] font-medium whitespace-nowrap cursor-pointer select-none',
-              'transition-colors duration-150 ease-standard active:scale-[0.97]',
+              'press',
               size === 'md' ? 'h-8 px-3 text-[13px]' : 'h-7 px-2.5 text-[12px]',
               touchSized && 'max-md:h-11 max-md:min-w-11',
               active ? 'text-on-surface' : 'text-on-surface-2 hover:text-on-surface',

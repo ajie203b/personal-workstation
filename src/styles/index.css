@@ -210,10 +210,6 @@
   from { opacity: 0; transform: translateY(100%); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes slide-left {
-  from { opacity: 0; transform: translateX(100%); }
-  to { opacity: 1; transform: translateX(0); }
-}
 @keyframes nav-pop {
   0% { transform: scale(0.96); }
   55% { transform: scale(1.02); }
@@ -359,6 +355,14 @@ select:focus-visible {
   transition: transform var(--dur-1) var(--ease-standard);
 }
 .press:active { transform: scale(0.98); }
+.chrome-button:active { background-color: var(--surface-3); }
+@media (hover: hover) {
+  .chrome-button:hover { background-color: var(--surface-3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .press:active { transform: none; }
+}
+.no-motion .press:active { transform: none; }
 
 /* 提交按钮三连变：彩色底是一层绝对定位图层，收缩时只动自己，不挤动按钮内外布局 */
 .btn-fill {
@@ -530,13 +534,6 @@ select:focus-visible {
 /* 页面入场：300ms / 12px 上移淡入（MD3 medium2） */
 .enter { animation: fade-up var(--dur-2) var(--ease-standard) backwards; }
 
-/* 弹层打开时背后页面退后一步（ui-motion 12）；scale 是独立变换，不和切页的 transform 动画打架 */
-.page-flow { min-width: 0; }
-
-@keyframes sheet-rise {
-  from { transform: translateY(100%); opacity: 0.7; }
-  to { transform: translateY(0); opacity: 1; }
-}
 @keyframes menu-item-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -547,13 +544,6 @@ select:focus-visible {
 [role='menu'] > *:nth-child(4) { animation-delay: 72ms; }
 [role='menu'] > *:nth-child(5) { animation-delay: 96ms; }
 [role='menu'] > *:nth-child(6) { animation-delay: 120ms; }
-
-/* 底栏切页：内容从切换方向轻轻流进来（只加在 AppShell 的内容 wrapper 上，不重挂页面） */
-@keyframes page-flow-in {
-  from { opacity: 0.8; transform: translateX(var(--flow-x, 6px)); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.page-flow-in { animation: page-flow-in var(--dur-2) var(--ease-standard) backwards; }
 
 /* ---------------- 阅读器宽度滑块 ---------------- */
 .reader-range {
@@ -640,9 +630,76 @@ select:focus-visible {
    注意：Radix 的定位 transform 在 [data-radix-popper-content-wrapper] 包裹层上，
    包裹层一旦带 transform，内部 fixed 元素就以它为基准 —— 所以必须钉包裹层，
    内层只负责样式与动画。旧 WebView 不认 :has() 时自动退回锚定下拉（仍可用）。 */
-.dialog-panel { animation: scale-in var(--dur-2) var(--ease-spring); }
+.modal-backdrop {
+  opacity: var(--sheet-opacity, 1);
+  transition: opacity var(--dur-2) var(--ease-standard);
+}
+.modal-backdrop[data-state='open']:not([data-drag-motion]) {
+  animation: fade-in var(--dur-2) var(--ease-standard);
+}
+.modal-backdrop[data-state='closed'] {
+  animation: modal-backdrop-out var(--dur-2) var(--ease-standard) both;
+}
+@keyframes modal-backdrop-out {
+  from { opacity: var(--sheet-opacity, 1); }
+  to { opacity: 0; }
+}
+.dialog-panel[data-state='open']:not([data-drag-motion]) {
+  animation: scale-in var(--dur-2) var(--ease-standard);
+}
+.dialog-panel[data-state='closed'] {
+  animation: dialog-out var(--dur-1) var(--ease-standard) both;
+}
+@keyframes dialog-out {
+  to { opacity: 0; transform: scale(.98); }
+}
+
+.sheet-grabber {
+  display: grid;
+  place-items: center;
+  height: 24px;
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+.sheet-grabber > span {
+  width: 34px;
+  height: 4px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--on-surface-2) 35%, var(--outline));
+}
+.sheet-panel {
+  --sheet-travel: translateX(100%);
+  transform: translateX(var(--sheet-offset, 0px));
+  transition: transform var(--dur-2) var(--ease-standard);
+}
+.sheet-panel[data-state='open']:not([data-drag-motion]) {
+  animation: sheet-in var(--dur-3) var(--ease-standard);
+}
+.sheet-panel[data-state='closed'] {
+  animation: sheet-out var(--dur-2) var(--ease-standard) both;
+}
+[data-drag-motion='dragging'] { transition: none !important; }
+@keyframes sheet-in {
+  from { transform: var(--sheet-travel); }
+}
+@keyframes sheet-out {
+  to { transform: var(--sheet-travel); }
+}
 @media (max-width: 767px) {
-  .dialog-panel.mobile-dialog-sheet { animation: sheet-rise var(--dur-3) var(--ease-soft-spring); }
+  .sheet-panel, .mobile-dialog-sheet {
+    --sheet-travel: translateY(100%);
+    transform: translateY(var(--sheet-offset, 0px));
+    transition: transform var(--dur-2) var(--ease-standard);
+  }
+  .mobile-dialog-sheet[data-state='open']:not([data-drag-motion]) {
+    animation: sheet-in var(--dur-3) var(--ease-standard);
+  }
+  .mobile-dialog-sheet[data-state='closed'] {
+    animation: sheet-out var(--dur-2) var(--ease-standard) both;
+  }
+  .pop.mobile-dialog-sheet { border-end-start-radius: 0; border-end-end-radius: 0; }
   [data-radix-popper-content-wrapper]:has(.select-menu) {
     position: fixed !important;
     left: 0 !important;
@@ -665,6 +722,16 @@ select:focus-visible {
   }
   .select-menu-open { animation: select-sheet-in var(--dur-3) var(--ease-soft-spring) both; }
   .select-menu-closed { animation: select-sheet-out var(--dur-2) var(--ease-standard) both; }
+}
+@media (min-width: 768px) {
+  .sheet-grabber { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog-panel, .sheet-panel, .modal-backdrop { animation: none !important; transition: none !important; }
+}
+.no-motion :is(.dialog-panel, .sheet-panel, .modal-backdrop) {
+  animation: none !important;
+  transition: none !important;
 }
 /* 选项依次浮现（ui-motion：同组间隔 30–60ms；减弱动效时 --stagger 归零） */
 .select-row {
@@ -703,50 +770,91 @@ select:focus-visible {
   to { transform: scaleX(0); }
 }
 
-/* ---------------- 底部导航：水滴胶囊（ui-motion 11） ---------------- */
-@property --pill-l {
-  syntax: '<number>';
-  inherits: false;
-  initial-value: 0;
+/* 桌面导航面板留出窗边；折叠时仅标签过渡，正文直接获得最终宽度。 */
+.workspace-sidebar {
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 72%, var(--canvas));
+  border: 1px solid var(--outline);
+  border-radius: 20px;
+  box-shadow: var(--elev-card);
 }
-@property --pill-r {
-  syntax: '<number>';
-  inherits: false;
-  initial-value: 0;
+.sidebar-link:focus-visible { outline-offset: -2px; }
+@media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+  :root:not(.no-motion) .sidebar-label { animation: fade-in var(--dur-2) var(--ease-standard); }
+}
+
+/* 移动导航覆在滚动内容上。内边距保留首尾空间，滚动定位也避开导航。 */
+@media (max-width: 767px) {
+  .workspace-column {
+    --mobile-toolbar-height: calc(3.5rem + env(safe-area-inset-top, 0px));
+    --mobile-tab-clearance: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+  }
+  .mobile-toolbar {
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+    height: var(--mobile-toolbar-height);
+    padding-top: env(safe-area-inset-top, 0px);
+    border-bottom: 1px solid color-mix(in srgb, var(--outline) 70%, transparent);
+  }
+  .workspace-scroll.has-mobile-toolbar {
+    padding-block-start: var(--mobile-toolbar-height);
+    scroll-padding-block-start: var(--mobile-toolbar-height);
+  }
+  .workspace-scroll.has-mobile-tabs {
+    padding-block-end: var(--mobile-tab-clearance);
+    scroll-padding-block-end: var(--mobile-tab-clearance);
+  }
+}
+
+/* 底栏、添加按钮和专注条共享底部安全区。 */
+.mobile-tab-bar {
+  grid-template-columns: repeat(var(--tab-count), minmax(0, 1fr));
+  width: calc(100% - 24px);
+  max-width: 32rem;
+  margin: 0 auto calc(6px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--outline);
+  border-radius: 9999px;
+  box-shadow: var(--elev-card);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .mobile-tab-bar.glass {
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    box-shadow: 0 6px 24px -10px color-mix(in srgb, var(--on-surface) 27%, transparent);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .mobile-tab-bar.glass { background: var(--surface); }
+  }
+}
+@media (max-width: 767px) {
+  .mobile-actions-offset { bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)); }
 }
 .tab-pill {
   position: absolute;
-  top: 6px;
-  left: 0;
-  width: 64px;
-  height: 32px;
+  inset: 0 auto 0 0;
+  width: calc(100% / var(--tab-count));
   pointer-events: none;
-  transform-origin: left center;
-  /* 两边各自过渡，差值变化时胶囊会被自然拉长；只改 transform，不触发重排 */
-  transform: translate3d(calc(var(--pill-l) * 1px), 0, 0) scaleX(calc((var(--pill-r) - var(--pill-l)) / 64));
-  will-change: transform;
+  transition: transform var(--dur-2) var(--ease-standard), opacity var(--dur-1) var(--ease-standard);
 }
-.tab-pill[data-ready] {
-  transition:
-    --pill-l 220ms var(--ease-soft-spring) var(--pill-dl, 0ms),
-    --pill-r 240ms var(--ease-soft-spring) var(--pill-dr, 0ms),
-    opacity 180ms var(--ease-standard);
-}
-.tab-pill-fill {
+.tab-pill::before {
+  content: '';
   position: absolute;
-  inset: 0;
+  inset: 4px 3px;
   border-radius: 9999px;
   background: var(--primary-soft);
-  transform-origin: center;
-  transition: transform 180ms var(--ease-standard);
 }
-/* 被拉开时轻微压扁，停稳后恢复，像一滴被拖长的水 */
-.tab-pill[data-moving] .tab-pill-fill { transform: scaleY(0.94); }
+.mobile-tab-link { transition: color var(--dur-1) var(--ease-standard); }
+.mobile-tab-link:focus-visible { outline-offset: -3px; }
+.mobile-tab-icon { transition: transform var(--dur-1) var(--ease-standard); }
+.mobile-tab-link:active .mobile-tab-icon { transform: scale(.92); }
+@media (prefers-reduced-motion: reduce) {
+  .tab-pill, .mobile-tab-icon, .segmented-thumb { transition: none !important; }
+  .mobile-tab-link:active .mobile-tab-icon { transform: none; }
+}
+.no-motion :is(.tab-pill, .mobile-tab-icon, .segmented-thumb) { transition: none !important; }
+.no-motion .mobile-tab-link:active .mobile-tab-icon { transform: none; }
 
-.nav-badge { will-change: transform; }
 .nav-badge-num {
   display: block;
-  animation: badge-flip 260ms var(--ease-standard) both;
+  animation: badge-flip var(--dur-2) var(--ease-standard) both;
 }
 @keyframes badge-flip {
   0% { opacity: 0; transform: translateY(70%); }
@@ -756,7 +864,7 @@ select:focus-visible {
 @keyframes badge-out {
   to { opacity: 0; transform: scale(0.4); }
 }
-.nav-badge.nav-badge-out { animation: badge-out 220ms var(--ease-standard) forwards; }
+.nav-badge.nav-badge-out { animation: badge-out var(--dur-2) var(--ease-standard) forwards; }
 
 /* 同层内容最多错峰 105ms，避免等待整屏逐项播放。 */
 .cascade > * { animation: fade-up var(--dur-2) var(--ease-standard) backwards; }

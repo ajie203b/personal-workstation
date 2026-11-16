@@ -51,12 +51,7 @@ export function useFocusTicker(): FocusTicker | null {
   return state
 }
 
-/**
- * 只回答「有没有在计时」。
- *
- * 外壳（AppShell）需要它来给悬浮按钮让位，但外壳每秒重渲染会把整页（包括几百页的 PDF）一起带走。
- * 这里每秒读一次存储，只有 true/false 真的翻转时 setState 才会触发渲染。
- */
+/** 浮层只在计时状态开始或结束时更新位置。 */
 export function useFocusActive(): boolean {
   const [active, setActive] = useState(() => readState() !== null)
   useEffect(() => {
@@ -73,7 +68,7 @@ export function useFocusActive(): boolean {
   return active
 }
 
-export function FocusMiniBar() {
+export function FocusMiniBar({ besideAddButton }: { besideAddButton: boolean }) {
   const state = useFocusTicker()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -85,8 +80,8 @@ export function FocusMiniBar() {
     <button
       type="button"
       onClick={() => navigate('/today')}
-      className="mini-bar-in md:hidden fixed left-3 right-[4.75rem] z-30 h-11 rounded-full bg-surface border border-outline shadow-lg flex items-center gap-2 px-3.5 cursor-pointer active:scale-[0.98] transition-transform"
-      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 4.25rem)' }}
+      className="mobile-actions-offset mini-bar-in press md:hidden fixed left-[calc(.75rem+env(safe-area-inset-left))] z-30 h-12 rounded-full bg-surface border border-outline shadow-md flex items-center gap-2 px-3.5 cursor-pointer"
+      style={{ right: `calc(${besideAddButton ? '4.25rem' : '.75rem'} + env(safe-area-inset-right, 0px))` }}
       aria-label={`番茄钟剩余 ${mm} 分 ${ss} 秒，点开今日页`}
     >
       <span className={state.phase === 'break' ? 'text-ok' : 'text-primary'}>

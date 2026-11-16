@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router'
-import { ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { IconSettings } from '@/shared/icons'
 import { NAV_ITEMS } from './nav'
 import { countByTier, useAllTasks } from '@/db/hooks'
@@ -16,9 +16,7 @@ import { guardNavigation } from '@/lib/unsavedGuard'
  * - ≥lg：完整侧栏（可折叠成图标栏，状态持久化）
  * - md（平板竖屏 / 窄窗口）：图标栏
  * - <md：隐藏，由底部导航接管
- *
- * 折叠动画改的是 width（不是 translateX）：以前只把内容左移 176px、宽度仍是 w-60，
- * 右侧就留一条空白。现在宽度从 240 → 64 过渡，内容区自动补位。
+ * 侧栏宽度一次落位，文档视口只需按最终宽度重排。
  */
 export function Sidebar() {
   const navigate = useNavigate()
@@ -36,40 +34,26 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'glass hidden md:flex flex-col shrink-0 border-r border-outline/70 z-30 overflow-hidden pt-[env(safe-area-inset-top,0px)]',
-        'w-16 transition-[width] duration-300 ease-standard',
-        collapsed ? 'lg:w-16' : 'lg:w-60',
+        'workspace-sidebar hidden md:flex flex-col shrink-0 w-16 z-30 overflow-hidden ml-2.5 mb-2.5 mt-[calc(.625rem+env(safe-area-inset-top,0px))]',
+        !collapsed && 'lg:w-56',
       )}
     >
-      <div className="flex items-center gap-2.5 h-14 px-3 shrink-0 overflow-hidden">
-        {/* 折叠后宽度只够放一个控件：品牌让位给「展开」，展开态两者都在 */}
+      <div className="flex items-center gap-1 h-14 px-2.5 shrink-0 overflow-hidden">
         <button
           type="button"
           aria-label="回到今日"
           title="今日"
           onClick={onBrandClick}
-          className={cn('shrink-0 cursor-pointer rounded-[10px] active:opacity-80 select-none', collapsed && 'lg:hidden')}
+          className="chrome-button press shrink-0 cursor-pointer rounded-xl select-none"
         >
           <BrandMark />
         </button>
-        <span
-          className="hidden lg:block text-[17px] font-bold tracking-[0.01em] overflow-hidden whitespace-nowrap transition-opacity duration-200"
-          style={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : undefined }}
-        >
+        {!collapsed && <span className="sidebar-label hidden lg:block text-[17px] font-semibold tracking-tight whitespace-nowrap">
           Kairos
-        </span>
-        <button
-          type="button"
-          aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
-          aria-expanded={!collapsed}
-          onClick={() => reading ? setReaderExpanded(collapsed) : setCollapsed(!collapsed)}
-          className="hidden lg:grid place-items-center ml-auto w-8 h-8 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors shrink-0"
-        >
-          {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
-        </button>
+        </span>}
       </div>
 
-      <nav className="flex-1 flex flex-col gap-1 px-2.5 py-2">
+      <nav aria-label="主导航" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5 px-2.5 py-1.5">
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}
@@ -79,7 +63,7 @@ export function Sidebar() {
             title={item.label}
             className={({ isActive }) =>
               cn(
-                'group relative flex items-center gap-3 h-11 px-2.5 rounded-[12px] shrink-0 overflow-hidden',
+                'sidebar-link relative flex items-center gap-3 h-11 px-2.5 rounded-xl shrink-0',
                 'transition-colors duration-150',
                 isActive
                   ? 'bg-primary-soft text-primary font-medium'
@@ -91,14 +75,14 @@ export function Sidebar() {
               <>
                 <item.icon size={20} strokeWidth={isActive ? 2 : 1.8} className="shrink-0" aria-hidden />
                 <span
-                  className={cn('text-ui-label whitespace-nowrap', collapsed ? 'hidden' : 'hidden lg:block')}
+                  className={cn('sidebar-label text-ui-label whitespace-nowrap', collapsed ? 'hidden' : 'hidden lg:block')}
                 >
                   {item.label}
                 </span>
                 {!collapsed && item.path === '/tasks' && counts.today > 0 && (
                   <span
                     className={cn(
-                      'hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] transition-opacity duration-200 tabular-nums',
+                      'sidebar-label hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] tabular-nums',
                       isActive ? 'bg-primary text-on-primary' : 'bg-surface-3 text-on-surface-2',
                     )}
                   >
@@ -111,20 +95,30 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className={cn('flex items-center gap-1 px-2.5 py-3 shrink-0', collapsed ? 'flex-col lg:flex-col' : 'flex-col lg:flex-row')}>
+      <div className={cn('flex items-center gap-0.5 px-2.5 py-2 shrink-0 flex-col', !collapsed && 'lg:flex-row')}>
         <button
           type="button"
           aria-label={pathname.startsWith('/settings') ? '返回' : '设置'}
           title={pathname.startsWith('/settings') ? '返回' : '设置'}
           onClick={() => guardNavigation(() => navigate(pathname.startsWith('/settings') ? '/today' : '/settings'))}
           className={cn(
-            'grid place-items-center w-10 h-10 rounded-[10px] shrink-0 transition-colors cursor-pointer',
+            'chrome-button press grid place-items-center size-10 rounded-xl shrink-0 cursor-pointer',
             pathname.startsWith('/settings') ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
           )}
         >
           <IconSettings size={18} />
         </button>
         <ThemeButton compact={collapsed} />
+        <button
+          type="button"
+          aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
+          title={collapsed ? '展开侧栏' : '折叠侧栏'}
+          aria-expanded={!collapsed}
+          onClick={() => reading ? setReaderExpanded(collapsed) : setCollapsed(!collapsed)}
+          className="chrome-button press hidden lg:grid place-items-center size-10 rounded-xl text-on-surface-2 shrink-0 lg:ml-auto cursor-pointer"
+        >
+          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+        </button>
       </div>
     </aside>
   )

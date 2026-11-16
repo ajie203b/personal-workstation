@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import { useSearchParams } from 'react-router'
 import { ChevronRight, Database, Info, Lightbulb, Palette, RefreshCw } from 'lucide-react'
 import { getSettingsSection, SETTINGS_TITLES, type SettingsSection } from '@/app/nav'
@@ -26,7 +26,7 @@ export function SettingsPage() {
   const section = getSettingsSection(params.get('section'))
   const tab = section ?? 'appearance'
   const setTab = (section: SettingsSection) => setParams({ section })
-  useEffect(() => { document.getElementById('main-scroll')?.scrollTo({ top: 0 }) }, [section])
+  useLayoutEffect(() => { document.getElementById('main-scroll')?.scrollTo({ top: 0 }) }, [section])
 
   const content = tab === 'appearance' ? <AppearanceTab />
     : tab === 'data' ? <DataTab onGoSync={() => setTab('sync')} />
@@ -35,8 +35,8 @@ export function SettingsPage() {
     : <AboutTab />
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 pb-24 md:pb-14 enter">
-      <h1 className="hidden md:block text-[22px] font-bold leading-8 mb-4">设置</h1>
+    <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 md:pt-6 pb-24 md:pb-14">
+      <h1 className="hidden md:block text-[28px] font-semibold leading-tight tracking-tight mb-5">设置</h1>
 
       <div className="flex flex-col md:flex-row md:gap-8 md:items-start">
         {/* 桌面：分区列表 */}
@@ -45,9 +45,10 @@ export function SettingsPage() {
             <button
               key={s.id}
               type="button"
+              aria-current={tab === s.id ? 'page' : undefined}
               onClick={() => setTab(s.id)}
               className={cn(
-                'flex items-center gap-2.5 h-9 px-2.5 rounded-[9px] text-[13px] text-left transition-colors cursor-pointer',
+                'press flex items-center gap-2.5 h-10 px-2.5 rounded-[10px] text-[14px] text-left cursor-pointer',
                 tab === s.id ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
               )}
             >
@@ -59,26 +60,26 @@ export function SettingsPage() {
 
         {/* 手机：一级列表 */}
         {!section && (
-          <div className="md:hidden flex flex-col rounded-2xl bg-surface overflow-hidden">
+          <nav aria-label="设置分区" className="md:hidden flex flex-col rounded-2xl border border-outline bg-surface overflow-hidden">
             {SECTIONS.map((s, index) => (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => setTab(s.id)}
-                className="relative flex items-center gap-3 px-4 py-3.5 text-left cursor-pointer hover:bg-surface-2"
+                className="chrome-button relative flex min-h-16 items-center gap-3 px-3.5 py-2.5 text-left cursor-pointer focus-visible:-outline-offset-2"
               >
-                {index > 0 && <span aria-hidden className="absolute top-0 left-16 right-4 border-t border-outline/70" />}
+                {index > 0 && <span aria-hidden className="absolute top-0 left-[3.875rem] right-0 border-t border-outline/70" />}
                 <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
                   <s.icon size={17} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-medium">{SETTINGS_TITLES[s.id]}</span>
-                  <span className="block text-[12px] text-on-surface-2 mt-0.5 truncate">{s.hint}</span>
+                  <span className="block text-[15px] font-medium leading-5">{SETTINGS_TITLES[s.id]}</span>
+                  <span className="block text-[12px] text-on-surface-2 mt-0.5">{s.hint}</span>
                 </span>
                 <ChevronRight size={16} className="text-on-surface-2 shrink-0" />
               </button>
             ))}
-          </div>
+          </nav>
         )}
 
         {/* 内容：手机二级页才显示，桌面常显 */}

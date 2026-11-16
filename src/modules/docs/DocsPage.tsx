@@ -30,7 +30,6 @@ import { CitationDialog } from './CitationDialog'
 import { Sheet } from '@/shared/ui/Sheet'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem } from '@/shared/ui/Menu'
-import { useFocusActive } from '@/shared/FocusMiniBar'
 import { isAnnotationDue } from './reviewSm2'
 import {
   ANNOTATED_VIEW,
@@ -57,7 +56,6 @@ export function DocsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [citationDoc, setCitationDoc] = useState<Doc | null>(null)
   const desktop = useSyncExternalStore(subscribeToWidth, isDesktopWidth)
-  const focusActive = useFocusActive()
   const activeFolder = params.get('folder')
   const inTrash = activeFolder === TRASH_FOLDER
   const trashCount = useLiveQuery(() => db.docs.filter(d => !!d.deletedAt).count(), [], 0)
@@ -589,9 +587,8 @@ export function DocsPage() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" aria-label="添加文档"
-              className="lg:hidden fixed right-4 z-30 grid place-items-center w-14 h-14 rounded-full bg-primary-action text-on-primary-action shadow-lg cursor-pointer"
-              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + ${focusActive ? '8.25rem' : '4.25rem'})` }}>
-              <Plus size={26} />
+              className="mobile-actions-offset press lg:hidden fixed md:bottom-6 right-[calc(.75rem+env(safe-area-inset-right))] z-30 grid place-items-center size-12 rounded-full bg-primary-action text-on-primary-action shadow-md shadow-primary/20 cursor-pointer">
+              <Plus size={24} strokeWidth={2.2} />
             </button>
           </DropdownMenuTrigger>
           <MenuContent>

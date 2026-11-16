@@ -6,7 +6,6 @@ import { db } from '@/db/db'
 import { IntelligenceCard } from '@/modules/intelligence/IntelligenceCard'
 import { useFanqie } from '@/stores/fanqie'
 import { cn } from '@/lib/cn'
-import { usePressTilt } from '@/lib/usePressTilt'
 import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { orderTools } from './toolOrder'
@@ -38,7 +37,6 @@ const TOOL_CARDS: ToolCard[] = [
 export function ToolsPage() {
   const localBooks = useLiveQuery(() => db.fanqieBooks.count(), []) ?? 0
   const job = useFanqie((s) => s.job)
-  const tilt = usePressTilt<HTMLAnchorElement>()
   const savedOrder = useLiveQuery(() => db.settings.get('toolOrder'), [])
   // 拖拽落位先改本地顺序，再后台落库：否则会先弹回旧位置、等 liveQuery 回来才跳过去
   const [localOrder, setLocalOrder] = useState<string[] | null>(null)
@@ -77,13 +75,11 @@ export function ToolsPage() {
 
   const toolCard = (t: ToolCard, overlay = false) => (
     <Link
-      ref={!overlay && t.to === '/tools/fanqie' ? tilt.ref : undefined}
-      {...(!overlay && t.to === '/tools/fanqie' ? tilt.tiltProps : {})}
       to={t.to}
       draggable={false}
       tabIndex={overlay ? -1 : undefined}
       aria-label={t.title}
-      className="tilt-card press card card-hover flex relative w-full min-h-[76px] items-center gap-2.5 px-3 py-2 overflow-hidden select-none"
+      className="chrome-button press card flex relative w-full min-h-[76px] items-center gap-2.5 px-3 py-2 select-none"
     >
       <span className="grid place-items-center size-9 rounded-[10px] bg-primary-soft text-primary shrink-0"><t.icon size={20} /></span>
       <span className="min-w-0">
@@ -96,11 +92,8 @@ export function ToolsPage() {
   )
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-5 cascade">
-      <div className="hidden md:block">
-        <h1 className="text-[22px] font-bold leading-8">工具</h1>
-        <p className="text-[13px] text-on-surface-2 mt-0.5">模型榜单与小工具</p>
-      </div>
+    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 md:pt-6 pb-24 md:pb-14 flex flex-col gap-5">
+      <h1 className="hidden md:block text-[28px] font-semibold leading-tight tracking-tight">工具</h1>
 
       <IntelligenceCard />
 
