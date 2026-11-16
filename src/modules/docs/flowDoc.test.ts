@@ -37,6 +37,22 @@ async function makeEpub(chapterHtml: string): Promise<Blob> {
 }
 
 describe('parseFlowDoc(epub) 清洗', () => {
+  it('keeps a self-closing XHTML anchor empty without absorbing the following text', async () => {
+    const blob = await makeEpub(
+      '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+      + '<a id="chapter-start"/><p>章节正文。</p>'
+      + '<p>参见<a href="https://example.test/note">注释</a>。</p>'
+      + '</body></html>',
+    )
+    const flow = await parseFlowDoc('epub', blob)
+    const rendered = new DOMParser().parseFromString(flow.segments[0].html, 'text/html')
+
+    expect(rendered.querySelector('#chapter-start')?.textContent).toBe('')
+    expect(Array.from(rendered.body.children, (element) => element.localName)).toEqual(['a', 'p', 'p'])
+    expect(rendered.querySelector('a[href="https://example.test/note"]')?.textContent).toBe('注释')
+    expect(flow.text).toContain('章节正文。')
+  })
+
   it('章节里的 script 与 onerror 不会进入渲染 HTML', async () => {
     const blob = await makeEpub(
       '<html><body><h1>第一章</h1>'

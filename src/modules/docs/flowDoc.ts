@@ -124,6 +124,18 @@ function prepareEpubImages(doc: Document, chapterPath: string, zip: Zip): void {
   }
 }
 
+function parseEpubChapter(parser: DOMParser, raw: string): Document {
+  // XHTML 的空锚点 <a id="…"/> 直接交给 HTML 解析会把后面的正文卷入链接元素。
+  if (/<a(?=[\s/])(?:[^<>"']|"[^"]*"|'[^']*')*\/>/i.test(raw)) {
+    const xhtml = parser.parseFromString(raw, 'application/xhtml+xml')
+    if (xhtml.body) {
+      // 先让 XHTML 解析保留锚点边界，再统一走原有的 HTML 图片处理和清洗。
+      return parser.parseFromString(xhtml.body.innerHTML, 'text/html')
+    }
+  }
+  return parser.parseFromString(raw, 'text/html')
+}
+
 async function parseEpub(blob: Blob): Promise<FlowDoc> {
   const JSZip = (await import('jszip')).default
   const zip = await JSZip.loadAsync(await blob.arrayBuffer())
@@ -153,12 +165,12 @@ async function parseEpub(blob: Blob): Promise<FlowDoc> {
   }
 
   const segments: FlowSegment[] = []
+  const parser = new DOMParser()
   for (const path of chapterPaths) {
     const entry = findZipEntry(zip, path) ?? findZipEntry(zip, decodeURIComponent(path))
     if (!entry) continue
     const raw = await zip.file(entry)!.async('string')
-    // 每章只解析一次 DOM：文本、标题、图片占位、清洗都复用这棵树
-    const doc = new DOMParser().parseFromString(raw, 'text/html')
+    const doc = parseEpubChapter(parser, raw)
     const text = docToText(doc)
     const h = doc.querySelector('h1,h2,h3')
     const title = h?.textContent?.trim() || `第 ${segments.length + 1} 章`

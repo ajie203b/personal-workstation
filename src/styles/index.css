@@ -1350,7 +1350,7 @@ body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 .flow-body ol { list-style: decimal; }
 .flow-body li { margin: 0.32em 0; }
 .flow-body li::marker { color: var(--md-ink-2); }
-.flow-body a { color: var(--primary); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.flow-body a[href] { color: var(--primary); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .flow-body blockquote { margin: 1.2em 0; padding: 0.55em 1.1em; border-left: 2.5px solid color-mix(in srgb, var(--primary) 72%, transparent); background: var(--md-quote); border-radius: 2px 10px 10px 2px; color: var(--md-ink-2); }
 .flow-body code { font-family: var(--font-mono); font-size: 0.875em; background: var(--md-code-bg); border: 1px solid color-mix(in srgb, var(--md-rule) 70%, transparent); padding: 0.14em 0.4em; border-radius: 6px; }
 .flow-body pre { background: var(--md-code-bg); border: 1px solid var(--md-rule); border-radius: 12px; padding: 14px 16px; overflow-x: auto; margin: 1.2em 0; line-height: 1.65; }
