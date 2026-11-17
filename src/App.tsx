@@ -8,7 +8,7 @@ import { GlobalHotkeys } from './GlobalHotkeys'
 import { AddTaskSheet } from '@/modules/tasks/AddTaskSheet'
 import { TodayPage } from '@/modules/today/TodayPage'
 import { db } from '@/db/db'
-import { getNotifyEnabled, syncAllTaskNotifications } from '@/lib/notify'
+import { syncAllTaskNotifications } from '@/lib/notify'
 import { ShareInbound } from '@/shared/ShareInbound'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { useUi } from '@/stores/ui'
@@ -19,7 +19,7 @@ import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
 import { initTaskWidgetActions, syncTaskWidget } from '@/lib/taskWidget'
 import { AppUpdateHost } from '@/shared/AppUpdate'
-import { isMainWindow } from '@/lib/native'
+import { isMainWindow, isNative } from '@/lib/native'
 
 // 重资源页面按路由分包：任务多视图/文档渲染库/编辑器/工具页仅在访问对应页面或弹窗时加载
 const TasksPage = lazy(() => import('@/modules/tasks/TasksPage').then((m) => ({ default: m.TasksPage })))
@@ -80,15 +80,14 @@ function GlobalAddSheet() {
  */
 function NativeSyncBridge() {
   useEffect(() => {
+    if (!isNative()) return
     let timer: number | undefined
     let notificationSynced = false
     const sub = liveQuery(() => db.tasks.orderBy('updatedAt').reverse().toArray()).subscribe({
       next(rows) {
         if (!notificationSynced) {
           notificationSynced = true
-          void getNotifyEnabled().then((on) => {
-            if (on) void syncAllTaskNotifications(rows)
-          })
+          void syncAllTaskNotifications(rows)
         }
         window.clearTimeout(timer)
         timer = window.setTimeout(() => syncTaskWidget(rows), 400)

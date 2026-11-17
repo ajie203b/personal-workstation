@@ -50,12 +50,6 @@ export function deriveTodayDone(all: Task[], today?: string): Task[] {
   return all.filter((task) => task.status === 'done' && (task.doneAt ?? 0) >= start)
 }
 
-export function countByTier(all: Task[]): Record<string, number> {
-  const counts: Record<string, number> = { today: 0, upcoming: 0, anytime: 0, someday: 0 }
-  for (const t of all) if (t.status !== 'done') counts[t.tier]++
-  return counts
-}
-
 /* ============ 文档工作站 ============ */
 
 const EMPTY_DOCS: Doc[] = []

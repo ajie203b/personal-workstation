@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useSearchParams } from 'react-router'
 import { Suspense, useLayoutEffect, useRef } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { Plus } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
@@ -9,7 +10,7 @@ import { useThemeEffect } from '@/shared/theme'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { FocusMiniBar } from '@/shared/FocusMiniBar'
 import { useUi } from '@/stores/ui'
-import { TIERS, type Tier } from '@/db/db'
+import { db, TIERS, type Tier } from '@/db/db'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
 
@@ -34,6 +35,11 @@ export function AppShell() {
   const { pathname } = useLocation()
   const [params] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
+  const todayCount = useLiveQuery(
+    () => db.tasks.where('tier').equals('today').filter((task) => task.status !== 'done').count(),
+    [],
+    0,
+  )
   const section = `/${pathname.split('/')[1] || ''}`
   const title = PAGE_TITLE[pathname] ?? PAGE_TITLE[section] ?? 'Kairos'
 
@@ -77,7 +83,7 @@ export function AppShell() {
           target?.focus()
         }}
       >跳到主内容</a>
-      <Sidebar />
+      <Sidebar todayCount={todayCount} />
       <div className={cn('workspace-column relative flex-1 flex flex-col min-w-0', !immersive && 'md:pt-[env(safe-area-inset-top,0px)]')}>
         {showTopBar && <TopBar title={title} />}
         <main
@@ -97,7 +103,7 @@ export function AppShell() {
             </Suspense>
           </div>
         </main>
-        {!immersive && <BottomNav />}
+        {!immersive && <BottomNav todayCount={todayCount} />}
       </div>
 
       {/* 计时中：迷你条目常驻底栏上方，切到任何页都看得到 */}

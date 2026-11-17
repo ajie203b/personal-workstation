@@ -581,14 +581,14 @@ export function FanqiePage() {
         <label htmlFor="fq-search" className="text-[13px] font-medium">
           搜书名 / 作者
         </label>
-        <div className="flex items-center gap-2 mt-2">
-          <div className="relative flex-1 min-w-0">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-[1_1_12rem]">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-2 pointer-events-none" />
             <input
               id="fq-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="例如：戏神、三九音域、番茄书籍链接"
+              placeholder="例如：戏神 / 三九音域"
               aria-describedby="fq-search-hint"
               enterKeyHint="search"
               className="w-full h-10 pl-9 pr-3 rounded-[10px] bg-surface border border-outline text-[13.5px] outline-none focus:border-primary/60 placeholder:text-on-surface-2/70"

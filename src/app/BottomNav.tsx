@@ -1,15 +1,12 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { NavLink, useLocation } from 'react-router'
 import { NAV_ITEMS } from './nav'
-import { countByTier, useAllTasks } from '@/db/hooks'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
 
 /** 手机底栏的选中背景和标签共用等宽列，切换时只移动背景。 */
-export function BottomNav() {
-  const all = useAllTasks()
-  const counts = countByTier(all)
+export function BottomNav({ todayCount }: { todayCount: number }) {
   const { pathname } = useLocation()
   const section = `/${pathname.split('/')[1] || ''}`
   const activeIndex = NAV_ITEMS.findIndex((item) => item.path === section)
@@ -29,7 +26,6 @@ export function BottomNav() {
       />
       {NAV_ITEMS.map((item) => {
         // 今日待办数挂在「任务清单」上：底栏原来完全没有角标，得点进去才知道有多少
-        const badge = item.path === '/tasks' ? counts.today : 0
         return (
           <NavLink
             key={item.path}
@@ -47,7 +43,7 @@ export function BottomNav() {
               <>
                 <span className="mobile-tab-icon relative grid place-items-center size-7">
                   <item.icon size={21} strokeWidth={isActive ? 2 : 1.8} aria-hidden />
-                  {item.path === '/tasks' && <NavBadge value={badge} />}
+                  {item.path === '/tasks' && <NavBadge value={todayCount} />}
                 </span>
                 <span className="text-[12px] font-medium leading-none">{item.path === '/docs' ? '文档' : item.path === '/tasks' ? '任务' : item.label}</span>
               </>

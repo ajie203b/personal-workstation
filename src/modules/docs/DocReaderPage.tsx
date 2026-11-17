@@ -327,7 +327,8 @@ export function DocReaderPage() {
   }
 
   const pct = Math.round(progressPct * 100)
-  const activeFindQuery = findOpen ? debouncedFindQuery : ''
+  const findPending = findQuery !== debouncedFindQuery
+  const activeFindQuery = findOpen && !findPending ? debouncedFindQuery : ''
 
   return (
     <div
@@ -388,12 +389,9 @@ export function DocReaderPage() {
         focusTick={findFocusTick}
         query={findQuery}
         active={findActive}
-        total={findState.total}
-        searching={findState.searching}
-        onQueryChange={(q) => {
-          setFindQuery(q)
-          setFindActive(0)
-        }}
+        total={findPending ? 0 : findState.total}
+        searching={findPending || findState.searching}
+        onQueryChange={setFindQuery}
         onNext={() => setFindActive((i) => (findState.total > 0 ? (i + 1) % findState.total : 0))}
         onPrev={() => setFindActive((i) => (findState.total > 0 ? (i - 1 + findState.total) % findState.total : 0))}
         onClose={() => setFindOpen(false)}

@@ -109,13 +109,14 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
   // 按行铺进 CSS Grid：每行「周几 + 13 个格子」，格子用 aspect-square 自适应屏宽
   const heatRows = useMemo(() => Array.from({ length: 7 }, (_, d) => weeks.map((col) => col[d])), [weeks])
   const heatMonths = useMemo(() => {
-    let prev = -1
-    return weeks.map((col) => {
+    const months: { month: number; start: number; span: number }[] = []
+    weeks.forEach((col, start) => {
       const month = col[0].date.getMonth()
-      if (month === prev) return ''
-      prev = month
-      return `${month + 1}月`
+      const previous = months.at(-1)
+      if (previous?.month === month) previous.span++
+      else months.push({ month, start, span: 1 })
     })
+    return months
   }, [weeks])
 
   // 本周 vs 上周 / 本月 vs 上月（周一起算）
@@ -209,8 +210,17 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
         <div className="mx-auto w-full max-w-[360px]">
           <div className="grid gap-[3px]" style={{ gridTemplateColumns: 'auto repeat(13, minmax(0, 1fr))' }}>
             <span aria-hidden />
-            {heatMonths.map((label, i) => (
-              <span key={i} className="h-4 text-[11px] leading-4 text-on-surface-2 text-center truncate select-none">{label}</span>
+            {heatMonths.map(({ month, start, span }, i) => (
+              <span
+                key={start}
+                className={cn(
+                  'flex h-4 whitespace-nowrap text-[11px] leading-4 text-on-surface-2 select-none',
+                  i === 0 ? 'justify-start' : i === heatMonths.length - 1 ? 'justify-end' : 'justify-center',
+                )}
+                style={{ gridColumn: `${start + 2} / span ${span}`, gridRow: 1 }}
+              >
+                {month + 1}月
+              </span>
             ))}
             {heatRows.map((row, ri) => (
               <Fragment key={ri}>

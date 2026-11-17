@@ -3,13 +3,15 @@
  */
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { composePhotoCanvas, composeSheetCanvas } from './idphotoCompose'
-import { SHEET_5IN } from './idphotoLayout'
+import { composePhotoCanvas, composeSheetCanvas, drawSheetPreview } from './idphotoCompose'
+import { SHEET_5IN, SHEET_A4, computeSheetLayout } from './idphotoLayout'
 import { BUILTIN_SPECS } from './idphotoSpec'
 
 function mockCanvasEnv() {
   const fillRects: Array<{ fillStyle: unknown; w: number; h: number }> = []
   const strokeRects: Array<{ strokeStyle: unknown; lineWidth: number }> = []
+  const drawImage = vi.fn()
+  const scale = vi.fn()
   const createElementOrig = document.createElement.bind(document)
 
   const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
@@ -33,7 +35,8 @@ function mockCanvasEnv() {
         strokeRect: () => {
           strokeRects.push({ strokeStyle: state.strokeStyle, lineWidth: state.lineWidth })
         },
-        drawImage: vi.fn(),
+        drawImage,
+        scale,
         beginPath: vi.fn(),
         moveTo: vi.fn(),
         lineTo: vi.fn(),
@@ -44,7 +47,7 @@ function mockCanvasEnv() {
     return el
   }) as typeof document.createElement)
 
-  return { fillRects, strokeRects, restore: () => spy.mockRestore() }
+  return { fillRects, strokeRects, drawImage, scale, restore: () => spy.mockRestore() }
 }
 
 describe('composePhotoCanvas / composeSheetCanvas', () => {
@@ -96,6 +99,23 @@ describe('composePhotoCanvas / composeSheetCanvas', () => {
         expect(s.strokeStyle).toBe('#CBD5E1')
         expect(s.lineWidth).toBe(1)
       }
+    } finally {
+      restore()
+    }
+  })
+
+  it('A4 预览在缩略画布上复用打印排版的格子坐标', () => {
+    const { drawImage, scale, restore } = mockCanvasEnv()
+    try {
+      const spec = BUILTIN_SPECS[0]
+      const photo = document.createElement('canvas')
+      const preview = document.createElement('canvas')
+      drawSheetPreview(preview, photo, spec, SHEET_A4, 4)
+
+      expect([preview.width, preview.height]).toEqual([297, 420])
+      expect(scale).toHaveBeenCalledExactlyOnceWith(297 / SHEET_A4.width, 420 / SHEET_A4.height)
+      const { cells } = computeSheetLayout(spec, SHEET_A4, 4)
+      expect(drawImage.mock.calls).toEqual(cells.map(({ x, y, width, height }) => [photo, x, y, width, height]))
     } finally {
       restore()
     }

@@ -137,18 +137,17 @@ export function ToolsPage() {
       <IntelligenceCard />
 
       <section className="flex flex-col gap-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <h2 className="text-[13px] font-semibold text-on-surface-2 shrink-0">小工具</h2>
-            <Segmented
-              size="sm"
-              ariaLabel="按分类筛选工具"
-              value={category}
-              onChange={setCategory}
-              options={CATEGORY_OPTIONS}
-            />
-          </div>
-          <div className="flex items-center gap-2 text-[11px] text-on-surface-2 ml-auto">
+        <div className="grid grid-cols-[auto_1fr] items-center gap-2 px-1 sm:grid-cols-[auto_auto_1fr]">
+          <h2 className="col-start-1 row-start-1 text-[13px] font-semibold text-on-surface-2">小工具</h2>
+          <Segmented
+            className="col-span-2 row-start-2 justify-self-start sm:col-span-1 sm:col-start-2 sm:row-start-1"
+            size="sm"
+            ariaLabel="按分类筛选工具"
+            value={category}
+            onChange={setCategory}
+            options={CATEGORY_OPTIONS}
+          />
+          <div className="col-start-2 row-start-1 flex items-center gap-2 justify-self-end whitespace-nowrap text-[11px] text-on-surface-2 sm:col-start-3">
             {hasSavedOrder && (
               <button
                 type="button"

@@ -2,44 +2,35 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router'
 import {
   AlertTriangle,
-  Camera,
   Download,
   FileImage,
-  Image as ImageIcon,
   Loader2,
   Lock,
-  Plus,
   Printer,
   RefreshCw,
   Scissors,
-  Search,
   Sparkles,
-  Trash2,
 } from 'lucide-react'
 import { IconToolIdPhoto } from '@/shared/icons'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
-import { EmptyState } from '@/shared/ui/EmptyState'
-import { HexColorInput } from '@/shared/ui/HexColorInput'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
+import { IdPhotoPicker } from './IdPhotoPicker'
+import { IdPhotoSpecSection } from './IdPhotoSpecSection'
+import { CHECKERBOARD_STYLE, drawFacePreview } from './idphotoPreview'
 import {
   BUILTIN_SPECS,
   loadCustomSpecs,
-  parseSpecsJson,
-  saveCustomSpecs,
-  serializeSpecs,
-  validateSpec,
   type PhotoFormat,
   type PhotoSpec,
 } from './idphotoSpec'
 import {
   applyManualAdjust,
   computeCropBox,
-  cropGuides,
   fallbackCropBox,
   levelingRotation,
   refineCropWithAlpha,
@@ -62,27 +53,12 @@ import {
   composePhotoCanvas,
   composeSheetCanvas,
   composeSheetPdf,
+  drawSheetPreview,
   photoFilename,
 } from './idphotoCompose'
 
 /** 工作图最长边：定位/抠图都用它，原图再大也不进内存太久 */
 const WORK_MAX_EDGE = 1600
-
-/** 底色预设（报名照常用 + 透明底 PNG） */
-const BG_PRESETS = [
-  { id: 'white', label: '白底', value: '#FFFFFF' },
-  { id: 'blue', label: '蓝底', value: '#438EDB' },
-  { id: 'red', label: '红底', value: '#D9001B' },
-  { id: 'transparent', label: '透明底', value: 'transparent' },
-] as const
-
-const CHECKERBOARD_STYLE: CSSProperties = {
-  backgroundImage:
-    'linear-gradient(45deg, #cbd5e1 25%, transparent 25%), linear-gradient(-45deg, #cbd5e1 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #cbd5e1 75%), linear-gradient(-45deg, transparent 75%, #cbd5e1 75%)',
-  backgroundSize: '12px 12px',
-  backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0',
-  backgroundColor: '#ffffff',
-}
 
 type FaceState = 'idle' | 'running' | 'found' | 'none' | 'error'
 
@@ -94,28 +70,6 @@ interface GeneratedPhoto {
   height: number
   belowMinKb: boolean
   shrunkSize: boolean
-}
-
-interface NewSpecForm {
-  name: string
-  width: string
-  height: string
-  dpi: string
-  minKb: string
-  maxKb: string
-  format: PhotoFormat
-  sheetCount: string
-}
-
-const DEFAULT_NEW_SPEC: NewSpecForm = {
-  name: '',
-  width: '295',
-  height: '413',
-  dpi: '300',
-  minKb: '10',
-  maxKb: '30',
-  format: 'jpeg',
-  sheetCount: '8',
 }
 
 /**
@@ -142,36 +96,22 @@ export function IdPhotoPage() {
   const [brighten, setBrighten] = useState(false)
 
   const [bg, setBg] = useState('#FFFFFF')
-  const [customBg, setCustomBg] = useState('#438EDB')
 
   const [specId, setSpecId] = useState('yicun')
-  const [specQuery, setSpecQuery] = useState('')
   const [customSpecs, setCustomSpecs] = useState<PhotoSpec[]>([])
-  const [addOpen, setAddOpen] = useState(false)
-  const [newSpecForm, setNewSpecForm] = useState<NewSpecForm>(DEFAULT_NEW_SPEC)
-  const [jsonOpen, setJsonOpen] = useState(false)
-  const [jsonText, setJsonText] = useState('')
 
   const [sheetId, setSheetId] = useState<SheetPresetId>('6in')
   const [fillSheet, setFillSheet] = useState(false)
 
   const [result, setResult] = useState<GeneratedPhoto | null>(null)
 
-  const fileRef = useRef<HTMLInputElement>(null)
-  const cameraRef = useRef<HTMLInputElement>(null)
   const faceCanvasRef = useRef<HTMLCanvasElement>(null)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null)
   const sheetCanvasRef = useRef<HTMLCanvasElement>(null)
   const pickIdRef = useRef(0)
 
   const allSpecs = useMemo(() => [...BUILTIN_SPECS, ...customSpecs], [customSpecs])
-  const filteredSpecs = useMemo(() => {
-    const q = specQuery.trim().toLowerCase()
-    if (!q) return allSpecs
-    return allSpecs.filter((s) => s.name.toLowerCase().includes(q) || `${s.width}x${s.height}`.includes(q))
-  }, [allSpecs, specQuery])
   const spec = allSpecs.find((s) => s.id === specId) ?? BUILTIN_SPECS[0]
-  const isCustomSpec = customSpecs.some((s) => s.id === spec.id)
   const effectiveFormat: PhotoFormat = bg === 'transparent' ? 'png' : spec.format
 
   const sheetPreset = SHEET_PRESETS.find((p) => p.id === sheetId) ?? SHEET_PRESETS[0]
@@ -417,161 +357,14 @@ export function IdPhotoPage() {
     }
   }
 
-  // ---------- 规格新增 / JSON / 我的规格 ----------
-
-  const openJson = () => {
-    setJsonText(serializeSpecs(customSpecs.length ? customSpecs : BUILTIN_SPECS))
-    setJsonOpen((v) => !v)
-    setAddOpen(false)
-  }
-
-  const saveJson = () => {
-    const parsed = parseSpecsJson(jsonText)
-    if (!parsed.ok) {
-      toast(parsed.error)
-      return
-    }
-    const saved = saveCustomSpecs(parsed.specs)
-    if (!saved.ok) {
-      toast(saved.error)
-      return
-    }
-    setCustomSpecs(saved.specs)
-    setSpecId(saved.specs[0]?.id ?? 'yicun')
+  const selectSpec = (nextId: string) => {
+    setSpecId(nextId)
     setResult(null)
-    toast(`已保存 ${saved.specs.length} 条我的规格`)
   }
 
-  const submitNewSpec = () => {
-    const candidate = {
-      id: `mine-${Date.now().toString(36)}`,
-      name: newSpecForm.name,
-      width: Number(newSpecForm.width),
-      height: Number(newSpecForm.height),
-      dpi: Number(newSpecForm.dpi),
-      minKb: Number(newSpecForm.minKb),
-      maxKb: Number(newSpecForm.maxKb),
-      format: newSpecForm.format,
-      sheetCount: Number(newSpecForm.sheetCount),
-    }
-    const check = validateSpec(candidate)
-    if (!check.ok) {
-      toast(check.error)
-      return
-    }
-    const saved = saveCustomSpecs([...customSpecs, check.spec])
-    if (!saved.ok) {
-      toast(saved.error)
-      return
-    }
-    setCustomSpecs(saved.specs)
-    setSpecId(check.spec.id)
-    setResult(null)
-    setAddOpen(false)
-    setNewSpecForm(DEFAULT_NEW_SPEC)
-    toast(`已新增规格「${check.spec.name}」`)
-  }
-
-  const saveCurrentAsMine = () => {
-    const mine: PhotoSpec = {
-      ...spec,
-      id: `mine-${Date.now().toString(36)}`,
-      name: `${spec.name}·自定义`,
-    }
-    const saved = saveCustomSpecs([...customSpecs, mine])
-    if (!saved.ok) {
-      toast(saved.error)
-      return
-    }
-    setCustomSpecs(saved.specs)
-    setSpecId(mine.id)
-    setResult(null)
-    toast(`已存为我的规格「${mine.name}」`)
-  }
-
-  const deleteCurrentCustomSpec = () => {
-    if (!isCustomSpec) return
-    const next = customSpecs.filter((s) => s.id !== spec.id)
-    const saved = saveCustomSpecs(next.length ? next : [])
-    if (!next.length) {
-      localStorage.removeItem('idphoto.specs')
-      setCustomSpecs([])
-    } else if (saved.ok) {
-      setCustomSpecs(saved.specs)
-    }
-    setSpecId('yicun')
-    setResult(null)
-    toast(`已删除自定义规格「${spec.name}」`)
-  }
-
-  // ---------- 画布重绘 ----------
-
-  // 取景预览：原图 + 裁剪框 + 辅助线（当手动微调把框拖出原图外时自动扩展画布边界，不裁断白框）
   useEffect(() => {
     const canvas = faceCanvasRef.current
-    if (!canvas || !image || !crop) return
-    const pad = 12
-    const minX = Math.min(0, crop.x - pad)
-    const minY = Math.min(0, crop.y - pad)
-    const maxX = Math.max(image.width, crop.x + crop.width + pad)
-    const maxY = Math.max(image.height, crop.y + crop.height + pad)
-    const expanded = crop.x < 0 || crop.y < 0 || crop.x + crop.width > image.width || crop.y + crop.height > image.height
-    const viewX = expanded ? minX : 0
-    const viewY = expanded ? minY : 0
-    const viewW = expanded ? maxX - minX : image.width
-    const viewH = expanded ? maxY - minY : image.height
-
-    const scale = Math.min(1, 640 / Math.max(viewW, viewH))
-    canvas.width = Math.max(1, Math.round(viewW * scale))
-    canvas.height = Math.max(1, Math.round(viewH * scale))
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    ctx.fillStyle = '#1E293B'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-    const src = document.createElement('canvas')
-    src.width = image.width
-    src.height = image.height
-    const sctx = src.getContext('2d')
-    if (!sctx) return
-    sctx.putImageData(new ImageData(image.data, image.width, image.height), 0, 0)
-
-    const ox = -viewX * scale
-    const oy = -viewY * scale
-    ctx.drawImage(src, ox, oy, image.width * scale, image.height * scale)
-
-    if (expanded) {
-      ctx.save()
-      ctx.strokeStyle = 'rgba(148,163,184,0.65)'
-      ctx.setLineDash([4, 4])
-      ctx.strokeRect(ox, oy, image.width * scale, image.height * scale)
-      ctx.restore()
-    }
-
-    const k = scale
-    const g = cropGuides(crop)
-    const cx = ox + crop.x * k
-    const cy = oy + crop.y * k
-    const cw = crop.width * k
-    const ch = crop.height * k
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.92)'
-    ctx.lineWidth = 2
-    ctx.strokeRect(cx, cy, cw, ch)
-    ctx.strokeStyle = 'rgba(67,142,219,0.9)'
-    ctx.lineWidth = 1
-    for (const y of g.thirdLinesY) {
-      ctx.beginPath()
-      ctx.moveTo(cx, oy + y * k)
-      ctx.lineTo(cx + cw, oy + y * k)
-      ctx.stroke()
-    }
-    ctx.strokeStyle = 'rgba(217,0,27,0.9)'
-    ctx.beginPath()
-    ctx.moveTo(cx, oy + g.eyeLineY * k)
-    ctx.lineTo(cx + cw, oy + g.eyeLineY * k)
-    ctx.stroke()
+    if (canvas && image && crop) drawFacePreview(canvas, image, crop)
   }, [image, crop])
 
   // 成片预览 + 实时排版缩略图预览
@@ -598,15 +391,7 @@ export function IdPhotoPage() {
 
       const sheetCanvas = sheetCanvasRef.current
       if (sheetCanvas) {
-        const sheet = composeSheetCanvas(photo, spec, sheetPreset.spec, targetSheetCount)
-        const thumbScale = Math.min(1, 420 / Math.max(sheet.width, sheet.height))
-        sheetCanvas.width = Math.max(1, Math.round(sheet.width * thumbScale))
-        sheetCanvas.height = Math.max(1, Math.round(sheet.height * thumbScale))
-        const sctx = sheetCanvas.getContext('2d')
-        if (sctx) {
-          sctx.imageSmoothingQuality = 'high'
-          sctx.drawImage(sheet, 0, 0, sheetCanvas.width, sheetCanvas.height)
-        }
+        drawSheetPreview(sheetCanvas, photo, spec, sheetPreset.spec, targetSheetCount)
       }
     } catch {
       // 预览失败不影响导出
@@ -635,55 +420,7 @@ export function IdPhotoPage() {
       </header>
 
       {/* 1. 选图 */}
-      <section className="card p-4 flex flex-col gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-surface-2 text-on-surface-2 shrink-0">
-            <Camera size={15} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-medium">① 选照片 / 拍照</p>
-            <p className="text-[11px] text-on-surface-2">正面免冠，光线均匀；会自动按 EXIF 方向转正，并按双眼把头扶正</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button onClick={() => fileRef.current?.click()} className="h-9 px-3" disabled={Boolean(busy)}>
-              <FileImage size={15} /> 相册
-            </Button>
-            <Button onClick={() => cameraRef.current?.click()} className="h-9 px-3" disabled={Boolean(busy)}>
-              <Camera size={15} /> 拍照
-            </Button>
-          </div>
-          {/* 带 capture 的 input 在安卓只会开相机，所以相册和拍照分成两个入口 */}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              void onPickFile(e.target.files?.[0])
-              e.target.value = ''
-            }}
-          />
-          <input
-            ref={cameraRef}
-            type="file"
-            accept="image/*"
-            capture="user"
-            className="hidden"
-            onChange={(e) => {
-              void onPickFile(e.target.files?.[0])
-              e.target.value = ''
-            }}
-          />
-        </div>
-        {!image && (
-          <EmptyState
-            icon={ImageIcon}
-            title="还没有照片"
-            hint="从相册选一张，或直接拍一张正面照。"
-            compact
-          />
-        )}
-      </section>
+      <IdPhotoPicker busy={Boolean(busy)} hasImage={Boolean(image)} onPickFile={onPickFile} />
 
       {/* 2. 人脸取景 */}
       {image && crop && (
@@ -858,223 +595,19 @@ export function IdPhotoPage() {
 
       {/* 4. 底色 + 规格 */}
       {image && (
-        <section className="card p-4 flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-surface-2 text-on-surface-2 shrink-0">
-              <ImageIcon size={15} />
-            </span>
-            <p className="text-[13.5px] font-medium flex-1">④ 换底与规格</p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="背景底色">
-            {BG_PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                aria-pressed={bg === p.value}
-                onClick={() => selectBg(p.value)}
-                className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-3 rounded-[10px] border text-[12.5px] transition-colors cursor-pointer',
-                  bg === p.value ? 'border-primary text-primary bg-primary-soft' : 'border-outline text-on-surface-2',
-                )}
-              >
-                <span
-                  className="w-4 h-4 rounded-full border border-outline shrink-0"
-                  style={p.value === 'transparent' ? CHECKERBOARD_STYLE : { background: p.value }}
-                />
-                {p.label}
-              </button>
-            ))}
-            <HexColorInput
-              label="自定义底色"
-              value={customBg}
-              onChange={(value) => {
-                setCustomBg(value)
-                selectBg(value)
-              }}
-            />
-          </div>
-
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-2 pointer-events-none" />
-            <input
-              type="search"
-              value={specQuery}
-              onChange={(e) => setSpecQuery(e.target.value)}
-              placeholder="搜索规格（如 一寸 / 四六级 / 社保卡 / 签证）"
-              aria-label="搜索照片规格"
-              className="w-full h-9 rounded-[10px] border border-outline bg-surface-2 pl-8 pr-3 text-[12.5px] outline-none focus:border-primary/60"
-            />
-          </div>
-
-          <div role="group" aria-label="照片规格" className="flex gap-2 overflow-x-auto pb-1">
-            {filteredSpecs.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                aria-pressed={specId === s.id}
-                onClick={() => {
-                  setSpecId(s.id)
-                  setResult(null)
-                }}
-                className={cn(
-                  'shrink-0 flex min-h-12 items-center gap-2 rounded-lg border px-3 py-2 text-left cursor-pointer',
-                  specId === s.id ? 'border-primary bg-primary-soft text-primary' : 'border-outline bg-surface-2 text-on-surface',
-                )}
-              >
-                <span aria-hidden className="w-4 rounded-sm border border-current shrink-0" style={{ aspectRatio: s.width / s.height }} />
-                <span className="text-xs whitespace-nowrap">
-                  {s.name}
-                  <span className="block text-on-surface-2 tabular-nums">
-                    {s.width}×{s.height}
-                  </span>
-                </span>
-              </button>
-            ))}
-            {filteredSpecs.length === 0 && (
-              <p className="text-[12px] text-on-surface-2 py-2">没有匹配「{specQuery}」的规格，可直接点下方「新增规格」添加。</p>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              className="h-9 px-3 text-[12.5px]"
-              onClick={() => {
-                setAddOpen((v) => !v)
-                setJsonOpen(false)
-              }}
-            >
-              <Plus size={14} /> {addOpen ? '收起表单' : '新增规格'}
-            </Button>
-            <Button variant="outline" className="h-9 px-3 text-[12.5px]" onClick={saveCurrentAsMine}>
-              保存为我的规格
-            </Button>
-            <Button variant="ghost" className="h-9 px-3 text-[12.5px]" onClick={openJson}>
-              {jsonOpen ? '收起 JSON' : '编辑 JSON'}
-            </Button>
-            {isCustomSpec && (
-              <Button variant="danger" className="h-9 px-3 text-[12.5px]" onClick={deleteCurrentCustomSpec}>
-                <Trash2 size={14} /> 删除当前规格
-              </Button>
-            )}
-            <p className="text-[11px] text-on-surface-2">
-              {effectiveFormat === 'png'
-                ? bg === 'transparent'
-                  ? 'PNG 透明底（自动切为 PNG，不压 KB）'
-                  : 'PNG（不压 KB）'
-                : `JPEG · ${spec.minKb}~${spec.maxKb}KB · ${spec.dpi}dpi`}
-            </p>
-          </div>
-
-          {addOpen && (
-            <div className="rounded-[12px] border border-outline bg-surface-2 p-3 flex flex-col gap-3">
-              <p className="text-[12.5px] font-medium">自定义新规格</p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-[12px]">
-                <label className="flex flex-col gap-1 col-span-2">
-                  <span className="text-on-surface-2">规格名称</span>
-                  <input
-                    type="text"
-                    value={newSpecForm.name}
-                    onChange={(e) => setNewSpecForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="如 考研报名"
-                    className="h-9 rounded-lg border border-outline bg-surface px-2.5 outline-none focus:border-primary/60"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-on-surface-2">宽 (px)</span>
-                  <input
-                    type="number"
-                    value={newSpecForm.width}
-                    onChange={(e) => setNewSpecForm((f) => ({ ...f, width: e.target.value }))}
-                    className="h-9 rounded-lg border border-outline bg-surface px-2.5 outline-none focus:border-primary/60"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-on-surface-2">高 (px)</span>
-                  <input
-                    type="number"
-                    value={newSpecForm.height}
-                    onChange={(e) => setNewSpecForm((f) => ({ ...f, height: e.target.value }))}
-                    className="h-9 rounded-lg border border-outline bg-surface px-2.5 outline-none focus:border-primary/60"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-on-surface-2">DPI</span>
-                  <input
-                    type="number"
-                    value={newSpecForm.dpi}
-                    onChange={(e) => setNewSpecForm((f) => ({ ...f, dpi: e.target.value }))}
-                    className="h-9 rounded-lg border border-outline bg-surface px-2.5 outline-none focus:border-primary/60"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-on-surface-2">最小 KB</span>
-                  <input
-                    type="number"
-                    value={newSpecForm.minKb}
-                    onChange={(e) => setNewSpecForm((f) => ({ ...f, minKb: e.target.value }))}
-                    className="h-9 rounded-lg border border-outline bg-surface px-2.5 outline-none focus:border-primary/60"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-on-surface-2">最大 KB</span>
-                  <input
-                    type="number"
-                    value={newSpecForm.maxKb}
-                    onChange={(e) => setNewSpecForm((f) => ({ ...f, maxKb: e.target.value }))}
-                    className="h-9 rounded-lg border border-outline bg-surface px-2.5 outline-none focus:border-primary/60"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-on-surface-2">排版张数</span>
-                  <input
-                    type="number"
-                    value={newSpecForm.sheetCount}
-                    onChange={(e) => setNewSpecForm((f) => ({ ...f, sheetCount: e.target.value }))}
-                    className="h-9 rounded-lg border border-outline bg-surface px-2.5 outline-none focus:border-primary/60"
-                  />
-                </label>
-              </div>
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <Segmented<PhotoFormat>
-                  size="sm"
-                  ariaLabel="新规格导出格式"
-                  value={newSpecForm.format}
-                  onChange={(format) => setNewSpecForm((f) => ({ ...f, format }))}
-                  options={[
-                    { value: 'jpeg', label: 'JPEG' },
-                    { value: 'png', label: 'PNG' },
-                  ]}
-                />
-                <Button variant="primary" className="h-9 px-4" onClick={submitNewSpec}>
-                  保存并选中
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {jsonOpen && (
-            <div className="flex flex-col gap-2">
-              <textarea
-                value={jsonText}
-                onChange={(e) => setJsonText(e.target.value)}
-                rows={8}
-                spellCheck={false}
-                aria-label="规格 JSON 编辑器"
-                className="w-full rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 text-[12px] leading-relaxed font-mono outline-none focus:border-primary/60 resize-y"
-              />
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="primary" className="h-9 px-4" onClick={saveJson}>
-                  校验并保存
-                </Button>
-                <p className="text-[11px] text-on-surface-2 leading-relaxed">
-                  字段：name / width / height / dpi / minKb / maxKb / format(jpeg|png) / headRatio / headroom / sheetCount
-                </p>
-              </div>
-            </div>
-          )}
-        </section>
+        <IdPhotoSpecSection
+          spec={spec}
+          allSpecs={allSpecs}
+          customSpecs={customSpecs}
+          bg={bg}
+          effectiveFormat={effectiveFormat}
+          onSelectBg={selectBg}
+          onSelectSpec={selectSpec}
+          onCustomSpecsChange={(specs, selectedId) => {
+            setCustomSpecs(specs)
+            selectSpec(selectedId)
+          }}
+        />
       )}
 
       {/* 5. 预览与导出 */}

@@ -276,7 +276,8 @@ export function MediaParsePage() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={4}
-          placeholder={'粘贴分享文案、链接、BV/av 号或抖音作品 ID，例如：\nhttps://v.douyin.com/xxxxx/\nBV1xx411c7mD / av170001 / 7054761673470594318'}
+          aria-label="分享文案、链接或作品 ID"
+          placeholder={'粘贴分享文案、链接或作品 ID\n例如：https://v.douyin.com/xxxxx/\nBV1xx411c7mD / av170001'}
           className="w-full rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 text-[13.5px] leading-relaxed outline-none focus:border-primary/60 resize-y min-h-[96px]"
         />
         <div className="flex flex-wrap items-center gap-2">

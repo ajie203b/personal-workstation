@@ -112,7 +112,7 @@ export default defineConfig(({ mode }) => {
               options: { cacheName: 'mathnotes-runtime', expiration: { maxEntries: 4 } },
             },
             {
-              urlPattern: /\/(?:pdfjs\/.+|assets\/(?:qpdf-[^/]*\.wasm|(?:mermaid|cynefin|cytoscape|cose-bilkent|dagre|swimlanes|chunk-)[^/]*\.js|.*Diagram-[^/]*\.js))$/,
+              urlPattern: /\/(?:pdfjs\/.+|assets\/(?:qpdf(?:\.worker-[^/]+\.js|-[^/]+\.wasm)|(?:mermaid|cynefin|cytoscape|cose-bilkent|dagre|swimlanes|chunk-)[^/]*\.js|.*Diagram-[^/]*\.js))$/,
               handler: 'CacheFirst',
               options: { cacheName: 'heavy-assets-runtime', expiration: { maxEntries: 120 } },
             },

@@ -82,14 +82,35 @@ export function composeSheetCanvas(
   sheetSpec: SheetSpec = SHEET_6IN,
   count = spec.sheetCount,
 ): HTMLCanvasElement {
-  const layout = computeSheetLayout({ width: spec.width, height: spec.height }, sheetSpec, count)
   const sheet = document.createElement('canvas')
   sheet.width = sheetSpec.width
   sheet.height = sheetSpec.height
+  drawSheet(sheet, photo, spec, sheetSpec, count)
+  return sheet
+}
+
+/** 直接在缩略画布上绘制，复用打印排版的物理尺寸和坐标。 */
+export function drawSheetPreview(
+  canvas: HTMLCanvasElement,
+  photo: HTMLCanvasElement,
+  spec: PhotoSpec,
+  sheetSpec: SheetSpec,
+  count: number,
+): void {
+  const scale = Math.min(1, 420 / Math.max(sheetSpec.width, sheetSpec.height))
+  canvas.width = Math.max(1, Math.round(sheetSpec.width * scale))
+  canvas.height = Math.max(1, Math.round(sheetSpec.height * scale))
+  drawSheet(canvas, photo, spec, sheetSpec, count)
+}
+
+function drawSheet(sheet: HTMLCanvasElement, photo: HTMLCanvasElement, spec: PhotoSpec, sheetSpec: SheetSpec, count: number): void {
+  const layout = computeSheetLayout(spec, sheetSpec, count)
   const ctx = sheet.getContext('2d')
   if (!ctx) throw new Error('画布创建失败')
+  ctx.scale(sheet.width / sheetSpec.width, sheet.height / sheetSpec.height)
+  ctx.imageSmoothingQuality = 'high'
   ctx.fillStyle = '#FFFFFF'
-  ctx.fillRect(0, 0, sheet.width, sheet.height)
+  ctx.fillRect(0, 0, sheetSpec.width, sheetSpec.height)
   for (const cell of layout.cells) {
     ctx.drawImage(photo, cell.x, cell.y, cell.width, cell.height)
     // 白底/浅底照片在白相纸上需 1px 浅灰裁切细线才能看清边界
@@ -106,7 +127,6 @@ export function composeSheetCanvas(
     ctx.lineTo(l.x2 + 0.5, l.y2 + 0.5)
     ctx.stroke()
   }
-  return sheet
 }
 
 /** canvas → JPEG 字节 */

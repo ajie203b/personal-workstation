@@ -1,18 +1,21 @@
 {
   "name": "personal-workstation",
   "private": true,
-  "version": "4.0.0",
+  "version": "4.0.1",
   "type": "module",
   "description": "个人工作站：任务清单 × 文档工作站（本地优先 PWA + 安卓 App，数据不出本机）",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "dev:lan": "vite --host --mode lan",
     "build": "tsc -b && vite build",
     "lint": "eslint src",
     "capacitor:sync:after": "node scripts/prune-android-assets.mjs",
-    "test": "vitest run",
+    "test": "node scripts/check-test-node.mjs && vitest run",
     "test:scripts": "node --test scripts/intel-parse.test.mjs scripts/intel-api.test.mjs scripts/verify-updater.test.mjs",
-    "test:watch": "vitest",
+    "test:watch": "node scripts/check-test-node.mjs && vitest",
     "preview": "vite preview --host",
     "preview:lan": "vite preview --host --mode lan",
     "desktop:dev": "tauri dev",

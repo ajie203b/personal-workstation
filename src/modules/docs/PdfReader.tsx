@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
@@ -26,7 +25,8 @@ import {
   computeTrimTransform,
   findRowAtY,
 } from './pdf/pdfLayout'
-import { collectTextLayerFindRects, countMatchesInText, normalizeQuery } from './reader/docFind'
+import { PdfPageNavigator } from './pdf/PdfPageNavigator'
+import { usePdfFind } from './pdf/usePdfFind'
 import type { FilterAnnotationsArgs, OnItemClickArgs } from 'react-pdf/dist/shared/types.js'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
@@ -126,15 +126,6 @@ export function PdfReader({
   const [drawn, setDrawn] = useState<Set<number>>(() => new Set())
   const pdfProxyRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const pageTextCacheRef = useRef<Map<number, Promise<string>>>(new Map())
-  const pageWrappersRef = useRef<Map<number, HTMLElement>>(new Map())
-  const [textReadyTick, setTextReadyTick] = useState(0)
-  const onRenderTextLayerSuccess = useCallback(() => setTextReadyTick((tick) => tick + 1), [])
-  const [findMatches, setFindMatches] = useState<{ page: number; pageMatchIdx: number }[]>([])
-  const [pageFindRects, setPageFindRects] = useState<Map<number, NormRect[][]>>(() => new Map())
-  const pageFindRectsRef = useRef(pageFindRects)
-  pageFindRectsRef.current = pageFindRects
-  const lastScrolledFindRef = useRef<{ query: string; active: number; count: number } | null>(null)
-  const pendingRefineMatchRef = useRef<{ page: number; pageMatchIdx: number } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -181,11 +172,7 @@ export function PdfReader({
     () => computePdfLayout(numPages, ratios, dispW, spreadActive),
     [numPages, ratios, dispW, spreadActive],
   )
-  const offsets = useRef<number[]>([])
-  const layout = useCallback(() => {
-    offsets.current = layoutMetrics.pageOffsets
-    return layoutMetrics.totalHeight
-  }, [layoutMetrics])
+  const { pageOffsets } = layoutMetrics
 
   usePinch(scrollRef, {
     onStart: () => {
@@ -347,7 +334,6 @@ export function PdfReader({
   const onScroll = useCallback(() => {
     const container = scrollRef.current
     if (!container || !numPages) return
-    layout()
     const top = container.scrollTop
     const maxScroll = container.scrollHeight - container.clientHeight
     const pct = maxScroll > 0 ? Math.min(1, top / maxScroll) : 0
@@ -370,22 +356,21 @@ export function PdfReader({
     if (now - lastWriteRef.current < 500) return
     lastWriteRef.current = now
     if (delta < 3000) {
-      const pageTop = offsets.current[current] ?? 0
+      const pageTop = pageOffsets[current] ?? 0
       const pageHpx = row?.height || pageH(current)
       const offsetRatio = pageHpx > 0 ? Math.min(1, Math.max(0, (probe - pageTop) / pageHpx)) : 0
       void saveScrollAndProgress(hash, top, { kind: 'pdf', page: currentPage, offsetRatio }, pct)
     } else {
       void saveScrollAndProgress(hash, top, null, pct)
     }
-  }, [hash, numPages, onProgress, scrollRef, layout, layoutMetrics.rows, pageH])
+  }, [hash, numPages, onProgress, scrollRef, pageOffsets, layoutMetrics.rows, pageH])
 
   useLayoutEffect(() => {
     if (restoredRef.current || (!initialTarget && localScrollProgress == null) || !numPages || !ratios.length) return
     const container = scrollRef.current
     if (!container) return
-    layout()
     if (initialTarget) {
-      const pageTop = offsets.current[initialTarget.page - 1] ?? 0
+      const pageTop = pageOffsets[initialTarget.page - 1] ?? 0
       const h = pageH(initialTarget.page - 1)
       container.scrollTop = Math.max(0, pageTop + initialTarget.offsetRatio * h - container.clientHeight * 0.3)
     } else {
@@ -393,7 +378,7 @@ export function PdfReader({
     }
     restoredRef.current = true
     onRestored()
-  }, [initialTarget, localScrollProgress, numPages, ratios, scrollRef, onRestored, layout, pageH])
+  }, [initialTarget, localScrollProgress, numPages, ratios, scrollRef, onRestored, pageOffsets, pageH])
 
   useEffect(() => {
     if (!jump || jump.ts === lastJumpTs.current || !numPages || !ratios.length) return
@@ -402,15 +387,14 @@ export function PdfReader({
     if (!container) return
     const m = jump.anchor.match(/^p(\d+)/)
     const target = m ? Math.min(numPages, Math.max(1, Number(m[1]))) : 1
-    layout()
-    container.scrollTo({ top: Math.max(0, (offsets.current[target - 1] ?? 0) - 12), behavior: 'smooth' })
+    container.scrollTo({ top: Math.max(0, (pageOffsets[target - 1] ?? 0) - 12), behavior: 'smooth' })
     setCenter(target)
     if (jump.hl) {
       setFlashId(jump.hl)
       const t = setTimeout(() => setFlashId(null), 2200)
       return () => clearTimeout(t)
     }
-  }, [jump, numPages, ratios, scrollRef, layout, pageH])
+  }, [jump, numPages, ratios, scrollRef, pageOffsets, pageH])
 
   const onPageMouseUp = useCallback(
     (page: number, wrapper: HTMLElement) => {
@@ -476,7 +460,6 @@ export function PdfReader({
     window.getSelection()?.removeAllRanges()
   }, [shotMode, drag, onShot])
 
-  const [pageDraft, setPageDraft] = useState<string | null>(null)
   const renderWindow = containerW > 0 && containerW < 768 ? RENDER_WINDOW_NARROW : RENDER_WINDOW_WIDE
   const lo = Math.max(1, center - renderWindow - (spreadActive ? 1 : 0))
   const hi = Math.min(numPages, center + renderWindow + (spreadActive ? 1 : 0))
@@ -486,157 +469,19 @@ export function PdfReader({
     const container = scrollRef.current
     if (!container || !numPages || !ratios.length) return
     const target = Math.min(numPages, Math.max(1, pageNumber))
-    layout()
-    container.scrollTo({ top: Math.max(0, (offsets.current[target - 1] ?? 0) - 12), behavior: 'smooth' })
+    container.scrollTo({ top: Math.max(0, (pageOffsets[target - 1] ?? 0) - 12), behavior: 'smooth' })
     setCenter(target)
-  }, [numPages, ratios.length, layout, scrollRef])
+  }, [numPages, ratios.length, pageOffsets, scrollRef])
 
   const onPdfItemClick = useCallback(({ pageNumber }: OnItemClickArgs) => {
     if (shotMode) return
     if (pageNumber) scrollToPdfPage(pageNumber)
   }, [shotMode, scrollToPdfPage])
 
-  const onFindStateRef = useRef(onFindState)
-  onFindStateRef.current = onFindState
-
-  const readPageText = useCallback((pdf: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number) => {
-    const cache = pageTextCacheRef.current
-    const cached = cache.get(pageNumber)
-    if (cached) return cached
-    const text = pdf.getPage(pageNumber).then((page) => page.getTextContent()).then((content) =>
-      content.items.map((item) => 'str' in item ? item.str + (item.hasEOL ? '\n' : '') : '').join(''),
-    ).catch(() => '')
-    cache.set(pageNumber, text)
-    return text
-  }, [])
-
-  useEffect(() => {
-    const pdf = pdfProxyRef.current
-    if (!data || !pdf || !numPages || normalizeQuery(findQuery) || !window.requestIdleCallback) return
-    let active = true
-    let pending = 0
-    let nextPage = 1
-    let reading = false
-    const schedule = () => {
-      if (!active || reading || pending || pdfProxyRef.current !== pdf || document.hidden) return
-      while (pageTextCacheRef.current.has(nextPage)) nextPage++
-      if (nextPage > pdf.numPages) return
-      pending = window.requestIdleCallback(() => {
-        pending = 0
-        if (!active || pdfProxyRef.current !== pdf || document.hidden) return
-        reading = true
-        void readPageText(pdf, nextPage++).then(() => {
-          reading = false
-          schedule()
-        })
-      })
-    }
-    // 先让页面完成首屏绘制，再空闲时逐页读取；与搜索共享已缓存的请求。
-    const start = window.setTimeout(schedule, 600)
-    const onVisibility = () => {
-      window.cancelIdleCallback(pending)
-      pending = 0
-      if (!document.hidden) schedule()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      active = false
-      window.clearTimeout(start)
-      window.cancelIdleCallback(pending)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [data, findQuery, numPages, readPageText])
-
-  // 逐页扫描 PDF 文本并缓存，用于页内查找计数与跨页跳转
-  useEffect(() => {
-    const pdf = pdfProxyRef.current
-    if (!normalizeQuery(findQuery) || !numPages || !pdf) {
-      setFindMatches([])
-      setPageFindRects(new Map())
-      lastScrolledFindRef.current = null
-      pendingRefineMatchRef.current = null
-      onFindStateRef.current?.({ total: 0, searching: false })
-      return
-    }
-    let alive = true
-    onFindStateRef.current?.({ total: 0, searching: true })
-    void (async () => {
-      const hits: { page: number; pageMatchIdx: number }[] = []
-      for (let p = 1; p <= numPages; p++) {
-        if (!alive) return
-        if (pdfProxyRef.current !== pdf) return
-        const text = await readPageText(pdf, p)
-        const count = countMatchesInText(text, findQuery)
-        for (let k = 0; k < count; k++) hits.push({ page: p, pageMatchIdx: k })
-        if (p % 15 === 0) await new Promise<void>((r) => setTimeout(r, 0))
-      }
-      if (!alive) return
-      setFindMatches(hits)
-      onFindStateRef.current?.({ total: hits.length, searching: false })
-    })()
-    return () => { alive = false }
-  }, [data, findQuery, numPages, readPageText])
-
-  // 为渲染窗口内含命中的页面计算精确高亮矩形
-  useEffect(() => {
-    if (!normalizeQuery(findQuery) || !findMatches.length) {
-      setPageFindRects((prev) => (prev.size ? new Map() : prev))
-      return
-    }
-    const pagesWithHits = new Set<number>()
-    for (const m of findMatches) if (m.page >= lo && m.page <= hi) pagesWithHits.add(m.page)
-    const next = new Map<number, NormRect[][]>()
-    for (const p of pagesWithHits) {
-      const wrapper = pageWrappersRef.current.get(p)
-      const textLayer = wrapper?.querySelector('.textLayer')
-      if (!wrapper || !textLayer) continue
-      const rects = collectTextLayerFindRects(textLayer, wrapper.getBoundingClientRect(), findQuery)
-      if (rects.length) next.set(p, rects)
-    }
-    setPageFindRects(next)
-  }, [findQuery, findMatches, lo, hi, dispW, textReadyTick])
-
-  const activeFindMatch = findMatches.length
-    ? findMatches[Math.min(Math.max(0, findActive), findMatches.length - 1)]
-    : null
-
-  // 切换到新命中处：先滚到目标页，等 textLayer 算好矩形后再微调到该行
-  useEffect(() => {
-    if (!findMatches.length || !numPages || !ratios.length) return
-    const idx = Math.min(Math.max(0, findActive), findMatches.length - 1)
-    const prev = lastScrolledFindRef.current
-    if (prev && prev.query === findQuery && prev.active === idx && prev.count === findMatches.length) return
-    lastScrolledFindRef.current = { query: findQuery, active: idx, count: findMatches.length }
-    const match = findMatches[idx]
-    const container = scrollRef.current
-    if (!container) return
-    layout()
-    const pageTop = offsets.current[match.page - 1] ?? 0
-    const exactRect = pageFindRectsRef.current.get(match.page)?.[match.pageMatchIdx]?.[0]
-    if (exactRect) {
-      pendingRefineMatchRef.current = null
-      const y = pageTop + exactRect.y * pageH(match.page - 1) - container.clientHeight * 0.35
-      container.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
-    } else {
-      pendingRefineMatchRef.current = { page: match.page, pageMatchIdx: match.pageMatchIdx }
-      container.scrollTo({ top: Math.max(0, pageTop - 12), behavior: 'smooth' })
-      setCenter(match.page)
-    }
-  }, [findQuery, findActive, findMatches, numPages, ratios.length, layout, pageH, scrollRef])
-
-  useEffect(() => {
-    const pending = pendingRefineMatchRef.current
-    if (!pending) return
-    const exactRect = pageFindRects.get(pending.page)?.[pending.pageMatchIdx]?.[0]
-    if (!exactRect) return
-    pendingRefineMatchRef.current = null
-    const container = scrollRef.current
-    if (!container) return
-    layout()
-    const pageTop = offsets.current[pending.page - 1] ?? 0
-    const y = pageTop + exactRect.y * pageH(pending.page - 1) - container.clientHeight * 0.35
-    container.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
-  }, [pageFindRects, layout, pageH, scrollRef])
+  const { pageWrappersRef, onRenderTextLayerSuccess, pageFindRects, activeFindMatch } = usePdfFind({
+    data, pdfProxyRef, pageTextCacheRef, numPages, hasPageRatios: ratios.length > 0, lo, hi, dispW,
+    findQuery, findActive, onFindState, scrollRef, pageOffsets, pageH, setCenter,
+  })
 
   const annRects = useMemo(() => {
     const m = new Map<string, NormRect[]>()
@@ -825,59 +670,7 @@ export function PdfReader({
           </Document>
         </div>
       </div>
-      {numPages > 0 && (
-        <div className="pdf-floating-pill absolute bottom-3 left-3 z-10 flex items-center gap-0.5 min-h-11 px-1.5 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur">
-          <button
-            type="button"
-            aria-label="上一页"
-            disabled={center <= 1}
-            onClick={() => scrollToPdfPage(center - 1)}
-            className="grid place-items-center size-11 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <form
-            className="flex items-center gap-1 px-1"
-            onSubmit={(e) => {
-              e.preventDefault()
-              const raw = pageDraft ?? String(center)
-              const n = Number(raw)
-              setPageDraft(null)
-              if (Number.isFinite(n) && n >= 1) scrollToPdfPage(Math.min(numPages, Math.round(n)))
-            }}
-          >
-            <input
-              type="text"
-              inputMode="numeric"
-              aria-label="跳转页码"
-              value={pageDraft ?? String(center)}
-              onFocus={(e) => {
-                setPageDraft(String(center))
-                e.currentTarget.select()
-              }}
-              onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ''))}
-              onBlur={() => {
-                if (pageDraft !== null && pageDraft !== '') {
-                  const n = Number(pageDraft)
-                  if (Number.isFinite(n) && n >= 1) scrollToPdfPage(Math.min(numPages, Math.round(n)))
-                }
-                setPageDraft(null)
-              }}
-              className="size-11 bg-transparent text-center tabular-nums text-on-surface font-medium outline-none focus:bg-surface-3/70 rounded"
-            />
-            <span className="tabular-nums text-on-surface-2/80 select-none">/ {numPages}</span>
-          </form>
-          <button
-            type="button"
-            aria-label="下一页"
-            disabled={center >= numPages}
-            onClick={() => scrollToPdfPage(center + 1)}
-            className="grid place-items-center size-11 rounded-full hover:bg-surface-3 disabled:opacity-35 cursor-pointer disabled:cursor-default"
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
+      <PdfPageNavigator center={center} numPages={numPages} scrollToPdfPage={scrollToPdfPage} />
       {zoom !== 1 && (
         <button
           onClick={() => onZoom?.(1)}

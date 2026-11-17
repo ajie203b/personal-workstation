@@ -2,7 +2,6 @@ import { NavLink, useLocation, useNavigate } from 'react-router'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { IconSettings } from '@/shared/icons'
 import { NAV_ITEMS } from './nav'
-import { countByTier, useAllTasks } from '@/db/hooks'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
@@ -18,7 +17,7 @@ import { guardNavigation } from '@/lib/unsavedGuard'
  * - <md：隐藏，由底部导航接管
  * 侧栏宽度一次落位，文档视口只需按最终宽度重排。
  */
-export function Sidebar() {
+export function Sidebar({ todayCount }: { todayCount: number }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const savedCollapsed = useUi((s) => s.sidebarCollapsed)
@@ -26,8 +25,6 @@ export function Sidebar() {
   const reading = /^\/docs\/.+/.test(pathname)
   const collapsed = reading ? !readerExpanded : savedCollapsed
   const setCollapsed = useUi((s) => s.setSidebarCollapsed)
-  const all = useAllTasks()
-  const counts = countByTier(all)
 
   const onBrandClick = () => guardNavigation(() => navigate('/today'))
 
@@ -79,14 +76,14 @@ export function Sidebar() {
                 >
                   {item.label}
                 </span>
-                {!collapsed && item.path === '/tasks' && counts.today > 0 && (
+                {!collapsed && item.path === '/tasks' && todayCount > 0 && (
                   <span
                     className={cn(
                       'sidebar-label hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] tabular-nums',
                       isActive ? 'bg-primary text-on-primary' : 'bg-surface-3 text-on-surface-2',
                     )}
                   >
-                    {counts.today}
+                    {todayCount}
                   </span>
                 )}
               </>

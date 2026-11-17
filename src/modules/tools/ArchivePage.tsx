@@ -277,12 +277,12 @@ export function ArchivePage() {
         <>
           <div className="card flex flex-col gap-3 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-on-surface-2 min-w-0 flex-1 leading-relaxed">
+              <p className="min-w-0 flex-[1_1_18rem] text-sm text-on-surface-2 leading-relaxed">
                 {desktop
                   ? '在站内选好版本并等待免费通道倒计时；若页面只给出复制链接，可点击顶栏「粘贴链接下载」。'
                   : '在站内选好版本，完成免费通道倒计时后点击下载，应用会自动识别并入库。'}
               </p>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex max-w-full flex-wrap items-center gap-2 shrink-0">
                 <Button variant="outline" size="sm" state={importingLocal ? 'loading' : 'idle'} onClick={() => fileInputRef.current?.click()}>
                   <FileUp size={15} /> 导入本地 EPUB / PDF
                 </Button>
