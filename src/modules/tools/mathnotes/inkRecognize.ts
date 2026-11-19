@@ -6,10 +6,12 @@ import type { Stroke } from './types'
 
 /** 分行后只接受明确的数字与运算符；缺失操作符时交还用户纠错。 */
 export function columnExpression(rawRows: string[]): string | null {
-  if (rawRows.length !== 2) return null
+  if (rawRows.length < 2 || rawRows.length > 4) return null
   const lines = rawRows.map(row => normalizeLatex(row).replace(/\s+/g, ''))
-  lines[1] = lines[1].replace(/^[xX](?=\d)/, '\\times')
-  if (!/^(?:[+-]|\\times|\\div|\\cdot)/.test(lines[1])) return null
+  for (let i = 1; i < lines.length; i++) {
+    lines[i] = lines[i].replace(/^[xX](?=\d)/, '\\times')
+  }
+  if (!lines.slice(1).some((line) => /^(?:[+-]|\\times|\\div|\\cdot)/.test(line))) return null
   const flat = flattenColumnArithmetic(lines)
   return flat ? `${flat}=` : null
 }
@@ -38,10 +40,18 @@ export async function recognizeInk(strokes: Stroke[], charHeight: number, recogn
   const column = system ? null : columnRows(strokes, charHeight)
   if (column) {
     try {
-      const first = await recognize(column.rows[0])
-      const second = await recognize(column.rows[1])
-      const latex = columnExpression([first.latex, second.latex])
-      if (latex) return { latex, confidence: Math.min(first.confidence, second.confidence), ms: first.ms + second.ms }
+      const recognizedRows: RecognizeOutput[] = []
+      for (const row of column.rows) {
+        recognizedRows.push(await recognize(row))
+      }
+      const latex = columnExpression(recognizedRows.map((r) => r.latex))
+      if (latex) {
+        return {
+          latex,
+          confidence: Math.min(...recognizedRows.map((r) => r.confidence)),
+          ms: recognizedRows.reduce((sum, r) => sum + r.ms, 0),
+        }
+      }
     } catch {
       // 单行识别失败仍可尝试整块。
     }

@@ -85,3 +85,31 @@ it('提供快捷 LaTeX 模板芯片并支持 Ctrl/Cmd + Enter 提交', async () 
   })
   expect(submit).toHaveBeenCalledTimes(1)
 })
+
+it('支持实时计算预览与本页变量快捷插入', async () => {
+  const host = document.createElement('div'); document.body.append(host)
+  const root = createRoot(host); cleanup = () => { act(() => root.unmount()); host.remove() }
+  const block = { key: 'a', recognized: 'a+2=', result: { kind: 'none' as const, latex: '', text: '' } }
+  await act(async () =>
+    root.render(
+      <MathEditorDialog
+        open
+        block={block}
+        busy={false}
+        variables={{ a: 10, b: 3 }}
+        onOpenChange={() => {}}
+        onSubmit={() => {}}
+        onReset={() => {}}
+      />,
+    ),
+  )
+  const preview = document.querySelector('[aria-label="实时计算预览"]')
+  expect(preview?.textContent).toContain('12')
+
+  const varBtn = document.querySelector<HTMLButtonElement>('button[aria-label="插入变量 b"]')!
+  expect(varBtn).not.toBeNull()
+  const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="识别结果"]')!
+  input.setSelectionRange(input.value.length, input.value.length)
+  await act(async () => varBtn.click())
+  expect(input.value).toBe('a+2=b')
+})

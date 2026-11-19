@@ -73,7 +73,7 @@ export function estimateCharHeight(strokes: Pick<Stroke, 'points'>[], fallback =
   return Math.min(240, Math.max(16, h))
 }
 
-/** 检测带底线的两行竖式候选；只做几何分行，是否是算术由识别结果再确认。 */
+/** 检测带底线的多行竖式候选（2~4 行）；只做几何分行，是否是算术由识别结果再确认。 */
 export function columnRows(strokes: Stroke[], h: number): { rows: Stroke[][]; bar: Stroke } | null {
   const live = strokes.filter(s => s.points.length > 0)
   for (const bar of live) {
@@ -82,7 +82,7 @@ export function columnRows(strokes: Stroke[], h: number): { rows: Stroke[][]; ba
     const above = live.filter(s => {
       if (s === bar) return false
       const box = strokeBox(s)
-      return box.maxY < b.minY && b.minY - box.maxY < h * 3.2 && box.maxX >= b.minX - h * 0.6 && box.minX <= b.maxX + h * 0.3
+      return box.maxY < b.minY && b.minY - box.maxY < h * 5.6 && box.maxX >= b.minX - h * 0.6 && box.minX <= b.maxX + h * 0.3
     }).sort((a, c) => (strokeBox(a).minY + strokeBox(a).maxY) - (strokeBox(c).minY + strokeBox(c).maxY))
     const rows: Stroke[][] = []
     for (const stroke of above) {
@@ -94,7 +94,7 @@ export function columnRows(strokes: Stroke[], h: number): { rows: Stroke[][]; ba
       })
       if (row) row.push(stroke); else rows.push([stroke])
     }
-    if (rows.length === 2 && rows.every(row => row.some(s => boxH(strokeBox(s)) > h * 0.3))) return { rows, bar }
+    if (rows.length >= 2 && rows.length <= 4 && rows.every(row => row.some(s => boxH(strokeBox(s)) > h * 0.3))) return { rows, bar }
   }
   return null
 }
@@ -151,9 +151,13 @@ export function clusterStrokes(strokes: Stroke[], opts: ClusterOptions = {}): In
     const next: typeof groups = []
     for (const g of groups) {
       let target = -1
+      const gIsDot = boxW(g.box) < h * 0.25 && boxH(g.box) < h * 0.25
       for (let i = 0; i < next.length; i++) {
         const { gx, gy } = boxGaps(next[i].box, g.box)
-        if (gx <= tx && gy <= ty) {
+        const nIsDot = boxW(next[i].box) < h * 0.25 && boxH(next[i].box) < h * 0.25
+        // 小数点 / ÷ 上下点 / i 点纵向上略松，避免从主算式剥离成孤立块
+        const dotMatch = (gIsDot || nIsDot) && gx <= h * 0.65 && gy <= ty * 1.35
+        if ((gx <= tx && gy <= ty) || dotMatch) {
           target = i
           break
         }
@@ -217,11 +221,11 @@ export interface EqualsMark {
   midY: number
 }
 
-/** 看起来像一条短横线：宽明显大于高 */
+/** 看起来像一条短横线：宽明显大于高（允许平板快速手写带来的轻微倾斜） */
 function isFlat(b: Box, h: number): boolean {
   const w = boxW(b)
   const ht = boxH(b)
-  return w >= 0.22 * h && ht <= 0.4 * h && w >= ht * 2.2
+  return w >= 0.18 * h && ht <= 0.45 * h && w >= ht * 1.7
 }
 
 /**
@@ -372,6 +376,83 @@ export function strokesHitBy(strokes: Stroke[], x: number, y: number, r: number)
     }
   }
   return hit
+}
+
+/**
+ * 涂抹擦除手势（Scratch-out）：当用户用笔来回横划涂抹已有算式时，识别并返回被涂抹命中的笔画 id。
+ * 条件：
+ * 1) 点数足够且有一定宽度，呈扁平或横向往返形态；
+ * 2) 水平方向大幅折返次数 >= 3，且总路径长度 >= 2.8 * 包围盒宽；
+ * 3) 笔画路径命中了至少 1 条已有笔画且与命中笔画包围盒存在实质重叠。
+ */
+export function detectScratchOut(stroke: Stroke, existingStrokes: Stroke[], charHeight = 40): string[] {
+  const pts = stroke.points
+  if (pts.length < 12 || !existingStrokes.length) return []
+  const box = strokeBox(stroke)
+  const w = boxW(box)
+  const h = boxH(box)
+  if (w < Math.max(24, charHeight * 0.65) || w < h * 1.2) return []
+
+  let pathLen = 0
+  for (let i = 1; i < pts.length; i++) {
+    pathLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+  }
+  if (pathLen < w * 2.8) return []
+
+  // 统计水平方向大幅折返次数（过滤微小抖动）
+  const minRun = Math.max(12, w * 0.35)
+  let anchorX = pts[0].x
+  let extremeX = pts[0].x
+  let dir = 0
+  let reversals = 0
+  for (let i = 1; i < pts.length; i++) {
+    const x = pts[i].x
+    if (dir === 0) {
+      if (Math.abs(x - anchorX) >= minRun) {
+        dir = x > anchorX ? 1 : -1
+        extremeX = x
+      }
+    } else if (dir === 1) {
+      if (x > extremeX) extremeX = x
+      else if (extremeX - x >= minRun) {
+        reversals++
+        dir = -1
+        anchorX = extremeX
+        extremeX = x
+      }
+    } else {
+      if (x < extremeX) extremeX = x
+      else if (x - extremeX >= minRun) {
+        reversals++
+        dir = 1
+        anchorX = extremeX
+        extremeX = x
+      }
+    }
+  }
+  if (reversals < 3) return []
+
+  const radius = Math.max(8, charHeight * 0.2)
+  const hitSet = new Set<string>()
+  for (let i = 0; i < pts.length; i++) {
+    for (const id of strokesHitBy(existingStrokes, pts[i].x, pts[i].y, radius)) {
+      hitSet.add(id)
+    }
+    if (i > 0) {
+      const mx = (pts[i - 1].x + pts[i].x) / 2
+      const my = (pts[i - 1].y + pts[i].y) / 2
+      for (const id of strokesHitBy(existingStrokes, mx, my, radius)) {
+        hitSet.add(id)
+      }
+    }
+  }
+  if (!hitSet.size) return []
+  const hitBox = existingStrokes
+    .filter((s) => hitSet.has(s.id))
+    .map(strokeBox)
+    .reduce(unionBox)
+  if (!boxesOverlap(box, hitBox, 4)) return []
+  return [...hitSet]
 }
 
 /**

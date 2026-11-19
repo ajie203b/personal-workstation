@@ -124,4 +124,26 @@ describe('PointerGesture（双指滚动后画布不卡死，回归）', () => {
     g.penSeen = false
     expect(g.down(touch(4, 10, 10, 40))).toEqual({ action: 'draw' })
   })
+
+  it('平板上手掌先贴屏进入触控平移时，触控笔落笔优先接管立即书写，并支持双指间距计算', () => {
+    const g = new PointerGesture()
+    g.down({ id: 9, kind: 'pen', x: 0, y: 0, t: 0 })
+    g.up(9)
+    // 手掌先贴屏触发触控平移
+    expect(g.down(touch(1, 100, 100, 50))).toMatchObject({ action: 'pan' })
+    expect(g.mode).toBe('panning')
+    // 触控笔落笔时立即打断平移进入书写
+    expect(g.down({ id: 10, kind: 'pen', x: 150, y: 150, t: 80 })).toEqual({ action: 'draw' })
+    expect(g.isDrawing(10)).toBe(true)
+    expect(g.up(10)).toEqual({ action: 'endDraw', pointerId: 10, end: 'commit' })
+    g.up(1)
+
+    // 双指距离计算（双指捏合缩放）
+    g.down(touch(2, 0, 0, 200))
+    g.down(touch(3, 30, 40, 210))
+    expect(g.touchDistance()).toBeCloseTo(50, 5)
+    g.up(2)
+    g.up(3)
+    expect(g.touchDistance()).toBeNull()
+  })
 })

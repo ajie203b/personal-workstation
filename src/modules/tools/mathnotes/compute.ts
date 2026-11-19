@@ -96,7 +96,7 @@ export function formatNumber(x: number): { text: string; latex: string } {
   return { text: t, latex: t }
 }
 
-/** Compute Engine 的 LaTeX 输出整理：\imaginaryI → i，去千分位细空格，\bigl 括号换普通 */
+/** Compute Engine 的 LaTeX 输出整理：\imaginaryI → i，去千分位细空格，\bigl 括号换普通，1/2 次幂转根号 */
 export function tidyLatex(s: string): string {
   return s
     .replace(/\\imaginaryI/g, 'i')
@@ -106,6 +106,7 @@ export function tidyLatex(s: string): string {
     .replace(/\\lbrack/g, '[')
     .replace(/\\rbrack/g, ']')
     .replace(/\\operatorname\{([a-z]+)\}/g, '\\$1')
+    .replace(/(\d+)\^\{\s*(?:1\/2|\\frac\{1\}\{2\})\s*\}/g, '\\sqrt{$1}')
 }
 
 function isList(e: Expr): boolean {
@@ -381,6 +382,172 @@ function numbersEqual(l: Expr, r: Expr): boolean {
   return complexNearlyEqual(complexParts(l), complexParts(r))
 }
 
+/**
+ * 一元方程数值求根兜底：在 [-100, 100] 多尺度采样，结合变号二分 + 割线迭代求实根。
+ */
+function numericalSolve1D(eq: Expr, unknown: string): number[] {
+  const lhs = eq.ops?.[0]
+  const rhs = eq.ops?.[1]
+  if (!lhs || !rhs) return []
+  const diff = engineRef.box(['Subtract', lhs.json, rhs.json])
+  const evalAt = (x: number): number | null => {
+    try {
+      const v = diff.subs({ [unknown]: x }).N()
+      if (!v.isNumberLiteral || !Number.isFinite(v.re) || Math.abs(v.im ?? 0) > 1e-8) return null
+      return v.re
+    } catch {
+      return null
+    }
+  }
+  const refine = (lo0: number, hi0: number, fLo0: number, fHi0: number): number | null => {
+    let lo = lo0
+    let hi = hi0
+    let fLo = fLo0
+    let fHi = fHi0
+    for (let iter = 0; iter < 52; iter++) {
+      const mid = (lo + hi) / 2
+      const fMid = evalAt(mid)
+      if (fMid == null) return null
+      if (Math.abs(fMid) <= 1e-11 || Math.abs(hi - lo) <= 1e-12) return mid
+      if ((fLo <= 0 && fMid <= 0) || (fLo >= 0 && fMid >= 0)) {
+        lo = mid
+        fLo = fMid
+      } else {
+        hi = mid
+        fHi = fMid
+      }
+    }
+    const mid = (lo + hi) / 2
+    const fMid = evalAt(mid)
+    return fMid != null && Math.abs(fMid) <= 1e-6 && Math.abs(fLo) + Math.abs(fHi) < 1e4 ? mid : null
+  }
+
+  // 采样网格：原点附近更密，外围到 [-100, 100]
+  const xs: number[] = []
+  for (let x = -100; x <= 100; x += 0.5) xs.push(x)
+  for (let x = -10; x <= 10; x += 0.1) xs.push(Number(x.toFixed(2)))
+  const grid = [...new Set(xs)].sort((a, b) => a - b)
+
+  const roots: number[] = []
+  const pushRoot = (r: number) => {
+    const clean = Math.abs(r) < 1e-10 ? 0 : r
+    if (!roots.some((prev) => Math.abs(prev - clean) < 1e-5)) roots.push(clean)
+  }
+
+  let prevX: number | null = null
+  let prevF: number | null = null
+  for (const x of grid) {
+    const f = evalAt(x)
+    if (f == null) {
+      prevX = null
+      prevF = null
+      continue
+    }
+    if (Math.abs(f) <= 1e-10) {
+      pushRoot(x)
+    } else if (prevX != null && prevF != null && ((prevF < 0 && f > 0) || (prevF > 0 && f < 0))) {
+      const root = refine(prevX, x, prevF, f)
+      if (root != null) pushRoot(root)
+    }
+    prevX = x
+    prevF = f
+    if (roots.length >= 8) break
+  }
+  return roots
+}
+
+type InequalityOp = 'Less' | 'LessEqual' | 'Greater' | 'GreaterEqual'
+
+function isInequalityOp(op: string): op is InequalityOp {
+  return op === 'Less' || op === 'LessEqual' || op === 'Greater' || op === 'GreaterEqual'
+}
+
+/**
+ * 不等式验算（无未知数）与一元一次不等式求解。
+ */
+function solveInequality(expr: Expr): ComputeResult {
+  const op = expr.operator as InequalityOp
+  const lhs = expr.ops?.[0]
+  const rhs = expr.ops?.[1]
+  if (!lhs || !rhs) return error('没认出这个不等式')
+
+  const unknowns = [...new Set(expr.unknowns ?? [])]
+  if (!unknowns.length) {
+    const l = lhs.N()
+    const r = rhs.N()
+    if (!l.isNumberLiteral || !r.isNumberLiteral || !Number.isFinite(l.re) || !Number.isFinite(r.re) || Math.abs(l.im ?? 0) > 1e-10 || Math.abs(r.im ?? 0) > 1e-10) {
+      return error('不等式两边无法比较数值大小')
+    }
+    const diff = l.re - r.re
+    const eps = 1e-10 * Math.max(1, Math.abs(l.re), Math.abs(r.re))
+    const ok =
+      op === 'Less' ? diff < -eps
+      : op === 'LessEqual' ? diff <= eps
+      : op === 'Greater' ? diff > eps
+      : diff >= -eps
+    return ok
+      ? { kind: 'below', latex: '\\checkmark', text: '✓' }
+      : { kind: 'below', latex: '\\ne\\quad \\text{不成立}', text: '✗' }
+  }
+
+  if (unknowns.length > 1) return error('暂只支持一元一次不等式求解')
+  const u = unknowns[0]
+  const diff = engineRef.box(['Subtract', lhs.json, rhs.json])
+  if (!isLinearJson(diff.json, new Set([u]))) {
+    return error('暂只支持一元一次不等式求解')
+  }
+  const c0 = diff.subs({ [u]: 0 }).N()
+  const c1 = diff.subs({ [u]: 1 }).N()
+  if (!c0.isNumberLiteral || !c1.isNumberLiteral || !Number.isFinite(c0.re) || !Number.isFinite(c1.re) || Math.abs(c0.im ?? 0) > 1e-10 || Math.abs(c1.im ?? 0) > 1e-10) {
+    return error('不等式系数包含无法计算的符号')
+  }
+  const b = c0.re
+  const a = c1.re - b
+  if (Math.abs(a) <= 1e-10) {
+    const holds =
+      op === 'Less' ? b < -1e-10
+      : op === 'LessEqual' ? b <= 1e-10
+      : op === 'Greater' ? b > 1e-10
+      : b >= -1e-10
+    return holds
+      ? { kind: 'solutions', latex: '\\text{恒成立}', text: '恒成立' }
+      : { kind: 'solutions', latex: '\\text{无解}', text: '无解' }
+  }
+
+  // diff = a * u + b op 0  ==>  u (op or flipped op) -b / a
+  let effectiveOp = op
+  if (a < 0) {
+    effectiveOp =
+      op === 'Less' ? 'Greater'
+      : op === 'LessEqual' ? 'GreaterEqual'
+      : op === 'Greater' ? 'Less'
+      : 'LessEqual'
+  }
+  const opLatex =
+    effectiveOp === 'Less' ? '<'
+    : effectiveOp === 'LessEqual' ? '\\le '
+    : effectiveOp === 'Greater' ? '>'
+    : '\\ge '
+
+  // 用符号系数重新求解精确有理/根式边界：先令 u=0 得 BExpr，u=1 得 A+B
+  let boundLatex = formatNumber(-b / a).latex
+  let boundAlt: string | undefined
+  try {
+    const symB = diff.subs({ [u]: 0 })
+    const symA = engineRef.box(['Subtract', diff.subs({ [u]: 1 }).json, symB.json])
+    const exactBound = engineRef.box(['Divide', ['Negate', symB.json], symA.json]).simplify()
+    if (exactBound.isValid && !invalid(exactBound)) {
+      const f = formatScalar(exactBound)
+      if (f.latex) {
+        boundLatex = f.latex
+        boundAlt = f.alt ? `${u}${opLatex}${f.alt}` : undefined
+      }
+    }
+  } catch { /* 保留数值边界 */ }
+
+  return { kind: 'solutions', latex: `${u}${opLatex}${boundLatex}`, text: '', alt: boundAlt }
+}
+
 /** 方程（组）求解 */
 function solve(equations: Expr[]): ComputeResult {
   const unknowns = [...new Set(equations.flatMap((eq) => eq.unknowns ?? []))].sort()
@@ -412,14 +579,62 @@ function solve(equations: Expr[]): ComputeResult {
       const line = linear.solution.map((v, i) => `${unknowns[i]}=${formatNumber(v).latex}`).join(',\\ ')
       return { kind: 'solutions', latex: line, text: '' }
     }
+    if (equations.length === 1 && unknowns.length === 1) {
+      const numRoots = numericalSolve1D(equations[0], unknowns[0])
+      if (numRoots.length) {
+        const lines = numRoots.map((v, idx) => {
+          const name = numRoots.length > 1 ? `${unknowns[0]}_{${idx + 1}}` : unknowns[0]
+          return `${name}\\approx ${formatNumber(v).latex}`
+        })
+        return {
+          kind: 'solutions',
+          latex: lines.length > 1 ? `\\begin{aligned} ${lines.join(' \\\\ ')} \\end{aligned}` : lines[0],
+          text: '',
+        }
+      }
+    }
     return error('这个方程暂时解不出来，可点开修改后重试')
   }
-  const sols = res.operator === 'List' ? [...(res.ops ?? [])] : [res]
+  let sols = res.operator === 'List' ? [...(res.ops ?? [])] : [res]
   if (!sols.length) return { kind: 'solutions', latex: '\\text{无解}', text: '无解' }
-  // Solve 对恒等式会引入自由参数 t_1 / c_1
+  // Solve 对恒等式会引入自由参数 t_1 / c_1，对周期方程（如 sin(x)=0.5）会引入整数参数 t / k / n
   const unknownSet = new Set(unknowns)
   if (sols.some((sol) => (sol.unknowns ?? []).some((u) => !unknownSet.has(u)))) {
-    return { kind: 'solutions', latex: '\\text{无穷多解}', text: '无穷多解' }
+    const canTryPrincipal = equations.length === 1 && unknowns.length === 1 && sols.every((sol) =>
+      (sol.unknowns ?? []).filter((u) => !unknownSet.has(u)).every((u) => u === 't' || u === 'k' || u === 'n'),
+    )
+    if (canTryPrincipal) {
+      const lhs = equations[0].ops?.[0]
+      const rhs = equations[0].ops?.[1]
+      const principal: Expr[] = []
+      let validPrincipal = Boolean(lhs && rhs)
+      for (const sol of sols) {
+        const free = (sol.unknowns ?? []).filter((u) => !unknownSet.has(u))
+        const subMap = Object.fromEntries(free.map((u) => [u, 0]))
+        const pSol = sol.subs(subMap).evaluate()
+        if ((pSol.unknowns ?? []).length > 0 || invalid(pSol)) {
+          validPrincipal = false
+          break
+        }
+        const pNum = pSol.N()
+        if (lhs && rhs && pNum.isNumberLiteral && Number.isFinite(pNum.re)) {
+          const lv = lhs.subs({ [unknowns[0]]: pNum.re }).N()
+          const rv = rhs.subs({ [unknowns[0]]: pNum.re }).N()
+          if (!lv.isNumberLiteral || !rv.isNumberLiteral || Math.abs(lv.re - rv.re) > 1e-6 * Math.max(1, Math.abs(lv.re), Math.abs(rv.re))) {
+            validPrincipal = false
+            break
+          }
+        }
+        principal.push(pSol)
+      }
+      if (validPrincipal && principal.length) {
+        sols = principal
+      } else {
+        return { kind: 'solutions', latex: '\\text{无穷多解}', text: '无穷多解' }
+      }
+    } else {
+      return { kind: 'solutions', latex: '\\text{无穷多解}', text: '无穷多解' }
+    }
   }
   const lines: string[] = []
   const alts: string[] = []
@@ -442,8 +657,11 @@ function solve(equations: Expr[]): ComputeResult {
   }
 }
 
-function applyVars(expr: Expr, vars?: Record<string, number>): Expr {
-  return vars && Object.keys(vars).length ? expr.subs(vars) : expr
+function applyVars(expr: Expr, vars?: Record<string, number>, exclude?: Set<string>): Expr {
+  if (!vars || !Object.keys(vars).length) return expr
+  if (!exclude?.size) return expr.subs(vars)
+  const filtered = Object.fromEntries(Object.entries(vars).filter(([k]) => !exclude.has(k)))
+  return Object.keys(filtered).length ? expr.subs(filtered) : expr
 }
 
 /** 主入口：LaTeX → 结果 */
@@ -461,6 +679,10 @@ export function computeLatex(raw: string, opts: ComputeOptions = {}): ComputeRes
       const norm = normalizeLatex(src)
       return vars && Object.keys(vars).length ? substituteVarsInLatex(norm, vars).latex : norm
     }
+    const boundOf = (src: string) => {
+      const norm = normalizeLatex(src)
+      return vars && Object.keys(vars).length ? substituteVarsInLatex(norm, vars).boundVars : undefined
+    }
 
     // 自然输入：每行或分号分隔一个方程；LaTeX 环境交给下方原有解析。
     if (!/\\begin\s*\{/.test(raw)) {
@@ -470,7 +692,7 @@ export function computeLatex(raw: string, opts: ComputeOptions = {}): ComputeRes
           return error('方程组每行需要一个完整等式（最多四行）')
         }
         try {
-          const equations = rows.map((row) => applyVars(engineRef.parse(prepare(row)), vars))
+          const equations = rows.map((row) => applyVars(engineRef.parse(prepare(row)), vars, boundOf(row)))
           if (equations.some((eq) => invalid(eq) || eq.operator !== 'Equal')) return error('方程组没认全，点开修改后重试')
           return solve(equations)
         } catch {
@@ -480,6 +702,7 @@ export function computeLatex(raw: string, opts: ComputeOptions = {}): ComputeRes
     }
 
     let s = prepare(raw)
+    const boundVars = boundOf(raw)
     if (!s) return { kind: 'none', latex: '', text: '' }
 
     // 多行环境：竖式 / 方程组
@@ -492,7 +715,7 @@ export function computeLatex(raw: string, opts: ComputeOptions = {}): ComputeRes
           return error('方程组每行需要一个完整等式')
         }
         try {
-          const eqs = stacked.rows.map((r) => applyVars(engineRef.parse(r), vars))
+          const eqs = stacked.rows.map((r) => applyVars(engineRef.parse(r), vars, boundVars))
           if (eqs.some((eq) => invalid(eq) || eq.operator !== 'Equal')) return error('方程组没认全，点开修改后重试')
           return solve(eqs)
         } catch {
@@ -509,7 +732,7 @@ export function computeLatex(raw: string, opts: ComputeOptions = {}): ComputeRes
     if (!trailingEq && body.includes('=')) {
       const parts = body.split(/(?<![<>!\\])=/)
       if (parts.length === 2) {
-        const eq = applyVars(engineRef.parse(body), vars)
+        const eq = applyVars(engineRef.parse(body), vars, boundVars)
         if (invalid(eq) || eq.operator !== 'Equal') return error('没认出这个方程，点开修改后重试')
         return solve([eq])
       }
@@ -518,11 +741,16 @@ export function computeLatex(raw: string, opts: ComputeOptions = {}): ComputeRes
 
     let expr: Expr
     try {
-      expr = applyVars(engineRef.parse(body), vars)
+      expr = applyVars(engineRef.parse(body), vars, boundVars)
     } catch {
       return error('没认出这个算式，点开修改后重试')
     }
     if (invalid(expr)) return error('没认出这个算式，点开修改后重试')
+
+    // 不等式求解 / 验算（不带尾部等号也直接处理）
+    if (!trailingEq && isInequalityOp(expr.operator)) {
+      return solveInequality(expr)
+    }
 
     // 不带等号的普通算式不打扰；矩阵 / 微积分照算，结果放下方
     const matrixInput = /pmatrix|bmatrix|vmatrix|\\begin\{matrix\}|\\begin\{array\}/.test(body)

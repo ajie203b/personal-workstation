@@ -106,22 +106,8 @@ export function OverlayAnswer({
         </div>
       )
     }
-    // 模型仍在加载或尚未识别完成时，提供轻量「手动输入」入口，无需干等 120MB 模型
-    if (item.pending && onManual) {
-      return (
-        <button
-          type="button"
-          onClick={onManual}
-          aria-label="手动输入算式"
-          title="识别中或离线状态，可点击直接手动输入算式"
-          className="absolute pointer-events-auto cursor-pointer inline-flex items-center gap-1 rounded-full border border-outline bg-surface/90 px-2 py-0.5 text-[12px] text-on-surface-2 hover:text-on-surface hover:border-primary/50 shadow-xs whitespace-nowrap"
-          style={{ left: item.x, top: item.y, transform: 'translateY(-50%)', maxWidth: item.maxWidth }}
-        >
-          <Pencil size={11} aria-hidden />
-          <span>手动输入</span>
-        </button>
-      )
-    }
+    // 书写或识别排队期间不弹出可点「手动输入」按钮，避免平板手写时按钮紧跟笔尖遮挡/误触；
+    // 顶部工具栏与底部状态条已提供随时可用的键盘输入入口。
     return null
   }
 
@@ -216,6 +202,7 @@ export function OverlayAnswer({
           fontSize: item.fontSize,
           fontWeight: item.fontWeight,
           fontFamily: HAND_FONT,
+          textShadow: '0 0 6px var(--canvas), 0 0 12px var(--canvas)',
         }}
       >
         {simpleText ? <span>{r.text}</span> : <MathView latex={r.latex} />}
@@ -267,6 +254,7 @@ export function EmbeddedGraphLayer({
         return (
           <div
             key={graph.id}
+            data-graph-id={graph.id}
             className="absolute pointer-events-auto rounded-xl border border-outline bg-surface shadow-sm overflow-hidden flex flex-col"
             style={{ left: graph.x, top: graph.y, width: graph.width, height: graph.height }}
           >
@@ -311,7 +299,9 @@ export function EmbeddedGraphLayer({
                 }
               }}
             >
-              <span className="flex-1 truncate text-xs">{expression}</span>
+              <span className="flex-1 min-w-0 truncate text-xs leading-none" title={expression}>
+                <MathView latex={normalizeLatex(expression) || expression} />
+              </span>
               <button
                 type="button"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -456,12 +446,14 @@ export function ModelStatusBanner({
   recognizing,
   onOpenSettings,
   onRetryModel,
+  onNewFormula,
 }: {
   model: ModelState
   percent: number | null
   recognizing: number
   onOpenSettings: () => void
   onRetryModel: () => void
+  onNewFormula?: () => void
 }) {
   const [dismissedPhase, setDismissedPhase] = useState<'loading' | 'error' | null>(null)
   if (model.phase !== 'loading' && model.phase !== 'error' && recognizing <= 0) return null
@@ -488,7 +480,14 @@ export function ModelStatusBanner({
                 style={percent != null ? { width: `${percent}%` } : undefined}
               />
             </div>
-            <p className="text-[10.5px] text-on-surface-2 mt-1">约 120MB，只下载一次 · 可先书写并点「手动输入」计算</p>
+            <p className="text-[10.5px] text-on-surface-2 mt-1">
+              约 120MB，只下载一次 · 可先手写{onNewFormula ? '或' : ''}
+              {onNewFormula && (
+                <button type="button" onClick={onNewFormula} className="underline text-primary cursor-pointer ml-0.5">
+                  键盘输入
+                </button>
+              )}
+            </p>
           </div>
           <button
             type="button"
@@ -519,6 +518,9 @@ export function ModelStatusBanner({
             <p className="break-all max-h-24 overflow-y-auto mt-1">{model.message}</p>
           </details>
           <div className="flex flex-wrap justify-end gap-2">
+            {onNewFormula && (
+              <Button size="sm" variant="outline" className="h-9 px-3" onClick={onNewFormula}>键盘输入</Button>
+            )}
             <Button size="sm" variant="outline" className="h-9 px-3" onClick={onOpenSettings}>换下载源</Button>
             <Button
               size="sm"

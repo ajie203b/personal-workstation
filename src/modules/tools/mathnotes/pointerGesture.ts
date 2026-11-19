@@ -88,6 +88,17 @@ export class PointerGesture {
     return { x: this.touchCenterX(), y: this.touchCenterY() }
   }
 
+  /** 两指及以上触控时返回前两指的屏幕距离（供双指捏合缩放使用） */
+  touchDistance(): number | null {
+    let first: { x: number; y: number } | null = null
+    for (const p of this.active.values()) {
+      if (p.kind !== 'touch') continue
+      if (!first) first = p
+      else return Math.hypot(p.x - first.x, p.y - first.y)
+    }
+    return null
+  }
+
   private touchCount(): number {
     let n = 0
     for (const p of this.active.values()) if (p.kind === 'touch') n++
@@ -122,8 +133,14 @@ export class PointerGesture {
       }
     } else {
       if (p.kind === 'mouse' && (p.button ?? 0) !== 0) return { action: 'ignore' }
-      // 笔 / 鼠标在滚动途中不打断滚动
-      if (this._mode === 'panning') return { action: 'ignore' }
+      // 平板上常见手掌先贴屏触发 touch 平移、随后笔尖落笔：触控笔永远优先打断触控平移立即书写
+      if (this._mode === 'panning') {
+        if (p.kind === 'pen') {
+          this._mode = 'idle'
+        } else {
+          return { action: 'ignore' }
+        }
+      }
       this.active.set(p.id, { kind: p.kind, x: p.x, y: p.y })
     }
     if (this._mode !== 'idle') {

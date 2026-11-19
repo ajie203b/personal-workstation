@@ -237,3 +237,61 @@ describe('P0/P1 计算与规范化增强', () => {
     expect(Number(radSin30.text || radSin30.alt)).toBeCloseTo(Math.sin(30), 6)
   })
 })
+
+describe('深度优化：矩阵定界符、不等式、百分号、超越方程与自然写法', () => {
+  it('支持 Pix2Text array 矩阵定界符与转置上标', () => {
+    const mul = computeLatex('\\left(\\begin{array}{cc}1&2\\\\3&4\\end{array}\\right)\\left(\\begin{array}{c}1\\\\1\\end{array}\\right)')
+    expect(mul.kind).toBe('matrix')
+    expect(mul.latex).toBe('\\begin{pmatrix} 3 \\\\ 7 \\end{pmatrix}')
+
+    const bmul = computeLatex('\\left[\\begin{array}{cc}1&2\\\\3&4\\end{array}\\right]\\left[\\begin{array}{c}1\\\\1\\end{array}\\right]')
+    expect(bmul.kind).toBe('matrix')
+    expect(bmul.latex).toBe('\\begin{pmatrix} 3 \\\\ 7 \\end{pmatrix}')
+
+    const det = computeLatex('\\left|\\begin{array}{cc}1&2\\\\3&4\\end{array}\\right|=')
+    expect(det.kind).toBe('inline')
+    expect(det.text).toBe('-2')
+
+    const tr = computeLatex('\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}^{\\top}')
+    expect(tr.kind).toBe('matrix')
+    expect(tr.latex).toBe('\\begin{pmatrix} 1 & 3 \\\\ 2 & 4 \\end{pmatrix}')
+  })
+
+  it('支持百分号、末尾问号、约等号与常见函数/Unicode 写法', () => {
+    expect(computeLatex('20\\%=').latex).toBe('\\frac{1}{5}')
+    expect(computeLatex('150\\times 20\\%=').text).toBe('30')
+    expect(computeLatex('12+34=?').text).toBe('46')
+    expect(computeLatex('\\sqrt{2}\\approx').alt).toBe('1.414213562')
+    expect(computeLatex('sin(30)=', { angleMode: 'deg' }).latex).toBe('\\frac{1}{2}')
+    expect(computeLatex('sqrt(16)=').text).toBe('4')
+    expect(computeLatex('abs(-5)=').text).toBe('5')
+    expect(computeLatex('gcd(12,18)=').text).toBe('6')
+    expect(computeLatex('lcm(12,18)=').text).toBe('36')
+    expect(computeLatex('√9=').text).toBe('3')
+    expect(computeLatex('3²+4²=').text).toBe('25')
+    expect(computeLatex('2π=').alt).toBe('6.283185307')
+  })
+
+  it('支持不等式验算与一元一次不等式求解', () => {
+    expect(computeLatex('3+4>5').text).toBe('✓')
+    expect(computeLatex('2+2>10').text).toBe('✗')
+
+    const gt = computeLatex('2x+3>7')
+    expect(gt.kind).toBe('solutions')
+    expect(gt.latex).toBe('x>2')
+
+    const flip = computeLatex('-2x+3\\ge 7')
+    expect(flip.kind).toBe('solutions')
+    expect(flip.latex).toBe('x\\le -2')
+  })
+
+  it('三角方程给出主值解，无符号解的超越方程由数值求根兜底', () => {
+    const trig = computeLatex('\\sin(x)=0.5')
+    expect(trig.kind).toBe('solutions')
+    expect(trig.latex).not.toContain('无穷多解')
+
+    const trans = computeLatex('e^x+x=2')
+    expect(trans.kind).toBe('solutions')
+    expect(trans.latex).toContain('0.44285')
+  })
+})

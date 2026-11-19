@@ -79,3 +79,14 @@ it('非结尾等号方程也代换已定义变量（如 x^2 - a^2 = 0）', () =>
   expect(page.results.eq.latex).toContain('2')
   expect(page.results.eq.latex).toContain('-2')
 })
+
+it('积分、求导与求和中的绑定变量不被同名的页面变量误替换', () => {
+  const page = evaluatePage([
+    { key: 'x', latex: 'x = 3' },
+    { key: 'k', latex: 'k = 2' },
+    { key: 'intg', latex: '\\int_{0}^{1} x^{2} dx=' },
+    { key: 'sum', latex: '\\sum_{k=1}^{10} k =' },
+  ])
+  expect(page.results.intg.latex).toBe('\\frac{1}{3}')
+  expect(page.results.sum.text).toBe('55')
+})

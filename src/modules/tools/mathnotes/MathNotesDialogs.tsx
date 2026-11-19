@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Dialog } from '@/shared/ui/Sheet'
@@ -6,11 +7,13 @@ import { MathEditorDialog } from './MathEditorDialog'
 import { MODEL_SOURCES, type ModelSourceConfig, type ModelSourceId } from './recognizer'
 import type { ModelState } from './canvasDraw'
 import type { PlotCurve } from './plot'
-import type { AngleMode, BlockResult, NoteGraph } from './types'
+import type { AngleMode, BlockResult, ComputeResult, NoteGraph } from './types'
 
 export function MathNotesDialogs({
   editingBlock,
   editBusy,
+  pageVariables,
+  previewCompute,
   onCloseEdit,
   onSubmitEdit,
   onResetEdit,
@@ -21,6 +24,10 @@ export function MathNotesDialogs({
   onPlotOpenChange,
   plotFunction,
   onInsertGraph,
+  renameOpen,
+  pageTitle,
+  onRenameOpenChange,
+  onRenamePage,
   deleteOpen,
   onDeleteOpenChange,
   onConfirmDelete,
@@ -39,6 +46,8 @@ export function MathNotesDialogs({
 }: {
   editingBlock: BlockResult | null
   editBusy: boolean
+  pageVariables?: Record<string, number>
+  previewCompute?: (latex: string) => Promise<ComputeResult>
   onCloseEdit: () => void
   onSubmitEdit: (latex: string) => void
   onResetEdit: () => void
@@ -57,6 +66,10 @@ export function MathNotesDialogs({
     centerY: number,
     hiddenCurves?: number[],
   ) => void
+  renameOpen: boolean
+  pageTitle: string
+  onRenameOpenChange: (open: boolean) => void
+  onRenamePage: (title: string) => void
   deleteOpen: boolean
   onDeleteOpenChange: (open: boolean) => void
   onConfirmDelete: () => void
@@ -73,12 +86,20 @@ export function MathNotesDialogs({
   percent: number | null
   onReloadModel: () => void
 }) {
+  const [titleDraft, setTitleDraft] = useState(pageTitle)
+  useEffect(() => {
+    if (renameOpen) setTitleDraft(pageTitle)
+  }, [renameOpen, pageTitle])
+
   return (
     <>
       <MathEditorDialog
         open={Boolean(editingBlock)}
         block={editingBlock}
         busy={editBusy}
+        angleMode={angleMode}
+        variables={pageVariables}
+        previewCompute={previewCompute}
         onOpenChange={(v) => {
           if (!v) onCloseEdit()
         }}
@@ -99,6 +120,37 @@ export function MathNotesDialogs({
         plot={plotFunction}
         onInsert={onInsertGraph}
       />
+
+      <Dialog open={renameOpen} onOpenChange={onRenameOpenChange} title="重命名页面" description="为当前数学笔记页起一个方便查找的名称。">
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const next = titleDraft.trim()
+            if (next) {
+              onRenamePage(next)
+              onRenameOpenChange(false)
+            }
+          }}
+        >
+          <input
+            autoFocus
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            maxLength={60}
+            aria-label="页面名称"
+            className="h-10 rounded-[10px] border border-outline bg-surface-2 px-3 text-[14px] outline-none focus:border-primary/60"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <Button type="button" variant="outline" className="h-9 px-4" onClick={() => onRenameOpenChange(false)}>
+              取消
+            </Button>
+            <Button type="submit" variant="primary" className="h-9 px-4" disabled={!titleDraft.trim()}>
+              保存
+            </Button>
+          </div>
+        </form>
+      </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={onDeleteOpenChange} title="删除这一页？" description="本页的笔迹和识别结果都会删除，无法恢复。">
         <div className="flex items-center justify-end gap-2">

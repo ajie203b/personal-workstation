@@ -8,6 +8,9 @@ export const RESERVED_CONSTANTS = new Set(['i', 'e', 'pi', '\\pi'])
 export const RESERVED_VAR_NAMES = new Set([
   ...FN_NAMES,
   'lg',
+  'lcm',
+  'tr',
+  'mod',
   'sqrt',
   'abs',
   'pi',
@@ -48,17 +51,36 @@ function formatVarNumberForLatex(n: number): string {
 }
 
 /**
+ * 提取微积分、求和、求积和极限表达式中的局部绑定变量名，避免与页面级变量混淆。
+ */
+function findBoundCalculusVars(latex: string): Set<string> {
+  const bound = new Set<string>()
+  let m: RegExpExecArray | null
+  // 积分微分变量：\int ... dx 或 \int ... \mathrm{d}x
+  const intRe = /\\int(?![a-zA-Z])[\s\S]*?(?:\\mathrm\{d\}|(?<![a-zA-Z\\])d)\s*([a-zA-Z])(?![a-zA-Z])/g
+  while ((m = intRe.exec(latex))) bound.add(m[1])
+  // 求导变量：\frac{d}{dx} 或 \frac{\mathrm{d}}{\mathrm{d}x}
+  const diffRe = /\\frac\s*\{\s*(?:\\mathrm\{d\}|d)\s*\}\s*\{\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z])\s*\}/g
+  while ((m = diffRe.exec(latex))) bound.add(m[1])
+  // 极限、求和、求积下标绑定变量：\lim_{x \to ...}, \sum_{k=1}^{...}, \prod_{i=1}^{...}
+  const subRe = /\\(?:lim|sum|prod)\s*_\s*\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*(?:=|\\to|\\rightarrow)/g
+  while ((m = subRe.exec(latex))) bound.add(canonicalVarName(m[1]))
+  return bound
+}
+
+/**
  * 在规范化后的 LaTeX 中替换已定义的多字符 / 下标 / 单字符独立变量，并检测引用到的错误变量。
- * 保留 \sin、\frac、\begin{...} 等 LaTeX 命令不被误伤。
+ * 保留 \sin、\frac、\begin{...} 等 LaTeX 命令及微积分/求和/极限绑定变量不被误伤。
  */
 export function substituteVarsInLatex(
   normalizedLatex: string,
   variables: Record<string, number>,
   invalidVariables?: Set<string>,
-): { latex: string; invalidRef?: string; replaced: boolean } {
+): { latex: string; invalidRef?: string; replaced: boolean; boundVars?: Set<string> } {
+  const boundVars = findBoundCalculusVars(normalizedLatex)
   const hasVars = Object.keys(variables).length > 0
   const hasInvalid = Boolean(invalidVariables?.size)
-  if (!hasVars && !hasInvalid) return { latex: normalizedLatex, replaced: false }
+  if (!hasVars && !hasInvalid) return { latex: normalizedLatex, replaced: false, boundVars }
 
   const tokenRe = /(\\(?:begin|end)\s*\{[^{}]*\})|(\\[a-zA-Z]+)|([a-zA-Z][a-zA-Z0-9]*(?:_(?:\{[a-zA-Z0-9]+\}|[a-zA-Z0-9]+))?)/g
   let invalidRef: string | undefined
@@ -66,6 +88,7 @@ export function substituteVarsInLatex(
   const latex = normalizedLatex.replace(tokenRe, (full, env: string | undefined, cmd: string | undefined, ident: string | undefined, offset: number, src: string) => {
     if (env || cmd || !ident) return full
     const canon = canonicalVarName(ident)
+    if (boundVars.has(canon)) return full
     if (invalidVariables?.has(canon)) {
       invalidRef ??= canon
       return full
@@ -79,7 +102,7 @@ export function substituteVarsInLatex(
     }
     return full
   })
-  return { latex, invalidRef, replaced }
+  return { latex, invalidRef, replaced, boundVars }
 }
 
 /** 取一个 LaTeX 参数：{...} 或单个字符；返回 [内容, 结束下标] */
@@ -152,11 +175,24 @@ export function flattenColumnArithmetic(rows: string[]): string | null {
 
 export function normalizeLatex(raw: string): string {
   let s = raw.trim()
-  // 仅在纯数字四则表达式中，把紧邻数字的 O 纠正为 0；含变量的表达式保持原样。
-  if (/^[\dO\s.+\-*/=×÷]+$/.test(s) && /\d/.test(s)) {
-    s = s.replace(/(?<=\d)O|O(?=\d)/g, '0')
+  // 清理末尾问号、杂散标点、全等号/双等号与约等号（支持 12+34=? 与 \sqrt{2}\approx）
+  s = s.replace(/([=＝])\s*[?？,.;，。；]+$/, '$1')
+  s = s.replace(/(?:\\approx|\\equiv|≈|==)\s*[?？]*$/, '=')
+  // 仅在纯数字四则表达式中，把紧邻数字的 O/o 纠为 0、l/I 纠为 1；含变量的表达式保持原样。
+  if (/^[\dOolI\s.+\-*/=×÷()]+$/.test(s) && /\d/.test(s)) {
+    s = s.replace(/(?<=\d)[Oo]|[Oo](?=\d)/g, '0')
+    s = s.replace(/(?<=\d)[lI]|[lI](?=\d)/g, '1')
   }
   s = s.replace(/−|﹣/g, '-').replace(/＋/g, '+').replace(/／/g, '/')
+  // Unicode 与常见识别变体符号归一
+  s = s.replace(/\\surd(?![a-zA-Z])/g, '\\sqrt')
+  s = s.replace(/\\ldotp(?![a-zA-Z])/g, '.')
+  s = s.replace(/\\(?:big|Big|bigg|Bigg)[lr]?(?![a-zA-Z])/g, '')
+  s = s.replace(/π/g, '\\pi ').replace(/∞/g, '\\infty ')
+  s = s.replace(/≤/g, '\\le ').replace(/≥/g, '\\ge ').replace(/≠/g, '\\ne ')
+  s = s.replace(/²/g, '^2').replace(/³/g, '^3').replace(/⁴/g, '^4')
+  s = s.replace(/√\s*\(([^()]+)\)/g, '\\sqrt{$1}').replace(/√\s*([0-9a-zA-Z]+)/g, '\\sqrt{$1}')
+  s = s.replace(/\\lvert(?![a-zA-Z])/g, '\\left|').replace(/\\rvert(?![a-zA-Z])/g, '\\right|')
   // 排版空白
   s = s.replace(/\\(?:!|,|;|:|quad|qquad|enspace|thinspace)/g, ' ').replace(/\\ /g, ' ')
   s = s.replace(/\\displaystyle|\\textstyle/g, '')
@@ -168,14 +204,30 @@ export function normalizeLatex(raw: string): string {
     const name = inner.replace(/\s+/g, '')
     if (FN_NAMES.includes(name)) return `\\${name} `
     if (name === 'lg') return '\\log_{10} '
+    if (name === 'lcm') return '\\operatorname{lcm} '
+    if (name === 'tr') return '\\operatorname{tr} '
+    if (name === 'rank') return '\\operatorname{rank} '
     return name
   }
   s = s.replace(bracedWrapRe, unwrapInner).replace(bracedWrapRe, unwrapInner)
   s = s.replace(/\\(?:mathrm|textrm|textit|textbf|textsc|mathsf|texttt|textnormal|mathit|mathbf|boldsymbol|text)\s+(\\[a-zA-Z]+|[a-zA-Z0-9])/g, '$1')
   s = s.replace(/\\(lim|max|min|log)\s+(?=[_^])/g, '\\$1')
   s = s.replace(/\\lg(?![a-zA-Z])/g, '\\log_{10}')
+  // 还原 Pix2Text MFR 输出的 \left( \begin{array}{...}...\end{array} \right) 等矩阵/行列式定界符
+  s = s.replace(/\\left\s*\(\s*\\begin\{(?:array|matrix)\}(?:\{[^{}]*\})?([\s\S]*?)\\end\{(?:array|matrix)\}\s*\\right\s*\)/g, '\\begin{pmatrix}$1\\end{pmatrix}')
+  s = s.replace(/\\left\s*\[\s*\\begin\{(?:array|matrix)\}(?:\{[^{}]*\})?([\s\S]*?)\\end\{(?:array|matrix)\}\s*\\right\s*\]/g, '\\begin{bmatrix}$1\\end{bmatrix}')
+  s = s.replace(/\\left\s*\|\s*\\begin\{(?:array|matrix)\}(?:\{[^{}]*\})?([\s\S]*?)\\end\{(?:array|matrix)\}\s*\\right\s*\|/g, '\\begin{vmatrix}$1\\end{vmatrix}')
+  s = s.replace(/\^\s*\{\s*(?:\\top|\\mathrm\{T\}|\\mathsf\{T\}|T)\s*\}|\^\s*\\top(?![a-zA-Z])/g, '^T')
   // \dfrac / \tfrac
   s = s.replace(/\\[dt]frac/g, '\\frac')
+  // 未加反斜杠的函数名归一（仅当后面紧跟 ( 或 \left( 时转换，避免误伤 sin=3 等变量赋值）
+  s = s.replace(/(?<![a-zA-Z\\])(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|ln|log|exp|det|max|min|gcd)(?=\s*(?:\(|\\left\())/g, '\\$1')
+  s = s.replace(/(?<![a-zA-Z\\])lg(?=\s*(?:\(|\\left\())/g, '\\log_{10}')
+  s = s.replace(/(?<![a-zA-Z\\])lcm(?=\s*(?:\(|\\left\())/g, '\\operatorname{lcm}')
+  s = s.replace(/(?<![a-zA-Z\\])sqrt\s*\(([^()]+)\)/g, '\\sqrt{$1}')
+  s = s.replace(/(?<![a-zA-Z\\])abs\s*\(([^()]+)\)/g, '\\left|$1\\right|')
+  // 百分号转换（20% -> \frac{20}{100}）
+  s = s.replace(/(\d+(?:\.\d+)?)\s*\\?%(?![a-zA-Z0-9])/g, '\\frac{$1}{100}')
   // 数字之间的空格（模型常输出 "1 2" 表示 12）
   for (let k = 0; k < 3; k++) s = s.replace(/(\d)\s+(?=[\d.])/g, '$1').replace(/(\.)\s+(?=\d)/g, '$1')
   // 组合排列
@@ -187,10 +239,12 @@ export function normalizeLatex(raw: string): string {
       s = s.replace(/(\d)\s*[xX]\s*(?=\d)/g, '$1\\times ')
     }
   }
-  // 手写的 x 常被认成乘号：「×」后面紧跟运算符 / 右括号 / 结尾时，它其实是变量 x
-  s = s.replace(/\\times\s*(?=[+\-=)]|\\right|$)/g, 'x')
+  // 手写的 x 常被认成乘号：「×」后面紧跟运算符 / 幂次 / 右括号 / 结尾时，它其实是变量 x
+  s = s.replace(/\\times\s*(?=[+\-=)^]|\\right|$)/g, 'x')
   // \left. \right. 之类空定界
   s = s.replace(/\\left\s*\.|\\right\s*\./g, '')
+  // 去除解包 \text{?} 后残留的末尾问号
+  s = s.replace(/=\s*[?？]+$/, '=')
   // 手写或识别紧连单位的 \tom / \tokm 补空格，避免 KaTeX 把 \tom 当成未定义宏
   s = s.replace(/\\to(?=(?:km|cm|mm|dm|um|nm|m|kg|mg|g|ml|l|ms|s|min|h|kb|mb|gb|tb|b)\b)/gi, '\\to ')
   return s.replace(/\s{2,}/g, ' ').trim()

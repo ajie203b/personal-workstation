@@ -3,13 +3,17 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
+  Download,
   Eraser,
   FilePlus2,
   FileX2,
   Hand,
+  Keyboard,
   LassoSelect,
   MoreHorizontal,
   PenLine,
+  Pencil,
   Redo2,
   Settings2,
   Sigma,
@@ -77,7 +81,11 @@ export function MathNotesToolbar({
   onUnlockFinger,
   onToggleLatex,
   onAddPage,
+  onRenamePage,
   onClearAll,
+  onNewFormula,
+  onCopyAll,
+  onExportPng,
   onOpenPlot,
   onOpenSettings,
   onOpenDelete,
@@ -107,7 +115,11 @@ export function MathNotesToolbar({
   onUnlockFinger: () => void
   onToggleLatex: () => void
   onAddPage: () => void
+  onRenamePage: () => void
   onClearAll: () => void
+  onNewFormula: () => void
+  onCopyAll: () => void
+  onExportPng: () => void
   onOpenPlot: () => void
   onOpenSettings: () => void
   onOpenDelete: () => void
@@ -123,14 +135,28 @@ export function MathNotesToolbar({
         </button>
       </DropdownMenuTrigger>
       <MenuContent>
-        <MenuItem onSelect={onAddPage}>
-          <FilePlus2 size={15} /> 新建一页
-        </MenuItem>
-        <MenuItem onSelect={onClearAll}>
-          <Trash2 size={15} /> 清空本页
+        <MenuItem onSelect={onNewFormula}>
+          <Keyboard size={15} /> 键盘输入算式
         </MenuItem>
         <MenuItem onSelect={onOpenPlot}>
           <Sigma size={15} /> 函数图像
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem onSelect={onCopyAll}>
+          <Copy size={15} /> 复制全页算式
+        </MenuItem>
+        <MenuItem onSelect={onExportPng}>
+          <Download size={15} /> 导出图片 (PNG)
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem onSelect={onAddPage}>
+          <FilePlus2 size={15} /> 新建一页
+        </MenuItem>
+        <MenuItem onSelect={onRenamePage}>
+          <Pencil size={15} /> 重命名本页
+        </MenuItem>
+        <MenuItem onSelect={onClearAll}>
+          <Trash2 size={15} /> 清空本页
         </MenuItem>
         <MenuItem onSelect={onOpenSettings}>
           <Settings2 size={15} /> 识别设置
@@ -214,17 +240,20 @@ export function MathNotesToolbar({
       {/* 第 2 排（桌面同排右侧）：工具、笔色/笔宽、角度制、缩放、解锁手指 */}
       <div className="flex items-center justify-between lg:justify-end gap-1 h-11 lg:h-auto border-t border-outline/50 lg:border-t-0">
         <div className="flex items-center gap-0.5">
-          <button type="button" aria-label="笔" title="笔" aria-pressed={tool === 'pen'} className={toolBtn(tool === 'pen')} onClick={() => onSelectTool('pen')}>
+          <button type="button" aria-label="笔" title="笔 (P)" aria-pressed={tool === 'pen'} className={toolBtn(tool === 'pen')} onClick={() => onSelectTool('pen')}>
             <PenLine size={17} />
           </button>
-          <button type="button" aria-label="橡皮" title="橡皮（整笔擦除）" aria-pressed={tool === 'eraser'} className={toolBtn(tool === 'eraser')} onClick={() => onSelectTool('eraser')}>
+          <button type="button" aria-label="橡皮" title="橡皮 (E，整笔擦除；用笔来回涂抹也可直接擦除)" aria-pressed={tool === 'eraser'} className={toolBtn(tool === 'eraser')} onClick={() => onSelectTool('eraser')}>
             <Eraser size={17} />
           </button>
-          <button type="button" aria-label="套索选择" title="圈选笔迹后可移动、复制和缩放" aria-pressed={tool === 'lasso'} className={toolBtn(tool === 'lasso')} onClick={() => onSelectTool('lasso')}>
+          <button type="button" aria-label="套索选择" title="套索选择 (L)" aria-pressed={tool === 'lasso'} className={toolBtn(tool === 'lasso')} onClick={() => onSelectTool('lasso')}>
             <LassoSelect size={17} />
           </button>
-          <button type="button" aria-label="抓手平移" title="抓手平移画布" aria-pressed={tool === 'hand'} className={toolBtn(tool === 'hand')} onClick={() => onSelectTool('hand')}>
+          <button type="button" aria-label="抓手平移" title="抓手平移画布 (H / 按住空格)" aria-pressed={tool === 'hand'} className={toolBtn(tool === 'hand')} onClick={() => onSelectTool('hand')}>
             <Hand size={17} />
+          </button>
+          <button type="button" aria-label="键盘输入算式" title="直接用键盘输入算式" className={cn(toolBtn(false), 'hidden sm:grid')} onClick={onNewFormula}>
+            <Keyboard size={17} />
           </button>
 
           {/* 桌面端直接显示 4 色墨迹点 */}

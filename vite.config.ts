@@ -91,6 +91,7 @@ export default defineConfig(({ mode }) => {
             '**/qpdf*',
             '**/mathnotes.worker-*.js',
             '**/plot.worker-*.js',
+            '**/compute-*.js',
             '**/mermaid*',
             '**/*Diagram-*.js',
             '**/cynefin*',

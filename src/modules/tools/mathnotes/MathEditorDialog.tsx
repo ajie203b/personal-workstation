@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
-import { Loader2, RotateCcw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, Copy, Loader2, RotateCcw } from 'lucide-react'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Button } from '@/shared/ui/Button'
 import { MathView } from './MathView'
 import { normalizeLatex } from './latexNormalize'
-import type { BlockResult } from './types'
+import { manualExpression } from './mathText'
+import type { AngleMode, BlockResult, ComputeResult } from './types'
 
 interface QuickChip {
   label: string
@@ -17,19 +18,30 @@ const LATEX_CHIPS: QuickChip[] = [
   { label: 'a/b', ariaLabel: '插入分数', prefix: '\\frac{', suffix: '}{}' },
   { label: '√', ariaLabel: '插入根号', prefix: '\\sqrt{', suffix: '}' },
   { label: 'x²', ariaLabel: '插入平方', prefix: '^2' },
+  { label: 'xⁿ', ariaLabel: '插入幂次', prefix: '^{', suffix: '}' },
   { label: 'π', ariaLabel: '插入圆周率', prefix: '\\pi' },
   { label: '°', ariaLabel: '插入角度', prefix: '^{\\circ}' },
+  { label: 'sin', ariaLabel: '插入正弦', prefix: '\\sin(', suffix: ')' },
+  { label: 'cos', ariaLabel: '插入余弦', prefix: '\\cos(', suffix: ')' },
+  { label: 'tan', ariaLabel: '插入正切', prefix: '\\tan(', suffix: ')' },
+  { label: 'ln', ariaLabel: '插入自然对数', prefix: '\\ln(', suffix: ')' },
+  { label: 'log', ariaLabel: '插入常用对数', prefix: '\\log_{10}(', suffix: ')' },
   { label: '∫', ariaLabel: '插入积分', prefix: '\\int ' },
+  { label: '∑', ariaLabel: '插入求和', prefix: '\\sum_{k=1}^{n} ' },
+  { label: '→换算', ariaLabel: '插入单位换算箭头', prefix: '\\to ' },
   { label: '矩阵', ariaLabel: '插入矩阵', prefix: '\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}' },
 ]
 
 /**
- * 识别结果纠错：使用系统输入法直接编辑识别文本，避免加载额外的大型公式编辑器。
+ * 识别结果纠错：使用系统输入法直接编辑识别文本，提供实时计算预览、变量插入与一键复制。
  */
 export function MathEditorDialog({
   open,
   block,
   busy,
+  angleMode = 'rad',
+  variables,
+  previewCompute,
   onOpenChange,
   onSubmit,
   onReset,
@@ -38,6 +50,9 @@ export function MathEditorDialog({
   open: boolean
   block: BlockResult | null
   busy: boolean
+  angleMode?: AngleMode
+  variables?: Record<string, number>
+  previewCompute?: (latex: string) => Promise<ComputeResult>
   onOpenChange: (open: boolean) => void
   onSubmit: (latex: string) => void
   onReset: () => void
@@ -45,6 +60,8 @@ export function MathEditorDialog({
 }) {
   const [value, setValue] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null)
+  const [copied, setCopied] = useState<'result' | 'formula' | null>(null)
+  const [livePreview, setLivePreview] = useState<ComputeResult | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const alternatives: Record<string, string[]> = { '0': ['O'], 'O': ['0'], '1': ['7', 'l'], '7': ['1'], 'l': ['1'], '5': ['S'], 'S': ['5'], 'x': ['×'], '×': ['x'], '-': ['+'], '+': ['-'] }
   const selectedText = selection ? value.slice(selection.start, selection.end) : ''
@@ -55,8 +72,43 @@ export function MathEditorDialog({
     if (open) {
       setValue(initial)
       setSelection(null)
+      setCopied(null)
+    } else {
+      setLivePreview(null)
     }
   }, [open, block?.key, initial])
+
+  useEffect(() => {
+    const trimmed = value.trim()
+    if (!open || !trimmed) {
+      setLivePreview(null)
+      return
+    }
+    let alive = true
+    const expr = manualExpression(trimmed, false)
+    const run = async () => {
+      try {
+        const res = previewCompute
+          ? await previewCompute(expr)
+          : (await import('./compute')).computeLatex(expr, { angleMode, variables })
+        if (alive) setLivePreview(res)
+      } catch {
+        if (alive) setLivePreview(null)
+      }
+    }
+    void run()
+    return () => { alive = false }
+  }, [open, value, angleMode, variables, previewCompute])
+
+  const copyText = (text: string, kind: 'result' | 'formula') => {
+    if (!text) return
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(kind)
+      window.setTimeout(() => setCopied((prev) => (prev === kind ? null : prev)), 1500)
+    }).catch(() => undefined)
+  }
+
+  const varEntries = useMemo(() => Object.entries(variables ?? {}), [variables])
 
   const submit = () => {
     if (value.trim() && !busy) onSubmit(value.trim())
@@ -165,11 +217,72 @@ export function MathEditorDialog({
             ))}
           </div>
         )}
+
+        {varEntries.length > 0 && (
+          <div className="flex items-center flex-wrap gap-1.5 text-xs text-on-surface-2" aria-label="本页变量快捷插入">
+            <span>本页变量：</span>
+            {varEntries.map(([name, val]) => (
+              <button
+                key={name}
+                type="button"
+                aria-label={`插入变量 ${name}`}
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => insert(name)}
+                className="rounded-lg border border-ok/40 bg-ok/10 px-2 py-0.5 text-ok hover:bg-ok/15 cursor-pointer tabular-nums"
+              >
+                {name} = {Number(val.toPrecision(6))}
+              </button>
+            ))}
+          </div>
+        )}
+
         <p className="text-[12px] text-on-surface-2">点击或选中易混淆的字符可查看候选；方程组每行输入一个等式；Ctrl/Cmd + Enter 快速计算。</p>
 
         {value.trim() && (
-          <div className="rounded-[10px] bg-surface-2 px-3 py-2 text-on-surface overflow-x-auto" aria-label="公式预览">
-            <MathView latex={normalizeLatex(value)} />
+          <div className="rounded-[10px] bg-surface-2 px-3 py-2 text-on-surface overflow-x-auto flex items-center justify-between gap-2" aria-label="公式预览">
+            <div className="min-w-0 overflow-x-auto">
+              <MathView latex={normalizeLatex(value)} />
+            </div>
+            <button
+              type="button"
+              aria-label="复制算式 LaTeX"
+              title="复制算式"
+              onClick={() => copyText(normalizeLatex(value), 'formula')}
+              className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-outline bg-surface px-2 py-1 text-[11px] text-on-surface-2 hover:text-on-surface cursor-pointer"
+            >
+              {copied === 'formula' ? <Check size={12} className="text-ok" /> : <Copy size={12} />}
+              <span>{copied === 'formula' ? '已复制' : '复制算式'}</span>
+            </button>
+          </div>
+        )}
+
+        {livePreview && (livePreview.kind !== 'none' || livePreview.assigned) && (
+          <div className="rounded-[10px] border border-outline/70 bg-surface-2/70 px-3 py-2 text-[12.5px] flex items-center justify-between gap-2" aria-label="实时计算预览">
+            <div className="min-w-0 flex items-center gap-1.5 flex-wrap text-on-surface-2">
+              <span className="shrink-0">实时结果：</span>
+              {livePreview.kind === 'error' ? (
+                <span className="text-danger">{livePreview.message}</span>
+              ) : livePreview.assigned ? (
+                <span className="text-ok font-medium">变量 {livePreview.assigned.name} = {livePreview.assigned.value}</span>
+              ) : (
+                <span className="flex items-center gap-1.5 flex-wrap text-[#B45309] dark:text-[#FBBF24] font-medium">
+                  <MathView latex={livePreview.latex} />
+                  {livePreview.alt && <span className="text-on-surface-2 text-[11.5px]">≈ {livePreview.alt}</span>}
+                </span>
+              )}
+            </div>
+            {(livePreview.text || livePreview.latex) && livePreview.kind !== 'error' && (
+              <button
+                type="button"
+                aria-label="复制计算结果"
+                title="复制计算结果"
+                onClick={() => copyText(livePreview.text || livePreview.latex, 'result')}
+                className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-outline bg-surface px-2 py-1 text-[11px] text-on-surface-2 hover:text-on-surface cursor-pointer"
+              >
+                {copied === 'result' ? <Check size={12} className="text-ok" /> : <Copy size={12} />}
+                <span>{copied === 'result' ? '已复制' : '复制结果'}</span>
+              </button>
+            )}
           </div>
         )}
 

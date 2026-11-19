@@ -32,19 +32,28 @@ export function rasterizeStrokes(strokes: Stroke[], charHeight: number): GrayIma
   if (!Number.isFinite(box.minX)) return { data: new Uint8ClampedArray([255]), width: 1, height: 1 }
 
   let scale = RASTER_CHAR_PX / Math.max(1, charHeight)
-  const pad = RASTER_CHAR_PX * 0.3
-  const rawW = boxW(box) * scale + pad * 2
-  const rawH = boxH(box) * scale + pad * 2
+  const padX = RASTER_CHAR_PX * 0.35
+  const padYBase = RASTER_CHAR_PX * 0.35
+  const contentW = boxW(box) * scale
+  const contentH = boxH(box) * scale
+  // 长条单行算式（如 12+34+56=）宽高比极端时，384×384 拉伸会把竖笔压细、横笔拉粗；适当补齐纵向留白
+  const minHeight = Math.min((contentW + padX * 2) * 0.18, RASTER_CHAR_PX * 2.2)
+  const extraPadY = Math.max(0, (minHeight - (contentH + padYBase * 2)) / 2)
+  const padY = padYBase + extraPadY
+  const rawW = contentW + padX * 2
+  const rawH = contentH + padY * 2
   const shrink = Math.min(1, MAX_RASTER_SIDE / Math.max(rawW, rawH))
   scale *= shrink
-  const padS = pad * shrink
-  const width = Math.max(8, Math.ceil(boxW(box) * scale + padS * 2))
-  const height = Math.max(8, Math.ceil(boxH(box) * scale + padS * 2))
-  // ink 是覆盖率 0~1，最后再转灰度
+  const padXS = padX * shrink
+  const padYS = padY * shrink
+  const width = Math.max(8, Math.ceil(boxW(box) * scale + padXS * 2))
+  const height = Math.max(8, Math.ceil(boxH(box) * scale + padYS * 2))
+  // ink 是覆盖率 0~1，最后再转灰度；长算式横向缩小到 384 时略增笔宽，防止细竖笔（1 / + / /）变淡丢失
   const ink = new Float32Array(width * height)
-  const r = Math.max(1, (RASTER_LINE_PX * Math.max(0.5, shrink)) / 2)
-  const tx = (x: number) => (x - box.minX) * scale + padS
-  const ty = (y: number) => (y - box.minY) * scale + padS
+  const downscaleBoost = width > MFR_INPUT_SIZE ? Math.min(1.45, Math.sqrt(width / MFR_INPUT_SIZE)) : 1
+  const r = Math.max(1, (RASTER_LINE_PX * Math.max(0.5, shrink) * downscaleBoost) / 2)
+  const tx = (x: number) => (x - box.minX) * scale + padXS
+  const ty = (y: number) => (y - box.minY) * scale + padYS
 
   const stampSegment = (x0: number, y0: number, x1: number, y1: number) => {
     const minX = Math.max(0, Math.floor(Math.min(x0, x1) - r - 1))
@@ -77,8 +86,33 @@ export function rasterizeStrokes(strokes: Stroke[], charHeight: number): GrayIma
       stampSegment(tx(pts[0].x), ty(pts[0].y), tx(pts[0].x), ty(pts[0].y))
       continue
     }
+    if (pts.length === 2) {
+      stampSegment(tx(pts[0].x), ty(pts[0].y), tx(pts[1].x), ty(pts[1].y))
+      continue
+    }
+    // 按与画布一致的中点二次贝塞尔曲线细分栅格化，快速书写时曲线更圆润，提升数字与符号辨识度
     for (let i = 1; i < pts.length; i++) {
-      stampSegment(tx(pts[i - 1].x), ty(pts[i - 1].y), tx(pts[i].x), ty(pts[i].y))
+      const p0x = tx(pts[i - 1].x)
+      const p0y = ty(pts[i - 1].y)
+      const p1x = tx(pts[i].x)
+      const p1y = ty(pts[i].y)
+      const ax = i >= 2 ? (tx(pts[i - 2].x) + p0x) / 2 : p0x
+      const ay = i >= 2 ? (ty(pts[i - 2].y) + p0y) / 2 : p0y
+      const bx = i === pts.length - 1 ? p1x : (p0x + p1x) / 2
+      const by = i === pts.length - 1 ? p1y : (p0y + p1y) / 2
+      const span = Math.hypot(bx - ax, by - ay)
+      const steps = span > 8 ? 3 : span > 3 ? 2 : 1
+      let lx = ax
+      let ly = ay
+      for (let k = 1; k <= steps; k++) {
+        const t = k / steps
+        const mt = 1 - t
+        const nx = mt * mt * ax + 2 * mt * t * p0x + t * t * bx
+        const ny = mt * mt * ay + 2 * mt * t * p0y + t * t * by
+        stampSegment(lx, ly, nx, ny)
+        lx = nx
+        ly = ny
+      }
     }
   }
 

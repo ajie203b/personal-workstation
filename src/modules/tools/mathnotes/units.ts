@@ -43,18 +43,23 @@ const UNITS: Record<string, UnitDef> = {
   // 质量
   ton: lin('mass', 1e6, 'ton'), 吨: lin('mass', 1e6, '吨'),
   kg: lin('mass', 1000, 'kg'), 千克: lin('mass', 1000, '千克'), 公斤: lin('mass', 1000, '公斤'),
+  斤: lin('mass', 500, '斤'),
+  两: lin('mass', 50, '两'),
   g: lin('mass', 1, 'g'), 克: lin('mass', 1, '克'),
   mg: lin('mass', 0.001, 'mg'), 毫克: lin('mass', 0.001, '毫克'),
   lb: lin('mass', 453.59237, 'lb'), 磅: lin('mass', 453.59237, '磅'),
+  oz: lin('mass', 28.349523125, 'oz'), 盎司: lin('mass', 28.349523125, '盎司'),
   // 时间
+  周: lin('time', 604800, '周'), 星期: lin('time', 604800, '星期'),
   天: lin('time', 86400, '天'),
   h: lin('time', 3600, 'h'), hr: lin('time', 3600, 'h'), 小时: lin('time', 3600, '小时'), 时: lin('time', 3600, '时'),
-  min: lin('time', 60, 'min'), 分钟: lin('time', 60, '分钟'),
+  min: lin('time', 60, 'min'), 分钟: lin('time', 60, '分钟'), 分: lin('time', 60, '分钟'),
   s: lin('time', 1, 's'), sec: lin('time', 1, 's'), 秒: lin('time', 1, '秒'),
   ms: lin('time', 0.001, 'ms'), 毫秒: lin('time', 0.001, '毫秒'),
   // 面积
   'km²': lin('area', 1e6, 'km²'), 平方千米: lin('area', 1e6, '平方千米'), 平方公里: lin('area', 1e6, '平方公里'),
   ha: lin('area', 1e4, 'ha'), 公顷: lin('area', 1e4, '公顷'),
+  亩: lin('area', 2000 / 3, '亩'),
   'm²': lin('area', 1, 'm²'), 平方米: lin('area', 1, '平方米'), 平米: lin('area', 1, '平米'),
   'dm²': lin('area', 0.01, 'dm²'), 平方分米: lin('area', 0.01, '平方分米'),
   'cm²': lin('area', 1e-4, 'cm²'), 平方厘米: lin('area', 1e-4, '平方厘米'),
@@ -94,6 +99,27 @@ const UNITS: Record<string, UnitDef> = {
   '°k': { kind: 'temp', group: 'temp', scale: 'K', display: 'K' },
   k: { kind: 'temp', group: 'temp', scale: 'K', display: 'K', strictCase: true },
   开尔文: { kind: 'temp', group: 'temp', scale: 'K', display: '开尔文' },
+  // 压强
+  mpa: lin('pressure', 1e6, 'MPa'),
+  kpa: lin('pressure', 1000, 'kPa'),
+  pa: lin('pressure', 1, 'Pa'),
+  bar: lin('pressure', 1e5, 'bar'),
+  atm: lin('pressure', 101325, 'atm'),
+  // 能量
+  kwh: lin('energy', 3.6e6, 'kWh'),
+  kj: lin('energy', 1000, 'kJ'),
+  j: lin('energy', 1, 'J', true),
+  kcal: lin('energy', 4184, 'kcal'),
+  cal: lin('energy', 4.184, 'cal'),
+  // 功率
+  mw: lin('power', 1e6, 'MW', true),
+  kw: lin('power', 1000, 'kW'),
+  w: lin('power', 1, 'W', true),
+  // 频率
+  ghz: lin('freq', 1e9, 'GHz'),
+  mhz: lin('freq', 1e6, 'MHz'),
+  khz: lin('freq', 1000, 'kHz'),
+  hz: lin('freq', 1, 'Hz'),
 }
 
 const UNIT_KEYS = Object.keys(UNITS).sort((a, b) => b.length - a.length)
@@ -172,6 +198,8 @@ class UnitParser {
         volume: /(?:ml|m³|dm³|cm³|mm³|gal|升|毫升|立方)/i,
         storage: /(?:kb|mb|gb|tb|pb|kib|mib|gib|tib|字节)/i,
         temp: /(?:°c|°f|℃|℉|摄氏度|华氏度|开尔文)/i,
+        energy: /(?:kj|kwh|kcal|cal)/i,
+        power: /(?:kw|mw)/i,
       }
       if (!siblingPattern[def.group]?.test(this.s)) return null
     }
@@ -328,6 +356,26 @@ class UnitParser {
         }
       }
     }
+    // 支持复合单位连写累加（如 2小时30分钟、1m50cm）
+    while (q.unit?.kind === 'linear') {
+      const savedPos = this.pos
+      NUM_RE.lastIndex = this.pos
+      const nextNum = NUM_RE.exec(this.s)
+      if (!nextNum) break
+      this.pos = NUM_RE.lastIndex
+      const nextUnit = this.matchUnit()
+      if (!nextUnit || nextUnit.def.kind !== 'linear' || nextUnit.def.group !== q.unit.group) {
+        this.pos = savedPos
+        break
+      }
+      const addVal = (q.value < 0 ? -1 : 1) * Number(nextNum[0]) * nextUnit.def.factor
+      q = {
+        ...q,
+        value: q.value + addVal,
+        unitCount: q.unitCount + 1,
+        unitTokens: [...q.unitTokens, nextUnit.raw],
+      }
+    }
     return q
   }
 }
@@ -340,9 +388,17 @@ export interface UnitOptions {
 /** 只接管明确包含多单位、单位换算或带单位标量乘除的算式，避免把 2m+1 中的 m 猜成米。 */
 export function computeUnits(raw: string, opts?: UnitOptions): ComputeResult | null {
   const text = preprocessUnitText(raw)
-  const split = text.split(/→|->|换算成/)
+  let split = text.split(/→|->|换算成/)
   if (split.length > 2) return err('单位换算格式不正确')
-  const conversion = split.length === 2
+  let conversion = split.length === 2
+  // 支持 `5km=m` / `100°C=°F` / `5km=?m` 这种等号目标单位写法
+  if (!conversion) {
+    const eqTarget = text.match(/^(.+?)=\??([a-zA-Z°\u4e00-\u9fa5²³/]+)=?$/)
+    if (eqTarget && eqTarget[2] && UNITS[eqTarget[2].toLowerCase()]) {
+      split = [eqTarget[1], eqTarget[2]]
+      conversion = true
+    }
+  }
   if (!conversion && !text.endsWith('=')) return null
   const body = split[0].replace(/=$/, '')
   if (!body) return conversion ? err('请输入完整的单位数值') : null

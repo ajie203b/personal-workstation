@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { uid } from '@/lib/id'
-import { smoothAppend, strokeBox, strokesHitBy } from './geometry'
+import { detectScratchOut, estimateCharHeight, smoothAppend, strokeBox, strokesHitBy } from './geometry'
 import { selectInLasso } from './lasso'
 import { PointerGesture } from './pointerGesture'
 import { drawStroke, ERASER_RADIUS, GRID, MAX_ZOOM, MIN_ZOOM, resolveStrokeColor, type Action, type Tool } from './canvasDraw'
@@ -51,10 +51,11 @@ export function useCanvasPointer({
   pushAction: (a: Action) => void
   afterChange: (lastStroke?: Stroke) => void
 }) {
-  const drawingRef = useRef<{ pointerId: number; stroke: Stroke } | null>(null)
+  const drawingRef = useRef<{ pointerId: number; stroke: Stroke; tempEraser?: boolean } | null>(null)
   const erasedRef = useRef<Stroke[]>([])
+  const eraserPosRef = useRef<{ x: number; y: number } | null>(null)
   const gestureRef = useRef(new PointerGesture())
-  const panRef = useRef<{ x: number; y: number; scrollX: number; scrollY: number } | null>(null)
+  const panRef = useRef<{ x: number; y: number; scrollX: number; scrollY: number; distance?: number | null; zoom?: number } | null>(null)
   const handPanRef = useRef<{ pointerId: number; x: number; y: number; scrollX: number; scrollY: number } | null>(null)
 
   const redraw = useCallback(() => {
@@ -93,6 +94,19 @@ export function useCanvasPointer({
       ctx.stroke()
       ctx.restore()
     }
+    const eraserPos = eraserPosRef.current
+    if (eraserPos && (toolRef.current === 'eraser' || drawingRef.current?.tempEraser)) {
+      ctx.save()
+      const r = ERASER_RADIUS / z
+      ctx.beginPath()
+      ctx.arc(eraserPos.x, eraserPos.y, r, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(220, 38, 38, 0.1)'
+      ctx.fill()
+      ctx.lineWidth = 1.4 / z
+      ctx.strokeStyle = 'rgba(220, 38, 38, 0.7)'
+      ctx.stroke()
+      ctx.restore()
+    }
     if (containerRef.current) {
       containerRef.current.style.backgroundSize = `${GRID * z}px ${GRID * z}px`
       containerRef.current.style.backgroundPosition = `${-sx * z}px ${-sy * z}px`
@@ -101,7 +115,7 @@ export function useCanvasPointer({
       overlayRef.current.style.transformOrigin = '0 0'
       overlayRef.current.style.transform = `translate(${-sx * z}px, ${-sy * z}px) scale(${z})`
     }
-  }, [canvasRef, containerRef, lassoRef, overlayRef, scrollXRef, scrollYRef, sizeRef, strokesRef, zoomRef])
+  }, [canvasRef, containerRef, lassoRef, overlayRef, scrollXRef, scrollYRef, sizeRef, strokesRef, toolRef, zoomRef])
 
   useEffect(() => {
     const el = containerRef.current
@@ -216,25 +230,30 @@ export function useCanvasPointer({
   }, [canvasRef, containerRef, scrollTo, scrollXRef, scrollYRef, zoomAt, zoomRef])
 
   const eraseAt = (x: number, y: number) => {
+    eraserPosRef.current = { x, y }
     const hit = new Set(strokesHitBy(strokesRef.current, x, y, ERASER_RADIUS / zoomRef.current))
-    if (!hit.size) return
-    erasedRef.current.push(...strokesRef.current.filter((s) => hit.has(s.id)))
-    strokesRef.current = strokesRef.current.filter((s) => !hit.has(s.id))
+    if (hit.size) {
+      erasedRef.current.push(...strokesRef.current.filter((s) => hit.has(s.id)))
+      strokesRef.current = strokesRef.current.filter((s) => !hit.has(s.id))
+    }
     redraw()
   }
 
   /**
-   * 结束进行中的书写。commit：笔画入库（橡皮则提交擦除）；discard：丢弃笔画（橡皮擦掉的仍提交）。
+   * 结束进行中的书写。commit：笔画入库（橡皮则提交擦除，涂抹手势则擦除命中笔画）；discard：丢弃笔画（橡皮擦掉的仍提交）。
    */
   const finishDrawing = (end: 'commit' | 'discard', last?: { x: number; y: number; t: number }) => {
     const d = drawingRef.current
     drawingRef.current = null
+    eraserPosRef.current = null
     if (!d) return
-    if (toolRef.current === 'eraser' || !d.stroke.id) {
+    if (toolRef.current === 'eraser' || d.tempEraser || !d.stroke.id) {
       if (erasedRef.current.length) {
         pushAction({ type: 'erase', strokes: erasedRef.current })
         erasedRef.current = []
         afterChange()
+      } else {
+        redraw()
       }
       return
     }
@@ -245,6 +264,15 @@ export function useCanvasPointer({
     }
     const tail = pts[pts.length - 1]
     if (last && tail && Math.hypot(tail.x - last.x, tail.y - last.y) > 0.5) pts.push({ x: last.x, y: last.y, p: tail.p, t: last.t })
+    const scratchHit = detectScratchOut(d.stroke, strokesRef.current, estimateCharHeight(strokesRef.current))
+    if (scratchHit.length) {
+      const hitSet = new Set(scratchHit)
+      const removed = strokesRef.current.filter((s) => hitSet.has(s.id))
+      strokesRef.current = strokesRef.current.filter((s) => !hitSet.has(s.id))
+      pushAction({ type: 'erase', strokes: removed })
+      afterChange()
+      return
+    }
     strokesRef.current = [...strokesRef.current, d.stroke]
     pushAction({ type: 'add', strokes: [d.stroke] })
     afterChange(d.stroke)
@@ -270,14 +298,15 @@ export function useCanvasPointer({
     }
 
     const kind = e.pointerType === 'pen' ? 'pen' : e.pointerType === 'touch' ? 'touch' : 'mouse'
+    const stylusEraser = kind === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0)
     const r = gestureRef.current.down({
       id: e.pointerId,
       kind,
       x: e.clientX,
       y: e.clientY,
       t: e.timeStamp,
-      button: e.button,
-      palm: kind === 'touch' && e.width > 40 && e.height > 40,
+      button: stylusEraser ? 0 : e.button,
+      palm: kind === 'touch' && (e.width > 34 || e.height > 34 || e.width * e.height > 900),
     })
     if (gestureRef.current.penSeen) onPenLockChange(true)
     if (r.action === 'ignore') return
@@ -288,21 +317,29 @@ export function useCanvasPointer({
         redraw()
       }
       const center = gestureRef.current.panCenter()
-      panRef.current = { x: center.x, y: r.centerY, scrollX: scrollXRef.current, scrollY: scrollYRef.current }
+      panRef.current = {
+        x: center.x,
+        y: r.centerY,
+        scrollX: scrollXRef.current,
+        scrollY: scrollYRef.current,
+        distance: gestureRef.current.touchDistance(),
+        zoom: zoomRef.current,
+      }
       e.currentTarget.setPointerCapture(e.pointerId)
       return
     }
+    panRef.current = null
     e.currentTarget.setPointerCapture(e.pointerId)
     window.clearTimeout(idleTimer.current)
     const { x, y } = toWorld(e)
-    if (toolRef.current === 'lasso') {
+    if (toolRef.current === 'lasso' && !stylusEraser) {
       setSelected([])
       lassoRef.current = { pointerId: e.pointerId, points: [{ x, y }] }
       return
     }
-    if (toolRef.current === 'eraser') {
+    if (toolRef.current === 'eraser' || stylusEraser) {
       erasedRef.current = []
-      drawingRef.current = { pointerId: e.pointerId, stroke: { id: '', points: [], width: 0 } }
+      drawingRef.current = { pointerId: e.pointerId, stroke: { id: '', points: [], width: 0 }, tempEraser: stylusEraser }
       eraseAt(x, y)
       return
     }
@@ -315,6 +352,17 @@ export function useCanvasPointer({
       ...(color ? { color } : {}),
     }
     drawingRef.current = { pointerId: e.pointerId, stroke }
+    // 落笔首点立即反馈：轻点小数点、乘号点时无延迟可见
+    const ctx = canvasRef.current?.getContext('2d')
+    if (ctx) {
+      const { dpr } = sizeRef.current
+      const z = zoomRef.current
+      ctx.setTransform(dpr * z, 0, 0, dpr * z, -scrollXRef.current * dpr * z, -scrollYRef.current * dpr * z)
+      const ink = resolveStrokeColor(stroke.color)
+      ctx.strokeStyle = ink
+      ctx.fillStyle = ink
+      drawStroke(ctx, stroke)
+    }
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -328,6 +376,23 @@ export function useCanvasPointer({
     const m = g.move(e.pointerId, e.clientX, e.clientY)
     if (m && panRef.current) {
       const center = g.panCenter()
+      const dist = g.touchDistance()
+      if (dist != null && panRef.current.distance && panRef.current.distance > 12 && panRef.current.zoom) {
+        const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(panRef.current.zoom * (dist / panRef.current.distance) * 100) / 100))
+        const rect = canvasRef.current?.getBoundingClientRect()
+        const sx = rect ? panRef.current.x - rect.left : sizeRef.current.w / 2
+        const sy = rect ? panRef.current.y - rect.top : sizeRef.current.h / 2
+        const worldAnchorX = panRef.current.scrollX + sx / panRef.current.zoom
+        const worldAnchorY = panRef.current.scrollY + sy / panRef.current.zoom
+        const curSx = rect ? center.x - rect.left : sx
+        const curSy = rect ? center.y - rect.top : sy
+        if (Math.abs(nextZoom - zoomRef.current) >= 0.01) {
+          zoomRef.current = nextZoom
+          onZoomChange(nextZoom)
+        }
+        scrollTo(worldAnchorX - curSx / zoomRef.current, worldAnchorY - curSy / zoomRef.current)
+        return
+      }
       scrollTo(panRef.current.scrollX + (panRef.current.x - center.x) / z, panRef.current.scrollY + (panRef.current.y - m.panCenterY) / z)
       return
     }
@@ -339,7 +404,7 @@ export function useCanvasPointer({
     const d = drawingRef.current
     if (!d || d.pointerId !== e.pointerId || !g.isDrawing(e.pointerId)) return
     const events = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [e.nativeEvent]
-    if (toolRef.current === 'eraser') {
+    if (toolRef.current === 'eraser' || d.tempEraser) {
       for (const ev of events.length ? events : [e.nativeEvent]) {
         const { x, y } = toWorld(ev)
         eraseAt(x, y)
@@ -351,7 +416,14 @@ export function useCanvasPointer({
     const before = pts.length
     for (const ev of events.length ? events : [e.nativeEvent]) {
       const { x, y } = toWorld(ev)
-      const p = ev.pointerType === 'pen' ? ev.pressure || 0.5 : 0.5
+      const prev = pts[pts.length - 1]
+      let p = ev.pointerType === 'pen' ? ev.pressure || 0.5 : 0.5
+      // 鼠标/手指/无压感笔按书写速度微调轻重，提升手写自然度
+      if ((ev.pointerType !== 'pen' || Math.abs(p - 0.5) < 0.001) && prev) {
+        const dt = Math.max(1, ev.timeStamp - prev.t)
+        const speed = Math.hypot(x - prev.x, y - prev.y) / dt
+        p = Math.max(0.36, Math.min(0.62, 0.58 - speed * 0.14))
+      }
       smoothAppend(pts, { x, y, p, t: ev.timeStamp } as InkPoint)
     }
     if (ctx && pts.length > before) {
@@ -382,7 +454,14 @@ export function useCanvasPointer({
     }
     if (r.action === 'panRebase') {
       const center = gestureRef.current.panCenter()
-      panRef.current = { x: center.x, y: r.centerY, scrollX: scrollXRef.current, scrollY: scrollYRef.current }
+      panRef.current = {
+        x: center.x,
+        y: r.centerY,
+        scrollX: scrollXRef.current,
+        scrollY: scrollYRef.current,
+        distance: gestureRef.current.touchDistance(),
+        zoom: zoomRef.current,
+      }
     } else if (r.action === 'endPan') {
       panRef.current = null
     } else if (r.action === 'endDraw' && drawingRef.current?.pointerId === e.pointerId) {

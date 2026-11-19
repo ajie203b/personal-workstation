@@ -10,13 +10,15 @@ import { normalizeLatex } from './latexNormalize'
 import { manualExpression } from './mathText'
 import { createPage, deletePage, getLastPageId, listPages, newPage, setLastPageId } from './store'
 import { NoteSession, type EditKind } from './noteSession'
-import { FAIL_MARK_WIDTH, GRID, HAND_FONT, MARK_WIDTH, PEN_WIDTH, plainOf, type Action, type OverlayItem, type PenColorId, type Tool } from './canvasDraw'
+import { FAIL_MARK_WIDTH, GRID, HAND_FONT, MARK_WIDTH, PEN_WIDTH, cssVar, drawStroke, plainOf, resolveStrokeColor, type Action, type OverlayItem, type PenColorId, type Tool } from './canvasDraw'
 import { EmbeddedGraphLayer, LassoSelectionOverlay, ModelStatusBanner, OverlayAnswer } from './MathNotesOverlay'
 import { MathNotesToolbar } from './MathNotesToolbar'
 import { MathNotesDialogs } from './MathNotesDialogs'
+import { synthFormulaStrokes } from './synthInk'
 import { useCanvasPointer } from './useCanvasPointer'
 import { useMathRecognition } from './useMathRecognition'
 import type { AngleMode, BlockResult, MathNotePage, NoteGraph, Stroke } from './types'
+import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { uid } from '@/lib/id'
 
 export { OverlayAnswer }
@@ -77,6 +79,7 @@ export function MathNotesPage() {
     void db.settings.get('mathNotesAngleMode').then(row => { if (row?.value === 'rad' || row?.value === 'deg') setAngleMode(row.value) })
   }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
   const [plotInput, setPlotInput] = useState('y=x^2')
   const [plotSource, setPlotSource] = useState<string | undefined>()
@@ -84,6 +87,7 @@ export function MathNotesPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [manualFallback, setManualFallback] = useState<BlockResult | null>(null)
+  const [creatingManual, setCreatingManual] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
   const [viewW, setViewW] = useState(0)
   /** 答案元素实测宽度（key → CSS 像素），用于判断等号右侧放不放得下 */
@@ -136,6 +140,7 @@ export function MathNotesPage() {
     source,
     setSourceState,
     recognizing,
+    pageVariables,
     evaluateEntriesNow,
     plotFunction,
     loadModel,
@@ -314,22 +319,7 @@ export function MathNotesPage() {
     toast('已清空本页，可点撤销找回')
   }
 
-  // 桌面快捷键：Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z / Ctrl+Y 重做（捕获阶段拦下，免得触发全局撤销）
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null
-      if (t && (t.closest('input, textarea, [contenteditable="true"], math-field') || e.isComposing)) return
-      if (!(e.ctrlKey || e.metaKey)) return
-      const k = e.key.toLowerCase()
-      if (k === 'z' && !e.shiftKey) undo()
-      else if ((k === 'z' && e.shiftKey) || k === 'y') redo()
-      else return
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [undo, redo])
+  // 撤销重做快捷键已合并进上方的全套快捷键监听中。
 
   /* ---------- 指针输入 ---------- */
 
@@ -370,10 +360,70 @@ export function MathNotesPage() {
     const copies = transformStrokes(selectionStrokes, new Set(selected), 15, 15).map(s => ({ ...s, id: uid() }))
     strokesRef.current = [...strokesRef.current, ...copies]; setSelected(copies.map(s => s.id)); pushAction({ type: 'add', strokes: copies }); afterChange()
   }
-  const deleteSelection = () => {
+  const deleteSelection = useCallback(() => {
+    if (!selected.length) return
     const ids = new Set(selected), removed = strokesRef.current.filter(s => ids.has(s.id))
     strokesRef.current = strokesRef.current.filter(s => !ids.has(s.id)); setSelected([]); pushAction({ type: 'erase', strokes: removed }); afterChange()
-  }
+  }, [selected, afterChange])
+
+  // 桌面快捷键：撤销/重做、P/E/L/H 切工具、Delete/Backspace 删选区、Ctrl+D 复制选区、Space 临时抓手平移
+  const spacePrevToolRef = useRef<Tool | null>(null)
+  useEffect(() => {
+    const isInputFocused = (t: HTMLElement | null) =>
+      Boolean(t && (t.closest('input, textarea, select, [contenteditable="true"], math-field')))
+    const onKeyDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (isInputFocused(t) || e.isComposing) return
+      const k = e.key.toLowerCase()
+      if (e.ctrlKey || e.metaKey) {
+        if (k === 'z' && !e.shiftKey) undo()
+        else if ((k === 'z' && e.shiftKey) || k === 'y') redo()
+        else if (k === 'd' && selected.length) {
+          const sel = strokesRef.current.filter((s) => selected.includes(s.id))
+          if (!sel.length) return
+          const copies = transformStrokes(sel, new Set(selected), 15, 15).map((s) => ({ ...s, id: uid() }))
+          strokesRef.current = [...strokesRef.current, ...copies]
+          setSelected(copies.map((s) => s.id))
+          pushAction({ type: 'add', strokes: copies })
+          afterChange()
+        } else return
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (e.altKey) return
+      if (e.code === 'Space' && !e.repeat) {
+        if (toolRef.current !== 'hand') {
+          spacePrevToolRef.current = toolRef.current
+          setTool('hand')
+        }
+        e.preventDefault()
+        return
+      }
+      if (k === 'p' || k === 'b') { setTool('pen'); setSelected([]) }
+      else if (k === 'e') { setTool('eraser'); setSelected([]) }
+      else if (k === 'l' || k === 's') { setTool('lasso'); setSelected([]) }
+      else if (k === 'h') { setTool('hand'); setSelected([]) }
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && selected.length) {
+        e.preventDefault()
+        deleteSelection()
+      } else if (e.key === 'Escape' && selected.length) {
+        setSelected([])
+      }
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && spacePrevToolRef.current) {
+        setTool(spacePrevToolRef.current)
+        spacePrevToolRef.current = null
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
+    }
+  }, [undo, redo, selected, afterChange, deleteSelection])
 
   /* ---------- 答案浮层 ---------- */
 
@@ -473,6 +523,7 @@ export function MathNotesPage() {
 
   const openManual = (key: string) => {
     const failed = queueRef.current?.failureOf(key)
+    setCreatingManual(false)
     setManualFallback({
       key,
       recognized: '',
@@ -486,12 +537,73 @@ export function MathNotesPage() {
     setEditing(key)
   }
 
+  const openNewManualFormula = () => {
+    setCreatingManual(true)
+    setManualFallback({
+      key: '__new_manual__',
+      recognized: '',
+      result: {
+        kind: 'none',
+        latex: '',
+        text: '',
+      },
+    })
+    setEditing('__new_manual__')
+  }
+
   const submitEdit = async (latex: string) => {
     const key = editing
     const engine = engineRef.current
-    const original = key ? resultsRef.current.get(key) : undefined
+    if (!key || !engine) return
+    if (creatingManual && key === '__new_manual__') {
+      const editingPage = pageRef.current?.id
+      setEditBusy(true)
+      try {
+        const blocks = clusterStrokes(strokesRef.current)
+        const maxBottom = blocks.reduce((m, b) => Math.max(m, b.box.maxY), scrollYRef.current + 36)
+        const ox = Math.max(24, scrollXRef.current + 28)
+        const oy = blocks.length ? maxBottom + 36 : scrollYRef.current + 64
+        const color = penColorRef.current === 'auto' ? undefined : penColorRef.current
+        const newStrokes = synthFormulaStrokes(latex, ox, oy, 36, penWidthRef.current, color)
+        const newIds = new Set(newStrokes.map((s) => s.id))
+        const allStrokes = [...strokesRef.current, ...newStrokes]
+        const nextBlocks = clusterStrokes(allStrokes)
+        const newBlock = nextBlocks.find((b) => b.strokeIds.some((id) => newIds.has(id)))
+        if (!newBlock) return
+        const input = manualExpression(latex, false)
+        const entries = nextBlocks.flatMap((b) => {
+          if (b.key === newBlock.key) return [{ key: newBlock.key, latex: input }]
+          const row = resultsRef.current.get(b.key)
+          if (!row || (row.edited == null && row.result.message?.includes('方程组未识别完整'))) return []
+          return [{ key: b.key, latex: row.edited ?? row.recognized }]
+        })
+        const evaluation = await evaluateEntriesNow(entries)
+        if (!evaluation || pageRef.current?.id !== editingPage) return
+        const result = evaluation.results[newBlock.key] ?? (await engine.compute(newBlock.key, input, { angleMode, variables: evaluation.variables }))
+        strokesRef.current = allStrokes
+        pushAction({ type: 'add', strokes: newStrokes })
+        resultsRef.current.set(newBlock.key, { key: newBlock.key, recognized: input, edited: input, result })
+        for (const entry of entries) {
+          if (entry.key === newBlock.key) continue
+          const old = resultsRef.current.get(entry.key)
+          const next = evaluation.results[entry.key]
+          if (old && next) resultsRef.current.set(entry.key, { ...old, result: next })
+        }
+        setCreatingManual(false)
+        setManualFallback(null)
+        setEditing(null)
+        bump()
+        markEdited('user')
+      } catch (e) {
+        toast(e instanceof Error ? e.message : '计算失败')
+      } finally {
+        setEditBusy(false)
+      }
+      return
+    }
+    const original = resultsRef.current.get(key)
     const current = original ?? (manualFallback?.key === key ? manualFallback : undefined)
-    if (!key || !engine || !current) return
+    if (!current) return
     const editingPage = pageRef.current?.id
     setEditBusy(true)
     try {
@@ -609,10 +721,189 @@ export function MathNotesPage() {
     setDeleteOpen(false)
   }
 
+  const renameCurrentPage = async (nextTitle: string) => {
+    const page = pageRef.current
+    if (!page || page.title === nextTitle) return
+    const updated = { ...page, title: nextTitle, updatedAt: Date.now() }
+    pageRef.current = updated
+    await db.mathNotes.update(page.id, { title: nextTitle, updatedAt: updated.updatedAt })
+    if (sessionRef.current?.id === page.id) {
+      openPage(updated)
+    }
+    toast(`已重命名为「${nextTitle}」`)
+  }
+
+  const copyAllFormulas = async () => {
+    const blocks = clusterStrokes(strokesRef.current)
+    const lines: string[] = []
+    for (const block of blocks) {
+      const res = resultsRef.current.get(block.key)
+      if (!res) continue
+      const expr = normalizeLatex(res.edited ?? res.recognized)
+      const r = res.result
+      if (r.assigned) lines.push(`${r.assigned.name} = ${r.assigned.value}`)
+      else if (r.kind === 'error') lines.push(`${expr}  [错误: ${r.message ?? ''}]`)
+      else if (r.kind === 'none') lines.push(expr)
+      else {
+        const val = r.text || r.latex
+        const suffix = r.alt ? ` (≈ ${r.alt})` : ''
+        if (/=\s*$/.test(expr)) lines.push(`${expr} ${val}${suffix}`)
+        else lines.push(`${expr}  →  ${val}${suffix}`)
+      }
+    }
+    if (!lines.length) {
+      toast('本页还没有可复制的计算结果')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      toast(`已复制 ${lines.length} 条算式与结果`)
+    } catch {
+      toast('剪贴板写入失败')
+    }
+  }
+
+  const exportPagePng = async () => {
+    if (!strokesRef.current.length && !graphsRef.current.length) {
+      toast('当前页面为空，暂无内容可导出')
+      return
+    }
+    let box = strokesRef.current.reduce((acc, s) => unionBox(acc, strokeBox(s)), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity })
+    for (const g of graphsRef.current) {
+      box = unionBox(box, { minX: g.x, minY: g.y, maxX: g.x + g.width, maxY: g.y + g.height })
+    }
+    if (!Number.isFinite(box.minX)) return
+    const pad = 48
+    const extraRight = 220
+    const extraBottom = 90
+    const w = Math.max(480, Math.ceil(box.maxX - box.minX + pad * 2 + extraRight))
+    const h = Math.max(360, Math.ceil(box.maxY - box.minY + pad * 2 + extraBottom))
+    const scale = Math.min(3, Math.max(2, Math.floor(2800 / Math.max(w, h))))
+    const out = document.createElement('canvas')
+    out.width = w * scale
+    out.height = h * scale
+    const ctx = out.getContext('2d')
+    if (!ctx) return
+    ctx.scale(scale, scale)
+    const bg = cssVar('--canvas', '#ffffff')
+    const surface = cssVar('--surface', '#ffffff')
+    const outline = cssVar('--outline', '#cbd5e1')
+    const onSurface = cssVar('--on-surface', '#1d1d1f')
+    const onSurface2 = cssVar('--on-surface-2', '#64748b')
+    const primary = cssVar('--primary', '#2563eb')
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, w, h)
+    // 绘制轻量网格背景
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)'
+    ctx.lineWidth = 1
+    for (let gx = 0; gx <= w; gx += GRID) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke()
+    }
+    for (let gy = 0; gy <= h; gy += GRID) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke()
+    }
+    ctx.save()
+    ctx.translate(pad - box.minX, pad - box.minY)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    for (const s of strokesRef.current) {
+      const color = resolveStrokeColor(s.color)
+      ctx.strokeStyle = color
+      ctx.fillStyle = color
+      drawStroke(ctx, s)
+    }
+    // 将画布中已渲染的嵌入式函数图像一同绘制进导出 PNG
+    for (const g of graphsRef.current) {
+      ctx.save()
+      ctx.fillStyle = surface
+      ctx.strokeStyle = outline
+      ctx.lineWidth = 1.2
+      ctx.beginPath()
+      ctx.roundRect(g.x, g.y, g.width, g.height, 12)
+      ctx.fill()
+      ctx.stroke()
+      const headerH = 32
+      ctx.fillStyle = onSurface
+      ctx.font = '500 12px system-ui, sans-serif'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(g.expression.slice(0, 32), g.x + 10, g.y + headerH / 2, g.width - 20)
+      ctx.strokeStyle = outline
+      ctx.beginPath()
+      ctx.moveTo(g.x, g.y + headerH)
+      ctx.lineTo(g.x + g.width, g.y + headerH)
+      ctx.stroke()
+      const svgNode = overlayRef.current?.querySelector<SVGSVGElement>(`[data-graph-id="${g.id}"] svg`)
+      if (svgNode) {
+        try {
+          const rawSvg = new XMLSerializer()
+            .serializeToString(svgNode)
+            .replaceAll('var(--primary)', primary)
+            .replaceAll('var(--outline)', outline)
+            .replaceAll('var(--surface)', surface)
+            .replaceAll('var(--on-surface-2)', onSurface2)
+            .replaceAll('var(--on-surface)', onSurface)
+          const img = new Image()
+          const svgBlob = new Blob([rawSvg], { type: 'image/svg+xml;charset=utf-8' })
+          const svgUrl = URL.createObjectURL(svgBlob)
+          await new Promise<void>((resolve) => {
+            img.onload = () => {
+              ctx.drawImage(img, g.x + 2, g.y + headerH + 2, g.width - 4, g.height - headerH - 4)
+              URL.revokeObjectURL(svgUrl)
+              resolve()
+            }
+            img.onerror = () => {
+              URL.revokeObjectURL(svgUrl)
+              resolve()
+            }
+            img.src = svgUrl
+          })
+        } catch { /* 图像序列化失败时保留外框 */ }
+      }
+      ctx.restore()
+    }
+    // 绘制计算结果文字（带浅背景描边，在网格上依然清晰）
+    const isDark = document.documentElement.classList.contains('dark')
+    const ansColor = isDark ? '#FBBF24' : '#B45309'
+    ctx.textBaseline = 'middle'
+    for (const it of overlay) {
+      const r = it.res?.result
+      if (!r || r.kind === 'error' || (r.kind === 'none' && !r.assigned)) continue
+      const label = r.assigned ? `✓ = ${r.assigned.value}` : (r.text || plainOf(r.latex)) + (r.alt ? ` ≈ ${r.alt}` : '')
+      if (!label) continue
+      ctx.font = `${it.fontWeight ?? 500} ${it.fontSize}px ${HAND_FONT}`
+      const drawY = it.y
+      ctx.strokeStyle = bg
+      ctx.lineWidth = 4
+      ctx.lineJoin = 'round'
+      ctx.strokeText(label, it.x, drawY)
+      ctx.fillStyle = ansColor
+      ctx.fillText(label, it.x, drawY)
+    }
+    ctx.restore()
+    const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'))
+    if (!blob) {
+      toast('导出图片失败')
+      return
+    }
+    const safeTitle = (pageRef.current?.title || '手写计算').replace(/[\\/:*?"<>|]/g, '_')
+    const saved = await saveBlob(blob, `${safeTitle}.png`)
+    toast(`已导出到${saved}`, openSavedAction())
+  }
+
   /* ---------- 视图 ---------- */
 
   const percent = model.phase === 'loading' && model.ratio >= 0 ? Math.round(model.ratio * 100) : null
   const editingGraph = graphsRef.current.find((graph) => graph.id === plotGraphId)
+  const varList = Object.entries(pageVariables)
+
+  const previewCompute = useCallback(
+    (latex: string) => {
+      const engine = engineRef.current
+      if (!engine) return Promise.reject(new Error('计算器未就绪'))
+      return engine.compute('__preview__', latex, { angleMode, variables: pageVariables })
+    },
+    [angleMode, engineRef, pageVariables],
+  )
 
   return (
     // AppShell 对本路由开沉浸模式（隐藏全局顶栏 / 底栏，内容区 h-full 不滚动），这里铺满即可。
@@ -654,7 +945,11 @@ export function MathNotesPage() {
         onUnlockFinger={unlockFinger}
         onToggleLatex={() => setShowLatex((v) => !v)}
         onAddPage={() => void addPage()}
+        onRenamePage={() => setRenameOpen(true)}
         onClearAll={clearAll}
+        onNewFormula={openNewManualFormula}
+        onCopyAll={() => void copyAllFormulas()}
+        onExportPng={() => void exportPagePng()}
         onOpenPlot={() => {
           setPlotSource(undefined)
           setPlotGraphId(undefined)
@@ -746,13 +1041,29 @@ export function MathNotesPage() {
           </button>
         )}
 
+        {varList.length > 0 && (
+          <div
+            aria-label="当前页已定义变量"
+            className="absolute top-2.5 left-2.5 z-10 flex flex-wrap items-center gap-1 max-w-[calc(100%-1.25rem)] pointer-events-none"
+          >
+            {varList.map(([name, val]) => (
+              <span
+                key={name}
+                className="inline-flex items-center rounded-full border border-ok/35 bg-surface/90 backdrop-blur px-2 py-0.5 text-[11px] font-medium text-ok shadow-xs tabular-nums"
+              >
+                {name} = {Number(val.toPrecision(6))}
+              </span>
+            ))}
+          </div>
+        )}
+
         {!strokesRef.current.length && pageId && (
-          <div className="absolute inset-x-0 top-[28%] text-center pointer-events-none px-6">
+          <div className="absolute inset-x-0 top-[28%] text-center pointer-events-none px-6 flex flex-col items-center">
             <p className="text-[15px] font-medium text-on-surface-2" style={{ fontFamily: HAND_FONT }}>
               在任意位置写下算式，写完「=」就有答案
             </p>
             <p className="text-[12px] text-on-surface-2/80 mt-2 leading-relaxed">
-              方程、方程组不写等号，停笔一秒后解会出现在下方 · 双指滑动翻看 · 点答案可修改
+              方程、方程组、不等式不写等号也可自动计算 · 用笔来回涂抹即可快速擦除 · 双指可平移缩放 · 点答案可纠错或绘图
             </p>
           </div>
         )}
@@ -763,18 +1074,25 @@ export function MathNotesPage() {
           recognizing={recognizing}
           onOpenSettings={() => setSettingsOpen(true)}
           onRetryModel={() => void loadModel({ fresh: true })}
+          onNewFormula={openNewManualFormula}
         />
       </div>
 
       <MathNotesDialogs
         editingBlock={editingBlock}
         editBusy={editBusy}
-        onCloseEdit={() => setEditing(null)}
+        pageVariables={pageVariables}
+        previewCompute={previewCompute}
+        onCloseEdit={() => {
+          setCreatingManual(false)
+          setEditing(null)
+        }}
         onSubmitEdit={(latex) => void submitEdit(latex)}
         onResetEdit={() => void resetEdit()}
         onPlotFromEdit={(latex) => {
-          setPlotSource(editing ?? undefined)
+          setPlotSource(editing === '__new_manual__' ? undefined : (editing ?? undefined))
           setPlotGraphId(undefined)
+          setCreatingManual(false)
           setEditing(null)
           setPlotInput(latex)
           setPlotOpen(true)
@@ -794,8 +1112,8 @@ export function MathNotesPage() {
               graph.id === existing.id ? { ...graph, expression, sourceKey, range, tMin, tMax, centerX, centerY, hiddenCurves } : graph,
             )
           } else {
-            const width = Math.min(280, Math.max(180, viewW - 32))
-            const height = 220
+            const width = Math.min(320, Math.max(200, viewW - 32))
+            const height = 250
             const pos = findGraphPlacement(clusterStrokes(strokesRef.current), graphsRef.current, {
               width,
               height,
@@ -827,6 +1145,10 @@ export function MathNotesPage() {
           bump()
           markEdited('user')
         }}
+        renameOpen={renameOpen}
+        pageTitle={pageRef.current?.title ?? ''}
+        onRenameOpenChange={setRenameOpen}
+        onRenamePage={(title) => void renameCurrentPage(title)}
         deleteOpen={deleteOpen}
         onDeleteOpenChange={setDeleteOpen}
         onConfirmDelete={() => void removePage()}

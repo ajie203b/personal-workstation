@@ -3,6 +3,7 @@ import { Dialog } from '@/shared/ui/Sheet'
 import { Button } from '@/shared/ui/Button'
 import type { PlotCurve } from './plot'
 import { findIntersections, nearestCurvePoint } from './plotIntersections'
+import { computeAxisTicks } from './plotTicks'
 
 /** 曲线按空值和大幅跳变断开，避免将渐近线画成竖线。 */
 export function plotPaths(values: (number | null)[], range: number, centerY = 0): string[] {
@@ -202,6 +203,12 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
   }, [open, svgEl])
 
   const activePoint = hoverPoint ?? inspected
+  const xTicks = useMemo(() => (is3d ? [] : computeAxisTicks(centerX, range, 'x', 6)), [is3d, centerX, range])
+  const yTicks = useMemo(() => (is3d ? [] : computeAxisTicks(centerY, range, 'y', 6)), [is3d, centerY, range])
+  const axisX = 200 - centerX / range * 200
+  const axisY = 200 + centerY / range * 200
+  const clampedAxisX = Math.max(14, Math.min(386, axisX))
+  const clampedAxisY = Math.max(16, Math.min(384, axisY))
   const axisLabelX = Math.min(352, Math.max(6, 205 - centerX / range * 200))
   const axisLabelY = Math.min(388, Math.max(18, 215 + centerY / range * 200))
 
@@ -218,7 +225,7 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             {activePoint.label}：({formatCoord(activePoint.x)}, {formatCoord(activePoint.y)})
           </div>
         )}
-        <svg ref={setSvgEl} viewBox="0 0 400 400" role="img" aria-label={`函数 ${expression} 的图像`} className="w-full max-h-[min(38dvh,300px)]" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'none', cursor: 'grab' }}
+        <svg ref={setSvgEl} viewBox="0 0 400 400" role="img" aria-label={`函数 ${expression} 的图像`} className="w-full max-h-[min(44dvh,340px)] bg-surface" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'none', cursor: 'grab' }}
           onPointerDown={e => {
             e.currentTarget.setPointerCapture(e.pointerId)
             pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -318,8 +325,20 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             drag.current = null
           }}>
           {!is3d && <>
-            {Array.from({ length: 9 }, (_, i) => (i + 1) * 40).map(n => <g key={n} stroke="var(--outline)" strokeWidth="0.6" opacity="0.6"><path d={`M${n} 0V400 M0 ${n}H400`} /></g>)}
-            <path d={`M${200 - centerX / range * 200} 0V400 M0 ${200 + centerY / range * 200}H400`} stroke="var(--on-surface-2)" strokeWidth="1.2" />
+            <g stroke="var(--outline)" strokeWidth="0.7" opacity="0.65">
+              {xTicks.map(t => <line key={`gx-${t.label}`} x1={t.pos} y1="0" x2={t.pos} y2="400" />)}
+              {yTicks.map(t => <line key={`gy-${t.label}`} x1="0" y1={t.pos} x2="400" y2={t.pos} />)}
+            </g>
+            <g stroke="var(--on-surface-2)" strokeWidth="1.35">
+              {axisX >= 0 && axisX <= 400 && <>
+                <line x1={axisX} y1="400" x2={axisX} y2="6" />
+                <path d={`M${axisX - 4} 13 L${axisX} 4 L${axisX + 4} 13`} fill="none" />
+              </>}
+              {axisY >= 0 && axisY <= 400 && <>
+                <line x1="0" y1={axisY} x2="394" y2={axisY} />
+                <path d={`M387 ${axisY - 4} L396 ${axisY} L387 ${axisY + 4}`} fill="none" />
+              </>}
+            </g>
           </>}
           {is3d && [[1,0,0,'x'],[0,1,0,'y'],[0,0,1,'z']].map(([x,y,z,label]) => {
             const a = project3d(0,0,0,yaw,pitch), b = project3d(x as number,y as number,z as number,yaw,pitch)
@@ -330,15 +349,35 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
             const paths = curve.kind === 'explicit' ? plotPaths(curve.values, range, centerY)
               : curve.kind === 'implicit' ? curve.segments.map(([x1, y1, x2, y2]) => `M${x1.toFixed(2)} ${y1.toFixed(2)}L${x2.toFixed(2)} ${y2.toFixed(2)}`)
               : curve.kind === 'parametric' ? parametricPaths(curve.points, range, centerX, centerY) : curve.kind === 'parametric3d' ? parametric3dPaths(curve.points, range, yaw, pitch) : surfacePaths(curve.values, range, yaw, pitch)
-            return <g key={index} fill="none" stroke={colors[index % colors.length]} strokeWidth={curve.kind === 'surface' ? 1.2 : 2.5} strokeLinejoin="round" strokeLinecap="round">{paths.map((d, i) => <path key={i} d={d} />)}</g>
+            return <g key={index} fill="none" stroke={colors[index % colors.length]} strokeWidth={curve.kind === 'surface' ? 1.3 : 2.6} strokeLinejoin="round" strokeLinecap="round">{paths.map((d, i) => <path key={i} d={d} />)}</g>
           })}</svg>
           {!is3d && intersections.points.map((point, i) => <g key={`${point.first}-${point.second}-${i}`} aria-label={`交点 ${i + 1}，坐标 ${formatCoord(point.x)}，${formatCoord(point.y)}`}>
             <title>{`交点 ${i + 1}：(${formatCoord(point.x)}, ${formatCoord(point.y)})`}</title>
             <circle cx={point.screenX} cy={point.screenY} r="5" fill="var(--surface)" stroke="var(--on-surface)" strokeWidth="2" />
-            <text x={Math.min(386, Math.max(8, point.screenX + 7))} y={Math.min(394, Math.max(12, point.screenY - 7))} fill="var(--on-surface)" fontSize="12" fontWeight="700">{i + 1}</text>
+            <text x={Math.min(386, Math.max(8, point.screenX + 7))} y={Math.min(394, Math.max(12, point.screenY - 7))} fill="var(--on-surface)" stroke="var(--surface)" strokeWidth="3" style={{ paintOrder: 'stroke' }} fontSize="12" fontWeight="700">{i + 1}</text>
           </g>)}
-          {!is3d && activePoint && <g aria-label={`曲线坐标 ${formatCoord(activePoint.x)}，${formatCoord(activePoint.y)}`}><circle cx={activePoint.screenX} cy={activePoint.screenY} r="5" fill="var(--primary)" stroke="var(--surface)" strokeWidth="2" /></g>}
-          {!is3d && <g fill="var(--on-surface-2)" fontSize="11"><text x="4" y={Math.min(392, Math.max(14, axisLabelY - 21))}>{formatCoord(centerX - range)}</text><text x="396" y={axisLabelY} textAnchor="end">{formatCoord(centerX + range)}</text><text x={axisLabelX} y="15">{formatCoord(centerY + range)}</text><text x={axisLabelX} y="394">{formatCoord(centerY - range)}</text></g>}
+          {!is3d && activePoint && <g aria-label={`曲线坐标 ${formatCoord(activePoint.x)}，${formatCoord(activePoint.y)}`}>
+            <line x1={activePoint.screenX} y1={activePoint.screenY} x2={activePoint.screenX} y2={clampedAxisY} stroke="var(--primary)" strokeWidth="1" strokeDasharray="3 3" opacity="0.65" />
+            <line x1={activePoint.screenX} y1={activePoint.screenY} x2={clampedAxisX} y2={activePoint.screenY} stroke="var(--primary)" strokeWidth="1" strokeDasharray="3 3" opacity="0.65" />
+            <circle cx={activePoint.screenX} cy={activePoint.screenY} r="5.5" fill="var(--primary)" stroke="var(--surface)" strokeWidth="2" />
+          </g>}
+          {!is3d && <g fill="var(--on-surface-2)" stroke="var(--surface)" strokeWidth="3" style={{ paintOrder: 'stroke' }} fontSize="11">
+            {xTicks.map(t => {
+              if (t.isZero || t.pos < 28 || t.pos > 362) return null
+              const y = clampedAxisY > 368 ? clampedAxisY - 8 : clampedAxisY + 14
+              return <text key={`lx-${t.label}`} x={t.pos} y={y} textAnchor="middle">{t.label}</text>
+            })}
+            {yTicks.map(t => {
+              if (t.isZero || t.pos < 22 || t.pos > 378) return null
+              const rightSide = clampedAxisX < 340
+              return <text key={`ly-${t.label}`} x={rightSide ? clampedAxisX + 6 : clampedAxisX - 6} y={t.pos + 4} textAnchor={rightSide ? 'start' : 'end'}>{t.label}</text>
+            })}
+            {axisX >= 14 && axisX <= 386 && axisY >= 14 && axisY <= 386 && <text x={axisX + 5} y={axisY + 13} fontSize="10.5">0</text>}
+            <text x="4" y={Math.min(392, Math.max(14, axisLabelY - 21))}>{formatCoord(centerX - range)}</text>
+            <text x="396" y={axisLabelY} textAnchor="end">{formatCoord(centerX + range)}</text>
+            <text x={axisLabelX} y="15">{formatCoord(centerY + range)}</text>
+            <text x={axisLabelX} y="394">{formatCoord(centerY - range)}</text>
+          </g>}
         </svg>
       </div>
       {is3d && <div className="flex items-center gap-2 text-xs text-on-surface-2 flex-wrap"><span>拖动旋转</span><Button variant="outline" aria-label="向左旋转" onClick={() => setYaw(v => v - Math.PI / 12)}>左转</Button><Button variant="outline" aria-label="向右旋转" onClick={() => setYaw(v => v + Math.PI / 12)}>右转</Button><Button variant="outline" aria-label="重置视角" onClick={() => { setYaw(-0.65); setPitch(0.65) }}>重置视角</Button></div>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { answerAnchor, boxesOverlap, columnRows, systemRows, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, findGraphPlacement, fitAnswer, layoutOverlayItems, strokesHitBy } from './geometry'
+import { answerAnchor, boxesOverlap, columnRows, detectScratchOut, systemRows, clusterStrokes, detectTrailingEquals, estimateAnswerWidth, estimateCharHeight, findGraphPlacement, fitAnswer, layoutOverlayItems, strokesHitBy } from './geometry'
 import { rasterizeStrokes, toPixelValues, MFR_INPUT_SIZE } from './preprocess'
 import { writeText } from './testInk'
 import type { Stroke } from './types'
@@ -253,4 +253,29 @@ describe('layoutOverlayItems / findGraphPlacement', () => {
     const p2 = findGraphPlacement([b1], [{ x: p1.x, y: p1.y, width: 280, height: 220 }], { width: 280, height: 220, viewWidth: 390, scrollY: 0 })
     expect(boxesOverlap({ minX: p2.x, minY: p2.y, maxX: p2.x + 280, maxY: p2.y + 220 }, { minX: p1.x, minY: p1.y, maxX: p1.x + 280, maxY: p1.y + 220 }, 0)).toBe(false)
   })
+})
+
+it('支持 3 行竖式分行，以及涂抹擦除手势识别（不误伤正常字符）', () => {
+  const r1 = writeText('12', 30, 10, 40, 'r1')
+  const r2 = writeText('+34', 30, 65, 40, 'r2')
+  const r3 = writeText('+56', 30, 120, 40, 'r3')
+  const bar: Stroke = { id: 'bar3', width: 3, points: [{ x: 20, y: 175, p: 0.5, t: 0 }, { x: 150, y: 175, p: 0.5, t: 1 }] }
+  const colStrokes = [...r1, ...r2, ...r3, bar]
+  expect(columnRows(colStrokes, 40)?.rows).toHaveLength(3)
+  expect(clusterStrokes(colStrokes, { charHeight: 40 })).toHaveLength(1)
+
+  const target = writeText('12+3', 40, 40, 40, 't')
+  // 水平来回涂抹覆盖 target 的前几笔
+  const scratchPts = []
+  for (let i = 0; i <= 24; i++) {
+    const x = i % 2 === 0 ? 35 : 135
+    const y = 55 + (i % 3) * 4
+    scratchPts.push({ x, y, p: 0.5, t: i * 10 })
+  }
+  const scratch: Stroke = { id: 'sc', width: 3, points: scratchPts }
+  const hit = detectScratchOut(scratch, target, 40)
+  expect(hit.length).toBeGreaterThan(0)
+  // 正常的数字书写不被误判为涂抹
+  const normalEight = writeText('8', 40, 40, 40, 'n8')[0]
+  expect(detectScratchOut(normalEight, target, 40)).toEqual([])
 })

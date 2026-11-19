@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { clusterStrokes, detectTrailingEquals, estimateCharHeight } from './geometry'
+import { boxH, boxW, clusterStrokes, detectTrailingEquals, estimateCharHeight } from './geometry'
 import { findGraphSource } from './graphLink'
 import { MathEngine } from './mathEngine'
 import { RecognitionQueue } from './recognitionQueue'
@@ -206,7 +206,11 @@ export function useMathRecognition({
     const jobs: RecognizeJob[] = []
     for (const block of blocks) {
       if (resultsRef.current.has(block.key)) continue
-      jobs.push({ key: block.key, pageId: page.id, strokes: strokes.filter((s) => block.strokeIds.includes(s.id)), charHeight: h })
+      // 忽略孤立误触微点（单笔且尺寸极小），避免弹出无意义的识别错误标记
+      if (block.strokeIds.length === 1 && boxW(block.box) < 4 && boxH(block.box) < 4) continue
+      const blockStrokes = strokes.filter((s) => block.strokeIds.includes(s.id))
+      const blockH = estimateCharHeight(blockStrokes, h)
+      jobs.push({ key: block.key, pageId: page.id, strokes: blockStrokes, charHeight: blockH })
     }
     getQueue().submit(jobs)
   }, [getQueue, pageRef, strokesRef, resultsRef])
@@ -222,7 +226,8 @@ export function useMathRecognition({
   const scheduleRecognition = useCallback(
     (immediate: boolean) => {
       window.clearTimeout(idleTimer.current)
-      idleTimer.current = window.setTimeout(runRecognition, immediate ? 60 : IDLE_MS)
+      // 写完「=」后留 360ms 缓冲：写完算式几乎立刻出答案，同时在写 2x+3=7 这类方程时不会过早抢跑
+      idleTimer.current = window.setTimeout(runRecognition, immediate ? 360 : IDLE_MS)
     },
     [runRecognition, idleTimer],
   )

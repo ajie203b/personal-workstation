@@ -172,7 +172,7 @@ describe('OverlayAnswer / LassoSelectionOverlay / ModelStatusBanner P0-P1 升级
     expect(lassoBar.style.top).toBe('calc(100% + 8px)')
   })
 
-  it('待识别块在模型加载期间直接显示「手动输入」入口，变量定义展示 ✓=val 徽标，模型条可收起', () => {
+  it('书写/待识别期间不渲染遮挡笔尖的「手动输入」浮标，变量定义展示 ✓=val 徽标，模型条可收起', () => {
     const manual = vi.fn()
     const el = render(
       <>
@@ -205,12 +205,12 @@ describe('OverlayAnswer / LassoSelectionOverlay / ModelStatusBanner P0-P1 升级
           recognizing={0}
           onOpenSettings={() => {}}
           onRetryModel={() => {}}
+          onNewFormula={manual}
         />
       </>,
     )
-    const manualBtn = el.querySelector<HTMLButtonElement>('button[aria-label="手动输入算式"]')!
-    act(() => manualBtn.click())
-    expect(manual).toHaveBeenCalledOnce()
+    // 待识别块不弹出紧跟笔迹的「手动输入」按钮，避免影响平板手写
+    expect(el.querySelector('button[aria-label="手动输入算式"]')).toBeNull()
     expect(el.textContent).toContain('✓ = 10')
 
     const closeBtn = el.querySelector<HTMLButtonElement>('button[aria-label="收起模型下载提示"]')!

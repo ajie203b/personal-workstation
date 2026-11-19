@@ -31,3 +31,15 @@ it('支持 LaTeX 单位写法、大小写、温度、面积、体积、存储、
   expect(computeLatex('6m / 2 =').text).toBe('3 m')
   expect(computeLatex('1km / 200m =').text).toBe('5')
 })
+
+it('支持等号目标单位换算、复合单位连写及中国市制/常用物理单位', () => {
+  expect(computeLatex('5km=m').text).toBe('5000 m')
+  expect(computeLatex('100°C=°F').text).toBe('212 °F')
+  expect(computeLatex('2小时30分钟=').text).toBe('2.5 小时')
+  expect(computeLatex('1m50cm=').text).toBe('1.5 m')
+  expect(computeLatex('2kg→斤').text).toBe('4 斤')
+  expect(computeLatex('1公顷→亩').text).toBe('15 亩')
+  expect(computeLatex('1kWh→kJ').text).toBe('3600 kJ')
+  expect(computeLatex('1MPa→kPa').text).toBe('1000 kPa')
+  expect(computeLatex('2.4GHz→MHz').text).toBe('2400 MHz')
+})
