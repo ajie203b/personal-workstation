@@ -64,13 +64,29 @@ if (!result.models || result.models.length < 3) {
   process.exit(1)
 }
 
+const FORCE = process.env.FORCE_INTEL_UPDATE === '1'
 const payload = {
   generatedAt: new Date().toISOString(),
   source: key ? 'https://artificialanalysis.ai/' : PAGE,
   indexVersion: result.indexVersion ?? undefined,
   models: result.models,
 }
-await fs.mkdir(path.dirname(OUT), { recursive: true })
-await fs.writeFile(OUT, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-console.log(`已写入 ${result.models.length} 个模型 → ${OUT}`)
+
+let unchanged = false
+if (!FORCE) {
+  try {
+    const prev = JSON.parse(await fs.readFile(OUT, 'utf8'))
+    const prevKey = JSON.stringify({ indexVersion: prev?.indexVersion ?? null, models: prev?.models ?? null })
+    const nextKey = JSON.stringify({ indexVersion: payload.indexVersion ?? null, models: payload.models })
+    unchanged = prevKey === nextKey
+  } catch { /* 首次生成或旧文件损坏时覆盖 */ }
+}
+
+if (unchanged) {
+  console.log('榜单排名与分数没有变化，跳过写入')
+} else {
+  await fs.mkdir(path.dirname(OUT), { recursive: true })
+  await fs.writeFile(OUT, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+  console.log(`已写入 ${result.models.length} 个模型 → ${OUT}`)
+}
 console.log(`榜首：${result.models[0].name} ${result.models[0].score}`)

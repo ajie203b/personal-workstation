@@ -1,13 +1,14 @@
 name: Update intelligence ranking
 
-# 每天抓一次 Artificial Analysis 智能指数：
+# 每 4 小时抓取一次 Artificial Analysis 智能指数，有变化时提交到 main 并同步到 gh-pages：
 # - public/intelligence.json：结构化排名（官方 API 或公开榜单页）
 # - public/intelligence/chart.png：官网首屏图表的浏览器截图（Recharts 无稳定图片地址）
-# 应用运行时优先读 main 上的新 JSON / 新图表，离线回退内置版本，
-# 因此网页版、桌面版与安卓包都不用重新发版也能拿到新榜单。
+# - public/intelligence/chart-meta.json：图表指纹与更新时间（供客户端缓存失效与展示）
+# 同步到 gh-pages 后自动触发 Pages 重建，国内直连 GitHub Pages 也能在几分钟内看到最新榜单，
+# 网页版、桌面版与安卓包都不用重新发版。
 on:
   schedule:
-    - cron: '17 5 * * *' # UTC 05:17 = 北京时间 13:17
+    - cron: '17 */4 * * *' # 每 4 小时一次（北京时间 01:17 / 05:17 / 09:17 / 13:17 / 17:17 / 21:17）
   workflow_dispatch:
     inputs:
       force_chart:
@@ -17,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: intelligence
@@ -64,12 +66,45 @@ jobs:
 
       - name: Commit chart if changed
         run: |
-          if [ -z "$(git status --porcelain -- public/intelligence/chart.png scripts/intelligence-chart.json)" ]; then
+          if [ -z "$(git status --porcelain -- public/intelligence/chart.png public/intelligence/chart-meta.json scripts/intelligence-chart.json)" ]; then
             echo "官方图表没有变化，跳过提交"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/intelligence/chart.png scripts/intelligence-chart.json
-          git commit -m "data: 每日更新官方模型图表"
+          git add public/intelligence/chart.png public/intelligence/chart-meta.json scripts/intelligence-chart.json
+          git commit -m "data: 更新官方模型图表"
           git push
+
+      # 关键：应用国内优先读 GitHub Pages（gh-pages 分支），必须把最新 JSON 与图表同步过去并触发重建
+      - name: Sync intelligence assets to gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! git ls-remote --heads origin gh-pages | grep -q 'refs/heads/gh-pages'; then
+            echo "远端尚无 gh-pages 分支，跳过同步"
+            exit 0
+          fi
+          git fetch origin gh-pages:gh-pages --depth=5
+          WORK="$(mktemp -d)"
+          trap 'git worktree remove --force "$WORK" 2>/dev/null || rm -rf "$WORK"' EXIT
+          git worktree add "$WORK" gh-pages
+          cp public/intelligence.json "$WORK/intelligence.json"
+          mkdir -p "$WORK/intelligence"
+          cp public/intelligence/chart.png "$WORK/intelligence/chart.png"
+          if [ -f public/intelligence/chart-meta.json ]; then
+            cp public/intelligence/chart-meta.json "$WORK/intelligence/chart-meta.json"
+          fi
+          cd "$WORK"
+          git add intelligence.json intelligence/chart.png
+          [ -f intelligence/chart-meta.json ] && git add intelligence/chart-meta.json
+          if git diff --cached --quiet; then
+            echo "GitHub Pages 榜单数据已是最新，跳过推送"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "data: 同步最新模型智能排名与图表"
+          git push origin gh-pages
+          # GITHUB_TOKEN 推送不会自动触发分支模式 Pages 重建，显式请求一次构建确保立即可见
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null || true

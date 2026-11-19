@@ -18,6 +18,7 @@ const PAGE = 'https://artificialanalysis.ai/'
 const OUT = path.resolve('public/intelligence/chart.png')
 const TMP = `${OUT}.tmp.png`
 const META = path.resolve('scripts/intelligence-chart.json')
+const PUBLIC_META = path.resolve('public/intelligence/chart-meta.json')
 const CHROME = process.env.CHROME_PATH?.trim()
 const FORCE = process.env.FORCE_CHART_SCREENSHOT === '1'
 
@@ -106,6 +107,13 @@ try {
   }
 
   if (!FORCE && previous?.fingerprint === hash && hasImage) {
+    // 确保 public/intelligence/chart-meta.json 与 scripts/intelligence-chart.json 同步，方便前端读取更新时间与版本指纹
+    const metaPayload = `${JSON.stringify(previous, null, 2)}\n`
+    let hasPublicMeta = false
+    try {
+      hasPublicMeta = (await fs.readFile(PUBLIC_META, 'utf8')) === metaPayload
+    } catch { /* 首次同步 */ }
+    if (!hasPublicMeta) await fs.writeFile(PUBLIC_META, metaPayload, 'utf8')
     console.log('官方图表内容没有变化，跳过截图')
   } else {
     // 官网图表底色是页面白卡，SVG 本身是透明的；补上白底，深色主题下文字才看得清
@@ -120,7 +128,9 @@ try {
     if (stat.size < 30_000) throw new Error(`截图文件异常过小（${stat.size} 字节），可能只截到了空白`)
 
     await fs.rename(TMP, OUT)
-    await fs.writeFile(META, `${JSON.stringify({ fingerprint: hash, generatedAt: new Date().toISOString() }, null, 2)}\n`, 'utf8')
+    const metaPayload = `${JSON.stringify({ fingerprint: hash, generatedAt: new Date().toISOString() }, null, 2)}\n`
+    await fs.writeFile(META, metaPayload, 'utf8')
+    await fs.writeFile(PUBLIC_META, metaPayload, 'utf8')
     console.log(`已更新官方图表 ${Math.round(box.width)}×${Math.round(box.height)} → ${OUT}（${Math.round(stat.size / 1024)} KB）`)
   }
 } finally {

@@ -24,12 +24,13 @@ const CACHE_KEY = 'intelData'
 const AT_KEY = 'intelFetchedAt'
 /** 上次「尝试」的时间（不管成没成）。只用来节流，不参与「更新于」的展示 */
 const ATTEMPT_KEY = 'intelAttemptAt'
-const DAY_MS = 24 * 60 * 60 * 1000
-/** 拉取失败后的重试间隔（成功则按 24h 走） */
-const RETRY_MS = 6 * 60 * 60 * 1000
+/** 成功后 2 小时静默刷新一次，配合后台每 4 小时抓取确保及时更新 */
+const STALE_MS = 2 * 60 * 60 * 1000
+/** 拉取失败后的重试间隔（30 分钟后再试） */
+const RETRY_MS = 30 * 60 * 1000
 const MAX_MODELS = 30
 
-/** 远端数据源：优先 raw（每日 Action 直接提交到这里），Pages 作为备选 */
+/** 远端数据源：优先 GitHub Pages（定时 Action 同步至 gh-pages），raw 作为备选 */
 const SOURCES = INTEL_JSON_URLS
 
 function num(v: unknown): number | null {
@@ -136,7 +137,7 @@ export async function refreshIntelDetailed(force = false): Promise<IntelRefresh>
   const cached = async (): Promise<IntelRefresh> => ({ data: await loadCachedIntel(), fetched: false })
   if (!force) {
     const at = await getLastIntelFetch()
-    if (at && Date.now() - at < DAY_MS) return cached()
+    if (at && Date.now() - at < STALE_MS) return cached()
     const attempt = await getLastAttempt()
     if (attempt && Date.now() - attempt < RETRY_MS) return cached()
   }

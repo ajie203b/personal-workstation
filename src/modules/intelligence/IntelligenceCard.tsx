@@ -1,39 +1,120 @@
-import { useEffect, useRef, useState } from 'react'
-import { ExternalLink, Maximize2, Sparkles, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ExternalLink, Maximize2, RefreshCw, Sparkles, X } from 'lucide-react'
 import { openExternal } from '@/lib/links'
 import { isNative } from '@/lib/native'
-import { INTEL_CHART_URLS } from '@/lib/intelSources'
+import { INTEL_CHART_META_URLS, INTEL_CHART_URLS } from '@/lib/intelSources'
 import { cn } from '@/lib/cn'
+import { useUi } from '@/stores/ui'
 
-/** 保留 Artificial Analysis 官方图表原图，支持横向查看及大图弹窗预览。 */
+interface ChartMeta {
+  fingerprint?: string
+  generatedAt?: string
+}
+
+function formatUpdatedAt(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${mi}`
+}
+
+async function fetchChartMeta(url: string, signal?: AbortSignal): Promise<ChartMeta | null> {
+  try {
+    const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store', signal })
+    if (!res.ok) return null
+    const body = await res.json() as ChartMeta | null
+    if (!body || typeof body !== 'object') return null
+    return {
+      fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined,
+      generatedAt: typeof body.generatedAt === 'string' ? body.generatedAt : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+function probeImage(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = new Image()
+    probe.onload = () => resolve(true)
+    probe.onerror = () => resolve(false)
+    probe.src = url
+  })
+}
+
+/** 保留 Artificial Analysis 官方图表原图，支持横向查看、大图弹窗预览与即时刷新。 */
 export function IntelligenceCard() {
+  const toast = useUi((s) => s.toast)
   const [dragging, setDragging] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
   const [zoomed, setZoomed] = useState(false)
   const [fitWidth, setFitWidth] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [updatedAt, setUpdatedAt] = useState('')
   const dragRef = useRef<{ x: number; left: number } | null>(null)
-  // 内置图保证离线/弱网立即有画面；每日 Action 提交的新图加载成功后再替换
+  const mountedRef = useRef(true)
+  // 内置图保证离线/弱网立即有画面；远端最新图加载成功后再替换
   const localChart = `${import.meta.env.BASE_URL}intelligence/chart.png`
+  const localMeta = `${import.meta.env.BASE_URL}intelligence/chart-meta.json`
   const [chartSrc, setChartSrc] = useState(localChart)
 
-  useEffect(() => {
-    let cancelled = false
-    const day = new Date().toISOString().slice(0, 10)
-    const tryAt = (index: number) => {
-      if (cancelled || index >= INTEL_CHART_URLS.length) return
-      const url = `${INTEL_CHART_URLS[index]}?v=${day}`
-      const probe = new Image()
-      probe.onload = () => {
-        if (cancelled) return
-        setImageFailed(false)
-        setChartSrc(url)
+  const loadLatestChart = useCallback(async (manual: boolean, signal?: AbortSignal) => {
+    setRefreshing(true)
+    try {
+      let bestUrl = ''
+      let bestUpdatedAt = ''
+      let bestTs = -1
+
+      // 优先读取国内直连源（GitHub Pages），失败再回退 raw；每次带新鲜参数绕过整日缓存
+      for (let i = 0; i < INTEL_CHART_URLS.length; i++) {
+        if (signal?.aborted) return
+        const meta = await fetchChartMeta(INTEL_CHART_META_URLS[i], signal)
+        const token = manual ? String(Date.now()) : (meta?.fingerprint?.slice(0, 12) || String(Math.floor(Date.now() / 600_000)))
+        const url = `${INTEL_CHART_URLS[i]}?v=${token}`
+        const ok = await probeImage(url)
+        if (signal?.aborted) return
+        if (!ok) continue
+        const ts = meta?.generatedAt ? Date.parse(meta.generatedAt) : 0
+        if (!bestUrl || (Number.isFinite(ts) && ts > bestTs)) {
+          bestUrl = url
+          bestUpdatedAt = meta?.generatedAt ?? ''
+          bestTs = Number.isFinite(ts) ? ts : 0
+        }
+        // 主源已拿到带元数据的最新图则直接采用，避免国内环境等待备选源超时
+        if (i === 0 && meta?.generatedAt) break
       }
-      probe.onerror = () => tryAt(index + 1)
-      probe.src = url
+
+      if (!mountedRef.current || signal?.aborted) return
+      if (bestUrl) {
+        setImageFailed(false)
+        setChartSrc(bestUrl)
+        if (bestUpdatedAt) setUpdatedAt(bestUpdatedAt)
+        if (manual) toast('模型榜单已刷新')
+      } else {
+        const fallbackMeta = await fetchChartMeta(localMeta, signal)
+        if (mountedRef.current && fallbackMeta?.generatedAt) {
+          setUpdatedAt((prev) => prev || fallbackMeta.generatedAt!)
+        }
+        if (manual) toast('暂时无法获取最新图表，已保留当前显示')
+      }
+    } finally {
+      if (mountedRef.current) setRefreshing(false)
     }
-    tryAt(0)
-    return () => { cancelled = true }
-  }, [])
+  }, [localMeta, toast])
+
+  useEffect(() => {
+    mountedRef.current = true
+    const ctrl = new AbortController()
+    void loadLatestChart(false, ctrl.signal)
+    return () => {
+      mountedRef.current = false
+      ctrl.abort()
+    }
+  }, [loadLatestChart])
 
   const openOriginal = (e: { preventDefault: () => void }) => {
     e.preventDefault()
@@ -56,8 +137,20 @@ export function IntelligenceCard() {
         </span>
         <div className="flex-1 min-w-0">
           <h2 className="text-[14px] font-semibold">模型智能排名</h2>
-          <p className="text-[12px] text-on-surface-2 mt-0.5">Artificial Analysis 官方图表</p>
+          <p className="text-[12px] text-on-surface-2 mt-0.5 truncate">
+            Artificial Analysis 官方图表{formatUpdatedAt(updatedAt) ? ` · 更新于 ${formatUpdatedAt(updatedAt)}` : ''}
+          </p>
         </div>
+        <button
+          type="button"
+          aria-label="刷新模型排名图表"
+          title="立即刷新榜单"
+          disabled={refreshing}
+          onClick={() => void loadLatestChart(true)}
+          className="grid place-items-center size-10 rounded-[10px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors shrink-0 cursor-pointer disabled:opacity-60"
+        >
+          <RefreshCw size={15} aria-hidden className={cn(refreshing && 'animate-spin')} />
+        </button>
         <a
           href="https://artificialanalysis.ai/leaderboards/models"
           rel="noopener noreferrer"
