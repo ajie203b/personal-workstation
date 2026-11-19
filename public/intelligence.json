@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-18T14:01:47.872Z",
+  "generatedAt": "2026-11-19T08:15:07.081Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
@@ -24,12 +24,20 @@
       "score": 61.6
     },
     {
+      "name": "Gemini 4 Neon (Xhigh)",
+      "score": 61.4
+    },
+    {
       "name": "GPT-6.2 Astra (High)",
       "score": 60.1
     },
     {
       "name": "Gemini 4 Carbon (High)",
       "score": 60
+    },
+    {
+      "name": "Gemini 4 Neon (High)",
+      "score": 59.6
     },
     {
       "name": "Claude Opus 5.5 (Max)",
@@ -66,6 +74,10 @@
     {
       "name": "GPT-6 Astra (Xhigh)",
       "score": 55.3
+    },
+    {
+      "name": "Gemini 4 Neon (Medium)",
+      "score": 54.9
     },
     {
       "name": "GPT-6.2 Sol (High)",
@@ -110,18 +122,6 @@
     {
       "name": "GPT-6 Astra (Medium)",
       "score": 51.6
-    },
-    {
-      "name": "GPT-6.1 Terra (Max)",
-      "score": 51.3
-    },
-    {
-      "name": "Gemini 4 Hydrogen (High)",
-      "score": 50.8
-    },
-    {
-      "name": "Gemini 4 Argon (High)",
-      "score": 50.4
     }
   ]
 }
