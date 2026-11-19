@@ -41,14 +41,15 @@ function formatDraftTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-const TOOLBAR_BTN = 'grid place-items-center shrink-0 w-11 h-11 md:w-8 md:h-8 rounded-[10px] text-on-surface-2 hover:bg-surface-3 transition-colors cursor-pointer'
+const TOOLBAR_BTN = 'grid place-items-center shrink-0 w-11 h-11 md:w-7 md:h-7 rounded-[10px] md:rounded-[7px] text-on-surface-2 hover:bg-surface-3 transition-colors cursor-pointer'
 const TOOLBAR_ON = 'bg-primary-soft text-primary'
 const HL_LABEL: Record<HlColor, string> = { yellow: '黄色', green: '绿色', blue: '蓝色', red: '红色' }
 
-function ToolBtn({ label, active, onClick, children }: {
+function ToolBtn({ label, active, onClick, className, children }: {
   label: string
   active?: boolean
   onClick: () => void
+  className?: string
   children: ReactNode
 }) {
   return (
@@ -58,7 +59,7 @@ function ToolBtn({ label, active, onClick, children }: {
       aria-pressed={active}
       title={label}
       data-tip={label}
-      className={cn(TOOLBAR_BTN, 'tip', active && TOOLBAR_ON)}
+      className={cn(TOOLBAR_BTN, 'tip', active && TOOLBAR_ON, className)}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
     >
@@ -563,67 +564,68 @@ export function MdEditorPage() {
       {/* 工具栏 */}
       {editor && (
         <div className="max-md:order-last shrink-0 flex flex-col bg-surface border-outline/60 max-md:border-t md:border-b" role="toolbar" aria-label="文档编辑工具">
-          <div className="flex items-center gap-0.5 px-3 py-1 overflow-x-auto md:overflow-visible md:flex-wrap md:w-full md:max-w-[724px] md:mx-auto">
+          <div className="flex items-center gap-0.5 px-3 py-1 md:px-4 md:py-1 overflow-x-auto md:overflow-visible md:flex-nowrap md:justify-center md:w-full">
             {!sourceMode && (
               <>
-                <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolBtn>
+                <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={14} /></ToolBtn>
+                <ToolBtn label="重做" className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={14} /></ToolBtn>
+                <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
                 <SelectMenu ariaLabel="段落格式" title="段落格式"
                   value={editor.isActive('heading') ? String(editor.getAttributes('heading').level) : 'paragraph'}
                   options={[{ value: 'paragraph', label: '正文' }, ...[1, 2, 3, 4, 5, 6].map(level => ({ value: String(level), label: `${level} 级标题` }))]}
-                  triggerClassName="h-11 md:h-8 shrink-0 border-transparent bg-transparent px-2"
+                  triggerClassName="h-11 md:h-7 shrink-0 border-transparent bg-transparent px-2 md:px-1.5 md:text-[12px] md:rounded-[7px]"
                   onChange={(value) => {
                     const chain = editor.chain().focus()
                     if (value === 'paragraph') chain.setParagraph().run()
                     else chain.setHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 }).run()
                   }}
                 />
-                <ToolBtn label="加粗" active={marks?.bold} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={16} /></ToolBtn>
-                <ToolBtn label="无序列表" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={15} /></ToolBtn>
-                <ToolBtn label="待办清单" active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={15} /></ToolBtn>
+                <ToolBtn label="加粗" active={marks?.bold} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={14} /></ToolBtn>
+                <ToolBtn label="斜体" active={marks?.italic} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={14} /></ToolBtn>
+                <ToolBtn label="删除线" active={marks?.strike} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={14} /></ToolBtn>
+                <ToolBtn label="高亮（黄色）" active={marks?.highlight} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleMark('hl', { color: 'yellow' }).run()}><Highlighter size={14} /></ToolBtn>
+                <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
+                <ToolBtn label="无序列表" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={14} /></ToolBtn>
+                <ToolBtn label="有序列表" active={editor.isActive('orderedList')} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></ToolBtn>
+                <ToolBtn label="待办清单" active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={14} /></ToolBtn>
+                <ToolBtn label="引用" active={editor.isActive('blockquote')} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={14} /></ToolBtn>
+                <ToolBtn label="代码块" active={editor.isActive('codeBlock')} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={14} /></ToolBtn>
+                <ToolBtn label="插入表格 (3×3)" active={isCursorInTable(editor.state)} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().insertGfmTable({ rows: 3, cols: 3 }).run()}><Table2 size={14} /></ToolBtn>
+                <ToolBtn label="行内公式 ($...$)" className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().insertInlineMath('').run()}><span className="text-[12px] font-mono font-semibold">$</span></ToolBtn>
+                <ToolBtn label="公式块 ($$...$$)" className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().insertMathBlock('').run()}><Sigma size={14} /></ToolBtn>
+                <ToolBtn label="插入图片（也可直接粘贴或拖入）" className={cn(!moreTools && 'max-md:hidden')} onClick={() => imageInputRef.current?.click()}><ImagePlus size={14} /></ToolBtn>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files?.length) void insertImages(Array.from(e.target.files))
+                    e.target.value = ''
+                  }}
+                />
+                <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
               </>
             )}
-            <button type="button" aria-label="更多编辑工具" aria-expanded={moreTools} onMouseDown={(e) => e.preventDefault()} onClick={() => setMoreTools((value) => !value)} className={cn(TOOLBAR_BTN, 'md:hidden', moreTools && TOOLBAR_ON)}>
-              <MoreHorizontal size={19} />
-            </button>
-            <div className={cn('items-center gap-0.5 shrink-0', moreTools ? 'flex' : 'hidden md:flex')}>
-              {!sourceMode && (
-                <>
-                  <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolBtn>
-                  <ToolBtn label="斜体" active={marks?.italic} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
-                  <ToolBtn label="删除线" active={marks?.strike} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={15} /></ToolBtn>
-                  <ToolBtn label="高亮（黄色）" active={marks?.highlight} onClick={() => editor.chain().focus().toggleMark('hl', { color: 'yellow' }).run()}><Highlighter size={15} /></ToolBtn>
-                  <ToolBtn label="有序列表" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>
-                  <ToolBtn label="引用" active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={15} /></ToolBtn>
-                  <ToolBtn label="代码块" active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={15} /></ToolBtn>
-                  <ToolBtn label="插入表格 (3×3)" active={isCursorInTable(editor.state)} onClick={() => editor.chain().focus().insertGfmTable({ rows: 3, cols: 3 }).run()}><Table2 size={15} /></ToolBtn>
-                  <ToolBtn label="行内公式 ($...$)" onClick={() => editor.chain().focus().insertInlineMath('').run()}><span className="text-[12px] font-mono font-semibold">$</span></ToolBtn>
-                  <ToolBtn label="公式块 ($$...$$)" onClick={() => editor.chain().focus().insertMathBlock('').run()}><Sigma size={15} /></ToolBtn>
-                  <ToolBtn label="插入图片（也可直接粘贴或拖入）" onClick={() => imageInputRef.current?.click()}><ImagePlus size={15} /></ToolBtn>
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files?.length) void insertImages(Array.from(e.target.files))
-                      e.target.value = ''
-                    }}
-                  />
-                </>
-              )}
-              {saveFailed && <ToolBtn label="重试保存" onClick={() => void save()}><Save size={15} /></ToolBtn>}
+            {!sourceMode && (
+              <button type="button" aria-label="更多编辑工具" aria-expanded={moreTools} onMouseDown={(e) => e.preventDefault()} onClick={() => setMoreTools((value) => !value)} className={cn(TOOLBAR_BTN, 'md:hidden', moreTools && TOOLBAR_ON)}>
+                <MoreHorizontal size={19} />
+              </button>
+            )}
+            <div className={cn('items-center gap-0.5 shrink-0', (moreTools || sourceMode) ? 'flex' : 'hidden md:flex')}>
+              {saveFailed && <ToolBtn label="重试保存" onClick={() => void save()}><Save size={14} /></ToolBtn>}
 
               <ToolBtn label="查找与替换 (Ctrl+F / Ctrl+H)" active={findReplace.open} onClick={() => findReplace.openFind(true)}>
-                <Search size={15} />
+                <Search size={14} />
               </ToolBtn>
               <ToolBtn label={outlineOpen ? '收起实时大纲' : '展开实时大纲'} active={outlineOpen} onClick={() => setOutlineOpen((v) => !v)}>
-                <ListTree size={15} />
+                <ListTree size={14} />
               </ToolBtn>
               {!sourceMode && (
                 <>
                   <ToolBtn label={focusMode ? '关闭专注模式' : '专注模式（突出当前段）'} active={focusMode} onClick={() => setFocusMode((v) => !v)}>
-                    <Focus size={15} />
+                    <Focus size={14} />
                   </ToolBtn>
                   <button
                     type="button"
@@ -632,7 +634,7 @@ export function MdEditorPage() {
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setTypewriterMode((v) => !v)}
                     className={cn(
-                      'h-11 md:h-8 px-2 rounded-[8px] text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap',
+                      'h-11 md:h-7 px-2 md:px-1.5 rounded-[8px] md:rounded-[7px] text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap',
                       typewriterMode ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
                     )}
                   >
@@ -641,7 +643,7 @@ export function MdEditorPage() {
                 </>
               )}
               <ToolBtn label="切换源码模式" active={sourceMode} onClick={toggleSourceMode}>
-                <Code2 size={15} />
+                <Code2 size={14} />
               </ToolBtn>
             </div>
           </div>
@@ -650,7 +652,7 @@ export function MdEditorPage() {
             <div
               role="group"
               aria-label="表格操作"
-              className="flex items-center gap-1 px-3 py-1 border-t border-outline/40 bg-surface-2/50 text-xs overflow-x-auto md:w-full md:max-w-[724px] md:mx-auto"
+              className="flex items-center gap-1 px-3 py-1 border-t border-outline/40 bg-surface-2/50 text-xs overflow-x-auto md:w-full md:justify-center"
               onMouseDown={(e) => { if ((e.target as HTMLElement).closest('button')) e.preventDefault() }}
             >
               {([
@@ -660,7 +662,7 @@ export function MdEditorPage() {
                 ['删除表格', 'deleteGfmTable'],
               ] as const).map(([label, command]) => (
                 <button key={command} type="button" onClick={() => editor.chain().focus()[command]().run()}
-                  className={cn('h-11 min-w-11 md:h-8 shrink-0 whitespace-nowrap px-2 rounded-lg cursor-pointer hover:bg-surface-3',
+                  className={cn('h-11 min-w-11 md:h-7 md:min-w-0 shrink-0 whitespace-nowrap px-2 rounded-lg cursor-pointer hover:bg-surface-3',
                     command === 'deleteGfmTable' && 'text-danger hover:bg-danger/10')}>
                   {label}
                 </button>

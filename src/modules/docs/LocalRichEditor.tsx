@@ -89,7 +89,7 @@ function loadMarkdown(editor: Editor, markdown: string, definitions: MutableRefO
 
 function ToolBtn({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: ReactNode }) {
   return <button type="button" aria-label={label} title={label} aria-pressed={active}
-    className={cn('grid place-items-center w-8 h-8 shrink-0 rounded-lg text-on-surface-2 hover:bg-surface-3', active && 'bg-primary-soft text-primary')}
+    className={cn('grid place-items-center w-8 h-8 md:w-7 md:h-7 shrink-0 rounded-[7px] text-on-surface-2 hover:bg-surface-3 cursor-pointer transition-colors', active && 'bg-primary-soft text-primary')}
     onMouseDown={e => e.preventDefault()} onClick={onClick}>{children}</button>
 }
 
@@ -197,41 +197,45 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
   }
 
   return <div className="flex-1 min-h-0 flex flex-col">
-    <div className="shrink-0 flex flex-wrap items-center gap-1 px-3 py-1.5 border-b border-outline/60" role="toolbar" aria-label="文档编辑工具">
-      <Button size="sm" aria-label="切换源码模式" onClick={toggleMode}>{mode === 'rich' ? '源码' : '富文本'}</Button>
+    <div className="shrink-0 flex flex-nowrap items-center gap-0.5 px-3 py-1 border-b border-outline/60 overflow-x-auto" role="toolbar" aria-label="文档编辑工具">
+      <Button size="sm" className="md:h-7 md:px-2.5 md:text-xs shrink-0" aria-label="切换源码模式" onClick={toggleMode}>{mode === 'rich' ? '源码' : '富文本'}</Button>
       {mode === 'rich' && editor && <>
-        <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolBtn>
-        <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolBtn>
-        <ToolBtn label="一级标题" active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 size={16} /></ToolBtn>
-        <ToolBtn label="加粗" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={15} /></ToolBtn>
-        <ToolBtn label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolBtn>
-        <ToolBtn label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={15} /></ToolBtn>
-        <ToolBtn label="高亮" active={editor.isActive('hl')} onClick={() => editor.chain().focus().toggleMark('hl').run()}><Highlighter size={15} /></ToolBtn>
-        <ToolBtn label="无序列表" onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={15} /></ToolBtn>
-        <ToolBtn label="有序列表" onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolBtn>
-        <ToolBtn label="引用" onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={15} /></ToolBtn>
-        <ToolBtn label="代码块" onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={15} /></ToolBtn>
-        <ToolBtn label="专注段落" active={focusMode} onClick={toggleFocusMode}><Focus size={15} /></ToolBtn>
+        <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
+        <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={14} /></ToolBtn>
+        <ToolBtn label="重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={14} /></ToolBtn>
+        <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
+        <ToolBtn label="一级标题" active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 size={15} /></ToolBtn>
+        <ToolBtn label="加粗" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={14} /></ToolBtn>
+        <ToolBtn label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={14} /></ToolBtn>
+        <ToolBtn label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={14} /></ToolBtn>
+        <ToolBtn label="高亮" active={editor.isActive('hl')} onClick={() => editor.chain().focus().toggleMark('hl').run()}><Highlighter size={14} /></ToolBtn>
+        <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
+        <ToolBtn label="无序列表" onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={14} /></ToolBtn>
+        <ToolBtn label="有序列表" onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></ToolBtn>
+        <ToolBtn label="引用" onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={14} /></ToolBtn>
+        <ToolBtn label="代码块" onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={14} /></ToolBtn>
+        <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
+        <ToolBtn label="专注段落" active={focusMode} onClick={toggleFocusMode}><Focus size={14} /></ToolBtn>
         <button
           type="button"
           aria-label="打字机居中"
           aria-pressed={typewriterMode}
           onClick={toggleTypewriterMode}
           className={cn(
-            'px-2 h-8 shrink-0 rounded-lg text-xs cursor-pointer transition-colors',
-            typewriterMode ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3',
+            'px-2 md:px-1.5 h-8 md:h-7 shrink-0 rounded-[7px] text-[11px] font-medium cursor-pointer transition-colors whitespace-nowrap',
+            typewriterMode ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3',
           )}
         >打字机</button>
       </>}
-      <ToolBtn label="查找替换" active={find.open} onClick={() => (find.open ? find.closeFind() : find.openFind(false))}><Search size={15} /></ToolBtn>
-      <div className="ml-auto flex items-center gap-1 text-xs text-on-surface-2" role="group" aria-label="显示字号">
+      <ToolBtn label="查找替换" active={find.open} onClick={() => (find.open ? find.closeFind() : find.openFind(false))}><Search size={14} /></ToolBtn>
+      <div className="ml-auto flex items-center gap-1 shrink-0 pl-2 text-xs text-on-surface-2" role="group" aria-label="显示字号">
         <button type="button" aria-label="缩小字号" disabled={fontSize <= 14} onMouseDown={e => e.preventDefault()}
           onClick={() => setFontSize(size => Math.max(14, size - 1))}
-          className="size-11 rounded-md border border-outline disabled:opacity-50">A−</button>
-        <output className="w-7 text-center tabular-nums" aria-label="当前字号">{fontSize}</output>
+          className="size-11 md:size-7 rounded-md border border-outline disabled:opacity-50 cursor-pointer">A−</button>
+        <output className="w-6 text-center tabular-nums" aria-label="当前字号">{fontSize}</output>
         <button type="button" aria-label="放大字号" disabled={fontSize >= 32} onMouseDown={e => e.preventDefault()}
           onClick={() => setFontSize(size => Math.min(32, size + 1))}
-          className="size-11 rounded-md border border-outline disabled:opacity-50">A＋</button>
+          className="size-11 md:size-7 rounded-md border border-outline disabled:opacity-50 cursor-pointer">A＋</button>
       </div>
     </div>
     <EditorFindReplaceBar

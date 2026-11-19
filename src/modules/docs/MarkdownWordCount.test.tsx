@@ -23,6 +23,9 @@ describe('Markdown 总字数', () => {
       expect(host.textContent).toBe('总字数：4')
       act(() => root.render(createElement(MarkdownWordCount, { markdown: '' })))
       expect(host.textContent).toBe('总字数：0')
+      const el = host.querySelector<HTMLElement>('[aria-label="Markdown 总字数"]')!
+      expect(el.style.paddingBottom).toBe('')
+      expect(el.className).toContain('leading-none')
     } finally { act(() => root.unmount()) }
   })
 })
