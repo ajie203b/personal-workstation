@@ -77,7 +77,9 @@ jobs:
           git push
 
       # 关键：应用国内优先读 GitHub Pages（gh-pages 分支），必须把最新 JSON 与图表同步过去并触发重建
+      # 即使某次官网截图偶发失败，只要前面 JSON 已更新仍继续同步到 gh-pages
       - name: Sync intelligence assets to gh-pages
+        if: always() && !cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
