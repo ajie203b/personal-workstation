@@ -5,7 +5,8 @@ fn main() {
             "local_markdown_pick", "local_markdown_list", "local_markdown_read",
             "local_markdown_write", "local_markdown_image", "local_document_open_with",
             "local_markdown_defaults",
-            "archive_browser", "archive_downloads", "archive_download_read", "archive_download_remove", "archive_download_link",
+            "archive_browser", "archive_downloads", "archive_download_read", "archive_download_remove",
+            "archive_download_link", "archive_set_target", "archive_download_save_local", "archive_open_downloads_dir",
         ])),
     ).expect("Kairos 权限清单生成失败");
 }

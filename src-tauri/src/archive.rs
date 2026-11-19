@@ -4,40 +4,62 @@ use std::{
     io::{BufWriter, Read, Write},
     net::{IpAddr, ToSocketAddrs},
     path::{Path, PathBuf},
+    process::Command,
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri_plugin_http::reqwest::{self, redirect::Policy};
 use tauri::{
     ipc::Response,
     webview::{DownloadEvent, NewWindowResponse, WebviewBuilder},
-    AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Url, Webview, WebviewUrl,
+    AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Url, Webview, WebviewUrl, Window,
 };
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_http::reqwest::{self, redirect::Policy};
 
 const HOME: &str = "https://annas-archive.gd/";
 const VIEW: &str = "archive-browser";
 const MAX_BYTES: u64 = 150 * 1024 * 1024;
+const MAX_LOCAL_BYTES: u64 = 500 * 1024 * 1024;
+
+const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "epub", "pdf", "mobi", "azw", "azw3", "azw4", "kf8", "kfx",
+    "fb2", "fbz", "djvu", "djv", "txt", "md", "markdown", "rtf",
+    "doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "ods", "odp", "csv",
+    "chm", "lit", "prc", "pdb", "lrf", "xps", "oxps", "ps", "tex",
+    "cbr", "cbz", "cb7", "cbt",
+    "zip", "rar", "7z", "gz", "tar", "bz2", "xz",
+    "mp3", "m4b", "m4a", "ogg", "flac",
+];
 
 // WebView2 can suppress a link targeting a new window before our navigation hook sees it.
 // Route real clicks on the slow-download page through the existing top-level navigation hook.
 const DOWNLOAD_LINK_CLICK: &str = r#"
     (() => {
         if (location.protocol !== 'https:' || location.port ||
-            !/^(?:[a-z]{2,3}\.)?annas-archive\.(?:gd|gl|pk)$/.test(location.hostname) ||
+            !/^(?:[a-z]{2,3}\.)?annas-archive\.(?:gd|gl|pk|org|se|li)$/.test(location.hostname) ||
             !location.pathname.startsWith('/slow_download/')) return;
+        const BOOK_EXT = /\.(?:epub|pdf|mobi|azw3?|azw4|kf8|kfx|fb2|fbz|djvu?|txt|md|markdown|rtf|docx?|pptx?|xlsx?|odt|ods|odp|csv|chm|lit|prc|pdb|lrf|o?xps|ps|tex|cb[rz7t]|zip|rar|7z|gz|tar|bz2|xz|mp3|m4[ba]|ogg|flac)$/i;
         window.addEventListener('click', (event) => {
             if (!event.isTrusted || event.button !== 0) return;
             const link = event.target instanceof Element && event.target.closest('a[href]');
             if (!link) return;
             const url = new URL(link.href, location.href);
             if (url.origin === location.origin || !/^https?:$/.test(url.protocol) ||
-                !/\.(?:epub|pdf)$/i.test(url.pathname)) return;
+                !BOOK_EXT.test(url.pathname)) return;
             event.preventDefault();
             event.stopImmediatePropagation();
             location.assign(url.href);
         }, { capture: true });
     })();
 "#;
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadTarget {
+    #[default]
+    App,
+    Local,
+}
 
 #[derive(Default)]
 pub struct ArchiveState(Mutex<Transfers>);
@@ -109,6 +131,8 @@ struct Transfers {
     active: Option<Transfer>,
     direct: Option<Progress>,
     error: Option<String>,
+    target: DownloadTarget,
+    last_saved_path: Option<String>,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -121,6 +145,7 @@ struct Transfer {
     url: Url,
     temp: PathBuf,
     ready: PathBuf,
+    target: DownloadTarget,
 }
 
 #[derive(Serialize)]
@@ -131,11 +156,14 @@ struct Download {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Downloads {
     items: Vec<Download>,
     downloading: bool,
     progress: Option<Progress>,
     error: Option<String>,
+    target: DownloadTarget,
+    last_saved_path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -169,7 +197,11 @@ fn archive_site(url: &Url) -> bool {
     let (prefix, root) = host.split_once('.').unwrap_or(("", host));
     let language = (2..=3).contains(&prefix.len()) && prefix.bytes().all(|b| b.is_ascii_lowercase());
     let host = if language { root } else { host };
-    matches!(host, "annas-archive.gd" | "annas-archive.gl" | "annas-archive.pk") && url.port().is_none()
+    matches!(
+        host,
+        "annas-archive.gd" | "annas-archive.gl" | "annas-archive.pk"
+            | "annas-archive.org" | "annas-archive.se" | "annas-archive.li"
+    ) && url.port().is_none()
 }
 
 fn public_ip(ip: IpAddr) -> bool {
@@ -221,7 +253,7 @@ fn intercept_download(app: &AppHandle, url: &Url) -> bool {
     let history = app.state::<ArchiveHistory>();
     let name = history.0.lock().ok().and_then(|history| download_from_page(&history, url));
     let Some(name) = name else { return false; };
-    if let Err(error) = queue_direct_download(app, url.clone(), name) {
+    if let Err(error) = queue_direct_download(app, url.clone(), name, None) {
         if let Ok(mut transfers) = app.state::<ArchiveState>().0.lock() {
             if transfers.active.is_none() && transfers.direct.is_none() { transfers.error = Some(error); }
         }
@@ -235,23 +267,79 @@ fn archive_root(app: &AppHandle) -> Result<PathBuf, String> {
     root.canonicalize().map_err(|_| "无法打开电子书下载目录".into())
 }
 
+fn local_downloads_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().download_dir().map_err(|_| "无法定位系统下载目录")?;
+    fs::create_dir_all(&dir).map_err(|_| "无法创建系统下载目录")?;
+    dir.canonicalize().map_err(|_| "无法打开系统下载目录".into())
+}
+
 fn book_extension(name: &str) -> Option<&'static str> {
     let ext = Path::new(name).extension()?.to_str()?;
-    if ext.eq_ignore_ascii_case("epub") { return Some("epub"); }
-    if ext.eq_ignore_ascii_case("pdf") { return Some("pdf"); }
-    None
+    SUPPORTED_EXTENSIONS.iter().copied().find(|candidate| ext.eq_ignore_ascii_case(candidate))
+}
+
+fn sanitize_stem(raw_stem: &str) -> String {
+    let cleaned: String = raw_stem
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .take(220)
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.');
+    if trimmed.is_empty() { "book".to_owned() } else { trimmed.to_owned() }
+}
+
+fn unique_local_path(dir: &Path, stem: &str, extension: &str) -> PathBuf {
+    let initial = dir.join(format!("{stem}.{extension}"));
+    if !initial.exists() { return initial; }
+    for idx in 1..1000 {
+        let candidate = dir.join(format!("{stem} ({idx}).{extension}"));
+        if !candidate.exists() { return candidate; }
+    }
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    dir.join(format!("{stem}-{stamp}.{extension}"))
 }
 
 fn start_download(root: &Path, url: Url, destination: &Path) -> Result<Transfer, &'static str> {
-    let name = destination.file_name().and_then(|part| part.to_str()).ok_or("无法识别电子书文件名")?;
-    let extension = book_extension(name).ok_or("请选择 EPUB 或 PDF 格式的电子书")?;
-    let stem: String = name[..name.len() - extension.len() - 1].chars().filter(|c| !c.is_control()).take(240).collect();
+    let name = destination.file_name().and_then(|part| part.to_str()).ok_or("无法识别文件名")?;
+    let extension = book_extension(name).ok_or("暂不支持下载该文件格式")?;
+    let stem = sanitize_stem(&name[..name.len() - extension.len() - 1]);
     let name = format!("{stem}.{extension}");
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| "无法创建下载任务")?;
     let dir = root.join(now.as_nanos().to_string());
     fs::create_dir(&dir).map_err(|_| "无法创建下载任务")?;
-    fs::write(dir.join("name.txt"), name).map_err(|_| "无法记录电子书名称")?;
-    Ok(Transfer { url, temp: dir.join(format!("partial.{extension}")), ready: dir.join(format!("book.{extension}")) })
+    fs::write(dir.join("name.txt"), name).map_err(|_| "无法记录文件名称")?;
+    Ok(Transfer {
+        url,
+        temp: dir.join(format!("partial.{extension}")),
+        ready: dir.join(format!("book.{extension}")),
+        target: DownloadTarget::App,
+    })
+}
+
+fn start_local_download(dir: &Path, url: Url, destination: &Path) -> Result<Transfer, &'static str> {
+    let name = destination.file_name().and_then(|part| part.to_str()).ok_or("无法识别文件名")?;
+    let extension = book_extension(name).ok_or("暂不支持下载该文件格式")?;
+    let stem = sanitize_stem(&name[..name.len() - extension.len() - 1]);
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| "无法创建下载任务")?;
+    let temp = dir.join(format!(".kairos-part-{}.tmp", now.as_nanos()));
+    let ready = unique_local_path(dir, &stem, extension);
+    Ok(Transfer { url, temp, ready, target: DownloadTarget::Local })
+}
+
+fn validate_download_header(extension: &str, header: &[u8]) -> bool {
+    if header.is_empty() { return false; }
+    match extension {
+        "pdf" => header.windows(5).any(|prefix| prefix == b"%PDF-"),
+        "epub" | "docx" | "pptx" | "xlsx" | "odt" | "ods" | "odp" | "cbz" | "zip" => {
+            header.starts_with(b"PK\x03\x04")
+        }
+        _ => {
+            let trimmed = header.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(header);
+            let head = String::from_utf8_lossy(&trimmed[..trimmed.len().min(512)]);
+            let lower = head.trim_start().to_ascii_lowercase();
+            !(lower.starts_with("<!doctype html") || lower.starts_with("<html") || lower.starts_with("<head"))
+        }
+    }
 }
 
 fn download_event(webview: Webview, event: DownloadEvent<'_>) -> bool {
@@ -260,22 +348,30 @@ fn download_event(webview: Webview, event: DownloadEvent<'_>) -> bool {
     match event {
         DownloadEvent::Requested { url, destination } => {
             if transfers.active.is_some() || transfers.direct.is_some() {
-                transfers.error = Some("请等当前电子书下载完成后再试".into());
+                transfers.error = Some("请等当前文件下载完成后再试".into());
                 return false;
             }
             if !browser_url(&url) {
                 transfers.error = Some("这个下载链接需要复制后使用「粘贴链接下载」".into());
                 return false;
             }
-            let Ok(root) = archive_root(webview.app_handle()) else {
-                transfers.error = Some("无法打开电子书下载目录".into());
-                return false;
+            let target = transfers.target;
+            let transfer_result = match target {
+                DownloadTarget::App => match archive_root(webview.app_handle()) {
+                    Ok(root) => start_download(&root, url, destination),
+                    Err(_) => Err("无法打开电子书下载目录"),
+                },
+                DownloadTarget::Local => match local_downloads_dir(webview.app_handle()) {
+                    Ok(dir) => start_local_download(&dir, url, destination),
+                    Err(_) => Err("无法打开系统下载目录"),
+                },
             };
-            match start_download(&root, url, destination) {
+            match transfer_result {
                 Ok(transfer) => {
                     *destination = transfer.temp.clone();
                     transfers.active = Some(transfer);
                     transfers.error = None;
+                    if target == DownloadTarget::Local { transfers.last_saved_path = None; }
                     true
                 }
                 Err(error) => { transfers.error = Some(error.into()); false }
@@ -290,11 +386,18 @@ fn download_event(webview: Webview, event: DownloadEvent<'_>) -> bool {
                 }
             }) { return true; }
             let Some(task) = transfers.active.take() else { return true };
+            let max_bytes = if task.target == DownloadTarget::Local { MAX_LOCAL_BYTES } else { MAX_BYTES };
             let error = match fs::metadata(&task.temp) {
-                Ok(meta) if success && meta.len() > MAX_BYTES => Some("文件超过 150 MB，无法导入"),
+                Ok(meta) if success && meta.len() > max_bytes => Some(
+                    if task.target == DownloadTarget::Local { "文件超过 500 MB，无法下载" }
+                    else { "文件超过 150 MB，请切换为「本地下载」后重试" }
+                ),
                 Ok(meta) if success && meta.len() > 0 && fs::rename(&task.temp, &task.ready).is_ok() => None,
                 _ => Some("下载未完成，请回到网页重试"),
             };
+            if error.is_none() && task.target == DownloadTarget::Local {
+                transfers.last_saved_path = Some(task.ready.to_string_lossy().into_owned());
+            }
             transfers.error = error.map(str::to_owned);
             if error.is_some() { remove_partial(&task); }
             true
@@ -305,9 +408,11 @@ fn download_event(webview: Webview, event: DownloadEvent<'_>) -> bool {
 
 fn remove_partial(task: &Transfer) {
     let _ = fs::remove_file(&task.temp);
-    if let Some(dir) = task.temp.parent() {
-        let _ = fs::remove_file(dir.join("name.txt"));
-        let _ = fs::remove_dir(dir);
+    if task.target == DownloadTarget::App {
+        if let Some(dir) = task.temp.parent() {
+            let _ = fs::remove_file(dir.join("name.txt"));
+            let _ = fs::remove_dir(dir);
+        }
     }
 }
 
@@ -350,20 +455,36 @@ async fn request_direct(url: Url) -> Result<reqwest::Response, String> {
     Ok(response)
 }
 
-async fn save_direct(app: &AppHandle, url: Url, name: String) -> Result<(), String> {
+async fn save_direct(app: &AppHandle, url: Url, name: String, target: DownloadTarget) -> Result<Option<String>, String> {
     let mut response = request_direct(url.clone()).await?;
+    let max_bytes = if target == DownloadTarget::Local { MAX_LOCAL_BYTES } else { MAX_BYTES };
     let total = response.content_length();
-    if total.is_some_and(|size| size > MAX_BYTES) { return Err("文件超过 150 MB，无法导入".into()); }
-    let root = archive_root(app)?;
-    let task = start_download(&root, url, Path::new(&name))?;
+    if total.is_some_and(|size| size > max_bytes) {
+        return Err(if target == DownloadTarget::Local {
+            "文件超过 500 MB，无法下载".into()
+        } else {
+            "文件超过 150 MB，请切换为「本地下载」后重试".into()
+        });
+    }
+    let extension = book_extension(&name).ok_or("暂不支持下载该文件格式")?;
+    let task = match target {
+        DownloadTarget::App => start_download(&archive_root(app)?, url, Path::new(&name))?,
+        DownloadTarget::Local => start_local_download(&local_downloads_dir(app)?, url, Path::new(&name))?,
+    };
     let state = app.state::<ArchiveState>();
-    let result = async {
+    let result: Result<(), &'static str> = async {
         let mut file = BufWriter::new(fs::File::create(&task.temp).map_err(|_| "无法创建下载文件")?);
         let mut received = 0u64;
         let mut header = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(|_| "下载中断，请重新复制链接后重试")? {
             received += chunk.len() as u64;
-            if received > MAX_BYTES { return Err("文件超过 150 MB，无法导入"); }
+            if received > max_bytes {
+                return Err(if target == DownloadTarget::Local {
+                    "文件超过 500 MB，无法下载"
+                } else {
+                    "文件超过 150 MB，请切换为「本地下载」后重试"
+                });
+            }
             let take = chunk.len().min(1024 - header.len());
             header.extend_from_slice(&chunk[..take]);
             file.write_all(&chunk).map_err(|_| "无法写入下载文件")?;
@@ -371,41 +492,67 @@ async fn save_direct(app: &AppHandle, url: Url, name: String) -> Result<(), Stri
                 transfers.direct = Some(Progress { received, total });
             }
         }
-        let valid = if book_extension(&name) == Some("pdf") {
-            header.windows(5).any(|prefix| prefix == b"%PDF-")
-        } else { header.starts_with(b"PK\x03\x04") };
-        if !valid { return Err("服务器返回的内容不是电子书，请换一个下载地址"); }
+        if !validate_download_header(extension, &header) {
+            return Err("服务器返回的内容不是有效文件，请换一个下载地址");
+        }
         file.flush().map_err(|_| "无法保存下载文件")?;
         drop(file);
-        fs::rename(&task.temp, &task.ready).map_err(|_| "无法保存下载文件")
+        fs::rename(&task.temp, &task.ready).map_err(|_| "无法保存下载文件")?;
+        Ok(())
     }.await;
-    if result.is_err() { remove_partial(&task); }
-    result.map_err(str::to_owned)
+    if result.is_err() {
+        remove_partial(&task);
+        return result.map(|_| None).map_err(str::to_owned);
+    }
+    Ok(if target == DownloadTarget::Local {
+        Some(task.ready.to_string_lossy().into_owned())
+    } else {
+        None
+    })
 }
 
 #[tauri::command]
-pub async fn archive_download_link(app: AppHandle, link: String) -> Result<(), String> {
+pub async fn archive_set_target(app: AppHandle, target: DownloadTarget) -> Result<(), String> {
+    let state = app.state::<ArchiveState>();
+    let mut transfers = state.0.lock().map_err(|_| "无法更新下载位置")?;
+    transfers.target = target;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn archive_download_link(app: AppHandle, link: String, target: Option<DownloadTarget>) -> Result<(), String> {
     if link.len() > 16384 { return Err("下载地址过长，请重新复制".into()); }
     let url = Url::parse(link.trim()).map_err(|_| "请粘贴完整的电子书下载地址")?;
     if !direct_url(&url) { return Err("请使用 HTTPS 地址或指向公网 IP 的 HTTP 地址".into()); }
-    let name = direct_filename(&url).ok_or("请粘贴网页复制的 EPUB 或 PDF 直链")?;
-    queue_direct_download(&app, url, name)
+    let name = direct_filename(&url).ok_or("请粘贴网页复制的电子书或文档直链")?;
+    queue_direct_download(&app, url, name, target)
 }
 
-fn queue_direct_download(app: &AppHandle, url: Url, name: String) -> Result<(), String> {
-    {
+fn queue_direct_download(app: &AppHandle, url: Url, name: String, target_override: Option<DownloadTarget>) -> Result<(), String> {
+    let target = {
         let state = app.state::<ArchiveState>();
         let mut transfers = state.0.lock().map_err(|_| "无法读取下载状态")?;
-        if transfers.active.is_some() || transfers.direct.is_some() { return Err("请等当前电子书下载完成后再试".into()); }
+        if transfers.active.is_some() || transfers.direct.is_some() { return Err("请等当前文件下载完成后再试".into()); }
+        let chosen = target_override.unwrap_or(transfers.target);
         transfers.direct = Some(Progress::default());
         transfers.error = None;
-    }
+        if chosen == DownloadTarget::Local { transfers.last_saved_path = None; }
+        chosen
+    };
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = save_direct(&app, url, name).await;
+        let result = save_direct(&app, url, name, target).await;
         if let Ok(mut transfers) = app.state::<ArchiveState>().0.lock() {
             transfers.direct = None;
-            transfers.error = result.err();
+            match result {
+                Ok(saved_path) => {
+                    transfers.error = None;
+                    if saved_path.is_some() { transfers.last_saved_path = saved_path; }
+                }
+                Err(error) => {
+                    transfers.error = Some(error);
+                }
+            }
         }
     });
     Ok(())
@@ -491,24 +638,63 @@ pub async fn archive_downloads(app: AppHandle) -> Result<Downloads, String> {
     items.sort_unstable_by(|a, b| b.id.cmp(&a.id));
     let state = app.state::<ArchiveState>();
     let transfers = state.0.lock().map_err(|_| "无法读取下载状态")?;
-    Ok(Downloads { items, downloading: transfers.active.is_some() || transfers.direct.is_some(), progress: transfers.direct.clone(), error: transfers.error.clone() })
+    Ok(Downloads {
+        items,
+        downloading: transfers.active.is_some() || transfers.direct.is_some(),
+        progress: transfers.direct.clone(),
+        error: transfers.error.clone(),
+        target: transfers.target,
+        last_saved_path: transfers.last_saved_path.clone(),
+    })
 }
 
 #[tauri::command]
 pub async fn archive_download_read(app: AppHandle, id: String) -> Result<Response, String> {
-    let (_, path) = ready_book(&archive_root(&app)?, &id).ok_or("下载的电子书已不存在")?;
+    let (_, path) = ready_book(&archive_root(&app)?, &id).ok_or("下载的文件已不存在")?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut bytes = Vec::new();
-        fs::File::open(path).map_err(|_| "无法读取电子书")?.take(MAX_BYTES + 1)
-            .read_to_end(&mut bytes).map_err(|_| "无法读取电子书")?;
+        fs::File::open(path).map_err(|_| "无法读取下载文件")?.take(MAX_BYTES + 1)
+            .read_to_end(&mut bytes).map_err(|_| "无法读取下载文件")?;
         if bytes.len() as u64 > MAX_BYTES { return Err("文件超过 150 MB，无法导入".into()); }
         Ok(Response::new(bytes))
-    }).await.map_err(|_| "读取电子书失败")?
+    }).await.map_err(|_| "读取文件失败")?
+}
+
+#[tauri::command]
+pub async fn archive_download_save_local(app: AppHandle, window: Window, id: String) -> Result<Option<String>, String> {
+    let (book, source_path) = ready_book(&archive_root(&app)?, &id).ok_or("下载的文件已不存在")?;
+    let saved = tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, String> {
+        let mut dialog = app.dialog().file()
+            .set_title("保存到本地")
+            .set_file_name(&book.name)
+            .set_parent(&window);
+        if let Some(ext) = book_extension(&book.name) {
+            dialog = dialog.add_filter(ext.to_ascii_uppercase(), &[ext]);
+        }
+        let Some(selection) = dialog.blocking_save_file() else { return Ok(None) };
+        let dest = selection.into_path().map_err(|_| "无法保存到此路径".to_owned())?;
+        fs::copy(&source_path, &dest).map_err(|_| "写入本地文件失败，请检查权限或磁盘空间".to_owned())?;
+        Ok(Some(dest.to_string_lossy().into_owned()))
+    }).await.map_err(|_| "保存到本地失败".to_owned())??;
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn archive_open_downloads_dir(app: AppHandle) -> Result<(), String> {
+    let dir = local_downloads_dir(&app)?;
+    #[cfg(target_os = "windows")]
+    let status = Command::new("explorer").arg(&dir).spawn();
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").arg(&dir).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = Command::new("xdg-open").arg(&dir).spawn();
+    status.map_err(|_| "无法打开下载目录")?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn archive_download_remove(app: AppHandle, id: String) -> Result<(), String> {
-    let (_, path) = ready_book(&archive_root(&app)?, &id).ok_or("下载的电子书已不存在")?;
+    let (_, path) = ready_book(&archive_root(&app)?, &id).ok_or("下载的文件已不存在")?;
     fs::remove_file(&path).map_err(|_| "无法清理下载文件")?;
     if let Some(dir) = path.parent() {
         let _ = fs::remove_file(dir.join("name.txt"));
@@ -554,10 +740,12 @@ mod tests {
     fn slow_download_links_route_from_localized_pages_to_the_downloader() {
         let source = Url::parse("https://zh.annas-archive.gd/slow_download/51d2b22ca12a8b470b51f543298b34c9/0/0").unwrap();
         let https = Url::parse("https://partner.example.org/signed/%E7%94%B5%E5%AD%90%E4%B9%A6.epub?token=test").unwrap();
+        let mobi = Url::parse("https://partner.example.org/signed/%E7%9F%A5%E4%B9%8E.mobi?token=test").unwrap();
         let http = Url::parse("http://1.1.1.1:6060/signed/book.pdf").unwrap();
         let mut history = PageHistory::default();
         history.record(&source);
         assert_eq!(download_from_page(&history, &https).as_deref(), Some("电子书.epub"));
+        assert_eq!(download_from_page(&history, &mobi).as_deref(), Some("知乎.mobi"));
         assert_eq!(download_from_page(&history, &http).as_deref(), Some("book.pdf"));
         for blocked in ["https://zh.annas-archive.gd/book.epub", "https://partner.example.org/verify",
             "http://127.0.0.1/book.pdf", "https://tauri.localhost/book.pdf"] {
@@ -581,12 +769,17 @@ mod tests {
     }
 
     #[test]
-    fn pasted_downloads_accept_public_ip_links_without_widening_browser_navigation() {
+    fn pasted_downloads_accept_public_ip_links_and_various_formats() {
         let link = Url::parse("http://1.1.1.1:6060/signed/%E7%94%B5%E5%AD%90%E4%B9%A6.epub?token=example").unwrap();
         assert!(direct_url(&link));
         assert_eq!(direct_filename(&link).as_deref(), Some("电子书.epub"));
         assert!(!browser_url(&link));
         assert!(direct_url(&Url::parse("https://www.gutenberg.org/book.pdf").unwrap()));
+        for ext in ["mobi", "azw3", "djvu", "fb2", "txt", "docx", "cbz", "zip"] {
+            let expected = format!("file.{ext}");
+            let u = Url::parse(&format!("https://partner.example.org/{expected}")).unwrap();
+            assert_eq!(direct_filename(&u).as_deref(), Some(expected.as_str()));
+        }
 
         for text in ["http://192.168.1.1/book.pdf", "http://100.64.0.1/book.pdf", "http://127.0.0.1/book.pdf",
             "http://localhost/book.pdf", "http://example.org/book.pdf", "http://[::ffff:127.0.0.1]/book.pdf",
@@ -596,6 +789,17 @@ mod tests {
         for text in ["https://example.org/page?file=book.pdf", "https://example.org/encoded%2Fbook.pdf", "https://example.org/file.exe"] {
             assert!(direct_filename(&Url::parse(text).unwrap()).is_none(), "{text}");
         }
+    }
+
+    #[test]
+    fn validates_download_headers_across_formats() {
+        assert!(validate_download_header("pdf", b"%PDF-1.7"));
+        assert!(!validate_download_header("pdf", b"<html>error</html>"));
+        assert!(validate_download_header("epub", b"PK\x03\x04test"));
+        assert!(!validate_download_header("epub", b"not a zip"));
+        assert!(validate_download_header("mobi", b"BookTitle\x00\x00BOOKMOBI"));
+        assert!(!validate_download_header("mobi", b"<!DOCTYPE html><html>challenge</html>"));
+        assert!(validate_download_header("txt", "第一章 正文".as_bytes()));
     }
 
     #[test]
@@ -618,6 +822,17 @@ mod tests {
         fs::remove_file(path).unwrap();
         fs::remove_file(folder.join("name.txt")).unwrap();
         fs::remove_dir(folder).unwrap();
+
+        let mobi_transfer = start_download(&root, HOME.parse().unwrap(), Path::new("知乎.MOBI")).unwrap();
+        let mobi_folder = mobi_transfer.temp.parent().unwrap();
+        let mobi_id = mobi_folder.file_name().unwrap().to_str().unwrap();
+        fs::write(&mobi_transfer.temp, b"BOOKMOBI").unwrap();
+        fs::rename(&mobi_transfer.temp, &mobi_transfer.ready).unwrap();
+        let (mobi_book, mobi_path) = ready_book(&root, mobi_id).unwrap();
+        assert_eq!(mobi_book.name, "知乎.mobi");
+        fs::remove_file(mobi_path).unwrap();
+        fs::remove_file(mobi_folder.join("name.txt")).unwrap();
+        fs::remove_dir(mobi_folder).unwrap();
         fs::remove_dir(root).unwrap();
     }
 }
