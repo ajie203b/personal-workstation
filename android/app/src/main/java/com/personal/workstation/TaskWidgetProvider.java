@@ -8,7 +8,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.util.SizeF;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -18,11 +20,13 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * 今日待办小组件（4x2 标准版 / 2x2 紧凑版）：只展示任务与右上角「+」，越极简越好。
+ * 今日待办小组件：标题栏快速添加，按可用高度展示任务和打卡进度。
  *
  * 小米负一屏主池只收录 MIUI 适配过的卡片；未收录的第三方卡片会显示「努力适配中」。
  * 本组件不再声明 miuiWidget，统一走系统「安卓小组件」入口，避免那个占位提示。
@@ -38,11 +42,8 @@ public class TaskWidgetProvider extends AppWidgetProvider {
     /** 小米 Widget 展现刷新（曝光触发，见小米小部件技术规范 2） */
     private static final String MIUI_APPWIDGET_UPDATE = "miui.appwidget.action.APPWIDGET_UPDATE";
 
-    /** 小于这个宽度就用紧凑布局（2x2 大约 110–180dp） */
-    private static final int COMPACT_WIDTH_DP = 220;
-
     private static final int COLOR_TEXT = Color.parseColor("#201F1D");
-    private static final int COLOR_MUTED = Color.parseColor("#8B887F");
+    private static final int MAX_ROWS = 4;
     private static final int COLOR_DANGER = Color.parseColor("#E5484D");
     private static final int COLOR_WARN = Color.parseColor("#B7791F");
 
@@ -77,14 +78,6 @@ public class TaskWidgetProvider extends AppWidgetProvider {
     private static synchronized void refresh(Context context, int[] ids) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         for (int id : ids) manager.updateAppWidget(id, build(context, id));
-    }
-
-    private static boolean isCompact(Context context, int appWidgetId) {
-        AppWidgetManager manager = AppWidgetManager.getInstance(context);
-        Bundle options = manager.getAppWidgetOptions(appWidgetId);
-        if (options == null) return false;
-        int minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH);
-        return minWidth > 0 && minWidth < COMPACT_WIDTH_DP;
     }
 
     private static PendingIntent appIntent(Context context, Uri uri, int requestCode) {
@@ -122,126 +115,84 @@ public class TaskWidgetProvider extends AppWidgetProvider {
     }
 
     private static RemoteViews build(Context context, int appWidgetId) {
-        boolean compact = isCompact(context, appWidgetId);
-        RemoteViews views = new RemoteViews(
-            context.getPackageName(),
-            compact ? R.layout.widget_tasks_compact : R.layout.widget_tasks
-        );
-
-        int base = appWidgetId * 100;
-        // 整卡：回今日页
-        views.setOnClickPendingIntent(
-            R.id.widget_root,
-            appIntent(context, Uri.parse("com.personal.workstation://today"), base)
-        );
-        // 右上「+」：原生添加框，不打开 App
-        views.setOnClickPendingIntent(
-            R.id.widget_add,
-            widgetActivityIntent(context, WidgetAddTaskActivity.class, null, base + 1)
-        );
-
-        int[] rowIds = {R.id.widget_row_1, R.id.widget_row_2, R.id.widget_row_3, R.id.widget_row_4};
-        int[] textIds = {R.id.widget_task_1, R.id.widget_task_2, R.id.widget_task_3, R.id.widget_task_4};
-        int[] checkIds = {R.id.widget_check_1, R.id.widget_check_2, R.id.widget_check_3, R.id.widget_check_4};
-        int maxRows = compact ? 3 : 4;
-
         JSONObject snapshot = TaskWidgetStore.take(context);
+        JSONArray tasks = new JSONArray();
+        String hint = "暂无待办";
         String raw = snapshot.optString("payload", "");
-        boolean hasPendingAdds = snapshot.optJSONArray("adds").length() > 0;
-
-        if ((raw == null || raw.isEmpty()) && !hasPendingAdds) {
-            showHint(views, "打开应用后自动同步待办");
-            return views;
-        }
-
-        JSONArray payloadTasks = null;
-        if (raw != null && !raw.isEmpty()) {
-            try {
-                payloadTasks = new JSONObject(raw).optJSONArray("tasks");
-            } catch (JSONException ignored) {
-                payloadTasks = null;
-            }
-        }
-        if (payloadTasks == null) {
-            if (!hasPendingAdds) {
-                showHint(views, "待办数据格式异常，打开应用后会重新同步");
-                return views;
-            }
-            payloadTasks = new JSONArray();
-        }
-
+        JSONArray saved = null;
         try {
-            JSONArray tasks = mergePending(snapshot, payloadTasks);
-            int taskCount = tasks.length();
-            int visible = 0;
-            for (int i = 0; i < rowIds.length; i++) {
-                if (i < taskCount && i < maxRows) {
-                    JSONObject task = tasks.optJSONObject(i);
-                    if (task != null) {
-                        String title = task.optString("title", "");
-                        boolean overdue = task.optBoolean("overdue", false);
-                        boolean pending = task.optBoolean("pending", false);
-                        int priority = task.optInt("priority", 3);
-                        int count = task.optInt("count", 0);
-                        int countTotal = task.optInt("total", 0);
-
-                        // 打卡任务补一个 2/3，普通任务只显示标题
-                        String suffix = countTotal > 1 ? "  " + count + "/" + countTotal : "";
-                        views.setTextViewText(textIds[i], title + suffix);
-                        views.setTextColor(
-                            textIds[i],
-                            overdue || priority == 0 ? COLOR_DANGER : priority == 1 ? COLOR_WARN : COLOR_TEXT
-                        );
-
-                        String id = task.optString("id", "");
-                        if (!id.isEmpty()) {
-                            // 待同步的新任务还没有真实的 DB id，标题点击先回今日页
-                            views.setOnClickPendingIntent(
-                                textIds[i],
-                                pending
-                                    ? appIntent(context, Uri.parse("com.personal.workstation://today"), base + 30 + i)
-                                    : appIntent(
-                                        context,
-                                        Uri.parse("com.personal.workstation://task?id=" + Uri.encode(id)),
-                                        base + 30 + i
-                                    )
-                            );
-                            // 勾选圈：私有广播直接完成，不启动阻塞桌面触摸的 Activity
-                            views.setOnClickPendingIntent(
-                                checkIds[i],
-                                completeIntent(context, id)
-                            );
-                        }
-                        views.setViewVisibility(rowIds[i], View.VISIBLE);
-                        visible++;
-                    }
-                } else {
-                    views.setViewVisibility(rowIds[i], View.GONE);
-                }
-            }
-
-            if (visible == 0) {
-                showHint(views, "暂无待办");
-            } else {
-                views.setViewVisibility(R.id.widget_tasks, View.VISIBLE);
-                views.setViewVisibility(R.id.widget_empty, View.GONE);
-            }
+            if (!raw.isEmpty()) saved = new JSONObject(raw).optJSONArray("tasks");
+        } catch (JSONException ignored) { /* 仍然显示本地待同步任务 */ }
+        if (saved == null) hint = raw.isEmpty() ? "打开应用后同步待办" : "打开应用以重新同步";
+        try {
+            tasks = mergePending(snapshot, saved == null ? new JSONArray() : saved);
         } catch (JSONException e) {
-            showHint(views, "待办数据格式异常，打开应用后会重新同步");
+            hint = "打开应用以重新同步";
         }
-        return views;
+
+        int rows = Math.min(MAX_ROWS, tasks.length());
+        if (rows <= 1) return layout(context, appWidgetId, tasks, rows, hint);
+
+        float density = context.getResources().getDisplayMetrics().density;
+        float header = (2 * context.getResources().getDimension(R.dimen.widget_padding)
+            + context.getResources().getDimension(R.dimen.widget_header_height)) / density;
+        float rowHeight = context.getResources().getDimension(R.dimen.widget_row_height) / density;
+        Bundle options = AppWidgetManager.getInstance(context).getAppWidgetOptions(appWidgetId);
+        List<SizeF> hostSizes = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            ? options.getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES) : null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && hostSizes != null && !hostSizes.isEmpty()) {
+            // 由启动器按实际分配的高度选择整行布局，横竖屏和拉伸都生效。
+            Map<SizeF, RemoteViews> sizes = new LinkedHashMap<>();
+            for (int count = 1; count <= rows; count++) {
+                sizes.put(new SizeF(1, Math.round(header + count * rowHeight)),
+                    layout(context, appWidgetId, tasks, count, hint));
+            }
+            return new RemoteViews(sizes);
+        }
+
+        int landscape = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110);
+        int portrait = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, landscape);
+        int landscapeRows = Math.max(1, Math.min(rows, (int) ((landscape - header) / rowHeight)));
+        int portraitRows = Math.max(1, Math.min(rows, (int) ((portrait - header) / rowHeight)));
+        RemoteViews normal = layout(context, appWidgetId, tasks, portraitRows, hint);
+        return landscapeRows == portraitRows ? normal : new RemoteViews(
+            layout(context, appWidgetId, tasks, landscapeRows, hint), normal);
     }
 
-    /** 没有任务 / 没有快照时只显示一行提示，别让空白的小组件看起来坏了 */
-    private static void showHint(RemoteViews views, String hint) {
-        // 第一行载着「+」按钮：提示态只藏勾选圈和标题，加号必须保持可点（否则空小组件没法添加第一条任务）
-        views.setViewVisibility(R.id.widget_row_1, View.VISIBLE);
-        views.setViewVisibility(R.id.widget_check_1, View.GONE);
-        views.setViewVisibility(R.id.widget_task_1, View.GONE);
-        views.setViewVisibility(R.id.widget_tasks, View.GONE);
-        views.setViewVisibility(R.id.widget_empty, View.VISIBLE);
+    private static RemoteViews layout(Context context, int appWidgetId, JSONArray tasks, int rows, String hint) {
+        RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_tasks);
+        int base = appWidgetId * 100;
+        PendingIntent today = appIntent(context, Uri.parse("com.personal.workstation://today"), base);
+        views.setOnClickPendingIntent(R.id.widget_root, today);
+        views.setOnClickPendingIntent(R.id.widget_add,
+            widgetActivityIntent(context, WidgetAddTaskActivity.class, null, base + 1));
+        views.removeAllViews(R.id.widget_tasks);
+        views.setViewVisibility(R.id.widget_empty, rows == 0 ? View.VISIBLE : View.GONE);
         views.setTextViewText(R.id.widget_empty, hint);
-        views.setTextColor(R.id.widget_empty, COLOR_MUTED);
+
+        for (int i = 0; i < rows; i++) {
+            JSONObject task = tasks.optJSONObject(i);
+            String id = task.optString("id");
+            String title = task.optString("title");
+            int priority = task.optInt("priority", 3);
+            int total = task.optInt("total");
+            RemoteViews row = new RemoteViews(context.getPackageName(), R.layout.widget_task_row);
+            row.setTextViewText(R.id.widget_task, title);
+            row.setTextColor(R.id.widget_task, task.optBoolean("overdue") || priority == 0
+                ? COLOR_DANGER : priority == 1 ? COLOR_WARN : COLOR_TEXT);
+            PendingIntent open = task.optBoolean("pending") ? today : appIntent(context,
+                Uri.parse("com.personal.workstation://task?id=" + Uri.encode(id)), base + 30 + i);
+            row.setOnClickPendingIntent(R.id.widget_task, open);
+            row.setContentDescription(R.id.widget_check, (total > 1 ? "打卡：" : "完成：") + title);
+            row.setOnClickPendingIntent(R.id.widget_check, completeIntent(context, id));
+            if (total > 1) {
+                row.setViewVisibility(R.id.widget_progress, View.VISIBLE);
+                row.setTextViewText(R.id.widget_progress, task.optInt("count") + "/" + total);
+                row.setOnClickPendingIntent(R.id.widget_progress, open);
+            }
+            views.addView(R.id.widget_tasks, row);
+        }
+        return views;
     }
 
     /**

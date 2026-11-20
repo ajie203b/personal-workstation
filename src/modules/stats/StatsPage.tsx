@@ -43,13 +43,13 @@ export function StatsPage() {
     <div>
       <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4">
         <div className="hidden md:block mb-4"><h1 className="text-[22px] font-bold leading-8">统计</h1><p className="text-[13px] text-on-surface-2 mt-0.5">查看任务数据与模型额度</p></div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="inline-flex shrink-0 gap-1 rounded-xl bg-surface-3/70 p-1" role="group" aria-label="统计页面切换">
             <button type="button" aria-pressed={view === 'tasks'} onClick={() => setView('tasks')} className={cn('flex items-center gap-1 rounded-lg px-2.5 py-2 text-[13px] whitespace-nowrap', view === 'tasks' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><BarChart3 size={15} />任务统计</button>
             <button type="button" aria-pressed={view === 'quota'} onClick={() => setView('quota')} className={cn('flex items-center gap-1 rounded-lg px-2.5 py-2 text-[13px] whitespace-nowrap', view === 'quota' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><WalletCards size={15} />模型额度</button>
           </div>
           {view === 'tasks' && <div className="flex shrink-0 items-center gap-0.5 rounded-[12px] bg-surface-3/70 p-[3px]" role="group" aria-label="统计时间范围">
-            {(['week', 'month'] as const).map(r => <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)} className={cn('h-8 rounded-[10px] px-3 text-[13px] font-medium transition-colors', range === r ? 'bg-surface text-on-surface shadow-sm' : 'text-on-surface-2 hover:text-on-surface')}>{r === 'week' ? '周' : '月'}</button>)}
+            {(['week', 'month'] as const).map(r => <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)} className={cn('h-8 max-md:size-11 rounded-[10px] px-3 text-[13px] font-medium transition-colors', range === r ? 'bg-surface text-on-surface shadow-sm' : 'text-on-surface-2 hover:text-on-surface')}>{r === 'week' ? '周' : '月'}</button>)}
           </div>}
         </div>
       </div>
@@ -196,9 +196,10 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
             {(['tasks', 'focus', 'notes'] as Metric[]).map((m) => (
               <button
                 key={m}
+                aria-pressed={metric === m}
                 onClick={() => setMetric(m)}
                 className={cn(
-                  'h-7 px-2.5 rounded-full text-[12px] cursor-pointer transition-colors',
+                  'h-7 max-md:min-h-11 max-md:min-w-11 px-2.5 rounded-full text-[12px] cursor-pointer transition-colors',
                   metric === m ? 'bg-primary text-on-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3',
                 )}
               >
@@ -484,7 +485,7 @@ function FocusTrend({ range, dayCounts }: { range: 'week' | 'month'; dayCounts: 
     const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width))
     setHover(Math.round(t * (n - 1)))
   }
-  const shown = hover != null ? data[hover] : data[data.length - 1]
+  const shown = data[hover ?? data.length - 1] ?? data[data.length - 1]
   const total = data.reduce((s, d) => s + d.v, 0)
 
   return (
@@ -505,6 +506,7 @@ function FocusTrend({ range, dayCounts }: { range: 'week' | 'month'; dayCounts: 
         onPointerMove={(e) => { if (e.buttons || e.pointerType === 'touch') scrub(e.clientX) }}
         onPointerLeave={() => setHover(null)}
         onPointerUp={() => setHover(null)}
+        onPointerCancel={() => setHover(null)}
         role="img"
         aria-label={`近 ${n} 天每日专注分钟`}
       >

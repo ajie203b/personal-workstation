@@ -129,6 +129,8 @@ export function IntelligenceCard() {
     return () => window.removeEventListener('keydown', onKey)
   }, [zoomed])
 
+  const updatedLabel = formatUpdatedAt(updatedAt)
+
   return (
     <section className="card p-4">
       <div className="flex items-start gap-2.5 mb-3">
@@ -137,8 +139,13 @@ export function IntelligenceCard() {
         </span>
         <div className="flex-1 min-w-0">
           <h2 className="text-[14px] font-semibold">模型智能排名</h2>
-          <p className="text-[12px] text-on-surface-2 mt-0.5 truncate">
-            Artificial Analysis 官方图表{formatUpdatedAt(updatedAt) ? ` · 更新于 ${formatUpdatedAt(updatedAt)}` : ''}
+          <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1 text-[12px] text-on-surface-2">
+            <span>Artificial Analysis 官方图表</span>
+            {updatedLabel && (
+              <time dateTime={updatedAt}>
+                <span aria-hidden className="hidden md:inline">· </span>更新于 {updatedLabel}
+              </time>
+            )}
           </p>
         </div>
         <button

@@ -84,7 +84,7 @@ export function TasksPage() {
 
   return (
     <div className={cn('mx-auto w-full px-4 md:px-8 pt-4 pb-36 md:pb-14 flex flex-col gap-4', view === 'board' ? 'max-w-[1600px]' : 'max-w-5xl')}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 max-md:flex-wrap">
         <h1 className="hidden md:block text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
 
         {/* 手机：5 个页签横滚看不到边，改成自绘下拉；桌面仍是分段控件 */}
@@ -94,7 +94,7 @@ export function TasksPage() {
             title="切换清单"
             value={isLogbook ? 'logbook' : tier}
             onChange={(v) => setParam('tier', v)}
-            triggerClassName="h-9 rounded-[10px] text-[14px] font-semibold"
+            triggerClassName="h-11 rounded-[10px] text-[14px] font-semibold"
             options={[
               ...TIERS.map((t) => ({ value: t as string, label: `${TIER_LABEL[t]}（${counts[t] ?? 0}）` })),
               { value: 'logbook', label: `日志（${doneCount}）` },
@@ -106,6 +106,8 @@ export function TasksPage() {
           <div className="ml-auto flex items-center gap-2">
             <Segmented
               size="sm"
+              touchSized
+              className="max-md:[&>button]:justify-center"
               ariaLabel="视图切换"
               value={view}
               onChange={(v) => setParam('view', v)}

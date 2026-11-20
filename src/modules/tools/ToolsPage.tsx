@@ -110,21 +110,21 @@ export function ToolsPage() {
         draggable={false}
         tabIndex={overlay ? -1 : undefined}
         aria-label={t.title}
-        className="chrome-button press card flex flex-col justify-between gap-2.5 relative w-full min-h-[104px] p-3.5 select-none"
+        className="chrome-button press card flex flex-col gap-2.5 relative w-full min-h-[104px] p-3.5 select-none max-md:h-full md:justify-between"
       >
-        <span className="flex items-center justify-between gap-2 w-full">
+        <span className="flex items-center justify-between gap-2 w-full max-md:flex-wrap">
           <span className="grid place-items-center size-9 rounded-[10px] bg-primary-soft text-primary shrink-0">
             <t.icon size={20} />
           </span>
           {badge.text && (
-            <span className={cn('px-2 py-0.5 rounded-full text-[10.5px] font-medium leading-4 truncate max-w-[116px]', badge.tone)}>
+            <span className={cn('min-w-0 px-2 py-0.5 rounded-full text-[10.5px] font-medium leading-4 text-center md:truncate max-w-[116px]', badge.tone)}>
               {badge.text}
             </span>
           )}
         </span>
         <span className="min-w-0 w-full">
-          <span className="block text-[14px] font-semibold leading-5 truncate">{t.title}</span>
-          <span className="block text-[11.5px] leading-4 mt-0.5 truncate text-on-surface-2">{t.sub}</span>
+          <span className="block text-[14px] font-semibold leading-5 md:truncate">{t.title}</span>
+          <span className="block text-xs md:text-[11.5px] leading-4 mt-0.5 md:truncate text-on-surface-2">{t.sub}</span>
         </span>
       </Link>
     )
@@ -142,6 +142,7 @@ export function ToolsPage() {
           <Segmented
             className="col-span-2 row-start-2 justify-self-start sm:col-span-1 sm:col-start-2 sm:row-start-1"
             size="sm"
+            touchSized
             ariaLabel="按分类筛选工具"
             value={category}
             onChange={setCategory}

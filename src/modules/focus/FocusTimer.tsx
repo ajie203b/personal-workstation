@@ -304,7 +304,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
           onChange={pickTask}
           ariaLabel="专注绑定任务"
           title="绑定任务"
-          triggerClassName="flex-1 h-8 px-2 rounded-[8px] text-[12px]"
+          triggerClassName="flex-1 h-11 md:h-8 px-2 rounded-[8px] text-[12px]"
           options={taskOptions}
         />
       </div>
