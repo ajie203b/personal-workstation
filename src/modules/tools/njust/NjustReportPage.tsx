@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router'
 import { AlertTriangle, CheckCircle2, Download, Eye, FileText, Image as ImageIcon, Loader2, Upload, X } from 'lucide-react'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
+import { IconToolReport } from '@/shared/icons'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { Dialog } from '@/shared/ui/Sheet'
 import { useUi } from '@/stores/ui'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
@@ -412,15 +414,16 @@ export function NjustReportPage() {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
-      <div className="flex items-center gap-3">
+      <header className="flex items-start gap-3.5">
+        <ToolIconTile icon={IconToolReport} />
         <div className="min-w-0 flex-1">
-          <h1 className="hidden md:block text-[22px] font-bold leading-7">NJUST 报告排版</h1>
-          <p className="text-[12.5px] text-on-surface-2 mt-0.5">txt / Markdown / docx → 南理工模板 Word，本地生成不上传</p>
+          <h1 className="hidden md:block text-[24px] font-bold tracking-[-0.02em] leading-7">NJUST 报告排版</h1>
+          <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">txt / Markdown / docx → 南理工模板 Word，本地生成不上传</p>
         </div>
-        <span className="hidden sm:inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-primary-soft text-primary text-[11px] font-medium shrink-0">
+        <span className="hidden sm:inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-ok/12 text-ok text-[11px] font-medium shrink-0">
           <CheckCircle2 size={12} /> 纯本地
         </span>
-      </div>
+      </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)] gap-4 items-start">
         <div className="flex flex-col gap-4 min-w-0">

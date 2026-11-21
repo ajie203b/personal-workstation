@@ -11,12 +11,17 @@
     <string name="shortcut_today_long">打开今日清单</string>
     <!-- 今日待办小组件（桌面 / 小米负一屏） -->
     <string name="task_widget_name">今日待办</string>
-    <string name="task_widget_desc">查看今日待办和打卡进度，轻点勾选完成任务，点右上角加号添加</string>
+    <string name="task_widget_desc">查看今日待办和打卡进度，轻点勾选完成并触发流光特效，点右上角加号快速添加</string>
+    <string name="task_widget_all_done">今日待办已清空</string>
+    <string name="task_widget_empty_hint">轻点右上角 + 随时记录</string>
     <string name="task_widget_add_title">添加到今日</string>
-    <string name="task_widget_add_hint">不打开 App，保存后自动同步</string>
+    <string name="task_widget_add_hint">自动同步至 Kairos</string>
     <string name="task_widget_add_placeholder">想做点什么？</string>
     <string name="task_widget_add_cancel">取消</string>
     <string name="task_widget_add_save">添加</string>
     <string name="task_widget_add_empty">写点什么吧</string>
     <string name="task_widget_added">已添加到今日</string>
+    <string name="task_widget_prio_normal">常规</string>
+    <string name="task_widget_prio_high">重要</string>
+    <string name="task_widget_prio_urgent">紧急</string>
 </resources>

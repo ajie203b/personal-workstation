@@ -42,7 +42,7 @@ export function DocsTable({
   onTrash: (doc: Doc) => void
 }) {
   return (
-    <div className="rounded-[14px] border border-outline bg-surface overflow-x-auto">
+    <div className="card overflow-x-auto">
       <table className="w-full text-left border-collapse text-[13px]">
         <thead>
           <tr className="border-b border-outline/80 text-[11.5px] text-on-surface-2 bg-surface-2/60">

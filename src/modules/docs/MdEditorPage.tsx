@@ -564,7 +564,7 @@ export function MdEditorPage() {
       {/* 工具栏 */}
       {editor && (
         <div className="max-md:order-last shrink-0 flex flex-col bg-surface border-outline/60 max-md:border-t md:border-b" role="toolbar" aria-label="文档编辑工具">
-          <div className="flex items-center gap-0.5 px-3 py-1 md:px-4 md:py-1 overflow-x-auto md:overflow-visible md:flex-nowrap md:justify-center md:w-full">
+          <div className="flex items-center gap-0.5 px-3 py-1 md:px-4 md:py-1 overflow-x-auto lg:overflow-visible lg:justify-center md:w-full">
             {!sourceMode && (
               <>
                 <ToolBtn label="撤销" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={14} /></ToolBtn>

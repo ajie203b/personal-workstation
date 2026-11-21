@@ -4,7 +4,7 @@ import { useId, useRef, type ReactNode, type RefObject } from 'react'
 import { cn } from '@/lib/cn'
 import { useSheetDrag } from './useSheetDrag'
 
-const BACKDROP = 'modal-backdrop fixed inset-0 z-40 bg-black/30'
+const BACKDROP = 'modal-backdrop fixed inset-0 z-40 bg-black/28 backdrop-blur-[6px]'
 
 /**
  * 侧滑详情面板：桌面/平板横屏=右侧滑入（440px），手机=底部抽屉（85dvh）。
@@ -45,7 +45,7 @@ export function Sheet({
           }}
           className={cn(
             'sheet-panel fixed z-50 bg-surface border-outline flex flex-col',
-            'max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-[20px] max-md:border-t max-md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]',
+            'max-md:inset-x-0 max-md:bottom-0 max-md:rounded-t-[26px] max-md:border-t max-md:pb-[calc(1.25rem+env(safe-area-inset-bottom))]',
             compact ? 'max-md:max-h-[85dvh]' : 'max-md:h-[85dvh]',
             'md:top-0 md:right-0 md:bottom-0 md:w-[min(440px,92vw)] md:border-l',
             'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]',

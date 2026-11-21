@@ -16,7 +16,8 @@ import {
   RotateCw,
   Trash2,
 } from 'lucide-react'
-import { IconToolNovel } from '@/shared/icons'
+import { IconToolArchive } from '@/shared/icons'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { Button } from '@/shared/ui/Button'
 import { importDoc } from '@/db/docs'
 import { openExternal } from '@/lib/links'
@@ -394,12 +395,10 @@ export function ArchivePage() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 pb-24 pt-4 md:px-8 md:pb-14">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
-      <header className="flex items-center gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-primary-soft text-primary">
-          <IconToolNovel size={22} />
-        </span>
+      <header className="flex items-start gap-3.5">
+        <ToolIconTile icon={IconToolArchive} />
         <div>
-          <h1 className="hidden md:block text-[22px] font-bold leading-7">安娜的档案</h1>
+          <h1 className="hidden md:block text-[24px] font-bold tracking-[-0.02em] leading-7">安娜的档案</h1>
           <p className="mt-0.5 text-sm text-on-surface-2">
             支持各种电子书与文档格式（EPUB / PDF / MOBI / AZW3 / DJVU / FB2 / TXT / ZIP 等），可选择保存到本地或导入 Kairos 阅读。
           </p>

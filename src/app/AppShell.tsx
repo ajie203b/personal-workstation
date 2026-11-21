@@ -7,6 +7,7 @@ import { BottomNav } from './BottomNav'
 import { TopBar } from './TopBar'
 import { PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
+import { useSpotlightEffect } from '@/lib/useSpotlight'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { FocusMiniBar } from '@/shared/FocusMiniBar'
 import { useUi } from '@/stores/ui'
@@ -32,6 +33,7 @@ const IMMERSIVE = [/^\/docs\/.+/, /^\/tools\/math-notes$/]
 
 export function AppShell() {
   useThemeEffect()
+  useSpotlightEffect()
   const { pathname } = useLocation()
   const [params] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
@@ -56,7 +58,11 @@ export function AppShell() {
 
   const selfScrolling = SELF_SCROLLING.test(pathname)
   const immersive = IMMERSIVE.some((re) => re.test(pathname))
-  const showTopBar = !immersive && pathname !== '/docs'
+  // 五大一级页统一顶栏视觉，不再单独在文档页断开
+  const showTopBar = !immersive
+  // 工具二级页与设置二级页自动收起底栏，让位给当前操作空间（原生 App 层级体验）
+  const isSecondaryMobile = /^\/tools\/.+/.test(pathname) || (pathname === '/settings' && Boolean(params.get('section')))
+  const showBottomNav = !immersive && !isSecondaryMobile
   // 设置页 / 工具页是配置与工具页，不摆「加任务」的悬浮按钮
   const showFab = !immersive && (section === '/today' || section === '/tasks')
 
@@ -72,7 +78,7 @@ export function AppShell() {
   }
 
   return (
-    <div className={cn('h-full flex bg-canvas', !immersive && 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]')}>
+    <div className={cn('app-ambient-canvas h-full flex', !immersive && 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]')}>
       <a
         href="#main-scroll"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-4 focus:py-3 focus:text-on-surface"
@@ -93,8 +99,10 @@ export function AppShell() {
           className={cn(
             'workspace-scroll flex-1 min-h-0',
             showTopBar && 'has-mobile-toolbar',
-            !immersive && 'has-mobile-tabs',
-            selfScrolling ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain',
+            showBottomNav && 'has-mobile-tabs',
+            selfScrolling
+              ? 'overflow-hidden md:my-3 md:mr-3 md:rounded-[24px] md:border md:border-outline md:shadow-[var(--elev-card)] md:bg-surface'
+              : 'overflow-y-auto overscroll-contain',
           )}
         >
           <div className={cn('min-w-0', selfScrolling && 'h-full', revisiting && 'enter-once')}>
@@ -103,11 +111,11 @@ export function AppShell() {
             </Suspense>
           </div>
         </main>
-        {!immersive && <BottomNav todayCount={todayCount} />}
+        {showBottomNav && <BottomNav todayCount={todayCount} />}
       </div>
 
       {/* 计时中：迷你条目常驻底栏上方，切到任何页都看得到 */}
-      {!immersive && <FocusMiniBar besideAddButton={section === '/tasks' || pathname === '/docs'} />}
+      {showBottomNav && <FocusMiniBar besideAddButton={section === '/tasks' || pathname === '/docs'} />}
 
       {/* 手机统一添加入口：右下角、底栏上方，拇指够得着；桌面用输入框与 N 快捷键 */}
       {showFab && (
@@ -118,11 +126,11 @@ export function AppShell() {
           aria-label="添加任务"
           title="添加任务"
           className={cn(
-            'mobile-actions-offset press md:hidden fixed right-[calc(.75rem+env(safe-area-inset-right))] z-30 grid place-items-center size-12 rounded-full cursor-pointer',
-            'bg-primary-action text-on-primary-action shadow-md shadow-primary/20',
+            'mobile-actions-offset press btn-primary-glow md:hidden fixed right-[calc(.9rem+env(safe-area-inset-right))] z-30 grid place-items-center size-12 rounded-full cursor-pointer',
+            'bg-primary-action text-on-primary-action',
           )}
         >
-          <Plus size={24} strokeWidth={2.2} />
+          <Plus size={22} strokeWidth={2.3} />
         </button>
       )}
     </div>

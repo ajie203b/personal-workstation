@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 呼应四色 xyj 品牌基因的极简四色星阵微标 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="15dp"
+    android:height="15dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="#4285F4"
+        android:pathData="M4.2,1.5a2.7,2.7 0 1,0 0,5.4a2.7,2.7 0 1,0 0,-5.4z" />
+    <path
+        android:fillColor="#EA4335"
+        android:pathData="M11.8,1.5a2.7,2.7 0 1,0 0,5.4a2.7,2.7 0 1,0 0,-5.4z" />
+    <path
+        android:fillColor="#FBBC05"
+        android:pathData="M4.2,9.1a2.7,2.7 0 1,0 0,5.4a2.7,2.7 0 1,0 0,-5.4z" />
+    <path
+        android:fillColor="#34A853"
+        android:pathData="M11.8,9.1a2.7,2.7 0 1,0 0,5.4a2.7,2.7 0 1,0 0,-5.4z" />
+</vector>

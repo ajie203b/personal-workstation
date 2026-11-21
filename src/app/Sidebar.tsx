@@ -31,26 +31,33 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
   return (
     <aside
       className={cn(
-        'workspace-sidebar hidden md:flex flex-col shrink-0 w-16 z-30 overflow-hidden ml-2.5 mb-2.5 mt-[calc(.625rem+env(safe-area-inset-top,0px))]',
-        !collapsed && 'lg:w-56',
+        'workspace-sidebar hidden md:flex flex-col shrink-0 w-[68px] z-30 overflow-hidden ml-3 mb-3 mt-[calc(.75rem+env(safe-area-inset-top,0px))]',
+        !collapsed && 'lg:w-[228px]',
       )}
     >
-      <div className="flex items-center gap-1 h-14 px-2.5 shrink-0 overflow-hidden">
+      <div className="flex items-center gap-1.5 h-15 px-2.5 shrink-0 overflow-hidden">
         <button
           type="button"
           aria-label="回到今日"
           title="今日"
           onClick={onBrandClick}
-          className="chrome-button press shrink-0 cursor-pointer rounded-xl select-none"
+          className="chrome-button press shrink-0 cursor-pointer rounded-2xl select-none"
         >
           <BrandMark />
         </button>
-        {!collapsed && <span className="sidebar-label hidden lg:block text-[17px] font-semibold tracking-tight whitespace-nowrap">
-          Kairos
-        </span>}
+        {!collapsed && (
+          <div className="sidebar-label hidden lg:flex flex-col min-w-0 leading-none">
+            <span className="text-[17px] font-bold tracking-[-0.025em] text-on-surface whitespace-nowrap">
+              Kairos
+            </span>
+            <span className="text-[10.5px] font-medium tracking-[0.06em] uppercase text-on-surface-2/80 mt-0.5 whitespace-nowrap">
+              Workstation
+            </span>
+          </div>
+        )}
       </div>
 
-      <nav aria-label="主导航" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5 px-2.5 py-1.5">
+      <nav aria-label="主导航" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 px-2.5 py-1.5">
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}
@@ -60,17 +67,16 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
             title={item.label}
             className={({ isActive }) =>
               cn(
-                'sidebar-link relative flex items-center gap-3 h-11 px-2.5 rounded-xl shrink-0',
-                'transition-colors duration-150',
+                'sidebar-link relative flex items-center gap-3 h-11 px-3 rounded-[14px] shrink-0',
                 isActive
-                  ? 'bg-primary-soft text-primary font-medium'
-                  : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+                  ? 'text-primary font-semibold'
+                  : 'text-on-surface-2 hover:bg-surface-3/70 hover:text-on-surface',
               )
             }
           >
             {({ isActive }) => (
               <>
-                <item.icon size={20} strokeWidth={isActive ? 2 : 1.8} className="shrink-0" aria-hidden />
+                <item.icon size={20} strokeWidth={isActive ? 2.1 : 1.8} className="shrink-0" aria-hidden />
                 <span
                   className={cn('sidebar-label text-ui-label whitespace-nowrap', collapsed ? 'hidden' : 'hidden lg:block')}
                 >
@@ -79,7 +85,7 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
                 {!collapsed && item.path === '/tasks' && todayCount > 0 && (
                   <span
                     className={cn(
-                      'sidebar-label hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] tabular-nums',
+                      'sidebar-label hidden lg:grid place-items-center ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] font-semibold tabular-nums',
                       isActive ? 'bg-primary text-on-primary' : 'bg-surface-3 text-on-surface-2',
                     )}
                   >
@@ -92,15 +98,15 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
         ))}
       </nav>
 
-      <div className={cn('flex items-center gap-0.5 px-2.5 py-2 shrink-0 flex-col', !collapsed && 'lg:flex-row')}>
+      <div className={cn('flex items-center gap-1 px-2.5 py-2.5 border-t border-outline/80 shrink-0 flex-col', !collapsed && 'lg:flex-row')}>
         <button
           type="button"
           aria-label={pathname.startsWith('/settings') ? '返回' : '设置'}
           title={pathname.startsWith('/settings') ? '返回' : '设置'}
           onClick={() => guardNavigation(() => navigate(pathname.startsWith('/settings') ? '/today' : '/settings'))}
           className={cn(
-            'chrome-button press grid place-items-center size-10 rounded-xl shrink-0 cursor-pointer',
-            pathname.startsWith('/settings') ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+            'chrome-button press grid place-items-center size-10 rounded-[12px] shrink-0 cursor-pointer',
+            pathname.startsWith('/settings') ? 'bg-primary-soft text-primary' : 'text-on-surface-2 hover:bg-surface-3/70 hover:text-on-surface',
           )}
         >
           <IconSettings size={18} />
@@ -112,7 +118,7 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
           title={collapsed ? '展开侧栏' : '折叠侧栏'}
           aria-expanded={!collapsed}
           onClick={() => reading ? setReaderExpanded(collapsed) : setCollapsed(!collapsed)}
-          className="chrome-button press hidden lg:grid place-items-center size-10 rounded-xl text-on-surface-2 shrink-0 lg:ml-auto cursor-pointer"
+          className="chrome-button press hidden lg:grid place-items-center size-10 rounded-[12px] text-on-surface-2 shrink-0 lg:ml-auto cursor-pointer"
         >
           {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
         </button>

@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ScanLine } from 'lucide-react'
+import { QrCode, ScanLine } from 'lucide-react'
 import { IconToolQr } from '@/shared/icons'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Segmented, type SegmentOption } from '@/shared/ui/Segmented'
 import { db, type QrHistoryRow } from '@/db/db'
@@ -12,7 +13,7 @@ import { QrScanTab } from './QrScanTab'
 import { QrHistoryList } from './QrHistoryList'
 
 const TAB_OPTIONS: SegmentOption<'generate' | 'scan'>[] = [
-  { value: 'generate', label: '生成', icon: IconToolQr },
+  { value: 'generate', label: '生成', icon: QrCode },
   { value: 'scan', label: '扫码', icon: ScanLine },
 ]
 
@@ -55,12 +56,10 @@ export function QrPage() {
     <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
-      <header className="flex items-start gap-3">
-        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconToolQr size={22} />
-        </span>
+      <header className="flex items-start gap-3.5">
+        <ToolIconTile icon={IconToolQr} />
         <div className="min-w-0">
-          <h1 className="hidden md:block text-[22px] font-bold leading-7">二维码</h1>
+          <h1 className="hidden md:block text-[24px] font-bold tracking-[-0.02em] leading-7">二维码</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             生成二维码、扫码识别：文本 / 网址 / WiFi / 名片，导出 PNG / SVG
           </p>

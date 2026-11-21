@@ -18,6 +18,7 @@ import {
   Server,
 } from 'lucide-react'
 import { IconToolNovel } from '@/shared/icons'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { Button } from '@/shared/ui/Button'
 import { BackButton } from '@/shared/ui/BackButton'
 import { EmptyState } from '@/shared/ui/EmptyState'
@@ -485,12 +486,10 @@ export function FanqiePage() {
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
-      <header className="flex items-start gap-3">
-        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconToolNovel size={22} />
-        </span>
+      <header className="flex items-start gap-3.5">
+        <ToolIconTile icon={IconToolNovel} />
         <div className="min-w-0 flex-1">
-          <h1 className="hidden md:block text-[22px] font-bold leading-7">番茄小说</h1>
+          <h1 className="hidden md:block text-[24px] font-bold tracking-[-0.02em] leading-7">番茄小说</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             搜书名 / 作者，下载全本到本地书架 · TXT / EPUB
           </p>

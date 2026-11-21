@@ -29,16 +29,16 @@ const variantCls: Record<Variant, string> = {
   destructive: 'text-on-danger hover:opacity-90 active:opacity-80',
 }
 const fillCls: Record<Variant, string> = {
-  primary: 'bg-primary-action',
-  ghost: 'bg-transparent group-hover:bg-surface-3',
-  outline: 'bg-transparent ring-1 ring-inset ring-outline group-hover:bg-surface-3',
+  primary: 'bg-primary-action btn-primary-glow',
+  ghost: 'bg-transparent group-hover:bg-surface-3/80',
+  outline: 'bg-surface/70 ring-1 ring-inset ring-outline group-hover:bg-surface-2 group-hover:ring-primary/30',
   danger: 'bg-transparent group-hover:bg-danger/10',
-  destructive: 'bg-danger',
+  destructive: 'bg-danger shadow-sm',
 }
 const sizeCls: Record<Size, string> = {
-  sm: 'h-9 px-3 rounded-[10px] text-ui-caption gap-1.5 [--morph-size:36px]',
-  md: 'h-10 px-4 rounded-[12px] text-ui-label gap-2 [--morph-size:40px]',
-  icon: 'w-10 h-10 rounded-[10px] justify-center [--morph-size:40px]',
+  sm: 'h-9 px-3.5 rounded-[12px] text-ui-caption gap-1.5 [--morph-size:36px]',
+  md: 'h-10 px-4 rounded-[13px] text-ui-label gap-2 [--morph-size:40px]',
+  icon: 'w-10 h-10 rounded-[12px] justify-center [--morph-size:40px]',
 }
 const stateCls: Record<ButtonState, string> = {
   idle: '',

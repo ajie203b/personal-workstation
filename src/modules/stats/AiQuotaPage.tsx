@@ -88,12 +88,17 @@ export function AiQuotaPage() {
     } catch { toast('删除失败，请重试') }
   }
 
-  return <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 flex flex-col gap-4">
-    <header className="flex items-start gap-3">
-      <div className="flex-1"><h1 className="text-xl font-bold">模型额度</h1><p className="mt-1 text-sm text-on-surface-2">记录会员和 API 额度，安排使用与续费</p></div>
-      <button type="button" onClick={() => { setDraft(blank()); setEditing(false); setError('') }} className="inline-flex items-center gap-1 rounded-xl bg-primary-action px-3 py-2 text-sm text-on-primary-action"><Plus size={16} />添加</button>
+  return <div className="mx-auto w-full max-w-7xl px-3.5 md:px-8 pt-3 md:pt-4 pb-24 flex flex-col gap-3 md:gap-4">
+    <header className="flex items-center md:items-start gap-3">
+      <div className="flex-1 min-w-0">
+        <h1 className="hidden md:block text-xl font-bold">模型额度</h1>
+        <p className="text-[12.5px] md:text-sm md:mt-1 text-on-surface-2">记录会员和 API 额度，安排使用与续费</p>
+      </div>
+      <Button variant="primary" size="sm" onClick={() => { setDraft(blank()); setEditing(false); setError('') }}>
+        <Plus size={15} />添加
+      </Button>
     </header>
-    <p className="text-xs text-on-surface-2">数据由你手动填写和更新，保存在本机并随应用备份；无需填写 API 密钥。长按卡片可调整顺序。</p>
+    <p className="hidden md:block text-xs text-on-surface-2">数据由你手动填写和更新，保存在本机并随应用备份；无需填写 API 密钥。长按卡片可调整顺序。</p>
     {draft && <form onSubmit={save} className="card p-4 flex flex-col gap-4" aria-label={editing ? '编辑额度记录' : '添加额度记录'}>
       <div className="flex items-center justify-between"><h2 className="font-semibold">{editing ? '编辑记录' : '添加记录'}</h2><button type="button" onClick={() => setDraft(null)} className="text-sm text-on-surface-2">取消</button></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -123,16 +128,17 @@ export function AiQuotaPage() {
         <label className="text-sm flex flex-col gap-1 sm:col-span-2">备注（可选）<textarea className={field} rows={2} value={draft.note} onChange={e => change('note', e.target.value)} maxLength={500} /></label>
       </div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-      <div><button disabled={saving} type="submit" className="rounded-xl bg-primary-action px-4 py-2 text-sm text-on-primary-action disabled:opacity-50">保存记录</button></div>
+      <div><Button variant="primary" disabled={saving} type="submit">保存记录</Button></div>
     </form>}
     {!entries.length && !draft && <div className="card p-8 text-center text-on-surface-2"><WalletCards size={28} className="mx-auto mb-3 opacity-60" /><p className="font-medium text-on-surface">还没有额度记录</p><p className="mt-1 text-sm">添加一个会员或 API 套餐，开始规划使用。</p></div>}
     <DragSort ids={orderedEntries.map(entry => entry.id)} strategy={rectSwappingStrategy} onMove={moveEntry}
       renderOverlay={id => {
         const entry = orderedEntries.find(item => item.id === id)
-        return entry ? <div data-quota-overlay aria-hidden="true" className="h-full overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/15"><QuotaCard entry={entry} onEdit={() => {}} onDelete={() => {}} overlay /></div> : null
+        return entry ? <div data-quota-overlay aria-hidden="true" className="h-full overflow-hidden rounded-[20px] shadow-xl ring-1 ring-primary/15"><QuotaCard entry={entry} onEdit={() => {}} onDelete={() => {}} overlay /></div> : null
       }}>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full"><QuotaCard entry={entry} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} /></DragSortItem>)}</div>
     </DragSort>
+    <p className="md:hidden text-[11px] text-on-surface-2/80 text-center pt-1">数据保存在本机并随备份同步 · 长按卡片可排序</p>
     {pendingDelete && <Dialog open onOpenChange={() => setPendingDelete(null)} title="删除额度记录？" description={pendingDelete.name}>
       <div className="flex justify-end gap-2">
         <Button onClick={() => setPendingDelete(null)}>取消</Button>
@@ -150,22 +156,25 @@ function QuotaCard({ entry, onEdit, onDelete, overlay = false }: { entry: QuotaE
   const expiry = quotaExpiry(entry.expiresAt, todayStr())
   const metadata = [quotaProviderLabel(entry.name, entry.provider), entry.kind, entry.account].filter(Boolean).join(' · ')
   const number = (value: number) => value.toLocaleString('zh-CN')
+  const barTone = summary
+    ? (summary.exceeded || summary.percent >= 95 ? 'bg-danger' : summary.percent >= 75 ? 'bg-p1' : 'bg-primary')
+    : 'bg-primary'
 
-  return <article className="card p-4 flex h-full flex-col gap-4 min-w-0">
+  return <article className="card card-hover p-4 flex h-full flex-col gap-4 min-w-0">
     <div className="flex items-start gap-3">
       <BrandIcon name={entry.name} provider={entry.provider} />
       <div className="min-w-0 flex-1"><h2 className="font-semibold leading-5 break-words">{entry.name}</h2><p className="mt-1 text-xs text-on-surface-2 break-words">{metadata}</p></div>
-      <div className="flex shrink-0"><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`编辑 ${entry.name}`} onClick={onEdit} className="p-2 text-on-surface-2 hover:text-on-surface"><Pencil size={16} /></button><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`删除 ${entry.name}`} onClick={onDelete} className="p-2 text-on-surface-2 hover:text-on-surface"><Trash2 size={16} /></button></div>
+      <div className="flex shrink-0"><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`编辑 ${entry.name}`} onClick={onEdit} className="p-2 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"><Pencil size={15} /></button><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`删除 ${entry.name}`} onClick={onDelete} className="p-2 rounded-lg text-on-surface-2 hover:bg-danger/10 hover:text-danger transition-colors cursor-pointer"><Trash2 size={15} /></button></div>
     </div>
-    {mode === 'balance' && <div><p className="text-xs text-on-surface-2">账户余额</p><p className="mt-1 text-lg font-semibold break-words">{entry.balance != null ? <>{number(entry.balance)} <span className="text-sm font-normal text-on-surface-2">{entry.balanceUnit || '元'}</span></> : <span className="text-sm font-normal text-on-surface-2">尚未填写余额</span>}</p></div>}
+    {mode === 'balance' && <div><p className="text-xs text-on-surface-2">账户余额</p><p className="mt-1 text-xl font-bold tracking-[-0.02em] tabular-nums break-words">{entry.balance != null ? <>{number(entry.balance)} <span className="text-sm font-normal text-on-surface-2">{entry.balanceUnit || '元'}</span></> : <span className="text-sm font-normal text-on-surface-2">尚未填写余额</span>}</p></div>}
     {mode === 'quota' && (summary ? <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="min-w-0 break-words"><span className="text-xs text-on-surface-2">剩余 </span><span className="font-semibold">{number(summary.remaining)}</span> <span className="text-sm text-on-surface-2">{entry.unit}</span></p><p className="text-xs text-on-surface-2">已用 {number(entry.used!)} / {number(entry.total!)}</p></div>
-      <div className="mt-2 h-1.5 rounded-full bg-surface-3 overflow-hidden" role="progressbar" aria-label={`${entry.name} 已用额度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(summary.percent)}><div className="h-full rounded-full bg-primary" style={{ width: `${summary.percent}%` }} /></div>
-      {summary.exceeded && <p className="mt-1 text-xs text-danger">已超过记录的总额度</p>}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="min-w-0 break-words"><span className="text-xs text-on-surface-2">剩余 </span><span className="font-bold tabular-nums">{number(summary.remaining)}</span> <span className="text-sm text-on-surface-2">{entry.unit}</span></p><p className="text-xs text-on-surface-2 tabular-nums">已用 {number(entry.used!)} / {number(entry.total!)}</p></div>
+      <div className="mt-2 h-2 rounded-full bg-surface-3 overflow-hidden" role="progressbar" aria-label={`${entry.name} 已用额度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(summary.percent)}><div className={`h-full rounded-full transition-[width] duration-300 ${barTone}`} style={{ width: `${summary.percent}%` }} /></div>
+      {summary.exceeded && <p className="mt-1 text-xs font-medium text-danger">已超过记录的总额度</p>}
     </div> : <p className="text-sm text-on-surface-2">{entry.total != null ? `总额度 ${number(entry.total)} ${entry.unit}` : entry.used != null ? `已用 ${number(entry.used)} ${entry.unit}` : '尚未填写额度'}</p>)}
     {(entry.expiresAt || (mode !== 'none' && entry.resetAt)) && <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-outline pt-3">
-      {entry.expiresAt && <div className="flex items-center gap-2 text-sm"><CalendarDays size={16} className={expiry?.tone === 'expired' || expiry?.tone === 'soon' ? 'text-danger' : 'text-primary'} /><span className="font-medium">{entry.expiresAt}</span>{expiry && <span className={expiry.tone === 'expired' || expiry.tone === 'soon' ? 'text-xs font-semibold text-danger' : 'text-xs text-on-surface-2'}>{expiry.text}</span>}</div>}
-      {mode !== 'none' && entry.resetAt && <span className="text-xs text-on-surface-2">重置 {entry.resetAt}</span>}
+      {entry.expiresAt && <div className="flex items-center gap-2 text-sm"><CalendarDays size={15} className={expiry?.tone === 'expired' || expiry?.tone === 'soon' ? 'text-danger' : 'text-primary'} /><span className="font-medium tabular-nums">{entry.expiresAt}</span>{expiry && <span className={expiry.tone === 'expired' || expiry.tone === 'soon' ? 'text-xs font-semibold text-danger' : 'text-xs text-on-surface-2'}>{expiry.text}</span>}</div>}
+      {mode !== 'none' && entry.resetAt && <span className="text-xs text-on-surface-2 tabular-nums">重置 {entry.resetAt}</span>}
     </div>}
     {entry.note && <p className="text-xs text-on-surface-2 whitespace-pre-wrap break-words">{entry.note}</p>}
   </article>
@@ -174,7 +183,7 @@ function QuotaCard({ entry, onEdit, onDelete, overlay = false }: { entry: QuotaE
 
 function BrandIcon({ name, provider, compact = false }: { name: string; provider: string; compact?: boolean }) {
   const brand = quotaBrand(name, provider)
-  return <span aria-hidden="true" className={`grid shrink-0 place-items-center rounded-xl border border-outline bg-white overflow-hidden ${compact ? 'h-10 w-10' : 'h-11 w-11'}`}>
+  return <span aria-hidden="true" className={`grid shrink-0 place-items-center rounded-[13px] bg-[#FAFBFD] shadow-[0_4px_12px_-5px_rgba(15,23,42,0.18),0_0_0_1px_rgba(15,23,42,0.07)] overflow-hidden ${compact ? 'h-10 w-10' : 'h-11 w-11'}`}>
     {brand ? <img alt="" className={brand === 'lobe-xiaomimimo' ? 'h-9 w-9 object-contain' : 'h-7 w-7 object-contain'} src={`${import.meta.env.BASE_URL}brands/${brand}.svg`} /> : <span className="text-base font-bold text-slate-600">{provider.slice(0, 1).toUpperCase()}</span>}
   </span>
 }

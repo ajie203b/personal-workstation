@@ -109,30 +109,49 @@ function CountdownDisplay({
   const progress = total > 0 ? 1 - remaining / total : 0
 
   return (
-    <div className="relative w-[140px] h-[140px]">
-      {/* 呼吸光晕：仅运行中显示，暂停即停（同屏只保留一个循环动画） */}
-      {store.running && (
-        <span
-          aria-hidden
-          className="focus-breathe absolute inset-1 rounded-full"
-          style={{
-            background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 24%, transparent) 0%, transparent 68%)',
-          }}
-        />
-      )}
+    <div className="relative w-[138px] h-[138px] md:w-[152px] md:h-[152px]">
+      {/* 柔和极光背景环：运行中缓慢呼吸，待机保持极淡环境光晕 */}
+      <span
+        aria-hidden
+        className={cn('absolute inset-0 rounded-full', store.running && 'focus-breathe')}
+        style={{
+          background: store.running
+            ? 'radial-gradient(circle, color-mix(in srgb, var(--primary) 26%, transparent) 0%, transparent 68%)'
+            : 'radial-gradient(circle, color-mix(in srgb, var(--primary) 10%, transparent) 0%, transparent 64%)',
+        }}
+      />
       <svg viewBox="0 0 140 140" className="relative w-full h-full -rotate-90">
-        <circle cx="70" cy="70" r="60" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
+        <defs>
+          <linearGradient id="focus-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--primary)" />
+            <stop offset="100%" stopColor="color-mix(in srgb, var(--primary) 62%, #38BDF8)" />
+          </linearGradient>
+        </defs>
+        {/* 表圈细刻度环：极简精密计时器质感 */}
+        <circle
+          cx="70" cy="70" r="50.5" fill="none"
+          stroke="var(--outline-strong)" strokeWidth="1.25"
+          strokeDasharray="1.4 6.53"
+          opacity={store.running ? 0.65 : 0.42}
+        />
+        <circle cx="70" cy="70" r="60" fill="none" stroke="var(--surface-3)" strokeWidth="7.5" />
         <circle
           cx="70" cy="70" r="60" fill="none"
-          stroke="var(--primary)"
-          strokeWidth="8" strokeLinecap="round"
-          strokeDasharray={`${progress * RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`}
-          style={{ transition: 'stroke-dasharray 1s linear' }}
+          stroke="url(#focus-ring-grad)"
+          strokeWidth="7.5" strokeLinecap="round"
+          strokeDasharray={`${Math.max(progress, 0.015) * RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`}
+          style={{
+            transition: 'stroke-dasharray 1s linear',
+            filter: store.running ? 'drop-shadow(0 0 8px var(--primary-glow))' : undefined,
+          }}
         />
       </svg>
-      <div className="absolute inset-0 grid place-items-center">
-        <span className="text-[28px] font-bold tabular-nums text-primary">
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[30px] font-bold tracking-[-0.03em] leading-none tabular-nums text-on-surface">
           {mm}:{ss}
+        </span>
+        <span className="mt-1.5 text-[10.5px] font-semibold tracking-[0.12em] uppercase text-on-surface-2/80">
+          {store.phase === 'work' ? 'FOCUS' : 'BREAK'}
         </span>
       </div>
     </div>
@@ -242,10 +261,19 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   }, [store.running, store.phase, store.endsAt, store.workMin, boundTask])
 
   return (
-    <div className="card p-5 flex flex-col items-center gap-4">
-      <div className="flex items-center gap-2">
-        <Timer size={16} className="text-on-surface-2" />
-        <span className="text-[13px] font-semibold text-on-surface-2">
+    <div className="card p-4 md:p-5 flex flex-col items-center gap-3 md:gap-4">
+      <div className={cn(
+        'inline-flex items-center gap-2 rounded-full px-3 py-1 text-[12px] font-semibold border transition-colors',
+        store.running
+          ? 'bg-primary-soft/85 border-primary/25 text-primary'
+          : 'bg-surface-2/90 border-outline/80 text-on-surface-2',
+      )}>
+        {store.running ? (
+          <span aria-hidden className="ranking-live-dot" style={{ background: store.phase === 'work' ? 'var(--primary)' : 'var(--ok)' }} />
+        ) : (
+          <Timer size={13.5} className="opacity-80" aria-hidden />
+        )}
+        <span>
           {store.running ? (store.phase === 'work' ? '专注中' : '休息中') : '未开始'}
         </span>
       </div>
@@ -278,10 +306,9 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
             'grid place-items-center w-11 h-11 rounded-full cursor-pointer active:scale-95',
             'transition-[transform,background-color,color,box-shadow] duration-200',
             store.running
-              ? 'bg-primary/12 text-primary ring-1 ring-primary/30 hover:bg-primary/18'
-              : 'bg-primary-action text-on-primary-action hover:brightness-[1.06]',
+              ? 'bg-primary-soft text-primary ring-1 ring-primary/30 hover:bg-primary/20'
+              : 'bg-primary-action text-on-primary-action btn-primary-glow hover:scale-105',
           )}
-          style={store.running ? undefined : { boxShadow: '0 8px 20px -8px color-mix(in srgb, var(--primary) 70%, transparent)' }}
           aria-label={store.running ? '暂停' : '开始'}
         >
           {/* 32px 画布让播放三角形高约 17px，与 44px 按钮之间留出充足空隙 */}
@@ -304,7 +331,7 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
           onChange={pickTask}
           ariaLabel="专注绑定任务"
           title="绑定任务"
-          triggerClassName="flex-1 h-11 md:h-8 px-2 rounded-[8px] text-[12px]"
+          triggerClassName="flex-1 h-9 md:h-8 px-2.5 rounded-[10px] text-[12px]"
           options={taskOptions}
         />
       </div>

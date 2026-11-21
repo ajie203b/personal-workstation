@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, Clock3, Flag, Hash, Repeat, Target, Timer } from 'lucide-react'
+import { CalendarDays, Clock3, Flag, Hash, Plus, Repeat, Target, Timer } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { addTask } from '@/db/tasks'
 import { fmtDue } from '@/lib/date'
@@ -7,6 +7,7 @@ import { repeatLabel } from '@/lib/repeat'
 import { PRIORITY_VAR, type Tier } from '@/db/db'
 import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
+import { Button } from '@/shared/ui/Button'
 
 interface Props {
   defaultTier?: Tier
@@ -76,9 +77,15 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
         e.preventDefault()
         void submit()
       }}
-      className="card card-hover px-4 py-3 focus-within:border-primary/50"
+      className="card card-hover px-3.5 py-2.5 focus-within:border-primary/55 focus-within:ring-2 focus-within:ring-primary/15 transition-[border-color,box-shadow]"
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
+        <span
+          aria-hidden
+          className="grid place-items-center size-7 rounded-full bg-primary-soft/85 text-primary shrink-0"
+        >
+          <Plus size={15} strokeWidth={2.3} />
+        </span>
         <input
           ref={inputRef}
           id="quick-add-input"
@@ -103,9 +110,15 @@ export function QuickAdd({ defaultTier = 'anytime', todayContext = false, placeh
           placeholder={placeholder ?? '添加任务…（明天14:00 交报告 P1 #工作）'}
           className="flex-1 min-w-0 bg-transparent outline-none text-[15px] placeholder:text-on-surface-2/70"
         />
-        <button type="submit" disabled={!hasContent || saving} className="shrink-0 rounded-lg bg-primary-action px-3 py-2 text-sm text-on-primary-action disabled:bg-surface-3 disabled:text-on-surface-2">
+        <Button
+          type="submit"
+          variant="primary"
+          size="sm"
+          disabled={!hasContent || saving}
+          className="shrink-0"
+        >
           {saving ? '添加中' : '添加'}
-        </button>
+        </Button>
       </div>
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 mt-2.5">

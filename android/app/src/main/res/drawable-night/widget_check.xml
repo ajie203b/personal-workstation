@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 普通优先级勾选圆环（深色） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#1A7CA7FF"
+        android:pathData="M12,3a9,9 0 1,0 0,18a9,9 0 1,0 0,-18z"
+        android:strokeColor="#64748B"
+        android:strokeWidth="2" />
+</vector>

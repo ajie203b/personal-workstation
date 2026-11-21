@@ -108,91 +108,97 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
   const monthLabel = fmtMonth(new Date(viewYear, viewMonth, 1))
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* 月历导航 */}
-      <div className="flex items-center gap-2">
-        <button aria-label="上个月" onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-surface-3 cursor-pointer text-on-surface-2">
-          <ChevronLeft size={18} />
-        </button>
-        <span className="text-[15px] font-semibold min-w-[120px] text-center">{monthLabel}</span>
-        <button aria-label="下个月" onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-surface-3 cursor-pointer text-on-surface-2">
-          <ChevronRight size={18} />
-        </button>
-        <button onClick={goToday} className="ml-auto text-[12px] px-2.5 py-1 rounded-full bg-surface-3 hover:bg-surface-3/70 text-on-surface-2 cursor-pointer">
-          今天
-        </button>
-      </div>
+    <div className="flex flex-col gap-4 enter">
+      <div className="card p-3.5 sm:p-4 flex flex-col gap-3">
+        {/* 月历导航 */}
+        <div className="flex items-center gap-2">
+          <button aria-label="上个月" onClick={prevMonth} className="grid place-items-center w-8 h-8 rounded-full hover:bg-surface-3 cursor-pointer text-on-surface-2 hover:text-on-surface transition-colors">
+            <ChevronLeft size={18} />
+          </button>
+          <span className="text-[16px] font-bold tracking-[-0.015em] min-w-[120px] text-center">{monthLabel}</span>
+          <button aria-label="下个月" onClick={nextMonth} className="grid place-items-center w-8 h-8 rounded-full hover:bg-surface-3 cursor-pointer text-on-surface-2 hover:text-on-surface transition-colors">
+            <ChevronRight size={18} />
+          </button>
+          <button onClick={goToday} className="ml-auto text-[12px] font-medium px-3 py-1 rounded-full bg-primary-soft/80 hover:bg-primary-soft text-primary transition-colors cursor-pointer">
+            今天
+          </button>
+        </div>
 
-      {/* 星期标题 */}
-      <div className="grid grid-cols-7 text-center text-[11px] text-on-surface-2">
-        {WEEK_LABELS.map((w) => <span key={w} className="py-1">{w}</span>)}
-      </div>
+        {/* 星期标题 */}
+        <div className="grid grid-cols-7 text-center text-[11px] font-medium text-on-surface-2">
+          {WEEK_LABELS.map((w) => <span key={w} className="py-1">{w}</span>)}
+        </div>
 
-      {/* 日历网格（接受拖放排期） */}
-      <div className="grid grid-cols-7 gap-px bg-outline/40 rounded-[10px] overflow-hidden">
-        {grid.map((cell, i) => {
-          const key = toDateStr(cell.date)
-          const dayTasks = byDate.get(key) ?? []
-          const isToday = key === todayKey
-          const isSelected = key === selectedDate
-          return (
-            <button
-              key={i}
-              onClick={() => setSelectedDate(key)}
-              onDragOver={(e) => { e.preventDefault(); setDragOverKey(key) }}
-              onDragLeave={() => setDragOverKey((k) => (k === key ? null : k))}
-              onDrop={(e) => onCellDrop(e, key)}
-              className={cn(
-                'min-h-[64px] p-1.5 text-left bg-surface transition-colors cursor-pointer',
-                !cell.inMonth && 'opacity-30',
-                dragOverKey === key ? 'bg-primary-soft ring-2 ring-primary/60' : isSelected ? 'bg-primary-soft ring-1 ring-primary/50' : 'hover:bg-surface-2',
-              )}
-            >
-              <span className={cn(
-                'text-[12px] font-medium inline-grid place-items-center w-5 h-5 rounded-full',
-                isToday ? 'bg-primary text-on-primary' : '',
-              )}>
-                {cell.date.getDate()}
-              </span>
-              {dayTasks.length > 0 && (
-                <>
-                  {/* 小屏：圆点计数 */}
-                  <div className="mt-1 flex sm:hidden items-center gap-0.5 pl-0.5">
-                    {dayTasks.slice(0, 4).map((t) => (
-                      <span
-                        key={t.id}
-                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ background: t.priority === 0 ? 'var(--p0)' : t.priority === 1 ? 'var(--p1)' : t.priority === 2 ? 'var(--p2)' : 'var(--p3)' }}
-                      />
-                    ))}
-                    {dayTasks.length > 4 && <span className="text-[8px] text-on-surface-2">+{dayTasks.length - 4}</span>}
-                  </div>
-                  {/* 大屏：文本条 */}
-                  <div className="mt-0.5 hidden sm:flex flex-col gap-0.5">
-                    {dayTasks.slice(0, 3).map((t) => (
-                      <span
-                        key={t.id}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/task-id', t.id)
-                          e.dataTransfer.effectAllowed = 'move'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className={cn(
-                          'text-[9px] leading-tight truncate px-0.5 rounded-sm cursor-grab active:cursor-grabbing',
-                          t.priority === 0 ? 'text-p0 font-medium' : t.priority === 1 ? 'text-p1' : 'text-on-surface-2',
-                        )}
-                      >
-                        {t.title}
-                      </span>
-                    ))}
-                    {dayTasks.length > 3 && <span className="text-[9px] text-on-surface-2">+{dayTasks.length - 3}</span>}
-                  </div>
-                </>
-              )}
-            </button>
-          )
-        })}
+        {/* 日历网格（接受拖放排期） */}
+        <div className="grid grid-cols-7 gap-px bg-outline/55 rounded-[16px] overflow-hidden border border-outline/70">
+          {grid.map((cell, i) => {
+            const key = toDateStr(cell.date)
+            const dayTasks = byDate.get(key) ?? []
+            const isToday = key === todayKey
+            const isSelected = key === selectedDate
+            return (
+              <button
+                key={i}
+                onClick={() => setSelectedDate(key)}
+                onDragOver={(e) => { e.preventDefault(); setDragOverKey(key) }}
+                onDragLeave={() => setDragOverKey((k) => (k === key ? null : k))}
+                onDrop={(e) => onCellDrop(e, key)}
+                className={cn(
+                  'min-h-[68px] sm:min-h-[76px] p-1.5 text-left bg-surface transition-colors cursor-pointer flex flex-col',
+                  !cell.inMonth && 'opacity-30',
+                  dragOverKey === key ? 'bg-primary-soft ring-2 ring-inset ring-primary/65' : isSelected ? 'bg-primary-soft/65 ring-1 ring-inset ring-primary/50' : 'hover:bg-surface-2',
+                )}
+              >
+                <span className={cn(
+                  'text-[12px] font-semibold inline-grid place-items-center w-6 h-6 rounded-full tabular-nums',
+                  isToday ? 'bg-primary-action text-on-primary-action shadow-[0_2px_10px_-2px_var(--primary-glow)]' : '',
+                )}>
+                  {cell.date.getDate()}
+                </span>
+                {dayTasks.length > 0 && (
+                  <>
+                    {/* 小屏：圆点计数 */}
+                    <div className="mt-1 flex sm:hidden items-center gap-0.5 pl-0.5">
+                      {dayTasks.slice(0, 4).map((t) => (
+                        <span
+                          key={t.id}
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ background: t.priority === 0 ? 'var(--p0)' : t.priority === 1 ? 'var(--p1)' : t.priority === 2 ? 'var(--p2)' : 'var(--p3)' }}
+                        />
+                      ))}
+                      {dayTasks.length > 4 && <span className="text-[8px] text-on-surface-2">+{dayTasks.length - 4}</span>}
+                    </div>
+                    {/* 大屏：柔和色彩胶囊条 */}
+                    <div className="mt-1 hidden sm:flex flex-col gap-0.5 w-full">
+                      {dayTasks.slice(0, 3).map((t) => (
+                        <span
+                          key={t.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/task-id', t.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className={cn(
+                            'text-[10px] leading-[1.35] truncate px-1.5 py-0.5 rounded-[5px] cursor-grab active:cursor-grabbing font-medium',
+                            t.priority === 0
+                              ? 'bg-p0/12 text-p0'
+                              : t.priority === 1
+                                ? 'bg-p1/14 text-p1'
+                                : 'bg-primary-soft/75 text-primary',
+                          )}
+                        >
+                          {t.title}
+                        </span>
+                      ))}
+                      {dayTasks.length > 3 && <span className="text-[9.5px] text-on-surface-2 px-1">+{dayTasks.length - 3}</span>}
+                    </div>
+                  </>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* 议程流 */}

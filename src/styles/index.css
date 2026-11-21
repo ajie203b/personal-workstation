@@ -4,55 +4,58 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ============================================================
-   设计令牌 —— MD3 角色化骨架 × HIG 克制气质（《产品方案》5.2–5.6）
-   亮 / 暗两套语义变量，全站零硬编码色值
+   设计令牌 —— Apple Liquid Glass × Google Material You Expressive
+   亮 / 暗两套语义变量，极简通透、层次鲜明、零硬编码色值
    ============================================================ */
 :root {
   color-scheme: light;
 
-  /* 色彩 · 亮色 —— 暖纸中性 + 墨蓝主色（编辑气质，去默认蓝模板味） */
-  --primary: #2C55B8;
+  /* 色彩 · 亮色 —— 瓷白通透画布 + 钴蓝光感主色 */
+  --primary: #2563EB;
   --on-primary: #FFFFFF;
-  --primary-soft: #EAEFF9;
-  --primary-action: var(--primary);
+  --primary-soft: rgba(37, 99, 235, 0.10);
+  --primary-action: #2563EB;
   --on-primary-action: #FFFFFF;
-  --canvas: #F6F7F9;
+  --primary-glow: rgba(37, 99, 235, 0.28);
+  --canvas: #F3F5FA;
   --surface: #FFFFFF;
-  --surface-2: #F3F5F8;
-  --surface-3: #E9EDF3;
-  --outline: #DFE4EC;
-  --on-surface: #252B36;
-  --on-surface-2: #606C7E;
+  --surface-2: #F4F6FB;
+  --surface-3: #E9EEF7;
+  --outline: rgba(15, 23, 42, 0.085);
+  --on-surface: #111827;
+  --on-surface-2: #58657A;
 
-  /* 优先级四档：红 → 橙黄 → 钢蓝 → 灰白（绿色保留给状态语义，不做优先级） */
+  /* 优先级四档：红 → 琥珀 → 钴蓝 → 柔灰 */
   --p0: #E5484D;
-  --p1: #A96916;
-  --p2: #4E7ACF;
-  --p3: #9CA3AF;
+  --p1: #C27803;
+  --p2: #3B82F6;
+  --p3: #94A3B8;
 
   /* 状态色 */
-  --ok: #22A06B;
-  --danger: #D5353F;
+  --ok: #10B981;
+  --danger: #DC2626;
   --on-danger: #FFFFFF;
 
-  /* HIG 玻璃材质：仅顶栏 / 侧栏 / ⌘K 面板 */
-  --glass-bg: rgba(255, 255, 255, 0.86);
+  /* Apple Liquid Glass 材质：高饱和毛玻璃 + 顶部高光细边 */
+  --glass-bg: rgba(255, 255, 255, 0.74);
+  --glass-surface: rgba(255, 255, 255, 0.84);
+  --glass-rim: rgba(255, 255, 255, 0.88);
+  --glass-shadow: 0 10px 36px -14px rgba(15, 23, 42, 0.16), 0 2px 8px -2px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.92);
 
-  /* 弹层阴影：MD3 Elevation-3 等效，单层大柔和 */
-  --shadow-pop: 0 20px 64px -12px rgba(34, 48, 72, 0.18), 0 4px 16px -8px rgba(34, 48, 72, 0.08);
+  /* 弹层阴影：柔和大范围空间悬浮阴影 + 内高光 */
+  --shadow-pop: 0 28px 80px -16px rgba(15, 23, 42, 0.22), 0 8px 24px -8px rgba(15, 23, 42, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.88);
 
   /* 动效时长（系统「减弱动态效果」时全部替换为 80ms） */
-  --dur-1: 120ms;
-  --dur-2: 220ms;
-  --dur-3: 300ms;
-  --dur-4: 640ms;
-  /* 同组元素依次出现的间隔（ui-motion：30–60ms 一档） */
-  --stagger: 35ms;
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  --dur-1: 130ms;
+  --dur-2: 240ms;
+  --dur-3: 340ms;
+  --dur-4: 660ms;
+  --stagger: 32ms;
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
   --fs-2xs: 12px;
   --fs-xs: 13px;
   --fs-sm: 14px;
@@ -60,50 +63,64 @@
   --fs-lg: 17px;
   --ease-standard: cubic-bezier(.2, 0, 0, 1);
   --ease-emph: cubic-bezier(.05, .7, .1, 1);
-  --ease-spring: cubic-bezier(.22, 1.06, .36, 1);
+  --ease-spring: cubic-bezier(.22, 1.08, .36, 1);
   --ease-soft-spring: cubic-bezier(.22, 1.06, .36, 1);
 
-  /* 卡片静态层次：极浅双层阴影，弱光环境也能分清区块（P2 分层增强） */
-  --elev-card: 0 2px 10px -6px rgba(34, 48, 72, .14);
+  /* 卡片悬浮层次：通透双层漫反射阴影 + 顶部玻璃高光 */
+  --elev-card: 0 1px 2px rgba(15, 23, 42, 0.035), 0 10px 28px -16px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  --elev-card-hover: 0 4px 10px -2px rgba(15, 23, 42, 0.05), 0 20px 42px -18px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.96);
   /* 玻璃模糊半径集中管理，便于低端设备与减弱透明度时收敛 */
-  --glass-blur: 20px;
-  --glass-sat: 1.6;
+  --glass-blur: 24px;
+  --glass-sat: 1.85;
+  /* 画布极光氛围 */
+  --ambient-1: color-mix(in srgb, var(--primary) 9%, transparent);
+  --ambient-2: rgba(56, 189, 248, 0.075);
+  --ambient-3: rgba(168, 85, 247, 0.05);
 }
 
 .dark {
   color-scheme: dark;
-  --primary: #9FB6E8;
-  --on-primary: #152239;
-  --primary-soft: #242F47;
-  --primary-action: #426CC8;
-  /* 层级拉开：页面底 → 卡片 → 卡片内控件，各差一档；弱化文字提亮到 AA */
-  --canvas: #181C24;
-  --surface: #222833;
-  --surface-2: #2A3240;
-  --surface-3: #343E4E;
-  --outline: #414D60;
-  --on-surface: #E9EDF5;
-  --on-surface-2: #B6C1D1;
+  --primary: #7CA7FF;
+  --on-primary: #09152B;
+  --primary-soft: rgba(124, 167, 255, 0.16);
+  --primary-action: #3B82F6;
+  --on-primary-action: #FFFFFF;
+  --primary-glow: rgba(59, 130, 246, 0.38);
+  /* 深邃曜石蓝黑层次：画布 → 卡片 → 控件逐级提亮，通透不发灰 */
+  --canvas: #0B0E16;
+  --surface: #131927;
+  --surface-2: #1A2234;
+  --surface-3: #232D44;
+  --outline: rgba(226, 232, 240, 0.09);
+  --on-surface: #F1F5FB;
+  --on-surface-2: #9AA8BF;
 
-  --p0: #F26D6D;
-  --p1: #F0B451;
-  --p2: #7FA0E0;
-  --p3: #8A8F98;
+  --p0: #F87171;
+  --p1: #FBBF24;
+  --p2: #60A5FA;
+  --p3: #94A3B8;
 
-  --ok: #34C48C;
-  --danger: #F26D6D;
-  --on-danger: #2F1212;
+  --ok: #34D399;
+  --danger: #F87171;
+  --on-danger: #2A0B0E;
 
-  --glass-bg: rgba(34, 40, 51, 0.88);
-  --shadow-pop: 0 20px 64px -12px rgba(0, 0, 0, .5);
-  --elev-card: 0 2px 10px -6px rgba(0, 0, 0, .25);
+  --glass-bg: rgba(17, 23, 38, 0.72);
+  --glass-surface: rgba(19, 25, 39, 0.84);
+  --glass-rim: rgba(255, 255, 255, 0.11);
+  --glass-shadow: 0 18px 48px -14px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.11);
+  --shadow-pop: 0 28px 80px -12px rgba(0, 0, 0, 0.72), 0 8px 24px -6px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --elev-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 12px 32px -14px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.075);
+  --elev-card-hover: 0 6px 16px -4px rgba(0, 0, 0, 0.45), 0 22px 48px -18px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --ambient-1: color-mix(in srgb, var(--primary) 13%, transparent);
+  --ambient-2: rgba(56, 189, 248, 0.09);
+  --ambient-3: rgba(139, 92, 246, 0.08);
 }
 
 /* 真实弹簧：支持 linear() 的浏览器用弹簧积分曲线替换固定 cubic-bezier。
    旧浏览器自动忽略，回退到 :root 的 -ease-spring 近似值，行为一致。 */
 @supports (animation-timing-function: linear(0, 1)) {
   :root {
-    --ease-spring: linear(0, .12 5%, .4 15%, .7 30%, .9 45%, 1 60%, 1.025 72%, 1.012 85%, 1);
+    --ease-spring: linear(0, .12 5%, .4 15%, .7 30%, .9 45%, 1 60%, 1.028 72%, 1.012 85%, 1);
   }
 }
 
@@ -126,31 +143,28 @@
 }
 .no-motion .animate-spin { animation: none !important; }
 .no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot,
-.no-motion .confetti-layer, .no-motion .magnet-glow, .no-motion .sand-layer, .no-motion .sand-clone {
+.no-motion .confetti-layer, .no-motion .magnet-glow, .no-motion .sand-layer, .no-motion .sand-clone,
+.no-motion .ambient-mesh, .no-motion .ranking-prism-bar {
   animation: none !important;
+}
+.no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot,
+.no-motion .confetti-layer, .no-motion .magnet-glow, .no-motion .sand-layer, .no-motion .sand-clone {
   display: none !important;
 }
 
-/* 强调色（macOS 系统设置同款）：覆盖 --primary 系令牌，全站零硬编码随之换色 */
-:root[data-accent='blue'] { --primary: #2C55B8; --primary-soft: #EAEFF9; }
-.dark[data-accent='blue'] { --primary: #9FB6E8; --primary-soft: #242F47; }
-:root[data-accent='purple'] { --primary: #7D4FBE; --primary-soft: #F1EAF9; }
-.dark[data-accent='purple'] { --primary: #C4A4EC; --primary-soft: #33284A; }
-.dark[data-accent='purple'] { --primary-action: #8753BD; }
-:root[data-accent='pink'] { --primary: #B53470; --primary-soft: #FAE9F1; }
-:root[data-accent='pink'] { --primary-action: #B53470; }
-.dark[data-accent='pink'] { --primary: #F191B6; --primary-soft: #452438; }
-.dark[data-accent='pink'] { --primary-action: #B53470; }
-:root[data-accent='red'] { --primary: #D63C41; --primary-soft: #FAE9EA; }
-.dark[data-accent='red'] { --primary: #F08085; --primary-soft: #462224; }
-.dark[data-accent='red'] { --primary-action: #C63743; }
-:root[data-accent='orange'] { --primary: #A8510F; --primary-soft: #FBF0E2; }
-:root[data-accent='orange'] { --primary-action: #A8510F; }
-.dark[data-accent='orange'] { --primary: #F2AC60; --primary-soft: #47301A; }
-:root[data-accent='green'] { --primary: #247944; --primary-soft: #E7F4EC; }
-:root[data-accent='green'] { --primary-action: #247944; }
-.dark[data-accent='green'] { --primary: #5FC78C; --primary-soft: #1E3527; }
-.dark[data-accent='green'] { --primary-action: #247944; }
+/* 强调色（Apple 系统设置 × Material You 表现力调色板）：全站零硬编码随选色联动 */
+:root[data-accent='blue'] { --primary: #2563EB; --primary-action: #2563EB; --primary-soft: rgba(37, 99, 235, 0.10); --primary-glow: rgba(37, 99, 235, 0.28); }
+.dark[data-accent='blue'] { --primary: #7CA7FF; --primary-action: #3B82F6; --primary-soft: rgba(124, 167, 255, 0.16); --primary-glow: rgba(59, 130, 246, 0.38); }
+:root[data-accent='purple'] { --primary: #7C3AED; --primary-action: #7C3AED; --primary-soft: rgba(124, 58, 237, 0.10); --primary-glow: rgba(124, 58, 237, 0.28); }
+.dark[data-accent='purple'] { --primary: #C4A4FF; --primary-action: #8B5CF6; --primary-soft: rgba(196, 164, 255, 0.16); --primary-glow: rgba(139, 92, 246, 0.38); }
+:root[data-accent='pink'] { --primary: #DB2777; --primary-action: #DB2777; --primary-soft: rgba(219, 39, 119, 0.10); --primary-glow: rgba(219, 39, 119, 0.26); }
+.dark[data-accent='pink'] { --primary: #F472B6; --primary-action: #EC4899; --primary-soft: rgba(244, 114, 182, 0.16); --primary-glow: rgba(236, 72, 153, 0.36); }
+:root[data-accent='red'] { --primary: #E11D48; --primary-action: #E11D48; --primary-soft: rgba(225, 29, 72, 0.10); --primary-glow: rgba(225, 29, 72, 0.26); }
+.dark[data-accent='red'] { --primary: #FB7185; --primary-action: #F43F5E; --primary-soft: rgba(251, 113, 133, 0.16); --primary-glow: rgba(244, 63, 94, 0.36); }
+:root[data-accent='orange'] { --primary: #D97706; --primary-action: #D97706; --primary-soft: rgba(217, 119, 6, 0.11); --primary-glow: rgba(217, 119, 6, 0.26); }
+.dark[data-accent='orange'] { --primary: #FBBF24; --primary-action: #F59E0B; --primary-soft: rgba(251, 191, 36, 0.16); --primary-glow: rgba(245, 158, 11, 0.34); }
+:root[data-accent='green'] { --primary: #059669; --primary-action: #059669; --primary-soft: rgba(5, 150, 105, 0.10); --primary-glow: rgba(5, 150, 105, 0.26); }
+.dark[data-accent='green'] { --primary: #34D399; --primary-action: #10B981; --primary-soft: rgba(52, 211, 153, 0.16); --primary-glow: rgba(16, 185, 129, 0.34); }
 
 /* Tailwind v4：把语义变量映射为工具类（inline = 直接引用 var，随主题切换） */
 @theme inline {
@@ -433,74 +447,322 @@ select:focus-visible {
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* ============================================================
-   组件级工具类
+   组件级工具类 —— Apple Liquid Glass × Material 3 Expressive
    ============================================================ */
 
-/* 白色内容层与雾色画布分离；任务行保持安静，浮层另用 shadow-pop。 */
+/* 画布极光氛围层：克制通透的柔和极光光场，让毛玻璃导航与卡片产生真实折射感 */
+.app-ambient-canvas {
+  position: relative;
+  background-color: var(--canvas);
+  background-image:
+    radial-gradient(66% 52% at 12% -8%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 70%),
+    radial-gradient(56% 48% at 94% 2%, rgba(56, 189, 248, 0.11), transparent 68%),
+    radial-gradient(52% 44% at 80% 102%, rgba(168, 85, 247, 0.08), transparent 72%);
+}
+.dark .app-ambient-canvas {
+  background-image:
+    radial-gradient(66% 52% at 14% -8%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 68%),
+    radial-gradient(56% 48% at 94% 4%, rgba(56, 189, 248, 0.11), transparent 68%),
+    radial-gradient(52% 44% at 78% 102%, rgba(139, 92, 246, 0.12), transparent 72%);
+}
+
+/* 悬浮极简内容卡：20px 圆角 + 顶部微高光 + 轻盈漫反射阴影 + 桌面指针跟手微光 */
 .card {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--outline);
-  border-radius: 16px;
+  border-radius: 20px;
   box-shadow: var(--elev-card);
 }
+@media (hover: hover) and (pointer: fine) {
+  :root:not(.no-motion) .card[data-lit='1']::after,
+  :root:not(.no-motion) .tool-bento-card[data-lit='1']::after,
+  :root:not(.no-motion) .ranking-panel[data-lit='1']::after {
+    opacity: 1;
+  }
+  .card::after,
+  .tool-bento-card::after,
+  .ranking-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 260ms var(--ease-standard);
+    background: radial-gradient(
+      270px circle at var(--sx, 50%) var(--sy, 50%),
+      color-mix(in srgb, var(--tool-tint, var(--primary)) 10%, transparent),
+      transparent 66%
+    );
+  }
+  .dark .card::after,
+  .dark .tool-bento-card::after,
+  .dark .ranking-panel::after {
+    background: radial-gradient(
+      290px circle at var(--sx, 50%) var(--sy, 50%),
+      color-mix(in srgb, var(--tool-tint, var(--primary)) 16%, transparent),
+      transparent 66%
+    );
+  }
+  /* 与自绘 tilt-card 共存时不重复覆盖 */
+  .tilt-card::after {
+    background: radial-gradient(
+      150px circle at var(--tilt-x, 50%) var(--tilt-y, 50%),
+      color-mix(in srgb, white 18%, transparent),
+      transparent 66%
+    );
+  }
+}
+
+/* 排行榜旗舰展示卡（写死置顶于工具页最上方，不属于小工具） */
+@keyframes prism-drift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--ok) 28%, transparent); }
+  50% { box-shadow: 0 0 0 5.5px color-mix(in srgb, var(--ok) 8%, transparent); }
+}
+.ranking-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  border: 1px solid var(--outline);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primary-soft) 52%, var(--surface)) 0%,
+    var(--surface) 42%
+  );
+  box-shadow: var(--elev-card);
+  padding: 1.15rem 1.25rem 1.05rem;
+}
+@media (min-width: 768px) {
+  .ranking-panel {
+    padding: 1.4rem 1.55rem 1.25rem;
+  }
+}
+/* 呼应四色 xyj 基因的极细动态棱镜顶边 */
+.ranking-prism-bar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, #4285F4, #EA4335, #FBBC05, #34A853, #4285F4);
+  background-size: 220% 100%;
+  opacity: 0.9;
+  animation: prism-drift 10s linear infinite;
+}
+.ranking-intro {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.8rem;
+}
+.ranking-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--ok);
+  animation: live-pulse 2.6s ease-in-out infinite;
+}
+.no-motion .ranking-live-dot { animation: none; }
+.ranking-heading {
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 700;
+  letter-spacing: -0.028em;
+  line-height: 1.25;
+  color: var(--on-surface);
+}
+.ranking-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin-top: 0.25rem;
+  font-size: 12px;
+  color: var(--on-surface-2);
+}
+.ranking-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+}
+.ranking-action {
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 9999px;
+  border: 1px solid var(--outline);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--on-surface-2);
+  box-shadow: 0 2px 8px -4px rgba(15, 23, 42, 0.14);
+  transition: transform var(--dur-1) var(--ease-spring), background-color var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), border-color var(--dur-1) var(--ease-standard);
+}
+.ranking-action:hover {
+  background: var(--surface);
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--outline));
+  transform: translateY(-1px) scale(1.04);
+}
+.ranking-action:active {
+  transform: scale(0.93);
+}
+.ranking-paper {
+  position: relative;
+  border-radius: 16px;
+  background: #FFFFFF;
+  padding: 0.65rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03), 0 4px 16px -8px rgba(15, 23, 42, 0.10);
+  overflow: hidden;
+}
+.dark .ranking-paper {
+  background: #F8FAFC;
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* 小工具 Bento 卡片与瓷白方砖图标（静止极简、悬停点亮专属珠宝色调微光） */
+.tool-bento-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: 20px;
+  box-shadow: var(--elev-card);
+  transition:
+    transform var(--dur-2) var(--ease-spring),
+    border-color var(--dur-1) var(--ease-standard),
+    box-shadow var(--dur-2) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard);
+}
+@media (hover: hover) {
+  .tool-bento-card:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--tool-tint, var(--primary)) 42%, var(--outline));
+    box-shadow:
+      0 6px 14px -4px rgba(15, 23, 42, 0.06),
+      0 20px 42px -18px color-mix(in srgb, var(--tool-tint, var(--primary)) 34%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  }
+  .dark .tool-bento-card:hover {
+    box-shadow:
+      0 8px 18px -4px rgba(0, 0, 0, 0.48),
+      0 22px 46px -18px color-mix(in srgb, var(--tool-tint, var(--primary)) 42%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+  .tool-bento-card:hover .tool-icon-tile {
+    transform: scale(1.07) translateY(-1px);
+    box-shadow:
+      0 8px 18px -6px color-mix(in srgb, var(--tool-tint, var(--primary)) 36%, rgba(15, 23, 42, 0.22)),
+      0 0 0 1px color-mix(in srgb, var(--tool-tint, var(--primary)) 26%, rgba(15, 23, 42, 0.08));
+  }
+  .tool-bento-card:hover .tool-arrow {
+    opacity: 1;
+    background: color-mix(in srgb, var(--tool-tint, var(--primary)) 12%, transparent);
+    color: var(--tool-tint, var(--primary));
+    transform: translate(2px, -2px);
+  }
+}
+.tool-bento-card:active {
+  transform: scale(0.985);
+}
+.tool-icon-tile {
+  background: #FAFBFD;
+  box-shadow: 0 4px 14px -5px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.07);
+  transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2) var(--ease-standard);
+}
+.dark .tool-icon-tile {
+  box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.tool-arrow {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  font-size: 13px;
+  color: var(--on-surface-2);
+  opacity: 0.42;
+  flex-shrink: 0;
+  transition: transform var(--dur-2) var(--ease-spring), opacity var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), background-color var(--dur-1) var(--ease-standard);
+}
+@media (max-width: 639px) {
+  .tool-arrow { display: none; }
+}
+
 .task-card { box-shadow: none; }
-.task-list-group .task-card { border: 0; border-radius: 0; }
-.task-list-group .task-card:hover { transform: none; }
-.task-list-group > li:first-child .task-card { border-radius: 1rem 1rem 0 0; }
-.task-list-group > li:last-child .task-card { border-end-start-radius: 1rem; border-end-end-radius: 1rem; }
+.task-list-group {
+  border-radius: 20px;
+  box-shadow: var(--elev-card);
+}
+.task-list-group .task-card { border: 0; border-radius: 0; box-shadow: none; }
+.task-list-group .task-card::after { display: none; }
+.task-list-group .task-card:hover { transform: none; background: color-mix(in srgb, var(--primary-soft) 36%, var(--surface)); }
+.task-list-group > li:first-child .task-card { border-radius: 20px 20px 0 0; }
+.task-list-group > li:last-child .task-card { border-end-start-radius: 20px; border-end-end-radius: 20px; }
+.task-list-group > li:only-child .task-card { border-radius: 20px; }
 .task-list-group > li + li::before {
   content: '';
   position: absolute;
   inset: 0 1rem auto 3.25rem;
-  border-top: 1px solid color-mix(in srgb, var(--outline) 78%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--outline) 88%, transparent);
   z-index: 1;
   pointer-events: none;
 }
-/* 悬停不再逐帧改阴影：用位移 + 描边变色表达（合成层友好） */
+
+/* 卡片悬停反馈：弹簧轻抬 + 主题微光描边 */
 .card-hover {
-  transition: transform var(--dur-1) var(--ease-standard), border-color var(--dur-1) var(--ease-standard);
+  transition:
+    transform var(--dur-2) var(--ease-spring),
+    border-color var(--dur-1) var(--ease-standard),
+    box-shadow var(--dur-2) var(--ease-standard);
 }
-.card-hover:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--primary) 34%, var(--outline));
+@media (hover: hover) {
+  .card-hover:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--primary) 34%, var(--outline));
+    box-shadow: var(--elev-card-hover);
+  }
 }
-.card-hover:active { transform: scale(0.995); }
+.card-hover:active { transform: scale(0.99); }
 
 /* 按下微倾（ui-motion 65）：桌面鼠标按住时朝按下的方向轻压，表面反光跟手 */
 .tilt-card { transform-style: preserve-3d; }
-.tilt-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    150px circle at var(--tilt-x, 50%) var(--tilt-y, 50%),
-    color-mix(in srgb, white 16%, transparent),
-    transparent 66%
-  );
-  opacity: 0;
-  transition: opacity 200ms var(--ease-standard);
-  pointer-events: none;
-}
 @media (hover: hover) {
   .tilt-card:hover::after { opacity: 1; }
 }
 .tilt-card:active { transition-duration: 80ms; }
 
-/* 弹层：20px 圆角 + 单层大柔和阴影 */
+/* 弹层：Apple Liquid Glass 22px 圆角 + 柔和模糊背景 */
 .overlay-fade {
   animation: fade-in var(--dur-1) ease both;
 }
 
 .pop {
-  background: var(--surface);
+  background: var(--glass-surface);
+  -webkit-backdrop-filter: blur(28px) saturate(1.85);
+  backdrop-filter: blur(28px) saturate(1.85);
   border: 1px solid var(--outline);
-  border-radius: 20px;
+  border-radius: 22px;
   box-shadow: var(--shadow-pop);
 }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pop { background: var(--surface); }
+}
 
-/* 玻璃材质（HIG）：仅顶栏 / 侧栏 / ⌘K
-   边界规则：玻璃层 outline/70（半透）、弹层 outline（实色） */
+/* 主按钮高级微光质感 */
+.btn-primary-glow {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 56%);
+  box-shadow: 0 8px 22px -8px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.group:hover .btn-primary-glow {
+  box-shadow: 0 12px 26px -8px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+/* 玻璃材质（Apple Liquid Glass）：顶栏 / 侧栏 / 悬浮底栏 / ⌘K */
 .glass {
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
@@ -510,13 +772,13 @@ select:focus-visible {
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass { background: var(--surface); }
 }
-/* 移动端收敛模糊半径，降低 GPU 填充压力（性能红线） */
+/* 移动端收敛模糊半径，兼顾通透感与 GPU 填充流畅度 */
 @media (max-width: 767px) {
-  :root { --glass-blur: 14px; --glass-sat: 1.5; }
+  :root { --glass-blur: 18px; --glass-sat: 1.75; }
 }
 /* 系统「降低透明度」时关闭玻璃，尊重无障碍设置 */
 @media (prefers-reduced-transparency: reduce) {
-  .glass {
+  .glass, .pop {
     background: var(--surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -770,15 +1032,41 @@ select:focus-visible {
   to { transform: scaleX(0); }
 }
 
-/* 桌面导航面板留出窗边；折叠时仅标签过渡，正文直接获得最终宽度。 */
+/* 桌面悬浮毛玻璃侧栏：脱离窗边的 Apple 悬浮质感 + Material 3 柔和胶囊激活态 */
 .workspace-sidebar {
-  background: var(--surface);
-  background: color-mix(in srgb, var(--surface) 72%, var(--canvas));
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   border: 1px solid var(--outline);
-  border-radius: 20px;
-  box-shadow: var(--elev-card);
+  border-radius: 24px;
+  box-shadow: var(--glass-shadow);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .workspace-sidebar { background: var(--surface); }
+}
+.sidebar-link {
+  transition: background-color var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-spring), box-shadow var(--dur-2) var(--ease-standard);
 }
 .sidebar-link:focus-visible { outline-offset: -2px; }
+.sidebar-link[aria-current='page'] {
+  background: linear-gradient(135deg, var(--primary-soft), color-mix(in srgb, var(--primary-soft) 56%, transparent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 14px -8px var(--primary-glow);
+}
+.sidebar-link[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--primary);
+  transform: translateY(-50%);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+.dark .sidebar-link[aria-current='page'] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 4px 16px -8px var(--primary-glow);
+}
 @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
   :root:not(.no-motion) .sidebar-label { animation: fade-in var(--dur-2) var(--ease-standard); }
 }
@@ -786,14 +1074,44 @@ select:focus-visible {
 /* 移动导航覆在滚动内容上。内边距保留首尾空间，滚动定位也避开导航。 */
 @media (max-width: 767px) {
   .workspace-column {
-    --mobile-toolbar-height: calc(3.5rem + env(safe-area-inset-top, 0px));
-    --mobile-tab-clearance: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+    --mobile-toolbar-height: calc(3.125rem + env(safe-area-inset-top, 0px));
+    --mobile-tab-clearance: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
+  .card {
+    border-radius: 17px;
+  }
+  .task-list-group {
+    border-radius: 17px;
+  }
+  .task-list-group > li:first-child .task-card { border-radius: 17px 17px 0 0; }
+  .task-list-group > li:last-child .task-card { border-end-start-radius: 17px; border-end-end-radius: 17px; }
+  .task-list-group > li:only-child .task-card { border-radius: 17px; }
+  .ranking-panel {
+    border-radius: 20px;
+    padding: 0.85rem 0.9rem 0.8rem;
+  }
+  .ranking-intro {
+    margin-bottom: 0.6rem;
+  }
+  .ranking-action {
+    width: 2rem;
+    height: 2rem;
+  }
+  .ranking-paper {
+    border-radius: 13px;
+    padding: 0.45rem;
   }
   .mobile-toolbar {
-    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+    grid-template-columns: 2.25rem minmax(0, 1fr) 2.25rem;
     height: var(--mobile-toolbar-height);
     padding-top: env(safe-area-inset-top, 0px);
-    border-bottom: 1px solid color-mix(in srgb, var(--outline) 70%, transparent);
+    background: color-mix(in srgb, var(--canvas) 76%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.75);
+    backdrop-filter: blur(20px) saturate(1.75);
+    border-bottom: 1px solid color-mix(in srgb, var(--outline) 62%, transparent);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .mobile-toolbar { background: var(--canvas); }
   }
   .workspace-scroll.has-mobile-toolbar {
     padding-block-start: var(--mobile-toolbar-height);
@@ -805,46 +1123,65 @@ select:focus-visible {
   }
 }
 
-/* 底栏、添加按钮和专注条共享底部安全区。 */
+/* 悬浮液态玻璃底栏（Apple Liquid Glass Dock × Material 3 胶囊高亮 + 底部渐隐幕布） */
+.mobile-dock-scrim {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: calc(6.25rem + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--canvas) 72%, transparent) 46%,
+    color-mix(in srgb, var(--canvas) 96%, transparent) 78%,
+    var(--canvas) 100%
+  );
+}
 .mobile-tab-bar {
   grid-template-columns: repeat(var(--tab-count), minmax(0, 1fr));
-  width: calc(100% - 24px);
-  max-width: 32rem;
-  margin: 0 auto calc(6px + env(safe-area-inset-bottom, 0px));
-  border: 1px solid var(--outline);
+  width: calc(100% - 28px);
+  max-width: 28rem;
+  margin: 0 auto calc(10px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid color-mix(in srgb, var(--outline-strong) 72%, var(--outline));
   border-radius: 9999px;
-  box-shadow: var(--elev-card);
+  box-shadow: var(--glass-shadow);
+  padding: 3px;
 }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .mobile-tab-bar.glass {
-    background: color-mix(in srgb, var(--surface) 78%, transparent);
-    box-shadow: 0 6px 24px -10px color-mix(in srgb, var(--on-surface) 27%, transparent);
+    background: var(--glass-bg);
+    box-shadow: var(--glass-shadow);
   }
   @media (prefers-reduced-transparency: reduce) {
     .mobile-tab-bar.glass { background: var(--surface); }
   }
 }
 @media (max-width: 767px) {
-  .mobile-actions-offset { bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)); }
+  .mobile-actions-offset { bottom: calc(4.85rem + env(safe-area-inset-bottom, 0px)); }
 }
 .tab-pill {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: calc(100% / var(--tab-count));
+  inset: 3px auto 3px 3px;
+  width: calc((100% - 6px) / var(--tab-count));
   pointer-events: none;
-  transition: transform var(--dur-2) var(--ease-standard), opacity var(--dur-1) var(--ease-standard);
+  transition: transform var(--dur-3) var(--ease-spring), opacity var(--dur-1) var(--ease-standard);
 }
 .tab-pill::before {
   content: '';
   position: absolute;
-  inset: 4px 3px;
+  inset: 1px 3px;
   border-radius: 9999px;
   background: var(--primary-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+.dark .tab-pill::before {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 .mobile-tab-link { transition: color var(--dur-1) var(--ease-standard); }
 .mobile-tab-link:focus-visible { outline-offset: -3px; }
-.mobile-tab-icon { transition: transform var(--dur-1) var(--ease-standard); }
-.mobile-tab-link:active .mobile-tab-icon { transform: scale(.92); }
+.mobile-tab-icon { transition: transform var(--dur-2) var(--ease-spring); }
+.mobile-tab-link[aria-current='page'] .mobile-tab-icon { transform: translateY(-1px) scale(1.06); }
+.mobile-tab-link:active .mobile-tab-icon { transform: scale(.9); }
 @media (prefers-reduced-motion: reduce) {
   .tab-pill, .mobile-tab-icon, .segmented-thumb { transition: none !important; }
   .mobile-tab-link:active .mobile-tab-icon { transform: none; }

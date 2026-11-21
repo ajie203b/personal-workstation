@@ -371,20 +371,17 @@ export function DocsPage() {
         }
       } catch { toast('移动失败，请重试') }
     }}>
-    <div className="mx-auto w-full max-w-[1500px] px-4 md:px-8 pt-4 pb-36 lg:pb-14 flex flex-col gap-4 cascade">
+    <div className="mx-auto w-full max-w-[1500px] px-3.5 md:px-8 pt-3 md:pt-4 pb-28 lg:pb-14 flex flex-col gap-3 md:gap-4 cascade">
       {/* 桌面：标题 + 搜索 / 写作 / 导入 一行放得下 */}
       <div className="hidden lg:flex lg:items-start gap-3">
-        <div>
-          <h1 className="text-[22px] font-bold leading-8">文档工作站</h1>
-          <p className="text-[13px] text-on-surface-2 mt-0.5">本地优先 · 文献分类与引文 · 划词截图与间隔复习</p>
-        </div>
+        <h1 className="text-[28px] font-semibold leading-tight tracking-tight">文档工作站</h1>
         <div className="ml-auto flex items-center gap-2">
           <input
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             placeholder="搜索标题、作者、标签或全文…"
             aria-label="搜索文档"
-            className="h-9 w-56 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13px] outline-none focus:border-primary/60"
+            className="h-9 w-60 px-3.5 rounded-[12px] bg-surface border border-outline shadow-[var(--elev-card)] text-[13px] outline-none transition-colors focus:border-primary/60"
           />
           {allAnnotations.length > 0 && (
             <Button size="sm" onClick={() => setReviewOpen(true)}>
@@ -402,27 +399,30 @@ export function DocsPage() {
         </div>
       </div>
 
-      {/* 手机：常用入口直接展示，搜索框随剩余宽度收缩。 */}
-      <h1 className="lg:hidden pt-[env(safe-area-inset-top)] text-[22px] font-bold leading-8">文档工作站</h1>
+      {/* 平板（md..lg 无顶栏时）显示页面标题；手机端已统一由 TopBar 显示「文档工作站」 */}
+      <h1 className="hidden md:block lg:hidden text-[24px] font-bold leading-tight tracking-tight">文档工作站</h1>
       <div className="lg:hidden flex items-center gap-2">
-        <input
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          placeholder="搜索标题、作者或全文…"
-          aria-label="搜索文档"
-          className="flex-1 min-w-0 h-11 px-3 rounded-[10px] bg-surface-2 border border-outline text-[16px] outline-none focus:border-primary/60"
-        />
+        <div className="relative flex-1 min-w-0">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-2/75" aria-hidden />
+          <input
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="搜索标题、作者或全文…"
+            aria-label="搜索文档"
+            className="w-full h-10 pl-9 pr-3 rounded-[13px] bg-surface/95 border border-outline shadow-[var(--elev-card)] text-[14px] outline-none focus:border-primary/60"
+          />
+        </div>
         {!inTrash && (
           <button type="button" aria-label="筛选文档" aria-haspopup="dialog" onClick={() => setFiltersOpen(true)}
-            className="relative grid place-items-center shrink-0 w-11 h-11 rounded-[10px] border border-outline bg-surface-2 text-on-surface cursor-pointer">
-            <SlidersHorizontal size={18} />
+            className="relative grid place-items-center shrink-0 size-10 rounded-[12px] border border-outline bg-surface/95 shadow-[var(--elev-card)] text-on-surface cursor-pointer">
+            <SlidersHorizontal size={16} />
             {hasOptions && <span aria-hidden className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" />}
           </button>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" aria-label="更多文档操作" className="grid place-items-center shrink-0 w-11 h-11 rounded-[10px] text-on-surface-2 hover:bg-surface-2 cursor-pointer">
-              <MoreHorizontal size={20} />
+            <button type="button" aria-label="更多文档操作" className="grid place-items-center shrink-0 size-10 rounded-[12px] border border-outline bg-surface/95 shadow-[var(--elev-card)] text-on-surface-2 hover:text-on-surface cursor-pointer">
+              <MoreHorizontal size={18} />
             </button>
           </DropdownMenuTrigger>
           <MenuContent>
@@ -587,7 +587,7 @@ export function DocsPage() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" aria-label="添加文档"
-              className="mobile-actions-offset press lg:hidden fixed md:bottom-6 right-[calc(.75rem+env(safe-area-inset-right))] z-30 grid place-items-center size-12 rounded-full bg-primary-action text-on-primary-action shadow-md shadow-primary/20 cursor-pointer">
+              className="mobile-actions-offset press btn-primary-glow lg:hidden fixed md:bottom-6 right-[calc(.85rem+env(safe-area-inset-right))] z-30 grid place-items-center size-12 rounded-full bg-primary-action text-on-primary-action cursor-pointer">
               <Plus size={24} strokeWidth={2.2} />
             </button>
           </DropdownMenuTrigger>

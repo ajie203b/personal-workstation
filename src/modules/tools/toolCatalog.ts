@@ -1,5 +1,6 @@
 import {
   IconToolArticle,
+  IconToolArchive,
   IconToolDownload,
   IconToolIdPhoto,
   IconToolMath,
@@ -24,6 +25,8 @@ export interface ToolEntry {
   offline: boolean
   /** 仅原生客户端完整支持 */
   nativeOnly?: boolean
+  /** 卡片悬停与光晕使用的专属珠宝色调（与图标主色呼应） */
+  tint: string
   /** 供 ⌘K 命令面板匹配的关键词与别名 */
   keywords: string
 }
@@ -37,6 +40,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: '9 合 1 · 离线',
     category: 'doc',
     offline: true,
+    tint: '#E11D48',
     keywords: 'pdf merge split compress encrypt decrypt watermark signature pages 合并 拆分 压缩 加密 解密 水印 签名',
   },
   {
@@ -47,6 +51,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: '离线',
     category: 'utility',
     offline: true,
+    tint: '#3B82F6',
     keywords: 'math notes handwriting calculator plot graph 数学笔记 手写 计算 函数 绘图 方程 矩阵',
   },
   {
@@ -57,6 +62,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: '本地 AI',
     category: 'media',
     offline: true,
+    tint: '#0EA5E9',
     keywords: 'id photo portrait background cutout 证件照 报名照 抠图 换底色 一寸 二寸 排版',
   },
   {
@@ -67,6 +73,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: '本地 AI',
     category: 'doc',
     offline: true,
+    tint: '#10B981',
     keywords: 'ocr text recognize scan screenshot 文字识别 拍照取字 截图',
   },
   {
@@ -77,6 +84,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: '离线',
     category: 'utility',
     offline: true,
+    tint: '#6366F1',
     keywords: 'qr code barcode scan wifi vcard svg png 二维码 扫码 生成',
   },
   {
@@ -87,6 +95,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: 'Markdown / EPUB',
     category: 'doc',
     offline: false,
+    tint: '#F59E0B',
     keywords: 'article web clipper readability epub markdown 网页 剪藏 文章离线 抓取 微信 CSDN',
   },
   {
@@ -97,6 +106,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: 'DOCX · 离线',
     category: 'doc',
     offline: true,
+    tint: '#8B5CF6',
     keywords: 'njust report word docx latex 南理工 课程报告 实验报告 论文排版 公式 三线表',
   },
   {
@@ -107,6 +117,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: 'TXT / EPUB',
     category: 'media',
     offline: false,
+    tint: '#F97316',
     keywords: 'fanqie novel book epub txt 下载 小说 书架 番茄',
   },
   {
@@ -117,17 +128,19 @@ export const TOOL_CATALOG: ToolEntry[] = [
     badge: '抖音 / B站',
     category: 'media',
     offline: false,
+    tint: '#D946EF',
     keywords: 'media download video douyin bilibili 无水印 视频 图集 抖音 B站 bv',
   },
   {
     to: '/tools/archive',
-    icon: IconToolNovel,
+    icon: IconToolArchive,
     title: '安娜的档案',
     sub: '内置浏览器找书与 EPUB / PDF 直导入库',
     badge: '客户端',
     category: 'doc',
     offline: false,
     nativeOnly: true,
+    tint: '#64748B',
     keywords: 'anna archive ebook epub pdf 安娜的档案 电子书 搜索',
   },
 ]

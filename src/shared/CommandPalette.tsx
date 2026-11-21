@@ -139,7 +139,7 @@ export function CommandPalette() {
       label: t.title,
       hint: t.nativeOnly && !nativeClient ? '仅客户端' : (t.badge ?? t.sub),
       keywords: `${t.sub} ${t.keywords}`,
-      icon: <t.icon size={15} />,
+      icon: <t.icon size={18} />,
       run: () => go(t.to),
     }))
     const taskItems: PaletteItem[] = (tasks ?? []).map((t) => ({
@@ -251,7 +251,7 @@ export function CommandPalette() {
 
   return (
     <div className="fixed inset-0 z-50" onClick={() => setOpen(false)}>
-      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-0 bg-black/28 backdrop-blur-[6px]" />
       <div
         className="pop absolute left-1/2 top-[14%] -translate-x-1/2 w-[min(600px,92vw)] overflow-hidden"
         style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}

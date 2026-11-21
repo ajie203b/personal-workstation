@@ -83,9 +83,9 @@ export function TasksPage() {
   }
 
   return (
-    <div className={cn('mx-auto w-full px-4 md:px-8 pt-4 pb-36 md:pb-14 flex flex-col gap-4', view === 'board' ? 'max-w-[1600px]' : 'max-w-5xl')}>
+    <div className={cn('mx-auto w-full px-3.5 md:px-8 pt-3 md:pt-4 pb-28 md:pb-14 flex flex-col gap-3 md:gap-4', view === 'board' ? 'max-w-[1600px]' : 'max-w-5xl')}>
       <div className="flex items-center gap-2 max-md:flex-wrap">
-        <h1 className="hidden md:block text-[22px] font-bold leading-8 shrink-0">任务清单</h1>
+        <h1 className="hidden md:block text-[28px] font-semibold leading-tight tracking-tight shrink-0">任务清单</h1>
 
         {/* 手机：5 个页签横滚看不到边，改成自绘下拉；桌面仍是分段控件 */}
         <div className="md:hidden">
@@ -94,7 +94,7 @@ export function TasksPage() {
             title="切换清单"
             value={isLogbook ? 'logbook' : tier}
             onChange={(v) => setParam('tier', v)}
-            triggerClassName="h-11 rounded-[10px] text-[14px] font-semibold"
+            triggerClassName="h-[38px] rounded-[12px] text-[13.5px] font-semibold bg-surface/90 shadow-[var(--elev-card)]"
             options={[
               ...TIERS.map((t) => ({ value: t as string, label: `${TIER_LABEL[t]}（${counts[t] ?? 0}）` })),
               { value: 'logbook', label: `日志（${doneCount}）` },
@@ -107,7 +107,8 @@ export function TasksPage() {
             <Segmented
               size="sm"
               touchSized
-              className="max-md:[&>button]:justify-center"
+              showLabels
+              className="max-md:[&>button]:justify-center max-md:[&>button]:px-2 max-md:[&_svg]:hidden"
               ariaLabel="视图切换"
               value={view}
               onChange={(v) => setParam('view', v)}
@@ -173,6 +174,7 @@ export function TasksPage() {
           ) : (
             <TaskList
               scope={`tasks-${tier}`}
+              tier={tier}
               tasks={visible}
               emptyTitle={emptyMap[tier].title}
               emptyHint={emptyMap[tier].hint}
@@ -182,7 +184,10 @@ export function TasksPage() {
       </div>
 
       {!isLogbook && tier === 'today' && visible.length > 0 && (
-        <p className="text-[12px] text-on-surface-2 px-1">今天 · {fmtListDate(today)} · 按 ? 查看快捷键</p>
+        <p className="text-[12px] text-on-surface-2 px-1">
+          今天 · {fmtListDate(today)}
+          <span className="hidden md:inline"> · 按 ? 查看快捷键</span>
+        </p>
       )}
     </div>
   )

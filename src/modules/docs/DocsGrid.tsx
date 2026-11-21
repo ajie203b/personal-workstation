@@ -15,7 +15,7 @@ export function DocsGrid({ docs, showSnippets, renderCard }: {
   const { active } = useDndContext()
   const [focusedId, setFocusedId] = useState<string>()
   const [windowRows, setWindowRows] = useState({ columns: 1, start: 0, end: 16 })
-  const cardHeight = showSnippets ? 176 : 120
+  const cardHeight = showSnippets ? 184 : windowRows.columns === 1 ? 114 : 134
   const rowStep = cardHeight + GAP
 
   useLayoutEffect(() => {

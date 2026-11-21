@@ -238,7 +238,7 @@ export function MathNotesToolbar({
       </div>
 
       {/* 第 2 排（桌面同排右侧）：工具、笔色/笔宽、角度制、缩放、解锁手指 */}
-      <div className="flex items-center justify-between lg:justify-end gap-1 h-11 lg:h-auto border-t border-outline/50 lg:border-t-0">
+      <div className="flex items-center justify-between lg:justify-end gap-1 h-11 max-[360px]:h-auto max-[360px]:flex-wrap max-[360px]:py-1 lg:h-auto border-t border-outline/50 lg:border-t-0">
         <div className="flex items-center gap-0.5">
           <button type="button" aria-label="笔" title="笔 (P)" aria-pressed={tool === 'pen'} className={toolBtn(tool === 'pen')} onClick={() => onSelectTool('pen')}>
             <PenLine size={17} />
@@ -286,7 +286,7 @@ export function MathNotesToolbar({
                 type="button"
                 aria-label="笔迹颜色与粗细"
                 title="调整墨迹颜色与粗细"
-                className={cn(toolBtn(false), 'w-auto px-1.5 gap-1')}
+                className={cn(toolBtn(false), '!inline-flex items-center justify-center w-auto px-2 gap-1.5')}
               >
                 <span className="md:hidden"><ColorSwatchDot colorId={penColor} /></span>
                 <span className="text-[11px] font-medium text-on-surface-2">

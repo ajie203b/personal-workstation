@@ -20,33 +20,33 @@ export function TopBar({ title }: { title: string }) {
 
   return (
     <header
-      className="mobile-toolbar glass md:hidden absolute inset-x-0 top-0 z-30 grid items-center gap-2 px-3"
+      className="mobile-toolbar md:hidden absolute inset-x-0 top-0 z-30 grid items-center gap-2 px-3"
     >
       {backTarget ? (
         <button type="button" aria-label={toolPage ? '返回工具' : '返回设置'} onClick={() => navigate(backTarget)}
-          className="chrome-button press grid size-11 shrink-0 place-items-center rounded-full text-primary">
-          <ChevronLeft size={22} aria-hidden />
+          className="chrome-button press grid size-9 shrink-0 place-items-center rounded-full text-primary">
+          <ChevronLeft size={21} strokeWidth={2.2} aria-hidden />
         </button>
       ) : <button
         aria-label="回到今日"
         title="今日"
         onClick={() => navigate('/today')}
-        className="chrome-button press shrink-0 cursor-pointer rounded-full select-none"
+        className="chrome-button press grid size-9 shrink-0 place-items-center cursor-pointer rounded-full select-none"
       >
-        <BrandMark />
+        <span className="inline-flex scale-[0.9]"><BrandMark /></span>
       </button>}
       {backTarget
-        ? <h1 className="min-w-0 truncate text-center text-[16px] font-semibold">{settingsSection ? SETTINGS_TITLES[settingsSection] : title}</h1>
-        : <span className="min-w-0 truncate text-center text-[16px] font-semibold">{title}</span>}
+        ? <h1 className="min-w-0 truncate text-center text-[15.5px] font-semibold tracking-[-0.015em]">{settingsSection ? SETTINGS_TITLES[settingsSection] : title}</h1>
+        : <span className="min-w-0 truncate text-center text-[15.5px] font-semibold tracking-[-0.015em]">{title}</span>}
       {pathname !== '/settings' && (
         <button
           type="button"
           aria-label="设置"
           title="设置"
           onClick={() => navigate('/settings')}
-          className="chrome-button press grid place-items-center size-11 rounded-full text-on-surface-2"
+          className="chrome-button press grid place-items-center size-9 justify-self-end rounded-full text-on-surface-2"
         >
-          <IconSettings size={19} />
+          <IconSettings size={18} />
         </button>
       )}
     </header>

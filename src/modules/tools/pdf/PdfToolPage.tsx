@@ -12,6 +12,7 @@ import {
   Minimize2,
 } from 'lucide-react'
 import { IconToolPdf } from '@/shared/icons'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { BackButton } from '@/shared/ui/BackButton'
 import type { SegmentOption } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
@@ -97,28 +98,26 @@ export function PdfToolPage() {
   )
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
+    <div className="mx-auto w-full max-w-5xl px-3.5 md:px-8 pt-3 md:pt-4 pb-10 md:pb-14 flex flex-col gap-3.5 md:gap-4 enter">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
-      <header className="flex items-start gap-3">
-        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconToolPdf size={22} />
-        </span>
+      <header className="flex items-center md:items-start gap-3 md:gap-3.5">
+        <ToolIconTile icon={IconToolPdf} className="max-md:size-10 max-md:rounded-[11px]" />
         <div className="min-w-0">
-          <h1 className="hidden md:block text-[22px] font-bold leading-7">PDF 工具箱</h1>
-          <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
+          <h1 className="hidden md:block text-[24px] font-bold tracking-[-0.02em] leading-7">PDF 工具箱</h1>
+          <p className="text-[12px] md:text-[12.5px] text-on-surface-2 md:mt-0.5 leading-relaxed">
             合并、页面整理、转换、签名、压缩与密码保护。全程本地处理，文件不出设备。
           </p>
         </div>
       </header>
 
-      <div className="relative rounded-[14px]">
+      <div className="relative rounded-[14px] md:rounded-[16px]">
         <div
           ref={tablistRef}
           role="tablist"
           aria-label="PDF 工具"
           onScroll={updateScrollFade}
-          className="flex gap-1 overflow-x-auto rounded-[14px] bg-surface-3/70 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex gap-1 overflow-x-auto rounded-[14px] md:rounded-[16px] bg-surface-3/75 ring-1 ring-inset ring-outline/80 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {TABS.map(item => <button key={item.value} type="button" role="tab" aria-selected={tab === item.value} tabIndex={tab === item.value ? 0 : -1}
             aria-controls="pdf-tool-panel" id={`pdf-tool-${item.value}`}
@@ -131,8 +130,13 @@ export function PdfToolPage() {
               setParams({ tool: next.value }, { replace: true })
               document.getElementById(`pdf-tool-${next.value}`)?.focus()
             }}
-            className={cn('flex flex-1 shrink-0 items-center justify-center gap-1.5 min-h-11 px-3 rounded-[10px] text-[12px] whitespace-nowrap cursor-pointer transition-colors', tab === item.value ? 'bg-surface text-primary font-semibold shadow-sm' : 'text-on-surface-2 hover:text-on-surface hover:bg-surface/60')}>
-            {item.icon && <item.icon size={15} aria-hidden />}<span>{item.label}</span>
+            className={cn(
+              'flex flex-1 shrink-0 items-center justify-center gap-1.5 min-h-9 md:min-h-10 px-2.5 md:px-3 rounded-[10px] md:rounded-[12px] text-[12px] whitespace-nowrap cursor-pointer transition-[background-color,color,box-shadow]',
+              tab === item.value
+                ? 'bg-surface text-primary font-semibold shadow-[0_2px_8px_-3px_rgba(15,23,42,0.18),0_0_0_1px_var(--outline)]'
+                : 'text-on-surface-2 hover:text-on-surface hover:bg-surface/60',
+            )}>
+            {item.icon && <item.icon size={14} aria-hidden />}<span>{item.label}</span>
           </button>)}
         </div>
         {scrollFade.left && (

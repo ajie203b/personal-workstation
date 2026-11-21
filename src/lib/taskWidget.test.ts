@@ -49,10 +49,12 @@ it('确认失败后重试，不重复增加打卡次数', async () => {
 })
 
 it('待添加任务在同步期间被完成，继续合并下一批完成动作', async () => {
-  bridge.take.mockResolvedValueOnce({ adds: [{ id: 'new', title: '新任务' }] })
+  bridge.take.mockResolvedValueOnce({ adds: [{ id: 'new', title: '新任务', priority: 0 }] })
     .mockResolvedValueOnce({ checks: [{ id: 'new', at: Date.now() }] })
   await drainTaskWidgetActions()
-  expect((await db.tasks.get('new'))?.status).toBe('done')
+  const saved = await db.tasks.get('new')
+  expect(saved?.status).toBe('done')
+  expect(saved?.priority).toBe(0)
   expect(bridge.ack).toHaveBeenCalledTimes(2)
   expect(JSON.parse(bridge.ack.mock.calls.at(-1)![0].payload).tasks).toEqual([])
 })

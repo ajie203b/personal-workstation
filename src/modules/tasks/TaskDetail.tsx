@@ -181,16 +181,16 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
       }
     >
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 overlay-fade" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[6px] overlay-fade" />
         <RadixDialog.Content
           data-app-modal="dialog"
           aria-describedby={undefined}
           className={cn(
             'dialog-panel pop fixed z-50 flex flex-col bg-surface overflow-hidden',
-            // 手机：底部弹出的居中胶囊；桌面：居中宽面板（比右侧抽屉能少滚很多）
-            'left-0 right-0 bottom-0 max-h-[92dvh] rounded-t-[20px]',
+            // 手机：底部弹出的 iOS 原生圆角抽屉；桌面：居中宽面板（比右侧抽屉能少滚很多）
+            'left-0 right-0 bottom-0 max-h-[92dvh] rounded-t-[26px]',
             // v3.1：加宽到 1040 —— 桌面四列把原来三屏的字段压成一屏
-            'md:inset-0 md:m-auto md:h-fit md:w-[min(1040px,96vw)] md:max-h-[92dvh] md:rounded-[20px] md:border md:border-outline',
+            'md:inset-0 md:m-auto md:h-fit md:w-[min(1040px,96vw)] md:max-h-[92dvh] md:rounded-[22px] md:border md:border-outline',
           )}
           style={{
             // 常挂转场名：打开时若来自卡片则浏览器自动插值形变，关闭时也能「长回」卡片；
@@ -200,8 +200,11 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
             animation: morphFromCard.current ? undefined : 'scale-in var(--dur-2) var(--ease-spring)',
           }}
         >
+          <div className="sheet-grabber md:hidden" aria-hidden>
+            <span />
+          </div>
           {/* 标题栏 */}
-          <div className="flex items-center justify-between px-5 h-14 shrink-0 border-b border-outline">
+          <div className="flex items-center justify-between px-4 md:px-5 h-11 md:h-14 shrink-0 border-b border-outline">
             <RadixDialog.Title className="text-[16px] font-semibold">编辑任务</RadixDialog.Title>
             <RadixDialog.Close
               aria-label="关闭"

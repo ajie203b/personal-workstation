@@ -8,6 +8,7 @@ export interface TaskWidgetAdd {
   id: string
   title: string
   tier?: string
+  priority?: number
   createdAt?: number
 }
 
@@ -50,7 +51,10 @@ export function drainTaskWidgetActions(): Promise<void> {
         if (!id || !title) continue
         // 固定 id 去重：上次处理完但没来得及 ack 时不会重复添加
         if (await db.tasks.get(id)) continue
-        await addTask({ id, title, tier: add.tier === 'anytime' ? 'anytime' : 'today' })
+        const priority = add.priority === 0 || add.priority === 1 || add.priority === 2 || add.priority === 3
+          ? add.priority
+          : undefined
+        await addTask({ id, title, tier: add.tier === 'anytime' ? 'anytime' : 'today', priority })
       }
 
       for (const check of checks) {

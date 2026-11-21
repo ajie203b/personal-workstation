@@ -31,10 +31,10 @@ export function EmptyState({ icon: Icon, title, hint, children, compact, dense, 
     )}
     >
       <div className={cn(
-        'empty-icon bg-surface-2 border border-outline grid place-items-center mx-auto',
-        small ? 'w-11 h-11 rounded-[12px] mb-2.5 md:mb-4' : 'w-14 h-14 rounded-[16px] mb-4',
+        'empty-icon bg-surface border border-outline shadow-[var(--elev-card)] grid place-items-center mx-auto',
+        small ? 'w-12 h-12 rounded-[15px] mb-2.5 md:mb-4' : 'w-15 h-15 rounded-[18px] mb-4',
       )}>
-        <Icon size={small ? 19 : 24} strokeWidth={1.5} className="text-on-surface-2" />
+        <Icon size={small ? 20 : 25} strokeWidth={1.6} className="text-primary/80" />
       </div>
       <p className="text-[15px] font-medium">{title}</p>
       {/* dense：手机首屏放不下「图标+标题+说明+按钮+引导+专注控件」，

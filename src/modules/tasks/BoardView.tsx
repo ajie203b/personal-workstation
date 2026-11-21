@@ -23,6 +23,13 @@ const TIER_ICON: Record<Tier, LucideIcon> = {
   someday: Hourglass,
 }
 
+const TIER_COLOR: Record<Tier, string> = {
+  today: 'var(--primary)',
+  upcoming: 'var(--p2)',
+  anytime: 'var(--ok)',
+  someday: 'var(--p3)',
+}
+
 /**
  * 拖拽中的碰撞策略：指针明确落在某一列内时用「列内最近卡片」，
  * 否则退回「四角最近」——纯 closestCorners 在跨列时会被相邻列的卡片抢走落点。
@@ -95,7 +102,7 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
   return (
     <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveId(null)}>
       {/* 窄屏一列一屏左右滑（吸附），到 sm 才铺成 2 列 / xl 4 列 */}
-      <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-3 -mx-4 px-4 md:mx-0 md:px-0 enter">
+      <div className="flex gap-3.5 md:gap-4 overflow-x-auto snap-x snap-mandatory pb-3 -mx-3.5 px-3.5 md:mx-0 md:px-0 enter">
         {TIERS.map((tier) => (
           <div key={tier} className="snap-start shrink-0 w-[86vw] sm:w-[280px] md:flex-1 md:min-w-[260px]">
             <BoardColumn tier={tier} tasks={byTier[tier]} />
@@ -116,19 +123,33 @@ export function BoardView({ tasks }: { tasks: Task[] }) {
 function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
   const { setNodeRef, isOver } = useDroppable({ id: tier })
   const Icon = TIER_ICON[tier]
+  const color = TIER_COLOR[tier]
   return (
     <div
       ref={setNodeRef}
       className={cn(
         // 只过渡 transform / 边框 / 背景，避免 transition-all 连带阴影逐帧重算
-        'flex flex-col rounded-[16px] border p-2 min-h-[220px] transition-[transform,border-color,background-color] duration-150 ease-standard',
-        isOver ? 'border-primary/60 bg-primary-soft/40 scale-[1.004]' : 'border-outline bg-surface-2/50',
+        'flex flex-col rounded-[22px] border p-2.5 min-h-[240px] backdrop-blur-sm transition-[transform,border-color,background-color] duration-150 ease-standard',
+        isOver
+          ? 'border-primary/60 bg-primary-soft/45 scale-[1.005]'
+          : 'border-outline/90 bg-surface/65 shadow-[var(--elev-card)]',
       )}
     >
-      <div className="flex items-center gap-2 px-2 pt-1.5 pb-3">
-        <Icon size={15} className="text-on-surface-2" />
-        <span className="text-[13px] font-semibold">{TIER_LABEL[tier]}</span>
-        <span className="text-[11px] text-on-surface-2 bg-surface-3 px-1.5 py-0.5 rounded-full">{tasks.length}</span>
+      <div className="flex items-center gap-2 px-1.5 pt-1 pb-3">
+        <span
+          aria-hidden
+          className="grid place-items-center size-6 rounded-[8px] shrink-0"
+          style={{
+            background: `color-mix(in srgb, ${color} 14%, transparent)`,
+            color,
+          }}
+        >
+          <Icon size={13.5} />
+        </span>
+        <span className="text-[13.5px] font-semibold tracking-[-0.01em]">{TIER_LABEL[tier]}</span>
+        <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-surface-3/90 text-[11px] font-semibold text-on-surface-2 tabular-nums">
+          {tasks.length}
+        </span>
       </div>
       <SortableContext items={tasks.map((t) => t.id)} strategy={rectSwappingStrategy}>
         <div className="flex flex-col gap-2 flex-1">
@@ -138,7 +159,7 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
         </div>
       </SortableContext>
       {tasks.length === 0 && (
-        <div className="grid place-items-center flex-1 min-h-[96px] px-3 text-center text-[12px] text-on-surface-2 border border-dashed border-outline rounded-xl">
+        <div className="grid place-items-center flex-1 min-h-[104px] px-3 text-center text-[12px] text-on-surface-2/85 border border-dashed border-outline/80 bg-surface-2/40 rounded-[14px]">
           拖任务到这里，或用上方输入框 / 右下角加号添加
         </div>
       )}

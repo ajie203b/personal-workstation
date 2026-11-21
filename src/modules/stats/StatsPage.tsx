@@ -7,6 +7,7 @@ import { cn } from '@/lib/cn'
 import { fmtListDate, toDateStr } from '@/lib/date'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
 import { WalletCards, BarChart3 } from 'lucide-react'
+import { Segmented } from '@/shared/ui/Segmented'
 import { AiQuotaPage } from './AiQuotaPage'
 
 /** 统计页（v1.3）：完成热力图 + 周报 + 标签分布 + 专注排行。全部本地数据。 */
@@ -41,16 +42,35 @@ export function StatsPage() {
   const [range, setRange] = useState<'week' | 'month'>('week')
   return (
     <div>
-      <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4">
-        <div className="hidden md:block mb-4"><h1 className="text-[22px] font-bold leading-8">统计</h1><p className="text-[13px] text-on-surface-2 mt-0.5">查看任务数据与模型额度</p></div>
+      <div className="mx-auto w-full max-w-7xl px-3.5 md:px-8 pt-3 md:pt-4">
+        <h1 className="hidden md:block mb-4 text-[28px] font-semibold leading-tight tracking-tight">统计</h1>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex shrink-0 gap-1 rounded-xl bg-surface-3/70 p-1" role="group" aria-label="统计页面切换">
-            <button type="button" aria-pressed={view === 'tasks'} onClick={() => setView('tasks')} className={cn('flex items-center gap-1 rounded-lg px-2.5 py-2 text-[13px] whitespace-nowrap', view === 'tasks' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><BarChart3 size={15} />任务统计</button>
-            <button type="button" aria-pressed={view === 'quota'} onClick={() => setView('quota')} className={cn('flex items-center gap-1 rounded-lg px-2.5 py-2 text-[13px] whitespace-nowrap', view === 'quota' ? 'bg-surface shadow-sm text-on-surface' : 'text-on-surface-2')}><WalletCards size={15} />模型额度</button>
-          </div>
-          {view === 'tasks' && <div className="flex shrink-0 items-center gap-0.5 rounded-[12px] bg-surface-3/70 p-[3px]" role="group" aria-label="统计时间范围">
-            {(['week', 'month'] as const).map(r => <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)} className={cn('h-8 max-md:size-11 rounded-[10px] px-3 text-[13px] font-medium transition-colors', range === r ? 'bg-surface text-on-surface shadow-sm' : 'text-on-surface-2 hover:text-on-surface')}>{r === 'week' ? '周' : '月'}</button>)}
-          </div>}
+          <Segmented
+            ariaLabel="统计页面切换"
+            size="sm"
+            touchSized
+            showLabels
+            value={view}
+            onChange={(v) => setView(v as 'tasks' | 'quota')}
+            options={[
+              { value: 'tasks', label: '任务统计', icon: BarChart3 },
+              { value: 'quota', label: '模型额度', icon: WalletCards },
+            ]}
+          />
+          {view === 'tasks' && (
+            <Segmented
+              ariaLabel="统计时间范围"
+              asRadio
+              size="sm"
+              touchSized
+              value={range}
+              onChange={(v) => setRange(v as 'week' | 'month')}
+              options={[
+                { value: 'week', label: '周' },
+                { value: 'month', label: '月' },
+              ]}
+            />
+          )}
         </div>
       </div>
       <div key={view} className="stats-view-transition">{view === 'tasks' ? <TaskStatistics range={range} /> : <AiQuotaPage />}</div>
@@ -178,7 +198,7 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
   if (!tasks || !sessions || !annotations) return null
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 cascade">
+    <div className="mx-auto w-full max-w-7xl px-3.5 md:px-8 pt-3 md:pt-4 pb-24 md:pb-14 flex flex-col gap-3 md:gap-4 cascade">
       {/* 概览四卡：手机上一屏四列，不横滑 */}
       <div className="grid grid-cols-4 gap-2 md:gap-3">
         <StatCard icon={<CheckCircle2 size={16} />} label="累计完成" shortLabel="完成" value={doneTasks.length} unit="件" />
@@ -188,24 +208,24 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
       </div>
 
       {/* 热力图：近 13 周固定铺满一屏，今天用双描边点出来 */}
-      <div className="card p-4">
+      <div className="card p-3.5 md:p-4">
         <div className="flex items-center gap-3 mb-3">
           <h2 className="text-[14px] font-semibold whitespace-nowrap">近 13 周</h2>
           <p className="hidden sm:block text-[10.5px] text-on-surface-2 truncate">颜色越深，当天{METRIC_LABEL[metric] === '专注' ? '专注分钟' : METRIC_LABEL[metric] + '数'}越多</p>
-          <div className="ml-auto flex gap-1 shrink-0">
-            {(['tasks', 'focus', 'notes'] as Metric[]).map((m) => (
-              <button
-                key={m}
-                aria-pressed={metric === m}
-                onClick={() => setMetric(m)}
-                className={cn(
-                  'h-7 max-md:min-h-11 max-md:min-w-11 px-2.5 rounded-full text-[12px] cursor-pointer transition-colors',
-                  metric === m ? 'bg-primary text-on-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3',
-                )}
-              >
-                {METRIC_LABEL[m]}
-              </button>
-            ))}
+          <div className="ml-auto shrink-0">
+            <Segmented
+              ariaLabel="热力图指标"
+              asRadio
+              size="sm"
+              touchSized
+              value={metric}
+              onChange={(v) => setMetric(v as Metric)}
+              options={[
+                { value: 'tasks', label: '任务' },
+                { value: 'focus', label: '专注' },
+                { value: 'notes', label: '批注' },
+              ]}
+            />
           </div>
         </div>
         <div className="mx-auto w-full max-w-[360px]">
@@ -285,20 +305,30 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
           <h2 className="text-[14px] font-semibold">{range === 'week' ? '本周 vs 上周' : '本月 vs 上月'}</h2>
           <p className="ml-auto text-[11px] text-on-surface-2">{range === 'week' ? '本周数据截至今天' : '本月数据截至今天'}</p>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
           {compare.map(({ metric: m, current, previous }, i) => {
             const delta = current - previous
             const focusMode = m === 'focus'
             return (
-              <div key={m} className="rounded-[12px] bg-surface-2 px-3 py-3 text-center">
-                <p className="text-[12px] text-on-surface-2">{METRIC_LABEL[m]}{focusMode ? '（分钟）' : ''}</p>
-                <p className="text-[22px] font-bold tabular-nums mt-1">{current}</p>
-                <p className={cn('text-[11px] mt-0.5 tabular-nums', delta > 0 ? 'text-primary' : 'text-on-surface-2')}>
-                  {delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '— 持平'} · 上期 {previous}
-                </p>
+              <div key={m} className="flex flex-col rounded-[16px] bg-surface-2/75 border border-outline/75 px-2.5 sm:px-3.5 py-3.5 text-center transition-colors hover:border-primary/25">
+                <p className="text-[11.5px] sm:text-[12px] font-medium text-on-surface-2">{METRIC_LABEL[m]}{focusMode ? '（分钟）' : ''}</p>
+                <p className="text-[22px] sm:text-[24px] font-bold tracking-[-0.02em] tabular-nums mt-1 leading-tight">{current}</p>
+                <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1">
+                  <span className={cn(
+                    'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums leading-none',
+                    delta > 0
+                      ? 'bg-ok/12 text-ok'
+                      : delta < 0
+                        ? 'bg-surface-3 text-on-surface-2'
+                        : 'bg-surface-3/80 text-on-surface-2',
+                  )}>
+                    {delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '持平'}
+                  </span>
+                  <span className="text-[10.5px] text-on-surface-2 tabular-nums">上期 {previous}</span>
+                </div>
                 {/* 两根柱子：本期高亮、上期弱化，入场时从 0 长到各自高度；
                     两边都是 0 时不画柱子，免得空轨道看着像「已经满了」 */}
-                <div className="flex items-end justify-center gap-1.5 h-14 mt-2">
+                <div className="mt-auto pt-3 flex items-end justify-center gap-1.5 h-[68px]">
                   {current + previous > 0 ? (
                     <>
                       <CompareBar value={current} max={Math.max(current, previous, 1)} delay={i * 60} />
@@ -401,15 +431,20 @@ function StatCard({ icon, label, shortLabel, value, unit, accent, decimals = 0 }
 }) {
   const shown = useCountUp(value, decimals)
   return (
-    <div className="card p-2 md:p-4 flex flex-col gap-1 md:gap-1.5 h-full min-w-0">
-      <span className="inline-flex items-center gap-1 md:gap-1.5 min-w-0 text-[10px] md:text-[12px] leading-tight text-on-surface-2">
-        <span className="shrink-0 [&_svg]:size-3 md:[&_svg]:size-4" style={accent ? { color: accent } : undefined}>{icon}</span>
+    <div className="card card-hover p-2.5 md:p-4 flex flex-col gap-1.5 md:gap-2 h-full min-w-0">
+      <span className="inline-flex items-center gap-1.5 md:gap-2 min-w-0 text-[10.5px] md:text-[12.5px] leading-tight text-on-surface-2">
+        <span
+          className="grid place-items-center size-6 md:size-7 rounded-[9px] bg-primary-soft/80 text-primary shrink-0 [&_svg]:size-3 md:[&_svg]:size-4"
+          style={accent ? { color: accent, background: `color-mix(in srgb, ${accent} 14%, transparent)` } : undefined}
+        >
+          {icon}
+        </span>
         <span className="md:hidden truncate">{shortLabel}</span>
         <span className="hidden md:inline truncate">{label}</span>
       </span>
-      <span className="text-[17px] sm:text-[20px] md:text-[24px] font-bold tabular-nums leading-none whitespace-nowrap">
+      <span className="text-[18px] sm:text-[22px] md:text-[26px] font-bold tracking-[-0.025em] tabular-nums leading-none whitespace-nowrap">
         {shown}
-        <span className="text-[9px] md:text-[12px] font-normal text-on-surface-2 ml-1">{unit}</span>
+        <span className="text-[10px] md:text-[12px] font-normal text-on-surface-2 ml-1">{unit}</span>
       </span>
     </div>
   )
@@ -467,6 +502,7 @@ function FocusTrend({ range, dayCounts }: { range: 'week' | 'month'; dayCounts: 
     y: H - pad - (d.v / max) * (H - pad * 2),
   }))
   const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  const areaPath = pts.length > 0 ? `${path} L ${pts[pts.length - 1].x.toFixed(1)} ${H} L ${pts[0].x.toFixed(1)} ${H} Z` : ''
 
   // 一笔画出：先 dashoffset=1，下一帧归零
   const [drawn, setDrawn] = useState(false)
@@ -510,7 +546,16 @@ function FocusTrend({ range, dayCounts }: { range: 'week' | 'month'; dayCounts: 
         role="img"
         aria-label={`近 ${n} 天每日专注分钟`}
       >
-        <path d={path} fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        <defs>
+          <linearGradient id="focus-trend-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {areaPath && (
+          <path d={areaPath} fill="url(#focus-trend-area)" style={{ opacity: drawn ? 1 : 0, transition: 'opacity 500ms ease' }} />
+        )}
+        <path d={path} fill="none" stroke="var(--primary)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
           pathLength={1} strokeDasharray={1}
           style={{ strokeDashoffset: drawn ? 0 : 1, transition: 'stroke-dashoffset 720ms cubic-bezier(.22,.61,.36,1)' }}
         />

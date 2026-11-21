@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ChevronRight, Clock3, History, Keyboard, Plus, X } from 'lucide-react'
+import { ChevronRight, Clock3, History, Keyboard, Plus, Search, Sparkles, X } from 'lucide-react'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, todayStr } from '@/lib/date'
@@ -63,6 +63,19 @@ export function TodayPage() {
     return new Date()
   }, [today])
 
+  const greeting = useMemo(() => {
+    const h = date.getHours()
+    if (h < 6) return '夜深了'
+    if (h < 11) return '早上好'
+    if (h < 14) return '中午好'
+    if (h < 18) return '下午好'
+    return '晚上好'
+  }, [date])
+
+  const todayTotal = todayTasks.length + todayDone.length
+  const todayPct = todayTotal > 0 ? Math.round((todayDone.length / todayTotal) * 100) : 0
+  const openPalette = useUi((s) => s.setPaletteOpen)
+
   const roll = async () => {
     if (rolling || !todayTasks.length) return
     setRolling(true)
@@ -85,34 +98,72 @@ export function TodayPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 md:pt-6 pb-24 md:pb-14 flex flex-col gap-4 md:gap-5">
+    <div className="mx-auto w-full max-w-7xl px-3.5 md:px-8 pt-3 md:pt-6 pb-24 md:pb-14 flex flex-col gap-3 md:gap-5">
       <Milestone total={todayTasks.length} done={todayDone.length} />
       <header>
-        <div className="flex items-end justify-between gap-3">
+        <div className="flex items-center md:items-end justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-[28px] md:text-[34px] font-semibold leading-tight tracking-tight">
+            <div className="flex flex-wrap items-center gap-2 mb-0.5 md:mb-1">
+              <span className="text-[12px] md:text-[12.5px] font-medium text-on-surface-2">{greeting}</span>
+              {/* 手机端右侧已展示进度环，进度胶囊只在桌面展示，杜绝同一屏重复出现两个 25% */}
+              {todayTotal > 0 ? (
+                <span className={cn(
+                  'hidden md:inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                  todayTasks.length === 0
+                    ? 'bg-ok/12 text-ok'
+                    : 'bg-primary-soft text-primary',
+                )}>
+                  {todayTasks.length === 0 ? (
+                    <>
+                      <Sparkles size={11} aria-hidden /> 今日待办已清空
+                    </>
+                  ) : (
+                    <>今日完成 {todayDone.length}/{todayTotal} · {todayPct}%</>
+                  )}
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-medium bg-surface-3/80 text-on-surface-2">
+                  节奏清晰
+                </span>
+              )}
+            </div>
+            <h1 className="text-[24px] md:text-[34px] font-bold leading-tight tracking-[-0.03em]">
               {fmtWeekdayLong(date)}
             </h1>
           </div>
-          {/* 手机：一枚小进度环顶替原来那 4 张数字卡（完成 3/8 一眼可见，不占一屏） */}
-          <ProgressRing done={todayDone.length} total={todayTasks.length + todayDone.length} onClick={jumpToFocus} className="md:hidden shrink-0 mb-0.5" />
-          <button
-            type="button"
-            aria-label="添加任务"
-            title="添加任务（单次 / 打卡）"
-            onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
-            className="press hidden md:grid place-items-center size-11 rounded-full bg-primary-soft text-primary border border-primary/15 shrink-0 cursor-pointer"
-          >
-            <Plus size={22} strokeWidth={2.2} />
-          </button>
+          {/* 手机：一枚轻盈毛玻璃进度环（点击跳到番茄钟），零文字重复 */}
+          <ProgressRing done={todayDone.length} total={todayTotal} onClick={jumpToFocus} className="md:hidden shrink-0" />
+          <div className="hidden md:flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => openPalette(true)}
+              aria-label="打开命令面板快速跳转"
+              className="press h-10 px-3.5 rounded-full bg-surface/85 backdrop-blur-md border border-outline shadow-[var(--elev-card)] hover:border-primary/40 hover:text-on-surface text-on-surface-2 inline-flex items-center gap-2.5 text-[13px] transition-colors cursor-pointer"
+            >
+              <Search size={14} className="text-on-surface-2/80" aria-hidden />
+              <span>快速搜索与跳转</span>
+              <kbd className="rounded-md bg-surface-3/90 px-1.5 py-0.5 font-mono text-[10.5px] text-on-surface-2 border border-outline/80">
+                ⌘K
+              </kbd>
+            </button>
+            <button
+              type="button"
+              aria-label="添加任务"
+              title="添加任务（单次 / 打卡）"
+              onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
+              className="press btn-primary-glow grid place-items-center size-11 rounded-full bg-primary-action text-on-primary-action shrink-0 cursor-pointer transition-transform duration-150 hover:scale-105"
+            >
+              <Plus size={22} strokeWidth={2.2} />
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-4 items-start">
         {/* 今日任务 */}
         <section className="md:col-span-3 min-w-0">
-          <div className="flex items-baseline gap-2 px-1 mb-2">
-            <h2 className="text-[16px] font-semibold">今日任务</h2>
+          <div className="flex items-baseline gap-2 px-1 mb-1.5 md:mb-2">
+            <h2 className="text-[15px] md:text-[16px] font-semibold">今日任务</h2>
             {todayDone.length > 0 && (
               <span className="text-[12px] text-ok font-medium">已完成 {todayDone.length}</span>
             )}
@@ -148,6 +199,7 @@ export function TodayPage() {
                 </div>
                 <TaskList
                   scope="anytime"
+                  tier="anytime"
                   tasks={anytimeTasks}
                   emptyTitle="没有随时任务"
                   emptyHint="在任务清单里放进「随时」的任务会出现在这里。"
@@ -156,10 +208,10 @@ export function TodayPage() {
               <button
                 type="button"
                 onClick={() => navigate('/tasks?tier=anytime')}
-                className="md:hidden mt-3 w-full card card-hover px-4 py-2.5 flex items-center gap-2 text-left cursor-pointer"
+                className="md:hidden mt-2.5 w-full card card-hover px-3.5 py-2.5 flex items-center gap-2 text-left cursor-pointer"
               >
                 <span className="text-[13px] font-medium">随时清单</span>
-                <span className="text-[12px] text-on-surface-2">{anytimeTasks.length} 件</span>
+                <span className="rounded-full bg-surface-3/85 px-2 py-0.5 text-[11px] font-medium text-on-surface-2 tabular-nums">{anytimeTasks.length} 件</span>
                 <ChevronRight size={15} className="ml-auto text-on-surface-2" />
               </button>
             </>
@@ -178,10 +230,26 @@ export function TodayPage() {
           </div>
 
           <section className="hidden md:block card p-4 order-3 md:order-none">
-            <h2 className="text-[13px] font-semibold text-on-surface-2 mb-3">进度</h2>
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <h2 className="text-[13px] font-semibold text-on-surface-2">进度</h2>
+              {todayTotal > 0 && (
+                <span className="text-[11.5px] font-semibold tabular-nums text-primary">{todayPct}%</span>
+              )}
+            </div>
+            {todayTotal > 0 && (
+              <div className="h-1.5 rounded-full bg-surface-3/90 overflow-hidden mb-3.5" aria-hidden>
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-[width] duration-500 ease-standard',
+                    todayPct >= 100 ? 'bg-ok' : 'bg-primary',
+                  )}
+                  style={{ width: `${Math.max(todayPct, todayDone.length > 0 ? 6 : 0)}%` }}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Kpi value={todayTasks.length} label="今日待办" />
-              <Kpi value={todayDone.length} label="今日完成" />
+              <Kpi value={todayDone.length} label="今日完成" accent={todayDone.length > 0 ? 'var(--ok)' : undefined} />
               <Kpi value={weekDone} label="本周完成" />
               <Kpi value={totalDone} label="累计完成" />
             </div>
@@ -206,7 +274,8 @@ function ProgressRing({ done, total, onClick, className }: {
   // 今天一件都没有时不画环：0/0 的圆环看着像出错
   if (total === 0) return null
   const pct = done / total
-  const R = 15
+  const pctNum = Math.round(pct * 100)
+  const R = 16
   const C = 2 * Math.PI * R
   const full = done >= total
   return (
@@ -215,12 +284,16 @@ function ProgressRing({ done, total, onClick, className }: {
       onClick={onClick}
       aria-label={`今日完成 ${done} / ${total}，跳到番茄钟`}
       title="跳到番茄钟"
-      className={cn(className, 'press cursor-pointer rounded-full')}
+      className={cn(
+        className,
+        'press relative grid place-items-center w-12 h-12 rounded-full cursor-pointer',
+        'bg-surface/85 backdrop-blur-md ring-1 ring-outline/80 shadow-[var(--elev-card)]',
+      )}
     >
-      <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90" aria-hidden>
-        <circle cx="18" cy="18" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="3.2" />
+      <svg viewBox="0 0 40 40" className="w-10 h-10 -rotate-90" aria-hidden>
+        <circle cx="20" cy="20" r={R} fill="none" stroke="var(--outline-strong)" strokeWidth="3.2" opacity="0.65" />
         <circle
-          cx="18" cy="18" r={R} fill="none"
+          cx="20" cy="20" r={R} fill="none"
           stroke={full ? 'var(--ok)' : 'var(--primary)'}
           strokeWidth="3.2" strokeLinecap="round"
           strokeDasharray={C}
@@ -228,6 +301,9 @@ function ProgressRing({ done, total, onClick, className }: {
           style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
         />
       </svg>
+      <span aria-hidden className="absolute text-[9.5px] font-bold tabular-nums tracking-tight text-on-surface">
+        {pctNum}%
+      </span>
     </button>
   )
 }
@@ -252,7 +328,7 @@ function KeyboardHint({ className }: { className?: string }) {
           onClick={() => { openShortcuts(true); dismiss() }}
           className="flex items-center gap-3 text-left cursor-pointer flex-1 min-w-0"
         >
-          <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
+          <span className="grid place-items-center w-9 h-9 rounded-[12px] bg-primary-soft/80 text-primary shrink-0">
             <Keyboard size={17} />
           </span>
           <span className="min-w-0">
@@ -299,9 +375,9 @@ function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
   if (suggestions.length === 0) return null
 
   return (
-    <section className="card p-4 mt-3">
-      <div className="flex items-center gap-2 mb-2.5">
-        <Clock3 size={14} className="text-on-surface-2" />
+    <section className="card p-3 md:p-4 mt-2.5 md:mt-3">
+      <div className="flex items-center gap-1.5 mb-1.5 md:mb-2.5">
+        <Clock3 size={13.5} className="text-on-surface-2" />
         <span className="text-[12px] font-medium text-on-surface-2 tracking-wide">今日建议</span>
       </div>
       <div className="flex flex-col gap-1.5">
@@ -335,7 +411,7 @@ function RecentReads() {
       className="card card-hover w-full p-4 text-left cursor-pointer"
     >
       <span className="flex items-center gap-2.5 mb-2.5">
-        <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
+        <span className="grid place-items-center w-9 h-9 rounded-[12px] bg-primary-soft/80 text-primary shrink-0">
           <History size={17} />
         </span>
         <span>
@@ -366,11 +442,16 @@ function RecentReads() {
   )
 }
 
-function Kpi({ value, label }: { value: number; label: string }) {
+function Kpi({ value, label, accent }: { value: number; label: string; accent?: string }) {
   return (
-    <div className="rounded-[12px] bg-surface px-3 py-2.5 border border-outline/60">
-      <b className="block text-[22px] leading-7 font-bold text-primary">{value}</b>
-      <span className="text-[12px] text-on-surface-2">{label}</span>
+    <div className="rounded-[14px] bg-surface-2/85 px-3.5 py-3 border border-outline/80 transition-colors hover:border-primary/30 hover:bg-surface">
+      <b
+        className="block text-[24px] leading-7 font-bold tracking-[-0.02em] tabular-nums text-primary"
+        style={accent ? { color: accent } : undefined}
+      >
+        {value}
+      </b>
+      <span className="text-[12px] text-on-surface-2 mt-0.5 block">{label}</span>
     </div>
   )
 }

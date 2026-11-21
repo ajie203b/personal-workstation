@@ -11,47 +11,52 @@ export function BottomNav({ todayCount }: { todayCount: number }) {
   const section = `/${pathname.split('/')[1] || ''}`
   const activeIndex = NAV_ITEMS.findIndex((item) => item.path === section)
   return (
-    <nav
-      aria-label="主导航"
-      className="mobile-tab-bar glass absolute inset-x-0 bottom-0 z-20 grid md:hidden"
-      style={{ '--tab-count': NAV_ITEMS.length } as CSSProperties}
-    >
-      <span
-        aria-hidden
-        className="tab-pill"
-        style={{
-          transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
-          opacity: activeIndex < 0 ? 0 : undefined,
-        }}
-      />
-      {NAV_ITEMS.map((item) => {
-        // 今日待办数挂在「任务清单」上：底栏原来完全没有角标，得点进去才知道有多少
-        return (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            aria-label={item.label}
-            onClick={() => { if (item.path !== section) haptic('selection') }}
-            className={({ isActive }) =>
-              cn(
-                'mobile-tab-link relative flex min-w-0 h-14 flex-col items-center justify-center gap-0.5 rounded-full select-none',
-                isActive ? 'text-primary' : 'text-on-surface-2',
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <span className="mobile-tab-icon relative grid place-items-center size-7">
-                  <item.icon size={21} strokeWidth={isActive ? 2 : 1.8} aria-hidden />
-                  {item.path === '/tasks' && <NavBadge value={todayCount} />}
-                </span>
-                <span className="text-[12px] font-medium leading-none">{item.path === '/docs' ? '文档' : item.path === '/tasks' ? '任务' : item.label}</span>
-              </>
-            )}
-          </NavLink>
-        )
-      })}
-    </nav>
+    <div className="mobile-dock-wrap pointer-events-none absolute inset-x-0 bottom-0 z-20 md:hidden">
+      {/* 底部渐隐幕布：让滚动内容在悬浮底栏后方自然消隐，杜绝底栏下缘漏字穿帮 */}
+      <div aria-hidden className="mobile-dock-scrim" />
+      <nav
+        aria-label="主导航"
+        className="mobile-tab-bar glass pointer-events-auto relative grid"
+        style={{ '--tab-count': NAV_ITEMS.length } as CSSProperties}
+      >
+        <span
+          aria-hidden
+          className="tab-pill"
+          style={{
+            transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
+            opacity: activeIndex < 0 ? 0 : undefined,
+          }}
+        />
+        {NAV_ITEMS.map((item) => {
+          return (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              aria-label={item.label}
+              onClick={() => { if (item.path !== section) haptic('selection') }}
+              className={({ isActive }) =>
+                cn(
+                  'mobile-tab-link relative flex min-w-0 h-[50px] flex-col items-center justify-center gap-[2px] rounded-full select-none',
+                  isActive ? 'text-primary' : 'text-on-surface-2',
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <span className="mobile-tab-icon relative grid place-items-center size-6">
+                    <item.icon size={19} strokeWidth={isActive ? 2.1 : 1.8} aria-hidden />
+                    {item.path === '/tasks' && <NavBadge value={todayCount} />}
+                  </span>
+                  <span className={cn('text-[10.5px] leading-none tracking-[0.01em]', isActive ? 'font-semibold' : 'font-medium')}>
+                    {item.path === '/docs' ? '文档' : item.path === '/tasks' ? '任务' : item.label}
+                  </span>
+                </>
+              )}
+            </NavLink>
+          )
+        })}
+      </nav>
+    </div>
   )
 }
 
@@ -88,7 +93,7 @@ function NavBadge({ value }: { value: number }) {
       role="status"
       aria-label={`今日待办 ${shown} 件`}
       className={cn(
-        'nav-badge absolute -top-0.5 left-[calc(100%-5px)] grid place-items-center min-w-[15px] h-[15px] px-0.5 rounded-full bg-primary text-on-primary text-[10px] font-medium tabular-nums leading-none overflow-hidden',
+        'nav-badge absolute -top-0.5 -right-2 grid place-items-center min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-on-primary text-[9.5px] font-semibold tabular-nums leading-none overflow-hidden ring-[1.5px] ring-surface',
         leaving && 'nav-badge-out',
       )}
     >

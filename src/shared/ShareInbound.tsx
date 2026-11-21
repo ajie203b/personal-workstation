@@ -45,15 +45,15 @@ export function ShareInbound() {
   }, [saved, failed, title, body])
 
   return (
-    <div className="h-full grid place-items-center px-6">
-      <div className="card p-8 max-w-sm text-center flex flex-col items-center gap-3">
-        <span className="grid place-items-center w-12 h-12 rounded-full border border-outline bg-surface-2 text-on-surface-2/80">
+    <div className="min-h-[calc(100dvh-10rem)] grid place-items-center px-6 py-12">
+      <div className="card p-8 max-w-sm w-full text-center flex flex-col items-center gap-3.5">
+        <span className="grid place-items-center w-12 h-12 rounded-2xl bg-primary-soft text-primary">
           <Link2 size={22} />
         </span>
         <h1 className="text-[17px] font-bold">
-          {saved ? '已收进文档工作站' : failed ? '保存失败' : '正在收进文档工作站…'}
+          {saved ? '已收进文档工作站' : failed ? '保存失败' : body ? '正在收进文档工作站…' : '没有收到分享内容'}
         </h1>
-        <p className="text-[13px] text-on-surface-2 break-all">{title}</p>
+        <p className="text-[13px] text-on-surface-2 break-all">{body ? title : '从其他应用分享文本或链接，即可存入文档库。'}</p>
         <Button variant="primary" onClick={() => navigate('/docs')}>
           前往查看
         </Button>

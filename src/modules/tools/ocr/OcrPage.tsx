@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { IconToolOcr } from '@/shared/icons'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
@@ -482,12 +483,10 @@ export function OcrPage() {
     <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
-      <header className="flex items-start gap-3">
-        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconToolOcr size={22} />
-        </span>
+      <header className="flex items-start gap-3.5">
+        <ToolIconTile icon={IconToolOcr} />
         <div className="min-w-0">
-          <h1 className="hidden md:block text-[22px] font-bold leading-7">本地 OCR</h1>
+          <h1 className="hidden md:block text-[24px] font-bold tracking-[-0.02em] leading-7">本地 OCR</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             拍照 / 截图取文字，支持分栏与表格排版、多图连续识别追加，点框复制、存为文档
           </p>

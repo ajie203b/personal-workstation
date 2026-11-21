@@ -33,7 +33,7 @@ export function DocDragItem({ doc, children }: { doc: Doc; children: ReactNode }
   const { setNodeRef, listeners, isDragging } = useDraggable({ id: doc.id })
   return <div ref={setNodeRef} {...listeners} role="group" data-draggable-doc={doc.id}
     aria-label={`拖动文档：${doc.title}，也可通过文档操作菜单移动`}
-    className={isDragging ? 'opacity-35 select-none' : 'select-none'} style={{ WebkitTouchCallout: 'none' }}>
+    className={isDragging ? 'h-full min-h-0 opacity-35 select-none' : 'h-full min-h-0 select-none'} style={{ WebkitTouchCallout: 'none' }}>
     {children}
   </div>
 }

@@ -22,7 +22,7 @@ interface QuadMeta {
 }
 
 const QUADS: QuadMeta[] = [
-  { key: 'q1', label: '立即做', desc: '紧急 + 重要', icon: CircleArrowRight, color: 'var(--on-surface-2)' },
+  { key: 'q1', label: '立即做', desc: '紧急 + 重要', icon: CircleArrowRight, color: 'var(--p0)' },
   { key: 'q2', label: '计划做', desc: '重要 · 不紧急', icon: CalendarClock, color: 'var(--p2)' },
   { key: 'q3', label: '委托/简化', desc: '紧急 · 不重要', icon: AlertTriangle, color: 'var(--p1)' },
   { key: 'q4', label: '减少做', desc: '不紧急 · 不重要', icon: Archive, color: 'var(--p3)' },
@@ -51,18 +51,31 @@ export function QuadrantView({ tasks, onOpenTask }: Props) {
   }, [tasks])
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 enter">
       {QUADS.map((q) => (
-        <div key={q.key} className="card p-3.5 flex flex-col gap-2.5 min-h-[200px]">
-          <div className="flex items-center gap-2">
-            <q.icon size={16} style={{ color: q.color }} />
-            <span className="text-[13.5px] font-semibold">{q.label}</span>
-            <span className="text-[11px] text-on-surface-2">{q.desc}</span>
-            <span className="ml-auto text-[11px] text-on-surface-2 tabular-nums">{quadrants[q.key].length}</span>
+        <div key={q.key} className="card p-4 flex flex-col gap-3 min-h-[212px]">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden
+              className="grid place-items-center size-7 rounded-[9px] shrink-0"
+              style={{
+                background: `color-mix(in srgb, ${q.color} 14%, transparent)`,
+                color: q.color,
+              }}
+            >
+              <q.icon size={15} />
+            </span>
+            <span className="text-[14px] font-semibold tracking-[-0.01em]">{q.label}</span>
+            <span className="text-[11.5px] text-on-surface-2">{q.desc}</span>
+            <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-surface-3/90 text-[11px] font-semibold text-on-surface-2 tabular-nums">
+              {quadrants[q.key].length}
+            </span>
           </div>
-          <div className="flex flex-col gap-1.5 flex-1">
+          <div className="flex flex-col gap-2 flex-1">
             {quadrants[q.key].length === 0 && (
-              <p className="text-[11.5px] text-on-surface-2 py-3 text-center">暂无任务，用上方输入框或右下角加号添加</p>
+              <p className="text-[12px] text-on-surface-2/85 py-6 text-center rounded-[12px] border border-dashed border-outline/80 bg-surface-2/40">
+                暂无任务，用上方输入框或右下角加号添加
+              </p>
             )}
             {quadrants[q.key].map((t) => (
               <TaskQuadItem key={t.id} task={t} onOpen={onOpenTask} />
@@ -80,7 +93,7 @@ function TaskQuadItem({ task, onOpen }: { task: Task; onOpen: (id: string) => vo
   return (
     <div
       onClick={() => onOpen(task.id)}
-      className="px-2.5 py-2 rounded-[8px] bg-surface border border-outline/50 cursor-pointer hover:border-primary/40 transition-colors select-none"
+      className="px-3 py-2.5 rounded-[12px] bg-surface-2/70 border border-outline/65 cursor-pointer hover:bg-surface hover:border-primary/40 hover:shadow-sm transition-[background-color,border-color,box-shadow] select-none"
     >
       <div className="flex items-start gap-2">
         <span

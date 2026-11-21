@@ -35,12 +35,12 @@ export function SettingsPage() {
     : <AboutTab />
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 md:pt-6 pb-24 md:pb-14">
+    <div className={cn('mx-auto w-full max-w-4xl px-3.5 md:px-8 pt-3 md:pt-6 md:pb-14', section ? 'pb-10' : 'pb-24')}>
       <h1 className="hidden md:block text-[28px] font-semibold leading-tight tracking-tight mb-5">设置</h1>
 
       <div className="flex flex-col md:flex-row md:gap-8 md:items-start">
-        {/* 桌面：分区列表 */}
-        <nav className="hidden md:flex md:flex-col md:w-44 md:shrink-0 gap-0.5 md:sticky md:top-2" aria-label="设置分区">
+        {/* 桌面：悬浮卡片分区列表 */}
+        <nav className="hidden md:flex md:flex-col md:w-48 md:shrink-0 gap-1 card p-2 md:sticky md:top-3" aria-label="设置分区">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
@@ -48,8 +48,10 @@ export function SettingsPage() {
               aria-current={tab === s.id ? 'page' : undefined}
               onClick={() => setTab(s.id)}
               className={cn(
-                'press flex items-center gap-2.5 h-10 px-2.5 rounded-[10px] text-[14px] text-left cursor-pointer',
-                tab === s.id ? 'bg-primary-soft text-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+                'press flex items-center gap-2.5 h-10 px-3 rounded-[12px] text-[13.5px] text-left cursor-pointer transition-colors',
+                tab === s.id
+                  ? 'bg-primary-soft text-primary font-semibold'
+                  : 'text-on-surface-2 hover:bg-surface-3/80 hover:text-on-surface',
               )}
             >
               <s.icon size={15} className="shrink-0" />
@@ -60,16 +62,16 @@ export function SettingsPage() {
 
         {/* 手机：一级列表 */}
         {!section && (
-          <nav aria-label="设置分区" className="md:hidden flex flex-col rounded-2xl border border-outline bg-surface overflow-hidden">
+          <nav aria-label="设置分区" className="card md:hidden flex flex-col overflow-hidden">
             {SECTIONS.map((s, index) => (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => setTab(s.id)}
-                className="chrome-button relative flex min-h-16 items-center gap-3 px-3.5 py-2.5 text-left cursor-pointer focus-visible:-outline-offset-2"
+                className="chrome-button relative flex min-h-16 items-center gap-3.5 px-4 py-3 text-left cursor-pointer focus-visible:-outline-offset-2"
               >
-                {index > 0 && <span aria-hidden className="absolute top-0 left-[3.875rem] right-0 border-t border-outline/70" />}
-                <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-3 text-on-surface-2 shrink-0">
+                {index > 0 && <span aria-hidden className="absolute top-0 left-[4rem] right-0 border-t border-outline/80" />}
+                <span className="grid place-items-center w-9 h-9 rounded-[11px] bg-primary-soft/80 text-primary shrink-0">
                   <s.icon size={17} />
                 </span>
                 <span className="min-w-0 flex-1">

@@ -9,9 +9,11 @@ import {
   Printer,
   RefreshCw,
   Scissors,
+  ScanFace,
   Sparkles,
 } from 'lucide-react'
 import { IconToolIdPhoto } from '@/shared/icons'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
@@ -404,12 +406,10 @@ export function IdPhotoPage() {
     <div className="mx-auto w-full max-w-3xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
-      <header className="flex items-start gap-3">
-        <span className="grid place-items-center w-11 h-11 rounded-[12px] bg-primary-soft text-primary shrink-0">
-          <IconToolIdPhoto size={22} />
-        </span>
+      <header className="flex items-start gap-3.5">
+        <ToolIconTile icon={IconToolIdPhoto} />
         <div className="min-w-0">
-          <h1 className="hidden md:block text-[22px] font-bold leading-7">证件照 / 报名照</h1>
+          <h1 className="hidden md:block text-[24px] font-bold tracking-[-0.02em] leading-7">证件照 / 报名照</h1>
           <p className="text-[12.5px] text-on-surface-2 mt-0.5 leading-relaxed">
             人脸取景、抠图换底、按规格裁剪压 KB、多尺寸排版打印
           </p>
@@ -427,7 +427,7 @@ export function IdPhotoPage() {
         <section className="card p-4 flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-surface-2 text-on-surface-2 shrink-0">
-              <IconToolIdPhoto size={15} />
+              <ScanFace size={15} />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[13.5px] font-medium">② 人脸取景</p>

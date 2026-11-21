@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router'
-import { RotateCcw } from 'lucide-react'
+import { ArrowUpRight, RotateCcw } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { db } from '@/db/db'
@@ -11,6 +11,7 @@ import { cn } from '@/lib/cn'
 import { isNative, isTauri } from '@/lib/native'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { Segmented } from '@/shared/ui/Segmented'
+import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { TOOL_CATALOG, type ToolCategory, type ToolEntry } from './toolCatalog'
 import { orderTools } from './toolOrder'
 
@@ -86,20 +87,22 @@ export function ToolsPage() {
   const badgeFor = (t: ToolEntry): { text?: string; tone: string } => {
     if (t.to === '/tools/fanqie' && fanqieBadge) {
       const tone = job?.phase === 'error'
-        ? 'bg-danger/10 text-danger'
+        ? 'bg-danger/12 text-danger'
         : job?.phase === 'running'
           ? 'bg-primary-soft text-primary'
-          : 'bg-surface-3 text-on-surface-2'
+          : 'bg-surface-3/90 text-on-surface-2'
       return { text: fanqieBadge, tone }
     }
     if (t.nativeOnly && !nativeClient) {
-      return { text: '仅客户端', tone: 'bg-surface-3 text-on-surface-2' }
+      return { text: '仅客户端', tone: 'bg-surface-3/90 text-on-surface-2' }
     }
-    if (!t.badge) return { tone: '' }
-    return {
-      text: t.badge,
-      tone: t.offline ? 'bg-ok/10 text-ok' : 'bg-primary-soft text-primary',
+    if (t.badge) {
+      return {
+        text: t.badge,
+        tone: t.offline ? 'bg-ok/12 text-ok' : 'bg-primary-soft/80 text-primary',
+      }
     }
+    return { tone: '' }
   }
 
   const toolCard = (t: ToolEntry, overlay = false) => {
@@ -110,57 +113,88 @@ export function ToolsPage() {
         draggable={false}
         tabIndex={overlay ? -1 : undefined}
         aria-label={t.title}
-        className="chrome-button press card flex flex-col gap-2.5 relative w-full min-h-[104px] p-3.5 select-none max-md:h-full md:justify-between"
+        style={{ '--tool-tint': t.tint } as CSSProperties}
+        className={cn(
+          'tool-bento-card flex h-full w-full select-none',
+          'flex-col items-start gap-2 p-3 rounded-[18px] min-h-[112px]',
+          'sm:flex-row sm:items-center sm:gap-3.5 sm:px-4 sm:py-3.5 sm:rounded-[20px] sm:min-h-[94px]',
+        )}
       >
-        <span className="flex items-center justify-between gap-2 w-full max-md:flex-wrap">
-          <span className="grid place-items-center size-9 rounded-[10px] bg-primary-soft text-primary shrink-0">
-            <t.icon size={20} />
-          </span>
+        <div className="flex w-full items-start justify-between gap-1.5 sm:w-auto sm:block shrink-0">
+          <ToolIconTile
+            icon={t.icon}
+            size="lg"
+            className="max-sm:size-[42px] max-sm:rounded-[12px]"
+          />
           {badge.text && (
-            <span className={cn('min-w-0 px-2 py-0.5 rounded-full text-[10.5px] font-medium leading-4 text-center md:truncate max-w-[116px]', badge.tone)}>
+            <span className={cn('sm:hidden rounded-full px-1.5 py-0.5 text-[9.5px] font-medium leading-none max-w-[84px] truncate', badge.tone)}>
               {badge.text}
             </span>
           )}
+        </div>
+        <span className="min-w-0 flex-1 w-full">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[14px] sm:text-[15px] font-semibold tracking-[-0.01em] leading-snug text-on-surface max-sm:truncate max-sm:w-full">
+              {t.title}
+            </span>
+            {badge.text && (
+              <span className={cn('hidden sm:inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-medium leading-none', badge.tone)}>
+                {badge.text}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 sm:mt-1 block text-[11.5px] sm:text-[12.5px] leading-[1.38] sm:leading-[1.45] text-on-surface-2 line-clamp-2">
+            {t.sub}
+          </span>
         </span>
-        <span className="min-w-0 w-full">
-          <span className="block text-[14px] font-semibold leading-5 md:truncate">{t.title}</span>
-          <span className="block text-xs md:text-[11.5px] leading-4 mt-0.5 md:truncate text-on-surface-2">{t.sub}</span>
+        <span aria-hidden className="tool-arrow hidden sm:grid">
+          <ArrowUpRight size={15} strokeWidth={2} />
         </span>
       </Link>
     )
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-8 pt-4 md:pt-6 pb-24 md:pb-14 flex flex-col gap-5">
-      <h1 className="hidden md:block text-[28px] font-semibold leading-tight tracking-tight">工具</h1>
+    <div className="mx-auto w-full max-w-6xl px-3.5 md:px-8 pt-3 md:pt-6 pb-24 md:pb-14 flex flex-col gap-5 md:gap-7 enter">
+      <h1 className="sr-only">工具</h1>
 
+      {/* 【写死规则】排行榜永远独立置顶于最上方，不属于「小工具」，不参与分类与排序。 */}
       <IntelligenceCard />
 
-      <section className="flex flex-col gap-2.5">
-        <div className="grid grid-cols-[auto_1fr] items-center gap-2 px-1 sm:grid-cols-[auto_auto_1fr]">
-          <h2 className="col-start-1 row-start-1 text-[13px] font-semibold text-on-surface-2">小工具</h2>
-          <Segmented
-            className="col-span-2 row-start-2 justify-self-start sm:col-span-1 sm:col-start-2 sm:row-start-1"
-            size="sm"
-            touchSized
-            ariaLabel="按分类筛选工具"
-            value={category}
-            onChange={setCategory}
-            options={CATEGORY_OPTIONS}
-          />
-          <div className="col-start-2 row-start-1 flex items-center gap-2 justify-self-end whitespace-nowrap text-[11px] text-on-surface-2 sm:col-start-3">
-            {hasSavedOrder && (
-              <button
-                type="button"
-                onClick={resetOrder}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[6px] text-primary hover:bg-primary-soft/60 transition-colors cursor-pointer"
-              >
-                <RotateCcw size={11} aria-hidden /> 重置排序
-              </button>
-            )}
-            <span>长按拖动排序</span>
+      <section aria-labelledby="tool-directory-heading" data-tool-directory="true" className="flex flex-col gap-3 md:gap-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-baseline gap-2">
+            <h2 id="tool-directory-heading" className="text-[19px] md:text-[22px] font-bold tracking-[-0.025em] leading-tight">
+              小工具
+            </h2>
+            <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-surface-3/90 text-[11px] font-semibold tabular-nums text-on-surface-2">
+              {tools.length}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmented
+              size="sm"
+              touchSized
+              ariaLabel="按分类筛选工具"
+              value={category}
+              onChange={setCategory}
+              options={CATEGORY_OPTIONS}
+            />
+            <div className="flex items-center gap-2 text-[12px] text-on-surface-2">
+              {hasSavedOrder && (
+                <button
+                  type="button"
+                  onClick={resetOrder}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-primary bg-primary-soft/60 hover:bg-primary-soft transition-colors cursor-pointer"
+                >
+                  <RotateCcw size={11} aria-hidden /> 重置排序
+                </button>
+              )}
+              <span className="hidden sm:inline">长按拖动排序</span>
+            </div>
           </div>
         </div>
+
         <DragSort
           ids={tools.map((t) => t.to)}
           strategy={rectSwappingStrategy}
@@ -168,13 +202,13 @@ export function ToolsPage() {
           renderOverlay={(id) => {
             const tool = tools.find((t) => t.to === id)
             return tool ? (
-              <div aria-hidden="true" className="h-full overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/15">
+              <div aria-hidden="true" className="h-full overflow-hidden rounded-[18px] sm:rounded-[20px] shadow-2xl ring-2 ring-primary/25">
                 {toolCard(tool, true)}
               </div>
             ) : null
           }}
         >
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div key={category} className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 sm:gap-3 cascade">
             {tools.map((t) => (
               <DragSortItem key={t.to} id={t.to} label={t.title} className="w-full min-w-0">
                 {toolCard(t)}

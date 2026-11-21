@@ -34,8 +34,10 @@ export function FolderChip({
       onClick={onClick}
       className={cn(
         dropId && isOver && 'ring-2 ring-primary bg-primary-soft',
-        'shrink-0 inline-flex items-center gap-1.5 h-11 min-w-11 px-3 rounded-full border text-[12px] transition-colors cursor-pointer',
-        active ? 'bg-primary-soft border-primary/40 text-primary font-medium' : 'bg-surface-2 border-outline text-on-surface-2 hover:text-on-surface',
+        'shrink-0 inline-flex items-center gap-1.5 h-[34px] px-3 rounded-full border text-[12px] transition-[background-color,border-color,color,box-shadow] cursor-pointer',
+        active
+          ? 'bg-primary-soft border-primary/40 text-primary font-semibold shadow-sm'
+          : 'bg-surface/85 border-outline text-on-surface-2 hover:text-on-surface hover:bg-surface',
       )}
     >
       {children}
@@ -152,15 +154,15 @@ export function FolderTree({
   }
 
   return (
-    <aside className="hidden lg:flex flex-col gap-0.5 w-48 shrink-0 sticky top-2">
-      <p className="text-[11px] font-medium text-on-surface-2 tracking-wide px-2 mb-1">智能视图</p>
+    <aside className="hidden lg:flex flex-col gap-0.5 w-52 shrink-0 sticky top-3 card p-2.5">
+      <p className="text-[11px] font-semibold text-on-surface-2/85 tracking-wider px-2.5 pt-0.5 mb-1">智能视图</p>
       <TreeItem active={cur === ALL_DOCS_VIEW} onClick={() => onPick(null)} icon={Layers} label="全部文档" count={allCount} />
       <TreeItem active={cur === STARRED_VIEW} onClick={() => onPick(STARRED_VIEW)} icon={Star} label="星标收藏" count={starredCount} />
       <TreeItem active={cur === RECENT_VIEW} onClick={() => onPick(RECENT_VIEW)} icon={Clock} label="最近阅读" count={recentCount} />
       <TreeItem active={cur === ANNOTATED_VIEW} onClick={() => onPick(ANNOTATED_VIEW)} icon={Highlighter} label="有批注" count={annotatedCount} />
       <TreeItem dropId={UNFILED_FOLDER} active={cur === UNFILED_FOLDER} onClick={() => onPick(UNFILED_FOLDER)} icon={FileText} label="未分类文档" count={uncategorizedCount} />
 
-      <p className="text-[11px] font-medium text-on-surface-2 tracking-wide px-2 mt-3 mb-1">文件夹</p>
+      <p className="text-[11px] font-semibold text-on-surface-2/85 tracking-wider px-2.5 mt-3 mb-1">文件夹</p>
       {tree.map((node) => (
         <FolderBranch
           key={node.folder.id}
@@ -179,7 +181,7 @@ export function FolderTree({
       <button
         type="button"
         onClick={() => onCreate()}
-        className="flex items-center gap-2 h-8 px-2 mt-1 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface cursor-pointer"
+        className="flex items-center gap-2 h-8.5 px-2.5 mt-1.5 rounded-[10px] text-[12px] text-on-surface-2 hover:bg-surface-3/80 hover:text-on-surface transition-colors cursor-pointer"
       >
         <FolderPlus size={14} /> 新建文件夹
       </button>
@@ -187,7 +189,7 @@ export function FolderTree({
         <button
           type="button"
           onClick={onDelete}
-          className="flex items-center gap-2 h-8 px-2 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-danger/10 hover:text-danger cursor-pointer"
+          className="flex items-center gap-2 h-8.5 px-2.5 rounded-[10px] text-[12px] text-on-surface-2 hover:bg-danger/10 hover:text-danger transition-colors cursor-pointer"
         >
           <Trash2 size={14} /> 删除当前文件夹
         </button>

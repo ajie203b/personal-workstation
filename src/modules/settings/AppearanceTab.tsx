@@ -1,15 +1,16 @@
+import { Check } from 'lucide-react'
 import { useUi, type Accent, type ThemeMode } from '@/stores/ui'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
 
-/** macOS 系统设置同款强调色（与 index.css 中 data-accent 调板的浅色值一致） */
+/** Apple 系统设置 × Material 3 表现力强调色（与 index.css 中 data-accent 调板一致） */
 const ACCENTS: { value: Accent; color: string; label: string }[] = [
-  { value: 'blue', color: '#2C55B8', label: '蓝色' },
-  { value: 'purple', color: '#7D4FBE', label: '紫色' },
-  { value: 'pink', color: '#B53470', label: '粉色' },
-  { value: 'red', color: '#D63C41', label: '红色' },
-  { value: 'orange', color: '#A8510F', label: '橙色' },
-  { value: 'green', color: '#247944', label: '绿色' },
+  { value: 'blue', color: '#2563EB', label: '蓝色' },
+  { value: 'purple', color: '#7C3AED', label: '紫色' },
+  { value: 'pink', color: '#DB2777', label: '粉色' },
+  { value: 'red', color: '#E11D48', label: '红色' },
+  { value: 'orange', color: '#D97706', label: '橙色' },
+  { value: 'green', color: '#059669', label: '绿色' },
 ]
 
 export function AppearanceTab() {
@@ -46,23 +47,34 @@ export function AppearanceTab() {
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1">强调色</h2>
         <p className="text-[13px] text-on-surface-2 mb-3">用于主按钮、链接、选中状态与番茄钟。完成保持绿色，删除与错误保持红色。</p>
-        <div className="flex flex-wrap gap-1">
-          {ACCENTS.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              title={a.label}
-              aria-label={`强调色：${a.label}`}
-              aria-pressed={accent === a.value}
-              onClick={() => setAccent(a.value)}
-              className="grid size-11 place-items-center rounded-full press transition-transform duration-150 hover:scale-110"
-            >
-              <span aria-hidden className="size-7 rounded-full" style={{
-                background: a.color,
-                boxShadow: accent === a.value ? '0 0 0 2px var(--surface), 0 0 0 4px var(--on-surface-2)' : undefined,
-              }} />
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-1.5">
+          {ACCENTS.map((a) => {
+            const active = accent === a.value
+            return (
+              <button
+                key={a.value}
+                type="button"
+                title={a.label}
+                aria-label={`强调色：${a.label}`}
+                aria-pressed={active}
+                onClick={() => setAccent(a.value)}
+                className="grid size-11 place-items-center rounded-full press transition-transform duration-150 hover:scale-110 cursor-pointer"
+              >
+                <span
+                  aria-hidden
+                  className="grid place-items-center size-7.5 rounded-full text-white transition-shadow duration-200"
+                  style={{
+                    background: `radial-gradient(circle at 32% 28%, color-mix(in srgb, ${a.color} 78%, white), ${a.color} 72%)`,
+                    boxShadow: active
+                      ? `0 0 0 2.5px var(--surface), 0 0 0 4.5px ${a.color}, 0 6px 14px -4px ${a.color}`
+                      : 'inset 0 1px 1px rgba(255,255,255,0.45), 0 2px 6px -2px rgba(15,23,42,0.22)',
+                  }}
+                >
+                  {active && <Check size={14} strokeWidth={2.8} />}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </section>
 

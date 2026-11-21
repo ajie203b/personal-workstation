@@ -81,15 +81,25 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
         onChange(next.value)
         btnRefs.current.get(next.value)?.focus()
       } : undefined}
-      className={cn('relative inline-flex items-center gap-0.5 p-[3px] rounded-[12px] bg-surface-3/70', className)}
+      className={cn(
+        'relative inline-flex items-center gap-0.5 p-[3px] bg-surface-3/75 ring-1 ring-inset ring-outline/80',
+        size === 'sm' ? 'rounded-[12px]' : 'rounded-[14px]',
+        className,
+      )}
     >
       <span
         aria-hidden
         className={cn(
-          'segmented-thumb absolute left-0 top-[3px] bottom-[3px] rounded-[10px] bg-surface shadow-sm pointer-events-none',
-          thumb.ready && 'transition-[transform,width] ease-standard',
+          'segmented-thumb absolute left-0 top-[3px] bottom-[3px] bg-surface ring-1 ring-inset ring-white/60 dark:ring-white/10 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.16)] pointer-events-none',
+          size === 'sm' ? 'rounded-[9px]' : 'rounded-[11px]',
+          thumb.ready && 'transition-[transform,width]',
         )}
-        style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width, transitionDuration: thumb.ready ? 'var(--dur-2)' : undefined }}
+        style={{
+          transform: `translateX(${thumb.left}px)`,
+          width: thumb.width,
+          transitionDuration: thumb.ready ? 'var(--dur-3)' : undefined,
+          transitionTimingFunction: thumb.ready ? 'var(--ease-spring)' : undefined,
+        }}
       />
       {options.map((o) => {
         const active = o.value === value
@@ -109,11 +119,13 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
             type="button"
             onClick={() => onChange(o.value)}
             className={cn(
-              'relative z-[1] inline-flex items-center gap-1.5 rounded-[10px] font-medium whitespace-nowrap cursor-pointer select-none',
+              'relative z-[1] inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap cursor-pointer select-none',
               'press',
-              size === 'md' ? 'h-8 px-3 text-[13px]' : 'h-7 px-2.5 text-[12px]',
-              touchSized && 'max-md:h-11 max-md:min-w-11',
-              active ? 'text-on-surface' : 'text-on-surface-2 hover:text-on-surface',
+              size === 'md' ? 'h-8 px-3 rounded-[10px] text-[13px]' : 'h-7 px-2.5 rounded-[8.5px] text-[12px]',
+              touchSized && (size === 'md'
+                ? 'max-md:h-9 max-md:min-w-9 max-md:px-3 max-md:text-[13px]'
+                : 'max-md:h-[32px] max-md:min-w-[34px] max-md:px-2.5 max-md:text-[12px]'),
+              active ? 'text-on-surface font-semibold' : 'text-on-surface-2 hover:text-on-surface',
             )}
           >
             {o.dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: o.dot }} />}

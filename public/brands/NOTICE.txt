@@ -50,3 +50,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Tool source identities (website icons)
+fanqie.png — https://fanqienovel.com/ — https://p1-tt.byteimg.com/origin/novel-static/a3621391ca2e537045168afda6722ee9
+annas-archive.png — https://annas-archive.gl/ — https://annas-archive.gl/apple-touch-icon.png?hash=d2fa3410fb1ae23ef0ab

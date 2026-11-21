@@ -31,7 +31,7 @@ export function GettingStarted() {
   ]
 
   return (
-    <section className="mt-2 mb-1 rounded-[14px] border border-outline/70 bg-surface-2/50 px-3 py-2 md:py-2.5">
+    <section className="card mt-2.5 mb-1 px-4 py-3 md:py-3.5">
       <div className="flex items-center gap-2">
         <h3 className="text-[13px] font-semibold">三步把阅读变成行动</h3>
         <Link to="/docs" className="ml-auto flex min-h-11 shrink-0 items-center rounded-md px-2 text-[13px] font-medium text-primary hover:bg-primary-soft">打开文档库</Link>

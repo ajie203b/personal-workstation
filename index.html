@@ -5,14 +5,14 @@
     <!-- 整页缩放会连 UI 一起放大，手势也拦不住；文档内部的缩放由阅读器自己处理（lib/usePinch） -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="description" content="Kairos：任务清单 × 文档工作站，本地优先、数据不出本机" />
-    <meta name="theme-color" content="#F6F7F9" />
+    <meta name="theme-color" content="#F3F5FA" />
     <link rel="icon" type="image/png" href="./favicon.png" />
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Kairos</title>
-    <style>html.dark{background:#181C24}</style>
+    <style>html.dark{background:#0B0E16}</style>
     <script>
       // 主题预置：React 挂载前解析 light / dark / system，避免首帧闪烁并同步 theme-color
       try {
@@ -23,7 +23,7 @@
         if (dark) {
           document.documentElement.classList.add('dark');
           var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', '#181C24');
+          if (meta) meta.setAttribute('content', '#0B0E16');
         }
       } catch (e) { /* 忽略 */ }
     </script>
