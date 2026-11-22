@@ -1,0 +1,1 @@
+import{n,o as r}from"./index-BEEyrlS5.js";function t({icon:o,size:e="md",className:s}){const i=e==="lg"?50:44;return n.jsx("span",{"aria-hidden":!0,className:r("tool-icon-tile grid shrink-0 place-items-center overflow-hidden",e==="lg"?"size-[50px] rounded-[14px]":"size-11 rounded-[12.5px]",s),children:n.jsx(o,{size:i,className:"size-full"})})}export{t as T};
