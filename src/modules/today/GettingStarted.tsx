@@ -52,13 +52,13 @@ export function GettingStarted() {
             className="text-left px-1.5 py-1 md:px-2 md:py-2 min-w-0"
           >
             <span className="flex items-center gap-1 text-[11px] text-on-surface-2 tabular-nums">
-              <span className="w-4 h-4 rounded-full bg-primary-soft text-primary grid place-items-center text-[10px] font-semibold shrink-0">
+              <span className="w-4 h-4 rounded-full bg-primary-soft text-primary grid place-items-center text-[11px] font-semibold shrink-0">
                 {i + 1}
               </span>
               <s.icon size={14} aria-hidden className="shrink-0" />
             </span>
             <span className="block mt-0.5 text-[12px] md:text-[12.5px] font-medium truncate">{s.title}</span>
-            <span className="hidden md:block mt-0.5 text-[10.5px] leading-snug text-on-surface-2 line-clamp-2">{s.hint}</span>
+            <span className="hidden md:block mt-0.5 text-[12px] leading-snug text-on-surface-2 line-clamp-2">{s.hint}</span>
           </li>
         ))}
       </ol>

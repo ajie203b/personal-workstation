@@ -44,7 +44,7 @@ export function ReaderFindBar({
     <div
       role="search"
       aria-label="页内查找"
-      className="shrink-0 z-20 flex items-center gap-1.5 px-3 md:px-4 h-11 bg-surface-2/95 border-b border-outline/70 backdrop-blur"
+      className="shrink-0 z-20 flex items-center gap-1.5 px-3 md:px-4 h-11 bg-surface-2 border-b border-outline/70"
     >
       <Search size={15} className="text-on-surface-2 shrink-0" aria-hidden />
       <input

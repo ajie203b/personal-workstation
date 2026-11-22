@@ -148,7 +148,7 @@ export function TaskList({ tasks, tier = 'today', emptyTitle, emptyHint, scope, 
   if (orderedTasks.length === 0) {
     return (
       <EmptyState dense={denseEmpty} icon={Inbox} title={emptyTitle} hint={emptyHint ?? '按 N 或 / 快速添加，例如「明天14:00 交报告 P1 #工作」'}>
-        {!hideEmptyAction && <Button size="sm" variant="primary" magnetic onClick={() => openAddSheet({ tier, todayContext: tier === 'today' })}>
+        {!hideEmptyAction && <Button size="sm" variant="primary" onClick={() => openAddSheet({ tier, todayContext: tier === 'today' })}>
           <Plus size={15} /> 加第一个任务
         </Button>}
       </EmptyState>

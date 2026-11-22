@@ -1,10 +1,9 @@
 import {
   forwardRef, useCallback, useEffect, useRef, useState,
-  type ButtonHTMLAttributes, type MutableRefObject,
+  type ButtonHTMLAttributes,
 } from 'react'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
-import { useMagnetic } from '@/lib/useMagnetic'
 
 type Variant = 'primary' | 'ghost' | 'outline' | 'danger' | 'destructive'
 type Size = 'sm' | 'md' | 'icon'
@@ -16,8 +15,6 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size
   /** 不传即 idle；受控用法配 useAsyncButton 自动流转 */
   state?: ButtonState
-  /** 桌面/网页精细指针下的磁吸效果，只给核心 CTA 用 */
-  magnetic?: boolean
 }
 
 // 背景与描边交给 .btn-fill 图层：加载时它收缩成圆形，按钮本身不动布局
@@ -53,15 +50,6 @@ const fillStateCls: Record<ButtonState, string> = {
   error: 'bg-danger',
 }
 
-/** 磁吸按钮的柔光跟随指针位置；普通按钮不渲染这一层 */
-const magnetGlowCls: Record<Variant, string> = {
-  primary: '[--magnet-glow:rgba(255,255,255,.3)]',
-  ghost: '[--magnet-glow:color-mix(in_srgb,var(--primary)_16%,transparent)]',
-  outline: '[--magnet-glow:color-mix(in_srgb,var(--primary)_16%,transparent)]',
-  danger: '[--magnet-glow:color-mix(in_srgb,var(--danger)_16%,transparent)]',
-  destructive: '[--magnet-glow:rgba(255,255,255,.3)]',
-}
-
 function StateIcon({ state }: { state: Exclude<ButtonState, 'idle'> }) {
   if (state === 'loading') {
     return (
@@ -85,21 +73,14 @@ function StateIcon({ state }: { state: Exclude<ButtonState, 'idle'> }) {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant = 'ghost', size = 'md', type = 'button', state = 'idle', disabled, magnetic, children, ...rest },
+  { className, variant = 'ghost', size = 'md', type = 'button', state = 'idle', disabled, children, ...rest },
   ref,
 ) {
   const busy = state !== 'idle'
-  const localRef = useRef<HTMLButtonElement | null>(null)
-  const setRefs = useCallback((node: HTMLButtonElement | null) => {
-    localRef.current = node
-    if (typeof ref === 'function') ref(node)
-    else if (ref) (ref as MutableRefObject<HTMLButtonElement | null>).current = node
-  }, [ref])
-  useMagnetic(localRef, Boolean(magnetic) && !busy && !disabled)
 
   return (
     <button
-      ref={setRefs}
+      ref={ref}
       type={type}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
@@ -131,13 +112,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           borderRadius: busy ? 999 : 'inherit',
         }}
       />
-      {magnetic && (
-        <span aria-hidden className={cn('magnet-glow absolute inset-0 rounded-[inherit]', magnetGlowCls[variant])} />
-      )}
       {/* 标签与状态图标叠在同一格：宽度由标签撑住，切换时不触发重排 */}
       <span className="relative z-10 grid place-items-center w-full [&>span]:col-start-1 [&>span]:row-start-1">
         <span
-          data-magnetic-label={magnetic ? '' : undefined}
           className={cn('inline-flex items-center gap-1.5 transition-opacity duration-100', busy && 'opacity-0')}
         >
           {children}

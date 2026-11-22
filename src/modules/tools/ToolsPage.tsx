@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { ArrowUpRight, RotateCcw } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -99,7 +99,7 @@ export function ToolsPage() {
     if (t.badge) {
       return {
         text: t.badge,
-        tone: t.offline ? 'bg-ok/12 text-ok' : 'bg-primary-soft/80 text-primary',
+        tone: t.offline ? 'bg-ok/12 text-[color:var(--tool-badge-ok)]' : 'bg-primary-soft/80 text-primary',
       }
     }
     return { tone: '' }
@@ -113,7 +113,6 @@ export function ToolsPage() {
         draggable={false}
         tabIndex={overlay ? -1 : undefined}
         aria-label={t.title}
-        style={{ '--tool-tint': t.tint } as CSSProperties}
         className={cn(
           'tool-bento-card flex h-full w-full select-none',
           'flex-col items-start gap-2 p-3 rounded-[18px] min-h-[112px]',
@@ -127,7 +126,7 @@ export function ToolsPage() {
             className="max-sm:size-[42px] max-sm:rounded-[12px]"
           />
           {badge.text && (
-            <span className={cn('sm:hidden rounded-full px-1.5 py-0.5 text-[9.5px] font-medium leading-none max-w-[84px] truncate', badge.tone)}>
+            <span className={cn('sm:hidden rounded-full px-1.5 py-0.5 text-[11px] font-medium leading-none max-w-[84px] truncate', badge.tone)}>
               {badge.text}
             </span>
           )}
@@ -138,12 +137,12 @@ export function ToolsPage() {
               {t.title}
             </span>
             {badge.text && (
-              <span className={cn('hidden sm:inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-medium leading-none', badge.tone)}>
+              <span className={cn('hidden sm:inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-none', badge.tone)}>
                 {badge.text}
               </span>
             )}
           </span>
-          <span className="mt-0.5 sm:mt-1 block text-[11.5px] sm:text-[12.5px] leading-[1.38] sm:leading-[1.45] text-on-surface-2 line-clamp-2">
+          <span className="mt-0.5 sm:mt-1 block text-[12px] sm:text-[12.5px] leading-[1.38] sm:leading-[1.45] text-on-surface-2 line-clamp-2">
             {t.sub}
           </span>
         </span>
@@ -158,7 +157,7 @@ export function ToolsPage() {
     <div className="mx-auto w-full max-w-6xl px-3.5 md:px-8 pt-3 md:pt-6 pb-24 md:pb-14 flex flex-col gap-5 md:gap-7 enter">
       <h1 className="sr-only">工具</h1>
 
-      {/* 【写死规则】排行榜永远独立置顶于最上方，不属于「小工具」，不参与分类与排序。 */}
+      {/* 排行榜独立于目录的分类与排序。 */}
       <IntelligenceCard />
 
       <section aria-labelledby="tool-directory-heading" data-tool-directory="true" className="flex flex-col gap-3 md:gap-3.5">
@@ -175,6 +174,7 @@ export function ToolsPage() {
             <Segmented
               size="sm"
               touchSized
+              className="tool-category-filter"
               ariaLabel="按分类筛选工具"
               value={category}
               onChange={setCategory}
@@ -185,12 +185,13 @@ export function ToolsPage() {
                 <button
                   type="button"
                   onClick={resetOrder}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-primary bg-primary-soft/60 hover:bg-primary-soft transition-colors cursor-pointer"
+                  className="inline-flex min-h-11 items-center gap-1 px-3 rounded-full text-primary bg-primary-soft/60 hover:bg-primary-soft transition-colors cursor-pointer"
                 >
                   <RotateCcw size={11} aria-hidden /> 重置排序
                 </button>
               )}
-              <span className="hidden sm:inline">长按拖动排序</span>
+              <span className="any-pointer-coarse:hidden">拖动排序</span>
+              <span className="hidden any-pointer-coarse:inline">长按拖动排序</span>
             </div>
           </div>
         </div>

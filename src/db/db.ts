@@ -399,7 +399,14 @@ export interface FanqieChapterRow {
   savedAt: number
 }
 
+export interface RankingChart {
+  image: Blob
+  date: string
+  requestedAt: number
+}
+
 class WorkstationDB extends Dexie {
+  rankingCharts!: Table<RankingChart, string>
   tasks!: Table<Task, string>
   settings!: Table<SettingKV, string>
   docs!: Table<Doc, string>
@@ -482,6 +489,8 @@ class WorkstationDB extends Dexie {
       docs: 'id, hash, kind, lastOpenedAt, folderId, sourceUrl, *tags',
       folders: 'id, taskId, parentId, createdAt',
     })
+    // 可重新下载的本机缓存，不参与备份与同步。
+    this.version(12).stores({ rankingCharts: '' })
   }
 }
 

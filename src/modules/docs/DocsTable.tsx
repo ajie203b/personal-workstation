@@ -83,10 +83,10 @@ export function DocsTable({
                   <button type="button" onClick={() => onOpen(d, hit)} className="text-left w-full flex items-start gap-2.5 cursor-pointer">
                     <span className="shrink-0 mt-0.5"><FileTypeIcon kind={d.kind} size={20} /></span>
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-on-surface line-clamp-1 group-hover:text-primary transition-colors">{d.title}</span>
+                      <span title={d.title} className="line-clamp-1 [overflow-wrap:anywhere] font-medium text-on-surface group-hover:text-primary transition-colors">{d.title}</span>
                       {metaLine && <span className="block text-[11.5px] text-on-surface-2 truncate">{metaLine}</span>}
                       {hit && (
-                        <span className="block text-[11.5px] text-on-surface-2 line-clamp-1 mt-0.5">
+                        <span className="line-clamp-1 [overflow-wrap:anywhere] text-[11.5px] text-on-surface-2 mt-0.5">
                           <span className="text-primary font-medium">{hit.count}处命中：</span>{hit.snippet}
                         </span>
                       )}
@@ -99,7 +99,7 @@ export function DocsTable({
                 <td className="py-2.5 px-2 align-top hidden md:table-cell max-w-[200px]">
                   <div className="flex flex-wrap gap-1">
                     {folderPath && (
-                      <span className="px-1.5 py-0.5 rounded bg-surface-3 text-[11px] text-on-surface-2 truncate max-w-[140px]">
+                      <span title={folderPath} className="px-1.5 py-0.5 rounded bg-surface-3 text-[11px] text-on-surface-2 truncate max-w-[140px]">
                         {folderPath}
                       </span>
                     )}

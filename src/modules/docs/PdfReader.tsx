@@ -674,7 +674,7 @@ export function PdfReader({
       {zoom !== 1 && (
         <button
           onClick={() => onZoom?.(1)}
-          className="pdf-floating-pill absolute bottom-3 right-3 z-10 h-8 px-3 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur cursor-pointer"
+          className="pdf-floating-pill absolute bottom-3 right-3 z-10 h-8 px-3 rounded-full bg-surface border border-outline shadow-sm text-[12px] text-on-surface-2 cursor-pointer"
         >
           {Math.round(zoom * 100)}% · 重置
         </button>

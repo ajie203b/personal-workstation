@@ -7,7 +7,6 @@ import { BottomNav } from './BottomNav'
 import { TopBar } from './TopBar'
 import { PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
-import { useSpotlightEffect } from '@/lib/useSpotlight'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { FocusMiniBar } from '@/shared/FocusMiniBar'
 import { useUi } from '@/stores/ui'
@@ -33,7 +32,6 @@ const IMMERSIVE = [/^\/docs\/.+/, /^\/tools\/math-notes$/]
 
 export function AppShell() {
   useThemeEffect()
-  useSpotlightEffect()
   const { pathname } = useLocation()
   const [params] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
@@ -78,7 +76,7 @@ export function AppShell() {
   }
 
   return (
-    <div className={cn('app-ambient-canvas h-full flex', !immersive && 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]')}>
+    <div className={cn('relative h-full flex bg-canvas', !immersive && 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]')}>
       <a
         href="#main-scroll"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-4 focus:py-3 focus:text-on-surface"

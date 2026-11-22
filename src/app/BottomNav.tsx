@@ -12,7 +12,7 @@ export function BottomNav({ todayCount }: { todayCount: number }) {
   const activeIndex = NAV_ITEMS.findIndex((item) => item.path === section)
   return (
     <div className="mobile-dock-wrap pointer-events-none absolute inset-x-0 bottom-0 z-20 md:hidden">
-      {/* 底部渐隐幕布：让滚动内容在悬浮底栏后方自然消隐，杜绝底栏下缘漏字穿帮 */}
+      {/* 渐隐层覆盖底栏后的滚动内容。 */}
       <div aria-hidden className="mobile-dock-scrim" />
       <nav
         aria-label="主导航"
@@ -47,7 +47,7 @@ export function BottomNav({ todayCount }: { todayCount: number }) {
                     <item.icon size={19} strokeWidth={isActive ? 2.1 : 1.8} aria-hidden />
                     {item.path === '/tasks' && <NavBadge value={todayCount} />}
                   </span>
-                  <span className={cn('text-[10.5px] leading-none tracking-[0.01em]', isActive ? 'font-semibold' : 'font-medium')}>
+                  <span className={cn('text-[11px] leading-none tracking-[0.01em]', isActive ? 'font-semibold' : 'font-medium')}>
                     {item.path === '/docs' ? '文档' : item.path === '/tasks' ? '任务' : item.label}
                   </span>
                 </>
@@ -93,7 +93,7 @@ function NavBadge({ value }: { value: number }) {
       role="status"
       aria-label={`今日待办 ${shown} 件`}
       className={cn(
-        'nav-badge absolute -top-0.5 -right-2 grid place-items-center min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-on-primary text-[9.5px] font-semibold tabular-nums leading-none overflow-hidden ring-[1.5px] ring-surface',
+        'nav-badge absolute -top-0.5 -right-2 grid place-items-center min-w-4 h-4 px-1 rounded-full bg-primary text-on-primary text-[11px] font-semibold tabular-nums leading-none overflow-hidden ring-[1.5px] ring-surface',
         leaving && 'nav-badge-out',
       )}
     >

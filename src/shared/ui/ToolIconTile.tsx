@@ -7,10 +7,6 @@ interface Props {
   className?: string
 }
 
-/**
- * 统一的小工具瓷白方砖图标容器（工具目录 + 10 个子页标题共用）。
- * Apple Squircle 质感阴影 + 高光微边，让 8 枚自绘图标与番茄小说 / 安娜的档案浑然一体。
- */
 export function ToolIconTile({ icon: Icon, size = 'md', className }: Props) {
   const px = size === 'lg' ? 50 : 44
   return (
@@ -22,7 +18,7 @@ export function ToolIconTile({ icon: Icon, size = 'md', className }: Props) {
         className,
       )}
     >
-      <Icon size={px} className="w-full h-full" />
+      <Icon size={px} className="size-full" />
     </span>
   )
 }

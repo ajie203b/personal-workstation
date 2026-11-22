@@ -34,7 +34,6 @@ export const PAGE_TITLE: Record<string, string> = {
   '/tools/ocr': '本地 OCR',
   '/tools/math-notes': '手写计算',
   '/settings': '设置',
-  '/ai': 'AI 助手',
   '/share': '分享接收',
 }
 

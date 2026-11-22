@@ -150,7 +150,7 @@ function ChapterDirectorySection({
             <div className="max-h-[340px] overflow-y-auto overscroll-contain rounded-[10px] border border-outline bg-surface-2/40 divide-y divide-outline">
               {grouped.map((g, gi) => (
                 <div key={`${g.volume}-${gi}`}>
-                  <div className="sticky top-0 z-10 bg-surface-2/95 backdrop-blur-sm px-3 py-1.5 text-[11.5px] font-semibold text-on-surface-2 border-b border-outline/60">
+                  <div className="sticky top-0 z-10 bg-surface-2 px-3 py-1.5 text-[11.5px] font-semibold text-on-surface-2 border-b border-outline/60">
                     {g.volume}
                   </div>
                   <ul className="divide-y divide-outline/60">

@@ -1,11 +1,5 @@
 import { useId, type JSX, type ReactNode, type SVGProps } from 'react'
 
-/**
- * 主导航与功能卡图标。
- * - 主导航采用定制双层几何轮廓（Apple SF Symbols 比例 × Google Material 3 柔和底色层次），
- *   每个图标拥有高辨识度独立剪影，颜色跟随 currentColor。
- * - 10 个工具标识采用统一瓷白工作台圆角方砖（含番茄小说、安娜的档案及 8 枚定制图标）。
- */
 export type AppIconProps = Omit<SVGProps<SVGSVGElement>, 'ref'> & { size?: number | string; strokeWidth?: number | string }
 export type AppIcon = (props: AppIconProps) => JSX.Element
 
@@ -20,7 +14,7 @@ function make(body: ReactNode): AppIcon {
   }
 }
 
-function makeStroke(body: ReactNode): AppIcon {
+function makeStroke(body: ReactNode, tool?: string): AppIcon {
   return function Icon({ size = 24, strokeWidth, ...rest }: AppIconProps) {
     return (
       <svg
@@ -28,6 +22,7 @@ function makeStroke(body: ReactNode): AppIcon {
         width={size}
         height={size}
         viewBox="0 0 24 24"
+        data-tool-icon={tool}
         fill="none"
         stroke="currentColor"
         strokeWidth={strokeWidth ?? 1.85}
@@ -41,7 +36,6 @@ function makeStroke(body: ReactNode): AppIcon {
   }
 }
 
-/** 今日：晨曦地平线与半日穹顶（高辨识度，区别于常见日历方块） */
 export const IconToday = makeStroke(
   <>
     <path d="M6.75 15.5a5.25 5.25 0 0 1 10.5 0z" fill="currentColor" fillOpacity="0.16" stroke="none" />
@@ -51,7 +45,6 @@ export const IconToday = makeStroke(
   </>,
 )
 
-/** 任务清单：圆角对勾徽章 + 错落行动条 */
 export const IconTasks = makeStroke(
   <>
     <rect x="3" y="4.5" width="7.5" height="7.5" rx="2.4" fill="currentColor" fillOpacity="0.16" />
@@ -61,7 +54,6 @@ export const IconTasks = makeStroke(
   </>,
 )
 
-/** 文档工作站：双层折角卷宗 + 书签微标 */
 export const IconDocs = makeStroke(
   <>
     <path d="M5 6.5a2 2 0 0 1 2-2h6.8l4.7 4.7V18.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" fill="currentColor" fillOpacity="0.14" stroke="none" />
@@ -71,7 +63,6 @@ export const IconDocs = makeStroke(
   </>,
 )
 
-/** 工具：三枚方砖 + 旋转棱镜星标（现代工作台矩阵，告别老式扳手与杂乱工具箱） */
 export const IconTools = makeStroke(
   <>
     <rect x="3.5" y="3.5" width="7" height="7" rx="2.2" fill="currentColor" fillOpacity="0.14" />
@@ -81,7 +72,6 @@ export const IconTools = makeStroke(
   </>,
 )
 
-/** 统计：三柱阶梯胶囊 + 跃升趋势微光（直观表达成长与数据洞察） */
 export const IconStats = makeStroke(
   <>
     <rect x="4" y="12.5" width="3.8" height="7.5" rx="1.6" fill="currentColor" fillOpacity="0.14" />
@@ -92,7 +82,6 @@ export const IconStats = makeStroke(
   </>,
 )
 
-/** 设置：精密双轨控制胶囊 */
 export const IconSettings = makeStroke(
   <>
     <path d="M3.5 7.5h3.2M13.3 7.5h7.2M3.5 16.5h7.2M17.3 16.5h3.2" />
@@ -107,10 +96,6 @@ export const IconSun = make(<path fill="currentColor" d="M11 3V2q0-.425.288-.712
 
 export const IconDone = make(<path fill="currentColor" d="M12 22q-2.075 0-3.9-.788t-3.175-2.137T2.788 15.9T2 12t.788-3.9t2.137-3.175T8.1 2.788T12 2q1.2 0 2.338.275t2.187.8q.375.2.488.6t-.138.75t-.663.45t-.812-.1q-.8-.375-1.663-.575T12 4Q8.675 4 6.337 6.338T4 12t2.338 5.663T12 20t5.663-2.337T20 12q0-.2-.012-.387t-.038-.388q-.05-.425.163-.812t.637-.513q.4-.125.75.075t.4.6q.05.35.075.7T22 12q0 2.075-.788 3.9t-2.137 3.175t-3.175 2.138T12 22m-1.4-8.2l9.3-9.325q.275-.275.688-.288t.712.288q.275.275.275.7t-.275.7L11.3 15.9q-.3.3-.7.3t-.7-.3l-2.85-2.85q-.275-.275-.275-.7t.275-.7t.7-.275t.7.275z" />)
 
-/**
- * 目录、子页和命令面板共用的随应用打包工具标识。
- * 自带 Apple 风格平滑圆角裁剪与极细描边，在任意字号（16px–52px）和深浅色背景下均干净锐利。
- */
 function assetIcon(path: string, inset = 0): AppIcon {
   return function ToolAssetIcon({ size = 24, strokeWidth: _sw, ...rest }: AppIconProps) {
     void _sw
@@ -124,9 +109,8 @@ function assetIcon(path: string, inset = 0): AppIcon {
           </clipPath>
         </defs>
         <g clipPath={`url(#${clipId})`}>
-          <rect x="0.5" y="0.5" width="23" height="23" rx="6.2" fill="#FAFBFD" />
+          <rect x="0.5" y="0.5" width="23" height="23" rx="6.2" fill="var(--brand-tile)" />
           <image
-            className="tool-art"
             x={inset}
             y={inset}
             width={dim}
@@ -135,7 +119,7 @@ function assetIcon(path: string, inset = 0): AppIcon {
             href={`${import.meta.env.BASE_URL}${path}.png`}
           />
         </g>
-        <rect x="0.75" y="0.75" width="22.5" height="22.5" rx="6" fill="none" stroke="rgba(15,23,42,0.08)" strokeWidth="0.5" />
+        <rect x="0.75" y="0.75" width="22.5" height="22.5" rx="6" fill="none" stroke="var(--tool-rim)" strokeWidth="0.5" />
       </svg>
     )
   }
@@ -143,11 +127,58 @@ function assetIcon(path: string, inset = 0): AppIcon {
 
 export const IconToolNovel = assetIcon('brands/fanqie', 0.4)
 export const IconToolArchive = assetIcon('brands/annas-archive', 1.2)
-export const IconToolDownload = assetIcon('tool-icons/media')
-export const IconToolQr = assetIcon('tool-icons/qrcode')
-export const IconToolPdf = assetIcon('tool-icons/pdf')
-export const IconToolArticle = assetIcon('tool-icons/article')
-export const IconToolIdPhoto = assetIcon('tool-icons/idphoto')
-export const IconToolOcr = assetIcon('tool-icons/ocr')
-export const IconToolMath = assetIcon('tool-icons/math')
-export const IconToolReport = assetIcon('tool-icons/report')
+export const IconToolDownload = makeStroke(
+  <>
+    <rect x="3" y="4" width="18" height="12" rx="3" fill="currentColor" fillOpacity=".14" />
+    <path d="M12 9v12m-4-4 4 4 4-4" />
+  </>, 'media',
+)
+export const IconToolQr = makeStroke(
+  <>
+    <g fill="currentColor" fillOpacity=".14">
+      <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.4" />
+      <rect x="14" y="3.5" width="6.5" height="6.5" rx="1.4" />
+      <rect x="3.5" y="14" width="6.5" height="6.5" rx="1.4" />
+    </g>
+    <path d="M14 14h3v3h3.5M14 19v1.5h3m3.5 0h.01" />
+  </>, 'qr',
+)
+export const IconToolPdf = makeStroke(
+  <>
+    <path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="currentColor" fillOpacity=".14" />
+    <path d="M14 3v5h5M8.5 12h7m-7 4h4" />
+  </>, 'pdf',
+)
+export const IconToolArticle = makeStroke(
+  <>
+    <rect x="3.5" y="4" width="17" height="16" rx="2.5" fill="currentColor" fillOpacity=".14" />
+    <path d="M7 8h6m-6 4h10m-10 4h7" />
+    <path d="M16 4v5l1.5-1L19 9V4" fill="currentColor" stroke="none" />
+  </>, 'article',
+)
+export const IconToolIdPhoto = makeStroke(
+  <>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" fill="currentColor" fillOpacity=".14" />
+    <circle cx="9" cy="10" r="2" />
+    <path d="M5.8 16a3.3 3.3 0 0 1 6.4 0M15 10h3m-3 4h2" />
+  </>, 'idphoto',
+)
+export const IconToolOcr = makeStroke(
+  <>
+    <path d="M4 9V6a2 2 0 0 1 2-2h3m6 0h3a2 2 0 0 1 2 2v3m0 6v3a2 2 0 0 1-2 2h-3m-6 0H6a2 2 0 0 1-2-2v-3" />
+    <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" fillOpacity=".14" stroke="none" />
+    <path d="M8.5 9h7M12 9v7" />
+  </>, 'ocr',
+)
+export const IconToolMath = makeStroke(
+  <>
+    <path d="M4 19h16V6c-8 0-7 12-16 13Z" fill="currentColor" fillOpacity=".14" stroke="none" />
+    <path d="M4 4v15h17M6.5 15c6 0 5-9 13-9" />
+  </>, 'math',
+)
+export const IconToolReport = makeStroke(
+  <>
+    <rect x="5" y="3" width="14" height="18" rx="2" fill="currentColor" fillOpacity=".14" />
+    <path d="M8.5 7h7m-7 4h2m3 0h2m-7 3h2m3 0h2m-7 3h7" />
+  </>, 'report',
+)

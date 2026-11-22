@@ -37,7 +37,7 @@ export function DocCard({
           <FileTypeIcon kind={d.kind} size={30} />
         </span>
         <span className="flex-1 min-w-0">
-          <span className="block text-[15px] font-semibold tracking-[-0.01em] leading-snug line-clamp-2 group-hover:text-primary transition-colors">{d.title}</span>
+          <span title={d.title} className="line-clamp-2 [overflow-wrap:anywhere] text-[15px] font-semibold tracking-[-0.01em] leading-snug group-hover:text-primary transition-colors">{d.title}</span>
           <span className="block text-[12px] text-on-surface-2 mt-1 truncate">
             {DOC_KIND_LABEL[d.kind]} · {formatBytes(d.size)} · {fmtListDate(d.lastOpenedAt ?? d.addedAt)}
           </span>
@@ -57,7 +57,7 @@ export function DocCard({
             </span>
           )}
           {hit && (
-            <span className="block text-ui-caption text-on-surface mt-2 leading-relaxed line-clamp-2">
+            <span className="line-clamp-2 [overflow-wrap:anywhere] text-ui-caption text-on-surface mt-2 leading-relaxed">
               <span className="text-primary font-medium">{hit.count} 处命中{hit.seg ? ` · ${segLabel(d.kind, hit.seg)}` : ''}：</span>{hit.snippet}
             </span>
           )}

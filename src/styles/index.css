@@ -3,14 +3,10 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ============================================================
-   设计令牌 —— Apple Liquid Glass × Google Material You Expressive
-   亮 / 暗两套语义变量，极简通透、层次鲜明、零硬编码色值
-   ============================================================ */
+/* 主题颜色与动效令牌 */
 :root {
   color-scheme: light;
 
-  /* 色彩 · 亮色 —— 瓷白通透画布 + 钴蓝光感主色 */
   --primary: #2563EB;
   --on-primary: #FFFFFF;
   --primary-soft: rgba(37, 99, 235, 0.10);
@@ -22,6 +18,11 @@
   --surface-2: #F4F6FB;
   --surface-3: #E9EEF7;
   --outline: rgba(15, 23, 42, 0.085);
+  --outline-strong: rgba(15, 23, 42, 0.32);
+  --brand-tile: #FAFBFD;
+  --ranking-paper: #FFFFFF;
+  --tool-rim: var(--outline);
+  --tool-badge-ok: #067452;
   --on-surface: #111827;
   --on-surface-2: #58657A;
 
@@ -36,7 +37,6 @@
   --danger: #DC2626;
   --on-danger: #FFFFFF;
 
-  /* Apple Liquid Glass 材质：高饱和毛玻璃 + 顶部高光细边 */
   --glass-bg: rgba(255, 255, 255, 0.74);
   --glass-surface: rgba(255, 255, 255, 0.84);
   --glass-rim: rgba(255, 255, 255, 0.88);
@@ -66,16 +66,10 @@
   --ease-spring: cubic-bezier(.22, 1.08, .36, 1);
   --ease-soft-spring: cubic-bezier(.22, 1.06, .36, 1);
 
-  /* 卡片悬浮层次：通透双层漫反射阴影 + 顶部玻璃高光 */
   --elev-card: 0 1px 2px rgba(15, 23, 42, 0.035), 0 10px 28px -16px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.92);
-  --elev-card-hover: 0 4px 10px -2px rgba(15, 23, 42, 0.05), 0 20px 42px -18px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.96);
   /* 玻璃模糊半径集中管理，便于低端设备与减弱透明度时收敛 */
   --glass-blur: 24px;
   --glass-sat: 1.85;
-  /* 画布极光氛围 */
-  --ambient-1: color-mix(in srgb, var(--primary) 9%, transparent);
-  --ambient-2: rgba(56, 189, 248, 0.075);
-  --ambient-3: rgba(168, 85, 247, 0.05);
 }
 
 .dark {
@@ -86,12 +80,15 @@
   --primary-action: #3B82F6;
   --on-primary-action: #FFFFFF;
   --primary-glow: rgba(59, 130, 246, 0.38);
-  /* 深邃曜石蓝黑层次：画布 → 卡片 → 控件逐级提亮，通透不发灰 */
   --canvas: #0B0E16;
   --surface: #131927;
   --surface-2: #1A2234;
   --surface-3: #232D44;
   --outline: rgba(226, 232, 240, 0.09);
+  --outline-strong: rgba(226, 232, 240, 0.38);
+  --tool-rim: var(--glass-rim);
+  --tool-badge-ok: var(--ok);
+  --ranking-paper: #F8FAFC;
   --on-surface: #F1F5FB;
   --on-surface-2: #9AA8BF;
 
@@ -110,10 +107,6 @@
   --glass-shadow: 0 18px 48px -14px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.11);
   --shadow-pop: 0 28px 80px -12px rgba(0, 0, 0, 0.72), 0 8px 24px -6px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   --elev-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 12px 32px -14px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.075);
-  --elev-card-hover: 0 6px 16px -4px rgba(0, 0, 0, 0.45), 0 22px 48px -18px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  --ambient-1: color-mix(in srgb, var(--primary) 13%, transparent);
-  --ambient-2: rgba(56, 189, 248, 0.09);
-  --ambient-3: rgba(139, 92, 246, 0.08);
 }
 
 /* 真实弹簧：支持 linear() 的浏览器用弹簧积分曲线替换固定 cubic-bezier。
@@ -142,17 +135,13 @@
   animation-iteration-count: 1 !important;
 }
 .no-motion .animate-spin { animation: none !important; }
-.no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot,
-.no-motion .confetti-layer, .no-motion .magnet-glow, .no-motion .sand-layer, .no-motion .sand-clone,
-.no-motion .ambient-mesh, .no-motion .ranking-prism-bar {
+.no-motion .focus-breathe, .no-motion .done-halo, .no-motion .milestone-dot,
+.no-motion .confetti-layer, .no-motion .sand-layer, .no-motion .sand-clone {
   animation: none !important;
-}
-.no-motion .focus-breathe, .no-motion .spark-dot, .no-motion .done-halo, .no-motion .milestone-dot,
-.no-motion .confetti-layer, .no-motion .magnet-glow, .no-motion .sand-layer, .no-motion .sand-clone {
   display: none !important;
 }
 
-/* 强调色（Apple 系统设置 × Material You 表现力调色板）：全站零硬编码随选色联动 */
+/* 设置页强调色 */
 :root[data-accent='blue'] { --primary: #2563EB; --primary-action: #2563EB; --primary-soft: rgba(37, 99, 235, 0.10); --primary-glow: rgba(37, 99, 235, 0.28); }
 .dark[data-accent='blue'] { --primary: #7CA7FF; --primary-action: #3B82F6; --primary-soft: rgba(124, 167, 255, 0.16); --primary-glow: rgba(59, 130, 246, 0.38); }
 :root[data-accent='purple'] { --primary: #7C3AED; --primary-action: #7C3AED; --primary-soft: rgba(124, 58, 237, 0.10); --primary-glow: rgba(124, 58, 237, 0.28); }
@@ -254,10 +243,7 @@
 .knob-slide { transition: transform var(--dur-3) var(--ease-spring); }
 .knob-squash { animation: knob-squash var(--dur-3) var(--ease-standard); }
 
-/* macOS 风格按压反馈：轻微缩小，不用 MD 水波纹（.press 已有全局定义） */
-
-/* 完成特效（低调高级感）：一圈同色细光环向外扩散淡出 + 6 粒同色微光点晕开。
-   单色（状态绿）、短促、不撒花：克制但有仪式感。 */
+/* 任务完成反馈 */
 @keyframes done-halo {
   0% { transform: scale(0.72); opacity: 0.55; }
   100% { transform: scale(1.9); opacity: 0; }
@@ -269,20 +255,6 @@
   border: 1.5px solid var(--ok);
   animation: done-halo 320ms var(--ease-standard) forwards;
 }
-@keyframes spark-fade {
-  0% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(9px) scale(1); opacity: 0.85; }
-  100% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(15px) scale(0.3); opacity: 0; }
-}
-.spark-dot {
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 2px; height: 2px;
-  border-radius: 9999px;
-  background: var(--ok);
-  pointer-events: none;
-  animation: spark-fade 640ms var(--ease-standard) forwards;
-}
-
 /* 长按确认走满后的轻震 */
 @keyframes nudge {
   0%, 100% { transform: translateX(0); }
@@ -313,7 +285,7 @@
 @keyframes vt-fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes vt-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* 无障碍：系统开启“减弱动态效果”时压平全部动效（行业标配） */
+/* 系统减弱动态效果 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -322,9 +294,7 @@
     scroll-behavior: auto !important;
   }
   /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
-  .spark-dot, .done-halo, .confetti-layer, .magnet-glow, .sand-layer, .sand-clone, ::view-transition-new(root) { display: none !important; animation: none !important; }
-  /* 新增氛围特效同样静默降级 */
-  body::before { display: none !important; }
+  .done-halo, .confetti-layer, .sand-layer, .sand-clone, ::view-transition-new(root) { display: none !important; animation: none !important; }
   .focus-breathe, .drop-settle { animation: none !important; }
   .milestone-dot { display: none !important; }
 }
@@ -364,7 +334,7 @@ select:focus-visible {
   outline: none;
 }
 
-/* 按压下沉：只用 transform（合成层），不再逐帧改 box-shadow（性能红线） */
+/* 按压反馈只改变 transform。 */
 .press {
   transition: transform var(--dur-1) var(--ease-standard);
 }
@@ -388,15 +358,6 @@ select:focus-visible {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.9s linear infinite; }
-
-/* 磁吸按钮：高光从指针进入的方向铺开（仅桌面精细指针挂载） */
-.magnet-glow {
-  opacity: 0;
-  pointer-events: none;
-  background: radial-gradient(90px circle at var(--mx, 50%) var(--my, 50%), var(--magnet-glow, transparent), transparent 72%);
-  transition: opacity var(--dur-2) var(--ease-standard);
-}
-.group:hover .magnet-glow { opacity: 1; }
 
 /* 撒花粒子层：全页一张 canvas，永远不接鼠标事件 */
 .confetti-layer {
@@ -446,27 +407,7 @@ select:focus-visible {
 *::-webkit-scrollbar-thumb { background: var(--outline); border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-/* ============================================================
-   组件级工具类 —— Apple Liquid Glass × Material 3 Expressive
-   ============================================================ */
-
-/* 画布极光氛围层：克制通透的柔和极光光场，让毛玻璃导航与卡片产生真实折射感 */
-.app-ambient-canvas {
-  position: relative;
-  background-color: var(--canvas);
-  background-image:
-    radial-gradient(66% 52% at 12% -8%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 70%),
-    radial-gradient(56% 48% at 94% 2%, rgba(56, 189, 248, 0.11), transparent 68%),
-    radial-gradient(52% 44% at 80% 102%, rgba(168, 85, 247, 0.08), transparent 72%);
-}
-.dark .app-ambient-canvas {
-  background-image:
-    radial-gradient(66% 52% at 14% -8%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 68%),
-    radial-gradient(56% 48% at 94% 4%, rgba(56, 189, 248, 0.11), transparent 68%),
-    radial-gradient(52% 44% at 78% 102%, rgba(139, 92, 246, 0.12), transparent 72%);
-}
-
-/* 悬浮极简内容卡：20px 圆角 + 顶部微高光 + 轻盈漫反射阴影 + 桌面指针跟手微光 */
+/* 卡片 */
 .card {
   position: relative;
   background: var(--surface);
@@ -474,67 +415,12 @@ select:focus-visible {
   border-radius: 20px;
   box-shadow: var(--elev-card);
 }
-@media (hover: hover) and (pointer: fine) {
-  :root:not(.no-motion) .card[data-lit='1']::after,
-  :root:not(.no-motion) .tool-bento-card[data-lit='1']::after,
-  :root:not(.no-motion) .ranking-panel[data-lit='1']::after {
-    opacity: 1;
-  }
-  .card::after,
-  .tool-bento-card::after,
-  .ranking-panel::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 260ms var(--ease-standard);
-    background: radial-gradient(
-      270px circle at var(--sx, 50%) var(--sy, 50%),
-      color-mix(in srgb, var(--tool-tint, var(--primary)) 10%, transparent),
-      transparent 66%
-    );
-  }
-  .dark .card::after,
-  .dark .tool-bento-card::after,
-  .dark .ranking-panel::after {
-    background: radial-gradient(
-      290px circle at var(--sx, 50%) var(--sy, 50%),
-      color-mix(in srgb, var(--tool-tint, var(--primary)) 16%, transparent),
-      transparent 66%
-    );
-  }
-  /* 与自绘 tilt-card 共存时不重复覆盖 */
-  .tilt-card::after {
-    background: radial-gradient(
-      150px circle at var(--tilt-x, 50%) var(--tilt-y, 50%),
-      color-mix(in srgb, white 18%, transparent),
-      transparent 66%
-    );
-  }
-}
-
-/* 排行榜旗舰展示卡（写死置顶于工具页最上方，不属于小工具） */
-@keyframes prism-drift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-@keyframes live-pulse {
-  0%, 100% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--ok) 28%, transparent); }
-  50% { box-shadow: 0 0 0 5.5px color-mix(in srgb, var(--ok) 8%, transparent); }
-}
 .ranking-panel {
   position: relative;
   overflow: hidden;
   border-radius: 24px;
   border: 1px solid var(--outline);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--primary-soft) 52%, var(--surface)) 0%,
-    var(--surface) 42%
-  );
+  background: var(--surface);
   box-shadow: var(--elev-card);
   padding: 1.15rem 1.25rem 1.05rem;
 }
@@ -543,29 +429,11 @@ select:focus-visible {
     padding: 1.4rem 1.55rem 1.25rem;
   }
 }
-/* 呼应四色 xyj 基因的极细动态棱镜顶边 */
-.ranking-prism-bar {
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: linear-gradient(90deg, #4285F4, #EA4335, #FBBC05, #34A853, #4285F4);
-  background-size: 220% 100%;
-  opacity: 0.9;
-  animation: prism-drift 10s linear infinite;
-}
 .ranking-intro {
   display: flex;
   flex-direction: column;
   margin-bottom: 0.8rem;
 }
-.ranking-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: var(--ok);
-  animation: live-pulse 2.6s ease-in-out infinite;
-}
-.no-motion .ranking-live-dot { animation: none; }
 .ranking-heading {
   font-size: clamp(18px, 2.2vw, 24px);
   font-weight: 700;
@@ -591,40 +459,43 @@ select:focus-visible {
 .ranking-action {
   display: grid;
   place-items: center;
-  width: 2.35rem;
-  height: 2.35rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 9999px;
   border: 1px solid var(--outline);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  background: var(--surface);
   color: var(--on-surface-2);
-  box-shadow: 0 2px 8px -4px rgba(15, 23, 42, 0.14);
-  transition: transform var(--dur-1) var(--ease-spring), background-color var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), border-color var(--dur-1) var(--ease-standard);
+  transition: color var(--dur-1), border-color var(--dur-1);
 }
 .ranking-action:hover {
   background: var(--surface);
   color: var(--primary);
   border-color: color-mix(in srgb, var(--primary) 38%, var(--outline));
-  transform: translateY(-1px) scale(1.04);
-}
-.ranking-action:active {
-  transform: scale(0.93);
 }
 .ranking-paper {
   position: relative;
   border-radius: 16px;
-  background: #FFFFFF;
+  background: var(--ranking-paper);
   padding: 0.65rem;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03), 0 4px 16px -8px rgba(15, 23, 42, 0.10);
+  border: 1px solid var(--outline);
   overflow: hidden;
 }
-.dark .ranking-paper {
-  background: #F8FAFC;
-  border-color: rgba(255, 255, 255, 0.16);
-  box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.5);
-}
+.dark .ranking-paper { filter: brightness(.94); }
 
-/* 小工具 Bento 卡片与瓷白方砖图标（静止极简、悬停点亮专属珠宝色调微光） */
+:where(.lucide[stroke-width="2"]) { stroke-width: 1.85; }
+
+/* 自有工具共用描边和透明底，品牌图保留原色。 */
+[data-tool-icon] { color: var(--tool-tint); }
+[data-tool-icon="pdf"] { --tool-tint: #b44752; }
+[data-tool-icon="math"] { --tool-tint: #356bac; }
+[data-tool-icon="idphoto"] { --tool-tint: #23799b; }
+[data-tool-icon="ocr"] { --tool-tint: #247b65; }
+[data-tool-icon="qr"] { --tool-tint: #56589b; }
+[data-tool-icon="article"] { --tool-tint: #946319; }
+[data-tool-icon="report"] { --tool-tint: #775598; }
+[data-tool-icon="media"] { --tool-tint: #94557e; }
+.dark [data-tool-icon] { color: color-mix(in srgb, var(--tool-tint) 50%, white); }
+
 .tool-bento-card {
   position: relative;
   overflow: hidden;
@@ -632,51 +503,25 @@ select:focus-visible {
   border: 1px solid var(--outline);
   border-radius: 20px;
   box-shadow: var(--elev-card);
-  transition:
-    transform var(--dur-2) var(--ease-spring),
-    border-color var(--dur-1) var(--ease-standard),
-    box-shadow var(--dur-2) var(--ease-standard),
-    background-color var(--dur-1) var(--ease-standard);
+  transition: border-color var(--dur-1) var(--ease-standard);
 }
 @media (hover: hover) {
-  .tool-bento-card:hover {
-    transform: translateY(-3px);
-    border-color: color-mix(in srgb, var(--tool-tint, var(--primary)) 42%, var(--outline));
-    box-shadow:
-      0 6px 14px -4px rgba(15, 23, 42, 0.06),
-      0 20px 42px -18px color-mix(in srgb, var(--tool-tint, var(--primary)) 34%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.94);
-  }
-  .dark .tool-bento-card:hover {
-    box-shadow:
-      0 8px 18px -4px rgba(0, 0, 0, 0.48),
-      0 22px 46px -18px color-mix(in srgb, var(--tool-tint, var(--primary)) 42%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  }
-  .tool-bento-card:hover .tool-icon-tile {
-    transform: scale(1.07) translateY(-1px);
-    box-shadow:
-      0 8px 18px -6px color-mix(in srgb, var(--tool-tint, var(--primary)) 36%, rgba(15, 23, 42, 0.22)),
-      0 0 0 1px color-mix(in srgb, var(--tool-tint, var(--primary)) 26%, rgba(15, 23, 42, 0.08));
-  }
-  .tool-bento-card:hover .tool-arrow {
-    opacity: 1;
-    background: color-mix(in srgb, var(--tool-tint, var(--primary)) 12%, transparent);
-    color: var(--tool-tint, var(--primary));
-    transform: translate(2px, -2px);
+  .tool-bento-card:hover, .card-hover:hover {
+    border-color: var(--outline-strong);
   }
 }
-.tool-bento-card:active {
-  transform: scale(0.985);
+@media (any-pointer: coarse) {
+  .tool-category-filter button { min-height: 44px; min-width: 44px; }
 }
 .tool-icon-tile {
-  background: #FAFBFD;
-  box-shadow: 0 4px 14px -5px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.07);
-  transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2) var(--ease-standard);
+  background: var(--surface-2);
+  border: 1px solid var(--tool-rim);
 }
-.dark .tool-icon-tile {
-  box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.14);
+.tool-icon-tile [data-tool-icon] {
+  width: 68%;
+  height: 68%;
 }
+.tool-icon-tile:has(image) { background: var(--brand-tile); }
 .tool-arrow {
   display: grid;
   place-items: center;
@@ -687,7 +532,6 @@ select:focus-visible {
   color: var(--on-surface-2);
   opacity: 0.42;
   flex-shrink: 0;
-  transition: transform var(--dur-2) var(--ease-spring), opacity var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), background-color var(--dur-1) var(--ease-standard);
 }
 @media (max-width: 639px) {
   .tool-arrow { display: none; }
@@ -699,7 +543,6 @@ select:focus-visible {
   box-shadow: var(--elev-card);
 }
 .task-list-group .task-card { border: 0; border-radius: 0; box-shadow: none; }
-.task-list-group .task-card::after { display: none; }
 .task-list-group .task-card:hover { transform: none; background: color-mix(in srgb, var(--primary-soft) 36%, var(--surface)); }
 .task-list-group > li:first-child .task-card { border-radius: 20px 20px 0 0; }
 .task-list-group > li:last-child .task-card { border-end-start-radius: 20px; border-end-end-radius: 20px; }
@@ -713,30 +556,9 @@ select:focus-visible {
   pointer-events: none;
 }
 
-/* 卡片悬停反馈：弹簧轻抬 + 主题微光描边 */
-.card-hover {
-  transition:
-    transform var(--dur-2) var(--ease-spring),
-    border-color var(--dur-1) var(--ease-standard),
-    box-shadow var(--dur-2) var(--ease-standard);
-}
-@media (hover: hover) {
-  .card-hover:hover {
-    transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--primary) 34%, var(--outline));
-    box-shadow: var(--elev-card-hover);
-  }
-}
-.card-hover:active { transform: scale(0.99); }
+.card-hover { transition: border-color var(--dur-1) var(--ease-standard); }
 
-/* 按下微倾（ui-motion 65）：桌面鼠标按住时朝按下的方向轻压，表面反光跟手 */
-.tilt-card { transform-style: preserve-3d; }
-@media (hover: hover) {
-  .tilt-card:hover::after { opacity: 1; }
-}
-.tilt-card:active { transition-duration: 80ms; }
-
-/* 弹层：Apple Liquid Glass 22px 圆角 + 柔和模糊背景 */
+/* 弹层 */
 .overlay-fade {
   animation: fade-in var(--dur-1) ease both;
 }
@@ -753,7 +575,6 @@ select:focus-visible {
   .pop { background: var(--surface); }
 }
 
-/* 主按钮高级微光质感 */
 .btn-primary-glow {
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 56%);
   box-shadow: 0 8px 22px -8px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.28);
@@ -762,7 +583,7 @@ select:focus-visible {
   box-shadow: 0 12px 26px -8px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
-/* 玻璃材质（Apple Liquid Glass）：顶栏 / 侧栏 / 悬浮底栏 / ⌘K */
+/* 导航栏和弹层的半透明背景 */
 .glass {
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
@@ -1032,17 +853,11 @@ select:focus-visible {
   to { transform: scaleX(0); }
 }
 
-/* 桌面悬浮毛玻璃侧栏：脱离窗边的 Apple 悬浮质感 + Material 3 柔和胶囊激活态 */
 .workspace-sidebar {
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  background: var(--surface);
   border: 1px solid var(--outline);
   border-radius: 24px;
-  box-shadow: var(--glass-shadow);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .workspace-sidebar { background: var(--surface); }
+  box-shadow: var(--elev-card);
 }
 .sidebar-link {
   transition: background-color var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-spring), box-shadow var(--dur-2) var(--ease-standard);
@@ -1093,10 +908,6 @@ select:focus-visible {
   .ranking-intro {
     margin-bottom: 0.6rem;
   }
-  .ranking-action {
-    width: 2rem;
-    height: 2rem;
-  }
   .ranking-paper {
     border-radius: 13px;
     padding: 0.45rem;
@@ -1123,7 +934,7 @@ select:focus-visible {
   }
 }
 
-/* 悬浮液态玻璃底栏（Apple Liquid Glass Dock × Material 3 胶囊高亮 + 底部渐隐幕布） */
+/* 移动端底栏及其下方的渐隐层 */
 .mobile-dock-scrim {
   position: absolute;
   inset: auto 0 0 0;
@@ -1239,21 +1050,6 @@ select:focus-visible {
 /* ============================================================
    动效增强（评审改进项）
    ============================================================ */
-
-/* P2 纸纹/噪点：2.5% 透明度平铺噪点，去掉纯色塑料感。纯装饰、不接收事件。
-   层级压在模态遮罩（z-40/50）之下，避免弹窗打开时背景像蒙灰点（对齐 macOS 干净遮罩）。 */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.009;
-  mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-.dark body::before,
-body:has(.dark)::before { mix-blend-mode: screen; opacity: 0.012; }
 
 /* P2 番茄钟呼吸光晕：运行中极缓呼吸，暂停即停（同屏只保留一个循环动画） */
 @keyframes breathe {

@@ -1,15 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ExternalLink, Maximize2, RefreshCw, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { ExternalLink, Maximize2, RefreshCw } from 'lucide-react'
 import { openExternal } from '@/lib/links'
-import { isNative } from '@/lib/native'
+import { Dialog } from '@/shared/ui/Sheet'
+import { isNative, isTauri } from '@/lib/native'
 import { INTEL_CHART_META_URLS, INTEL_CHART_URLS } from '@/lib/intelSources'
+import type { RankingChart } from '@/db/db'
+import { downloadChartImage, readChart, saveChart } from './chartCache'
 import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
-
-interface ChartMeta {
-  fingerprint?: string
-  generatedAt?: string
-}
 
 function formatUpdatedAt(iso?: string): string {
   if (!iso) return ''
@@ -22,34 +20,20 @@ function formatUpdatedAt(iso?: string): string {
   return `${mm}-${dd} ${hh}:${mi}`
 }
 
-async function fetchChartMeta(url: string, signal?: AbortSignal): Promise<ChartMeta | null> {
+async function fetchChartDate(url: string, signal: AbortSignal): Promise<string> {
   try {
-    const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store', signal })
-    if (!res.ok) return null
-    const body = await res.json() as ChartMeta | null
-    if (!body || typeof body !== 'object') return null
-    return {
-      fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined,
-      generatedAt: typeof body.generatedAt === 'string' ? body.generatedAt : undefined,
-    }
+    const res = await fetch(url, { cache: 'no-cache', signal })
+    if (!res.ok) return ''
+    const body = await res.json()
+    return typeof body?.generatedAt === 'string' ? body.generatedAt : ''
   } catch {
-    return null
+    return ''
   }
 }
 
-function probeImage(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const probe = new Image()
-    probe.onload = () => resolve(true)
-    probe.onerror = () => resolve(false)
-    probe.src = url
-  })
-}
+const localChart = `${import.meta.env.BASE_URL}intelligence/chart.png`
+const localMeta = `${import.meta.env.BASE_URL}intelligence/chart-meta.json`
 
-/**
- * AI 模型智能排行榜（独立旗舰板块，硬性置顶于工具页最上方，不属于「小工具」目录）。
- * 保留 Artificial Analysis 官方原图，支持拖拽横移、原图高清灯箱与即时刷新。
- */
 export function IntelligenceCard() {
   const toast = useUi((s) => s.toast)
   const [dragging, setDragging] = useState(false)
@@ -57,14 +41,14 @@ export function IntelligenceCard() {
   const [zoomed, setZoomed] = useState(false)
   const [fitWidth, setFitWidth] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [updatedAt, setUpdatedAt] = useState('')
+  const [localDate, setLocalDate] = useState('')
   const [scrollEdge, setScrollEdge] = useState({ left: false, right: false })
   const dragRef = useRef<{ x: number; left: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const mountedRef = useRef(true)
-  const localChart = `${import.meta.env.BASE_URL}intelligence/chart.png`
-  const localMeta = `${import.meta.env.BASE_URL}intelligence/chart-meta.json`
-  const [chartSrc, setChartSrc] = useState(localChart)
+  const refreshRef = useRef<AbortController | null>(null)
+  const [remoteChart, setRemoteChart] = useState<{ url: string; date: string } | null>()
+  const chartSrc = remoteChart === null ? localChart : remoteChart?.url
+  const updatedAt = remoteChart === null ? localDate : remoteChart?.date ?? ''
 
   const syncScrollEdge = useCallback(() => {
     const el = scrollRef.current
@@ -84,76 +68,81 @@ export function IntelligenceCard() {
     return () => ro.disconnect()
   }, [syncScrollEdge, chartSrc])
 
-  const loadLatestChart = useCallback(async (manual: boolean, signal?: AbortSignal) => {
-    setRefreshing(true)
-    try {
-      let bestUrl = ''
-      let bestUpdatedAt = ''
-      let bestTs = -1
-
-      for (let i = 0; i < INTEL_CHART_URLS.length; i++) {
-        if (signal?.aborted) return
-        const meta = await fetchChartMeta(INTEL_CHART_META_URLS[i], signal)
-        const token = manual ? String(Date.now()) : (meta?.fingerprint?.slice(0, 12) || String(Math.floor(Date.now() / 600_000)))
-        const url = `${INTEL_CHART_URLS[i]}?v=${token}`
-        const ok = await probeImage(url)
-        if (signal?.aborted) return
-        if (!ok) continue
-        const ts = meta?.generatedAt ? Date.parse(meta.generatedAt) : 0
-        if (!bestUrl || (Number.isFinite(ts) && ts > bestTs)) {
-          bestUrl = url
-          bestUpdatedAt = meta?.generatedAt ?? ''
-          bestTs = Number.isFinite(ts) ? ts : 0
-        }
-        if (i === 0 && meta?.generatedAt) break
-      }
-
-      if (!mountedRef.current || signal?.aborted) return
-      if (bestUrl) {
-        setImageFailed(false)
-        setChartSrc(bestUrl)
-        if (bestUpdatedAt) setUpdatedAt(bestUpdatedAt)
-        if (manual) toast('模型榜单已刷新')
-      } else {
-        const fallbackMeta = await fetchChartMeta(localMeta, signal)
-        if (mountedRef.current && fallbackMeta?.generatedAt) {
-          setUpdatedAt((prev) => prev || fallbackMeta.generatedAt!)
-        }
-        if (manual) toast('暂时无法获取最新图表，已保留当前显示')
-      }
-    } finally {
-      if (mountedRef.current) setRefreshing(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    void readChart().then((cached) => {
+      if (controller.signal.aborted) return
+      setRemoteChart(cached ? { url: URL.createObjectURL(cached.image), date: cached.date } : null)
+    }).catch(() => {
+      if (!controller.signal.aborted) setRemoteChart(null)
+    })
+    void fetchChartDate(localMeta, controller.signal).then((date) => {
+      if (!controller.signal.aborted) setLocalDate(date)
+    })
+    return () => {
+      controller.abort()
+      refreshRef.current?.abort()
+      refreshRef.current = null
     }
-  }, [localMeta, toast])
+  }, [])
 
   useEffect(() => {
-    mountedRef.current = true
-    const ctrl = new AbortController()
-    void loadLatestChart(false, ctrl.signal)
     return () => {
-      mountedRef.current = false
-      ctrl.abort()
+      if (remoteChart) URL.revokeObjectURL(remoteChart.url)
     }
-  }, [loadLatestChart])
+  }, [remoteChart])
 
-  const openOriginal = (e: { preventDefault: () => void }) => {
-    e.preventDefault()
+  const refresh = async () => {
+    if (refreshRef.current) return
+    setRefreshing(true)
+    const requestedAt = Date.now()
+    let best: RankingChart | null = null
+    for (const [index, source] of INTEL_CHART_URLS.entries()) {
+      const controller = new AbortController()
+      refreshRef.current = controller
+      const timer = window.setTimeout(() => controller.abort(), 5000)
+      const url = `${source}?v=${Date.now()}`
+      try {
+        const [image, date] = await Promise.all([
+          downloadChartImage(url, controller.signal),
+          fetchChartDate(INTEL_CHART_META_URLS[index], controller.signal),
+        ])
+        if (refreshRef.current !== controller) return
+        if (image && (!best || date)) best = { image, date, requestedAt }
+        if (best?.date) break
+      } finally {
+        window.clearTimeout(timer)
+      }
+    }
+    if (best) {
+      let message = '模型榜单已保存，下次打开可离线查看'
+      const active = refreshRef.current
+      try {
+        best = await saveChart(best)
+      } catch {
+        message = '榜单已刷新，本机缓存保存失败'
+      }
+      if (refreshRef.current !== active) return
+      setImageFailed(false)
+      setRemoteChart({ url: URL.createObjectURL(best.image), date: best.date })
+      toast(message)
+    } else {
+      toast('暂时无法获取最新图表，已保留当前显示')
+    }
+    refreshRef.current = null
+    setRefreshing(false)
+  }
+
+  const openOriginal = (event: MouseEvent<HTMLButtonElement>) => {
+    event.currentTarget.focus({ preventScroll: true })
     setFitWidth(false)
     setZoomed(true)
   }
-
-  useEffect(() => {
-    if (!zoomed) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoomed(false) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [zoomed])
 
   const updatedLabel = formatUpdatedAt(updatedAt)
 
   return (
     <section aria-labelledby="ranking-heading" data-pinned-leaderboard="true" className="ranking-panel">
-      <span aria-hidden className="ranking-prism-bar" />
       <header className="ranking-intro">
         <div className="flex items-center justify-between gap-2">
           <h2 id="ranking-heading" className="ranking-heading min-w-0">AI 模型智能排行榜</h2>
@@ -162,8 +151,8 @@ export function IntelligenceCard() {
               type="button"
               aria-label="刷新模型排名图表"
               title="立即刷新榜单"
-              disabled={refreshing}
-              onClick={() => void loadLatestChart(true)}
+              disabled={refreshing || remoteChart === undefined}
+              onClick={() => void refresh()}
               className="ranking-action cursor-pointer disabled:opacity-60"
             >
               <RefreshCw size={15} aria-hidden className={cn(refreshing && 'animate-spin')} />
@@ -172,6 +161,7 @@ export function IntelligenceCard() {
               type="button"
               aria-label="大图查看原图"
               title="查看大图"
+              disabled={!chartSrc}
               onClick={openOriginal}
               className="ranking-action cursor-pointer"
             >
@@ -239,7 +229,7 @@ export function IntelligenceCard() {
                 draggable={false}
                 onLoad={syncScrollEdge}
                 onError={() => {
-                  if (chartSrc !== localChart) setChartSrc(localChart)
+                  if (remoteChart) setRemoteChart(null)
                   else setImageFailed(true)
                 }}
                 className="h-[clamp(158px,23dvh,210px)] md:h-[clamp(200px,32dvh,292px)] w-auto max-w-none rounded-[8px] select-none pointer-events-none"
@@ -248,86 +238,61 @@ export function IntelligenceCard() {
             {scrollEdge.left && (
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-white dark:from-[#F8FAFC] via-white/75 dark:via-[#F8FAFC]/75 to-transparent"
+                className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ranking-paper)] to-transparent"
               />
             )}
             {scrollEdge.right && (
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-white dark:from-[#F8FAFC] via-white/80 dark:via-[#F8FAFC]/80 to-transparent"
+                className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-[var(--ranking-paper)] to-transparent"
               />
             )}
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-2.5 text-[11.5px] md:text-[12px] text-on-surface-2 mt-2 md:mt-2.5 px-0.5">
+        <div className="flex items-center justify-between gap-2.5 text-[12px] text-on-surface-2 mt-2 md:mt-2.5 px-0.5">
           <span className="min-w-0 truncate">
             {dragging ? '拖动浏览中…' : '左右滑动或拖拽查看完整排名'}
           </span>
-          <a
-            href={chartSrc}
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            disabled={!chartSrc}
             onClick={openOriginal}
-            className="inline-flex items-center gap-1 px-2.5 py-1 -mr-1 rounded-full text-[11.5px] md:text-[12px] font-medium text-primary bg-primary-soft/75 hover:bg-primary-soft transition-colors shrink-0"
+            className="inline-flex min-h-11 items-center gap-1 px-2.5 -mr-1 rounded-full text-[12px] font-medium text-primary bg-primary-soft/75 hover:bg-primary-soft transition-colors shrink-0"
           >
-            查看原图 <Maximize2 size={11.5} aria-hidden />
-          </a>
+            查看原图 <Maximize2 size={12} aria-hidden />
+          </button>
         </div>
       </div>
 
-      {zoomed && (
-        <div
-          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-3 sm:p-6 cursor-zoom-out overlay-fade"
-          role="dialog"
-          aria-modal="true"
-          aria-label="模型排名图表原图"
-          onClick={() => setZoomed(false)}
-        >
-          <div
-            className="w-full max-w-[94vw] flex items-center justify-end gap-2 mb-3"
-            onClick={(e) => e.stopPropagation()}
+      <Dialog open={zoomed} onOpenChange={setZoomed} title="模型排名图表原图" widthClass="w-[94vw]">
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[13px]">
+          <button
+            type="button"
+            onClick={() => setFitWidth((value) => !value)}
+            className="min-h-11 rounded-lg bg-surface-2 px-3 hover:bg-surface-3"
           >
+            {fitWidth ? '原图横向滚动' : '适应屏幕宽度'}
+          </button>
+          {!isNative() && (
             <button
               type="button"
-              onClick={() => setFitWidth((v) => !v)}
-              className="px-3.5 h-9 rounded-full bg-white/14 backdrop-blur-md border border-white/15 text-white text-[12.5px] font-medium hover:bg-white/24 transition-colors cursor-pointer"
+              onClick={() => openExternal(isTauri() ? INTEL_CHART_URLS[0] : chartSrc ?? localChart)}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-primary hover:bg-primary-soft"
             >
-              {fitWidth ? '原图横向滚动' : '适应屏幕宽度'}
+              {isTauri() ? '查看线上原图' : '新窗口打开'} <ExternalLink size={14} aria-hidden />
             </button>
-            {!isNative() && (
-              <button
-                type="button"
-                onClick={() => openExternal(chartSrc)}
-                className="inline-flex items-center gap-1.5 px-3.5 h-9 rounded-full bg-white/14 backdrop-blur-md border border-white/15 text-white text-[12.5px] font-medium hover:bg-white/24 transition-colors cursor-pointer"
-              >
-                新窗口打开 <ExternalLink size={12} aria-hidden />
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label="关闭"
-              onClick={() => setZoomed(false)}
-              className="grid place-items-center w-9 h-9 rounded-full bg-white/14 backdrop-blur-md border border-white/15 text-white hover:bg-white/24 transition-colors cursor-pointer"
-            >
-              <X size={16} aria-hidden />
-            </button>
-          </div>
-          <div
-            className="max-w-[94vw] max-h-[82dvh] overflow-auto rounded-[18px] bg-white p-3 shadow-2xl ring-1 ring-white/20 cursor-default"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={chartSrc}
-              alt="Artificial Analysis 模型智能指数排名官方原图"
-              className={cn(
-                'rounded-[10px] select-none',
-                fitWidth ? 'w-full h-auto max-h-[76dvh] object-contain' : 'h-[min(500px,68dvh)] w-auto max-w-none',
-              )}
-              draggable={false}
-            />
-          </div>
+          )}
         </div>
-      )}
+        <div role="region" aria-label="榜单原图" tabIndex={0} className="overflow-auto overscroll-contain rounded-lg bg-[var(--ranking-paper)]">
+          <img
+            src={chartSrc}
+            alt="Artificial Analysis 模型智能指数排名官方原图"
+            className={fitWidth ? 'w-full h-auto' : 'h-[min(500px,55dvh)] w-auto max-w-none'}
+            draggable={false}
+          />
+        </div>
+      </Dialog>
     </section>
   )
 }

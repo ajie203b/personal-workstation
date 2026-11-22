@@ -518,7 +518,7 @@ function PagePlacer({
       })}
 
       {!sig && (
-        <p className="absolute inset-x-0 bottom-0 p-2 text-center text-[11px] text-on-surface-2 bg-surface/85 backdrop-blur-xs">
+        <p className="absolute inset-x-0 bottom-0 p-2 text-center text-[11px] text-on-surface-2 bg-surface">
           先在上面签名并选中，再点页面放置
         </p>
       )}

@@ -80,7 +80,7 @@ export function FocusMiniBar({ besideAddButton }: { besideAddButton: boolean }) 
     <button
       type="button"
       onClick={() => navigate('/today')}
-      className="mobile-actions-offset mini-bar-in press glass md:hidden fixed left-[calc(.75rem+env(safe-area-inset-left))] z-30 h-12 rounded-full border border-outline shadow-[var(--glass-shadow)] flex items-center gap-2 px-3.5 cursor-pointer"
+      className="mobile-actions-offset mini-bar-in press bg-surface md:hidden fixed left-[calc(.75rem+env(safe-area-inset-left))] z-30 h-12 rounded-full border border-outline shadow-[var(--elev-card)] flex items-center gap-2 px-3.5 cursor-pointer"
       style={{ right: `calc(${besideAddButton ? '4.25rem' : '.75rem'} + env(safe-area-inset-right, 0px))` }}
       aria-label={`番茄钟剩余 ${mm} 分 ${ss} 秒，点开今日页`}
     >

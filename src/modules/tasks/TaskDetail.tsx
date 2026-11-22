@@ -518,7 +518,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
           {/* 固定操作栏：详情只负责编辑，确认后回到打开前的列表；完成走列表勾选，删除走左滑/日志 */}
           <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
             <div className="flex items-center gap-1.5">
-              <Button variant="primary" magnetic className="flex-1 justify-center" onClick={() => void confirmEdit()}>
+              <Button variant="primary" className="flex-1 justify-center" onClick={() => void confirmEdit()}>
                 确认修改
               </Button>
               {!done && (

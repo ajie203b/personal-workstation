@@ -653,7 +653,6 @@ export function NjustReportPage() {
               </Button>
               <Button
                 variant="primary"
-                magnetic
                 className="flex-1 h-11 justify-center text-[14px]"
                 state={state}
                 disabled={!source || parsing || previewing}

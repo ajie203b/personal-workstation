@@ -129,10 +129,10 @@ function BoardColumn({ tier, tasks }: { tier: Tier; tasks: Task[] }) {
       ref={setNodeRef}
       className={cn(
         // 只过渡 transform / 边框 / 背景，避免 transition-all 连带阴影逐帧重算
-        'flex flex-col rounded-[22px] border p-2.5 min-h-[240px] backdrop-blur-sm transition-[transform,border-color,background-color] duration-150 ease-standard',
+        'flex flex-col rounded-[22px] border p-2.5 min-h-[240px] transition-[transform,border-color,background-color] duration-150 ease-standard',
         isOver
           ? 'border-primary/60 bg-primary-soft/45 scale-[1.005]'
-          : 'border-outline/90 bg-surface/65 shadow-[var(--elev-card)]',
+          : 'border-outline/90 bg-surface shadow-[var(--elev-card)]',
       )}
     >
       <div className="flex items-center gap-2 px-1.5 pt-1 pb-3">

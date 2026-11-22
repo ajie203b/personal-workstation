@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
-import { ChevronRight, Clock3, History, Keyboard, Plus, Search, Sparkles, X } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router'
+import { Check, ChevronRight, Clock3, History, Keyboard, Plus, Search, X } from 'lucide-react'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, todayStr } from '@/lib/date'
@@ -80,8 +80,20 @@ export function TodayPage() {
     if (rolling || !todayTasks.length) return
     setRolling(true)
     try {
-      await rolloverTasks(todayTasks)
-      toast(`已把 ${todayTasks.length} 件挪到明天`)
+      const { count, undo } = await rolloverTasks(todayTasks)
+      if (count > 0) {
+        toast(`已把 ${count} 件挪到明天`, {
+          label: '撤销',
+          run: async () => {
+            try {
+              const restored = await undo()
+              toast(restored > 0 ? `已恢复 ${restored} 件任务` : '任务已变更，无需恢复')
+            } catch {
+              toast('撤销失败，请检查任务清单')
+            }
+          },
+        })
+      }
     } catch {
       toast('挪动失败，请重试')
     } finally {
@@ -99,14 +111,14 @@ export function TodayPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-3.5 md:px-8 pt-3 md:pt-6 pb-24 md:pb-14 flex flex-col gap-3 md:gap-5">
-      <Milestone total={todayTasks.length} done={todayDone.length} />
+      <Milestone total={todayTotal} done={todayDone.length} />
       <header>
         <div className="flex items-center md:items-end justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-0.5 md:mb-1">
               <span className="text-[12px] md:text-[12.5px] font-medium text-on-surface-2">{greeting}</span>
-              {/* 手机端右侧已展示进度环，进度胶囊只在桌面展示，杜绝同一屏重复出现两个 25% */}
-              {todayTotal > 0 ? (
+              {/* 手机端由右侧进度环显示完成度。 */}
+              {todayTotal > 0 && (
                 <span className={cn(
                   'hidden md:inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums',
                   todayTasks.length === 0
@@ -115,15 +127,11 @@ export function TodayPage() {
                 )}>
                   {todayTasks.length === 0 ? (
                     <>
-                      <Sparkles size={11} aria-hidden /> 今日待办已清空
+                      <Check size={11} aria-hidden /> 今日待办已清空
                     </>
                   ) : (
                     <>今日完成 {todayDone.length}/{todayTotal} · {todayPct}%</>
                   )}
-                </span>
-              ) : (
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-medium bg-surface-3/80 text-on-surface-2">
-                  节奏清晰
                 </span>
               )}
             </div>
@@ -131,14 +139,14 @@ export function TodayPage() {
               {fmtWeekdayLong(date)}
             </h1>
           </div>
-          {/* 手机：一枚轻盈毛玻璃进度环（点击跳到番茄钟），零文字重复 */}
+          {/* 点击进度环可跳到番茄钟。 */}
           <ProgressRing done={todayDone.length} total={todayTotal} onClick={jumpToFocus} className="md:hidden shrink-0" />
           <div className="hidden md:flex items-center gap-2.5 shrink-0">
             <button
               type="button"
               onClick={() => openPalette(true)}
               aria-label="打开命令面板快速跳转"
-              className="press h-10 px-3.5 rounded-full bg-surface/85 backdrop-blur-md border border-outline shadow-[var(--elev-card)] hover:border-primary/40 hover:text-on-surface text-on-surface-2 inline-flex items-center gap-2.5 text-[13px] transition-colors cursor-pointer"
+              className="press h-10 px-3.5 rounded-full bg-surface border border-outline shadow-[var(--elev-card)] hover:border-primary/40 hover:text-on-surface text-on-surface-2 inline-flex items-center gap-2.5 text-[13px] transition-colors cursor-pointer"
             >
               <Search size={14} className="text-on-surface-2/80" aria-hidden />
               <span>快速搜索与跳转</span>
@@ -172,7 +180,7 @@ export function TodayPage() {
                 type="button"
                 disabled={rolling}
                 onClick={() => void roll()}
-                className="ml-auto text-[11.5px] text-on-surface-2 hover:text-on-surface disabled:opacity-50 cursor-pointer"
+                className="ml-auto min-h-11 rounded-lg px-3 text-[12px] text-on-surface-2 hover:text-on-surface disabled:opacity-50 cursor-pointer"
               >
                 {rolling ? '挪动中…' : '挪到明天'}
               </button>
@@ -188,7 +196,7 @@ export function TodayPage() {
           />
           {/* 空态下面直接给下一步：没有任务、也没导入过文档的新用户最需要这个 */}
           {todayTasks.length === 0 && <GettingStarted />}
-          <SmartSuggestions all={all} />
+          <SuggestedTasks all={all} />
 
           {anytimeTasks.length > 0 && (
             <>
@@ -218,8 +226,7 @@ export function TodayPage() {
           )}
         </section>
 
-        {/* 侧栏卡片组：手机顺序按「此刻最想用的」排 —— 番茄钟 → 最近阅读，
-            进度与键盘卡只在桌面出现（手机上进度环已经在标题旁） */}
+        {/* 窄屏仅显示番茄钟，完成度显示在页头。 */}
         <aside className="md:col-span-2 flex flex-col gap-3 md:gap-4 min-w-0">
           <div ref={focusRef} id="focus-timer" className="order-1 md:order-none min-w-0 scroll-mt-4">
             <FocusTimer initialTaskId={focusTaskParam} />
@@ -263,11 +270,7 @@ export function TodayPage() {
   )
 }
 
-/**
- * 今日完成度小环：手机上一眼看到进度（不再写 3/8 的数字，环本身就是答案）。
- * 点击它平滑滑到番茄钟——任务多时不用一路划下去找。
- * 环的进度用 stroke-dashoffset 过渡，减少动效时由全局兜底压平。
- */
+/** 进度环同时是跳到番茄钟的入口。 */
 function ProgressRing({ done, total, onClick, className }: {
   done: number; total: number; onClick: () => void; className?: string
 }) {
@@ -287,7 +290,7 @@ function ProgressRing({ done, total, onClick, className }: {
       className={cn(
         className,
         'press relative grid place-items-center w-12 h-12 rounded-full cursor-pointer',
-        'bg-surface/85 backdrop-blur-md ring-1 ring-outline/80 shadow-[var(--elev-card)]',
+        'bg-surface ring-1 ring-outline/80 shadow-[var(--elev-card)]',
       )}
     >
       <svg viewBox="0 0 40 40" className="w-10 h-10 -rotate-90" aria-hidden>
@@ -301,17 +304,14 @@ function ProgressRing({ done, total, onClick, className }: {
           style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
         />
       </svg>
-      <span aria-hidden className="absolute text-[9.5px] font-bold tabular-nums tracking-tight text-on-surface">
+      <span aria-hidden className="absolute text-[11px] font-bold tabular-nums tracking-tight text-on-surface">
         {pctNum}%
       </span>
     </button>
   )
 }
 
-/**
- * 键盘快捷键提示卡：用过一次（点开过快捷键面板）就收起来，不常驻占位。
- * 「收起」写进 localStorage，下次进来自动隐藏；想找回来在设置里再打开。
- */
+/** 打开过快捷键面板或手动收起后，在本机隐藏提示卡。 */
 function KeyboardHint({ className }: { className?: string }) {
   const openShortcuts = useUi((s) => s.setShortcutsOpen)
   const [hidden, setHidden] = useState(() => localStorage.getItem('ws-kbd-hint-dismissed') === '1')
@@ -326,13 +326,13 @@ function KeyboardHint({ className }: { className?: string }) {
         <button
           type="button"
           onClick={() => { openShortcuts(true); dismiss() }}
-          className="flex items-center gap-3 text-left cursor-pointer flex-1 min-w-0"
+          className="flex min-h-11 items-center gap-3 text-left cursor-pointer flex-1 min-w-0"
         >
           <span className="grid place-items-center w-9 h-9 rounded-[12px] bg-primary-soft/80 text-primary shrink-0">
             <Keyboard size={17} />
           </span>
           <span className="min-w-0">
-            <span className="block text-[13px] font-medium">全键盘工作流</span>
+            <span className="block text-[13px] font-medium">键盘快捷键</span>
             <span className="block text-[12px] text-on-surface-2 mt-0.5">按 ? 查看快捷键，N 快速添加</span>
           </span>
         </button>
@@ -341,7 +341,7 @@ function KeyboardHint({ className }: { className?: string }) {
           onClick={dismiss}
           aria-label="收起快捷键提示"
           title="收起来"
-          className="shrink-0 w-7 h-7 grid place-items-center rounded-lg text-on-surface-2/70 hover:bg-surface-3 hover:text-on-surface cursor-pointer"
+          className="shrink-0 size-11 grid place-items-center rounded-lg text-on-surface-2/70 hover:bg-surface-3 hover:text-on-surface cursor-pointer"
         >
           <X size={14} />
         </button>
@@ -350,8 +350,8 @@ function KeyboardHint({ className }: { className?: string }) {
   )
 }
 
-/** My Day 智能建议队列：逾期 → 今日到期 → 3 日内 → 高优先加权 */
-function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
+/** 按到期日和优先级选取最多三项任务。 */
+function SuggestedTasks({ all }: { all: import('@/db/db').Task[] }) {
   const navigate = useNavigate()
   const suggestions = useMemo(() => {
     const today = todayStr()
@@ -378,21 +378,21 @@ function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
     <section className="card p-3 md:p-4 mt-2.5 md:mt-3">
       <div className="flex items-center gap-1.5 mb-1.5 md:mb-2.5">
         <Clock3 size={13.5} className="text-on-surface-2" />
-        <span className="text-[12px] font-medium text-on-surface-2 tracking-wide">今日建议</span>
+        <span className="text-[12px] font-medium text-on-surface-2 tracking-wide">可能要做</span>
       </div>
       <div className="flex flex-col gap-1.5">
         {suggestions.map(({ task }) => (
           <button
             key={task.id}
             onClick={() => navigate(`/tasks?tier=${task.tier}&focus=${task.id}`)}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-3 transition-colors text-left cursor-pointer w-full"
+            className="flex min-h-11 items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-3 transition-colors text-left cursor-pointer w-full"
           >
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
               style={{ background: task.priority === 0 ? 'var(--p0)' : task.priority === 1 ? 'var(--p1)' : 'var(--p2)' }}
             />
             <span className="text-[13px] truncate flex-1">{task.title}</span>
-            {task.due && task.due < todayStr() && <span className="text-[10.5px] text-danger shrink-0">逾期</span>}
+            {task.due && task.due < todayStr() && <span className="text-[11px] text-danger shrink-0">逾期</span>}
           </button>
         ))}
       </div>
@@ -400,45 +400,37 @@ function SmartSuggestions({ all }: { all: import('@/db/db').Task[] }) {
   )
 }
 
-/** 最近阅读（M2）：点击直达上次阅读位置 */
 function RecentReads() {
-  const navigate = useNavigate()
   const recent = useRecentDocs(3)
   return (
-    <button
-      type="button"
-      onClick={() => navigate('/docs')}
-      className="card card-hover w-full p-4 text-left cursor-pointer"
-    >
-      <span className="flex items-center gap-2.5 mb-2.5">
-        <span className="grid place-items-center w-9 h-9 rounded-[12px] bg-primary-soft/80 text-primary shrink-0">
-          <History size={17} />
+    <section aria-label="最近阅读" className="card w-full p-4">
+      <div className="flex items-center gap-2.5">
+        <span className="grid size-9 place-items-center rounded-[12px] bg-primary-soft text-primary">
+          <History size={17} aria-hidden />
         </span>
-        <span>
-          <span className="block text-[13px] font-medium">最近阅读</span>
-          <span className="block text-[12px] text-on-surface-2 mt-0.5">继续上次的进度</span>
-        </span>
-      </span>
+        <h2 className="text-[13px] font-medium">最近阅读</h2>
+        <Link to="/docs" className="ml-auto inline-flex min-h-11 items-center rounded-lg px-2 text-[12px] text-primary hover:bg-primary-soft">
+          文档库
+        </Link>
+      </div>
       {recent.length > 0 ? (
-        <span className="flex flex-col gap-1.5">
-          {recent.map((d) => (
-            <span
-              key={d.id}
-              role="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                navigate(docPath({ docId: d.id }))
-              }}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-[10px] hover:bg-surface-3 transition-colors"
-            >
-              <span className="text-[13px] truncate flex-1">{d.title}</span>
-            </span>
+        <ul>
+          {recent.map((doc) => (
+            <li key={doc.id}>
+              <Link
+                to={docPath({ docId: doc.id })}
+                className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-[13px] hover:bg-surface-3"
+              >
+                <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+                <ChevronRight size={14} aria-hidden className="text-on-surface-2" />
+              </Link>
+            </li>
           ))}
-        </span>
+        </ul>
       ) : (
-        <span className="block text-[12px] text-on-surface-2">到「文档工作站」导入或撰写文档后，这里会显示最近打开的内容</span>
+        <p className="mt-2 text-[12px] text-on-surface-2">在文档库导入或撰写文档后，这里会显示最近打开的内容。</p>
       )}
-    </button>
+    </section>
   )
 }
 
@@ -456,27 +448,24 @@ function Kpi({ value, label, accent }: { value: number; label: string; accent?: 
   )
 }
 
-/**
- * 里程碑撒花（P2）：仅当「今日待办全部完成」这一真实成就出现「未满→满」跃迁时触发一次，
- * 日常单任务完成不撒。粒子为纯装饰，减弱动效下不渲染。
- */
+/** 从未完成变为全部完成时播放一次。 */
 function Milestone({ total, done }: { total: number; done: number }) {
   const [bursting, setBursting] = useState(false)
-  const prevAllDone = useRef(false)
+  const prevAllDone = useRef<boolean | null>(null)
   const timer = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     const allDone = total > 0 && done === total
-    if (allDone && !prevAllDone.current && !prefersReducedMotion()) {
+    if (allDone && prevAllDone.current === false && !prefersReducedMotion()) {
       setBursting(true)
       timer.current = window.setTimeout(() => setBursting(false), 1000)
     }
-    prevAllDone.current = allDone
+    prevAllDone.current = total > 0 ? allDone : null
     return () => window.clearTimeout(timer.current)
   }, [total, done])
 
   if (!bursting) return null
-  const COLORS = ['var(--ok)', 'var(--primary)', 'var(--p1)', '#E9C46A']
+  const COLORS = ['var(--ok)', 'var(--primary)', 'var(--p1)', 'var(--p2)']
   return (
     <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center" aria-hidden>
       <div className="relative w-0 h-0">

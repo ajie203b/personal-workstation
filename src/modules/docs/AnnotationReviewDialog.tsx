@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ExternalLink, RotateCcw, Sparkles } from 'lucide-react'
-import type { Annotation, Doc } from '@/db/db'
+import { DOC_KIND_LABEL, type Annotation, type Doc } from '@/db/db'
 import { updateAnnotation } from '@/db/docs'
 import { annotationAnchor } from '@/lib/docLocator'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
 import { cn } from '@/lib/cn'
+import { hrefLabelOf } from './reader/locator'
 import { isAnnotationDue, scheduleReview, type ReviewRating } from './reviewSm2'
 
 const RATINGS: { rating: ReviewRating; label: string; hint: string; tone: string }[] = [
@@ -51,6 +52,12 @@ export function AnnotationReviewDialog({
 
   const cur = queue[idx]
   const curDoc = cur ? docByHash.get(cur.docHash) : undefined
+  const position = curDoc?.kind === 'pdf' ? cur?.page : cur?.blockIdx
+  const isScreenshot = !!cur?.img
+  // PDF 选区偶尔会把排版间距复制成多行空白。只整理展示文本，保留公式换行。
+  const excerpt = curDoc?.kind === 'pdf'
+    ? cur?.text.replace(/\r\n?/g, '\n').replace(/\n(?:[^\S\n]*\n){2,}/g, '\n\n').trim()
+    : cur?.text
 
   const rate = async (rating: ReviewRating) => {
     if (!cur) return
@@ -67,7 +74,7 @@ export function AnnotationReviewDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="批注间隔重复复习"
-      description="基于 SM-2 回顾高亮与笔记，支持一键回到原文位置。"
+      widthClass="w-[min(640px,94vw)]"
     >
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between text-[12px] text-on-surface-2">
@@ -101,34 +108,37 @@ export function AnnotationReviewDialog({
             )}
           </div>
         ) : (
-          <div className="rounded-[12px] border border-outline bg-surface-2 p-3.5 flex flex-col gap-2.5">
-            <div className="flex items-center justify-between gap-2 text-[11.5px] text-on-surface-2">
-              <span className="truncate font-medium text-on-surface">{curDoc?.title}</span>
-              {cur.page && <span className="shrink-0">第 {cur.page} 页</span>}
+          <div className="rounded-[12px] border border-outline overflow-hidden">
+            <div className="border-b border-outline/70 bg-surface-2 px-4 py-3">
+              <p className="text-xs text-on-surface-2">
+                {curDoc && DOC_KIND_LABEL[curDoc.kind]}
+                {curDoc && position != null && <> · {hrefLabelOf(curDoc, position)}</>}
+              </p>
+              <p title={curDoc?.title} className="mt-1 line-clamp-2 [overflow-wrap:anywhere] text-sm font-semibold">{curDoc?.title}</p>
             </div>
 
-            {cur.kind === 'shot' && cur.img && (
-              <img src={cur.img} alt="批注截图" className="max-h-48 w-auto mx-auto rounded-[8px] border border-outline/70 object-contain" />
-            )}
+            <div key={cur.id} role="region" aria-label="批注内容" tabIndex={0} className="max-h-[48dvh] overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4">
+              {isScreenshot && (
+                <img src={cur.img} alt="批注截图" className="mx-auto max-w-full rounded-lg border border-outline/70" />
+              )}
+              {excerpt && !(isScreenshot && excerpt === '区域截图') && (
+                <blockquote className="border-l-2 border-primary/50 pl-3 text-[16px] leading-[1.8] whitespace-pre-wrap [overflow-wrap:anywhere]">{excerpt}</blockquote>
+              )}
+              {cur.comment && (
+                revealed ? (
+                  <div className="rounded-lg bg-surface-2 px-3 py-2.5">
+                    <p className="mb-1 text-xs font-medium text-on-surface-2">我的评论</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{cur.comment}</p>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => setRevealed(true)}>
+                    显示我的评论笔记
+                  </Button>
+                )
+              )}
+            </div>
 
-            <p className="text-[13.5px] leading-relaxed text-on-surface whitespace-pre-wrap max-h-48 overflow-y-auto">
-              {cur.text}
-            </p>
-
-            {cur.comment && (
-              revealed ? (
-                <div className="p-2.5 rounded-[8px] bg-surface border border-outline/70 text-[12.5px] text-on-surface-2 leading-relaxed">
-                  <span className="text-[11px] font-medium text-primary block mb-0.5">我的评论</span>
-                  {cur.comment}
-                </div>
-              ) : (
-                <Button size="sm" variant="outline" onClick={() => setRevealed(true)}>
-                  显示我的评论笔记
-                </Button>
-              )
-            )}
-
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-outline/60">
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 border-t border-outline/70">
               {curDoc && onJump && (
                 <button
                   type="button"
@@ -141,7 +151,7 @@ export function AnnotationReviewDialog({
                   <ExternalLink size={12} /> 定位原文
                 </button>
               )}
-              <div className="flex items-center gap-1.5 ml-auto">
+              <div className="grid grid-cols-4 gap-1.5 w-full sm:ml-auto sm:w-auto">
                 {RATINGS.map((r) => (
                   <button
                     key={r.rating}

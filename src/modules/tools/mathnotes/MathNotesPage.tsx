@@ -1035,7 +1035,7 @@ export function MathNotesPage() {
             type="button"
             onClick={unlockFinger}
             aria-label="允许手指书写"
-            className="md:hidden absolute top-2.5 left-1/2 -translate-x-1/2 z-20 inline-flex items-center h-8 px-3 rounded-full border border-primary/40 bg-surface/95 backdrop-blur text-primary text-xs font-medium shadow-sm whitespace-nowrap cursor-pointer"
+            className="md:hidden absolute top-2.5 left-1/2 -translate-x-1/2 z-20 inline-flex items-center h-8 px-3 rounded-full border border-primary/40 bg-surface text-primary text-xs font-medium shadow-sm whitespace-nowrap cursor-pointer"
           >
             允许手指书写
           </button>
@@ -1049,7 +1049,7 @@ export function MathNotesPage() {
             {varList.map(([name, val]) => (
               <span
                 key={name}
-                className="inline-flex items-center rounded-full border border-ok/35 bg-surface/90 backdrop-blur px-2 py-0.5 text-[11px] font-medium text-ok shadow-xs tabular-nums"
+                className="inline-flex items-center rounded-full border border-ok/35 bg-surface px-2 py-0.5 text-[11px] font-medium text-ok shadow-xs tabular-nums"
               >
                 {name} = {Number(val.toPrecision(6))}
               </span>

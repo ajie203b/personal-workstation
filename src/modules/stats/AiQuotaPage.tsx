@@ -54,6 +54,7 @@ export function AiQuotaPage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<QuotaEntry | null>(null)
+  const [noteEntry, setNoteEntry] = useState<QuotaEntry | null>(null)
   const change = <K extends keyof QuotaEntry>(key: K, value: QuotaEntry[K]) => setDraft(prev => prev ? { ...prev, [key]: value } : prev)
 
   async function save(event: FormEvent) {
@@ -136,9 +137,13 @@ export function AiQuotaPage() {
         const entry = orderedEntries.find(item => item.id === id)
         return entry ? <div data-quota-overlay aria-hidden="true" className="h-full overflow-hidden rounded-[20px] shadow-xl ring-1 ring-primary/15"><QuotaCard entry={entry} onEdit={() => {}} onDelete={() => {}} overlay /></div> : null
       }}>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full"><QuotaCard entry={entry} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} /></DragSortItem>)}</div>
+      <div className="grid auto-rows-fr grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full min-w-0"><QuotaCard entry={entry} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} onReadNote={() => setNoteEntry(entry)} /></DragSortItem>)}</div>
     </DragSort>
     <p className="md:hidden text-[11px] text-on-surface-2/80 text-center pt-1">数据保存在本机并随备份同步 · 长按卡片可排序</p>
+    {noteEntry && <Dialog open onOpenChange={() => setNoteEntry(null)} title="备注">
+      <p className="mb-2 text-sm font-medium [overflow-wrap:anywhere]">{noteEntry.name}</p>
+      <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-relaxed">{noteEntry.note}</p>
+    </Dialog>}
     {pendingDelete && <Dialog open onOpenChange={() => setPendingDelete(null)} title="删除额度记录？" description={pendingDelete.name}>
       <div className="flex justify-end gap-2">
         <Button onClick={() => setPendingDelete(null)}>取消</Button>
@@ -150,7 +155,7 @@ export function AiQuotaPage() {
 }
 
 
-function QuotaCard({ entry, onEdit, onDelete, overlay = false }: { entry: QuotaEntry; onEdit: () => void; onDelete: () => void; overlay?: boolean }) {
+function QuotaCard({ entry, onEdit, onDelete, onReadNote, overlay = false }: { entry: QuotaEntry; onEdit: () => void; onDelete: () => void; onReadNote?: () => void; overlay?: boolean }) {
   const mode = quotaDisplayMode(entry)
   const summary = mode === 'quota' ? quotaSummary(entry) : null
   const expiry = quotaExpiry(entry.expiresAt, todayStr())
@@ -160,7 +165,7 @@ function QuotaCard({ entry, onEdit, onDelete, overlay = false }: { entry: QuotaE
     ? (summary.exceeded || summary.percent >= 95 ? 'bg-danger' : summary.percent >= 75 ? 'bg-p1' : 'bg-primary')
     : 'bg-primary'
 
-  return <article className="card card-hover p-4 flex h-full flex-col gap-4 min-w-0">
+  return <article className="card card-hover p-4 flex h-full flex-col gap-3 min-w-0">
     <div className="flex items-start gap-3">
       <BrandIcon name={entry.name} provider={entry.provider} />
       <div className="min-w-0 flex-1"><h2 className="font-semibold leading-5 break-words">{entry.name}</h2><p className="mt-1 text-xs text-on-surface-2 break-words">{metadata}</p></div>
@@ -172,11 +177,17 @@ function QuotaCard({ entry, onEdit, onDelete, overlay = false }: { entry: QuotaE
       <div className="mt-2 h-2 rounded-full bg-surface-3 overflow-hidden" role="progressbar" aria-label={`${entry.name} 已用额度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(summary.percent)}><div className={`h-full rounded-full transition-[width] duration-300 ${barTone}`} style={{ width: `${summary.percent}%` }} /></div>
       {summary.exceeded && <p className="mt-1 text-xs font-medium text-danger">已超过记录的总额度</p>}
     </div> : <p className="text-sm text-on-surface-2">{entry.total != null ? `总额度 ${number(entry.total)} ${entry.unit}` : entry.used != null ? `已用 ${number(entry.used)} ${entry.unit}` : '尚未填写额度'}</p>)}
-    {(entry.expiresAt || (mode !== 'none' && entry.resetAt)) && <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-outline pt-3">
-      {entry.expiresAt && <div className="flex items-center gap-2 text-sm"><CalendarDays size={15} className={expiry?.tone === 'expired' || expiry?.tone === 'soon' ? 'text-danger' : 'text-primary'} /><span className="font-medium tabular-nums">{entry.expiresAt}</span>{expiry && <span className={expiry.tone === 'expired' || expiry.tone === 'soon' ? 'text-xs font-semibold text-danger' : 'text-xs text-on-surface-2'}>{expiry.text}</span>}</div>}
-      {mode !== 'none' && entry.resetAt && <span className="text-xs text-on-surface-2 tabular-nums">重置 {entry.resetAt}</span>}
-    </div>}
-    {entry.note && <p className="text-xs text-on-surface-2 whitespace-pre-wrap break-words">{entry.note}</p>}
+    <footer className="mt-auto grid grid-cols-1 gap-2">
+      {(entry.expiresAt || (mode !== 'none' && entry.resetAt)) && <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-outline pt-3">
+        {entry.expiresAt && <div className="flex items-center gap-2 text-sm"><CalendarDays size={15} className={expiry?.tone === 'expired' || expiry?.tone === 'soon' ? 'text-danger' : 'text-primary'} /><span className="font-medium tabular-nums">{entry.expiresAt}</span>{expiry && <span className={expiry.tone === 'expired' || expiry.tone === 'soon' ? 'text-xs font-semibold text-danger' : 'text-xs text-on-surface-2'}>{expiry.text}</span>}</div>}
+        {mode !== 'none' && entry.resetAt && <span className="text-xs text-on-surface-2 tabular-nums">重置 {entry.resetAt}</span>}
+      </div>}
+      <div className="h-5">
+        {entry.note?.trim() && <button type="button" onClick={onReadNote} tabIndex={overlay ? -1 : undefined}
+          aria-label={`查看 ${entry.name} 的备注`} title={entry.note}
+          className="block w-full truncate text-left text-xs leading-5 text-on-surface-2 hover:text-primary hover:underline cursor-pointer">{entry.note}</button>}
+      </div>
+    </footer>
   </article>
 }
 

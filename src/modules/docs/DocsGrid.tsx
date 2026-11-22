@@ -15,7 +15,8 @@ export function DocsGrid({ docs, showSnippets, renderCard }: {
   const { active } = useDndContext()
   const [focusedId, setFocusedId] = useState<string>()
   const [windowRows, setWindowRows] = useState({ columns: 1, start: 0, end: 16 })
-  const cardHeight = showSnippets ? 184 : windowRows.columns === 1 ? 114 : 134
+  // 两行标题、标签和进度同时出现时，单列卡片也要留出上下内边距。
+  const cardHeight = showSnippets ? 184 : 144
   const rowStep = cardHeight + GAP
 
   useLayoutEffect(() => {

@@ -105,7 +105,7 @@ export function FolderStripMobile({
       </FolderChip>
       {folders.map((f) => (
         <FolderChip key={f.id} dropId={f.id} active={activeFolder === f.id} onClick={() => onPick(f.id)}>
-          {f.name} {countLabel(subtreeCount(f.id, folders, counts))}
+          <span title={f.name} className="max-w-[min(12rem,50vw)] truncate">{f.name}</span> {countLabel(subtreeCount(f.id, folders, counts))}
         </FolderChip>
       ))}
     </div>
@@ -302,7 +302,7 @@ function TreeItem({
       ) : null}
       <button type="button" onClick={onClick} className="flex-1 min-w-0 flex items-center gap-2 text-left cursor-pointer h-full">
         <Icon size={14} className="shrink-0" />
-        <span className="truncate flex-1">{label}</span>
+        <span title={label} className="truncate flex-1">{label}</span>
         {count > 0 && <span className="text-[11px] tabular-nums text-on-surface-2">{count}</span>}
       </button>
       {onCreateChild && (

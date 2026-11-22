@@ -224,18 +224,34 @@ export async function postponeTask(task: Task, days = 1): Promise<void> {
 }
 
 /** 每日回顾：把今天没做完的整体挪到明天（截止日改明天、清单进「近期」） */
-export async function rolloverTasks(tasks: Task[], toDate: string = addDaysStr(1)): Promise<void> {
-  if (!tasks.length) return
-  const now = Date.now()
+export async function rolloverTasks(tasks: Task[], toDate = addDaysStr(1)) {
+  const moved: Task[] = []
   await db.transaction('rw', db.tasks, async () => {
-    for (const t of tasks) {
-      await db.tasks.update(t.id, { due: toDate, tier: 'upcoming', updatedAt: now })
+    for (const task of tasks) {
+      const current = await db.tasks.get(task.id)
+      if (!current || current.status === 'done' || current.due !== task.due || current.tier !== task.tier) continue
+      await db.tasks.update(task.id, { due: toDate, tier: 'upcoming', updatedAt: Date.now() })
+      moved.push(current)
     }
   })
-  for (const t of tasks) {
-    const updated = await db.tasks.get(t.id)
-    if (updated) void syncTaskNotification(updated)
+  for (const task of moved) void syncTaskNotification({ ...task, due: toDate, tier: 'upcoming' })
+
+  const undo = async () => {
+    const restored: Task[] = []
+    await db.transaction('rw', db.tasks, async () => {
+      for (const previous of moved) {
+        const current = await db.tasks.get(previous.id)
+        // 跳过已删除、已完成或后来又调整了日期和清单的任务。
+        if (!current || current.status === 'done' || current.due !== toDate || current.tier !== 'upcoming') continue
+        const patch = { due: previous.due, tier: previous.tier, updatedAt: Date.now() }
+        await db.tasks.update(previous.id, patch)
+        restored.push({ ...current, ...patch })
+      }
+    })
+    for (const task of restored) void syncTaskNotification(task)
+    return restored.length
   }
+  return { count: moved.length, undo }
 }
 
 export async function restoreTask(task: Task): Promise<void> {

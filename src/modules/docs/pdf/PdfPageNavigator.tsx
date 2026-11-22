@@ -12,7 +12,7 @@ export function PdfPageNavigator({ center, numPages, scrollToPdfPage }: Props) {
   if (!numPages) return null
 
   return (
-    <div className="pdf-floating-pill absolute bottom-3 left-3 z-10 flex items-center gap-0.5 min-h-11 px-1.5 rounded-full bg-surface/95 border border-outline shadow-sm text-[12px] text-on-surface-2 backdrop-blur">
+    <div className="pdf-floating-pill absolute bottom-3 left-3 z-10 flex items-center gap-0.5 min-h-11 px-1.5 rounded-full bg-surface border border-outline shadow-sm text-[12px] text-on-surface-2">
       <button
         type="button"
         aria-label="上一页"

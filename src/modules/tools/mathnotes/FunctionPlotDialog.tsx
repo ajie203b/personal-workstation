@@ -221,7 +221,7 @@ export function FunctionPlotDialog({ open, initial, onOpenChange, plot, onInsert
       {hasParamRange && <div className="flex items-center gap-2 text-sm text-on-surface-2"><span>参数 t / θ</span><input aria-label="参数起点" type="number" value={tStart} onChange={e => setTStart(e.target.value)} className="w-24 min-w-0 rounded-lg border border-outline bg-surface px-2 py-1" /><span>至</span><input aria-label="参数终点" type="number" value={tEnd} onChange={e => setTEnd(e.target.value)} className="w-24 min-w-0 rounded-lg border border-outline bg-surface px-2 py-1" /></div>}
       <div className="relative rounded-xl border border-outline bg-surface-2 overflow-hidden">
         {!is3d && activePoint && (
-          <div className="absolute left-2 top-2 z-10 pointer-events-none rounded-lg bg-surface/90 backdrop-blur border border-outline px-2 py-0.5 text-[11px] font-medium tabular-nums shadow-xs">
+          <div className="absolute left-2 top-2 z-10 pointer-events-none rounded-lg bg-surface border border-outline px-2 py-0.5 text-[11px] font-medium tabular-nums shadow-xs">
             {activePoint.label}：({formatCoord(activePoint.x)}, {formatCoord(activePoint.y)})
           </div>
         )}
