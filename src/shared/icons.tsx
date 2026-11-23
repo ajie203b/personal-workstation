@@ -109,7 +109,6 @@ function assetIcon(path: string, inset = 0): AppIcon {
           </clipPath>
         </defs>
         <g clipPath={`url(#${clipId})`}>
-          <rect x="0.5" y="0.5" width="23" height="23" rx="6.2" fill="var(--brand-tile)" />
           <image
             x={inset}
             y={inset}
@@ -119,7 +118,6 @@ function assetIcon(path: string, inset = 0): AppIcon {
             href={`${import.meta.env.BASE_URL}${path}.png`}
           />
         </g>
-        <rect x="0.75" y="0.75" width="22.5" height="22.5" rx="6" fill="none" stroke="var(--tool-rim)" strokeWidth="0.5" />
       </svg>
     )
   }

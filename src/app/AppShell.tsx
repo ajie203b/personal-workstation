@@ -99,7 +99,7 @@ export function AppShell() {
             showTopBar && 'has-mobile-toolbar',
             showBottomNav && 'has-mobile-tabs',
             selfScrolling
-              ? 'overflow-hidden md:my-3 md:mr-3 md:rounded-[24px] md:border md:border-outline md:shadow-[var(--elev-card)] md:bg-surface'
+              ? 'overflow-hidden md:my-3 md:mr-3 md:rounded-[16px] md:border md:border-outline md:shadow-[var(--elev-card)] md:bg-surface'
               : 'overflow-y-auto overscroll-contain',
           )}
         >

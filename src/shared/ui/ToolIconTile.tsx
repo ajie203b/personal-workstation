@@ -8,13 +8,13 @@ interface Props {
 }
 
 export function ToolIconTile({ icon: Icon, size = 'md', className }: Props) {
-  const px = size === 'lg' ? 50 : 44
+  const px = size === 'lg' ? 40 : 36
   return (
     <span
       aria-hidden
       className={cn(
         'tool-icon-tile grid shrink-0 place-items-center overflow-hidden',
-        size === 'lg' ? 'size-[50px] rounded-[14px]' : 'size-11 rounded-[12.5px]',
+        size === 'lg' ? 'size-10 rounded-[10px]' : 'size-9 rounded-[9px]',
         className,
       )}
     >

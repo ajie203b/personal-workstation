@@ -13,15 +13,13 @@
   --primary-action: #2563EB;
   --on-primary-action: #FFFFFF;
   --primary-glow: rgba(37, 99, 235, 0.28);
-  --canvas: #F3F5FA;
+  --canvas: #F6F7F9;
   --surface: #FFFFFF;
-  --surface-2: #F4F6FB;
-  --surface-3: #E9EEF7;
-  --outline: rgba(15, 23, 42, 0.085);
-  --outline-strong: rgba(15, 23, 42, 0.32);
-  --brand-tile: #FAFBFD;
+  --surface-2: #F3F5F8;
+  --surface-3: #E9EDF3;
+  --outline: rgba(15, 23, 42, 0.09);
+  --outline-strong: rgba(15, 23, 42, 0.28);
   --ranking-paper: #FFFFFF;
-  --tool-rim: var(--outline);
   --tool-badge-ok: #067452;
   --on-surface: #111827;
   --on-surface-2: #58657A;
@@ -37,13 +35,13 @@
   --danger: #DC2626;
   --on-danger: #FFFFFF;
 
-  --glass-bg: rgba(255, 255, 255, 0.74);
-  --glass-surface: rgba(255, 255, 255, 0.84);
-  --glass-rim: rgba(255, 255, 255, 0.88);
-  --glass-shadow: 0 10px 36px -14px rgba(15, 23, 42, 0.16), 0 2px 8px -2px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-surface: rgba(255, 255, 255, 0.92);
+  --glass-rim: rgba(15, 23, 42, 0.08);
+  --glass-shadow: 0 8px 28px -12px rgba(15, 23, 42, 0.14), 0 2px 6px -2px rgba(15, 23, 42, 0.05);
 
-  /* 弹层阴影：柔和大范围空间悬浮阴影 + 内高光 */
-  --shadow-pop: 0 28px 80px -16px rgba(15, 23, 42, 0.22), 0 8px 24px -8px rgba(15, 23, 42, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  /* 弹层阴影：柔和大范围空间悬浮阴影 */
+  --shadow-pop: 0 20px 60px -14px rgba(15, 23, 42, 0.18), 0 4px 16px -6px rgba(15, 23, 42, 0.08);
 
   /* 动效时长（系统「减弱动态效果」时全部替换为 80ms） */
   --dur-1: 130ms;
@@ -51,11 +49,11 @@
   --dur-3: 340ms;
   --dur-4: 660ms;
   --stagger: 32ms;
-  --radius-xs: 8px;
-  --radius-sm: 12px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 24px;
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --fs-2xs: 12px;
   --fs-xs: 13px;
   --fs-sm: 14px;
@@ -66,10 +64,10 @@
   --ease-spring: cubic-bezier(.22, 1.08, .36, 1);
   --ease-soft-spring: cubic-bezier(.22, 1.06, .36, 1);
 
-  --elev-card: 0 1px 2px rgba(15, 23, 42, 0.035), 0 10px 28px -16px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  --elev-card: 0 1px 3px rgba(15, 23, 42, 0.04);
   /* 玻璃模糊半径集中管理，便于低端设备与减弱透明度时收敛 */
-  --glass-blur: 24px;
-  --glass-sat: 1.85;
+  --glass-blur: 20px;
+  --glass-sat: 1.6;
 }
 
 .dark {
@@ -79,14 +77,13 @@
   --primary-soft: rgba(124, 167, 255, 0.16);
   --primary-action: #3B82F6;
   --on-primary-action: #FFFFFF;
-  --primary-glow: rgba(59, 130, 246, 0.38);
-  --canvas: #0B0E16;
-  --surface: #131927;
-  --surface-2: #1A2234;
-  --surface-3: #232D44;
+  --primary-glow: rgba(59, 130, 246, 0.32);
+  --canvas: #12151C;
+  --surface: #1A1F2B;
+  --surface-2: #222836;
+  --surface-3: #2B3345;
   --outline: rgba(226, 232, 240, 0.09);
-  --outline-strong: rgba(226, 232, 240, 0.38);
-  --tool-rim: var(--glass-rim);
+  --outline-strong: rgba(226, 232, 240, 0.32);
   --tool-badge-ok: var(--ok);
   --ranking-paper: #F8FAFC;
   --on-surface: #F1F5FB;
@@ -101,12 +98,12 @@
   --danger: #F87171;
   --on-danger: #2A0B0E;
 
-  --glass-bg: rgba(17, 23, 38, 0.72);
-  --glass-surface: rgba(19, 25, 39, 0.84);
-  --glass-rim: rgba(255, 255, 255, 0.11);
-  --glass-shadow: 0 18px 48px -14px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.11);
-  --shadow-pop: 0 28px 80px -12px rgba(0, 0, 0, 0.72), 0 8px 24px -6px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  --elev-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 12px 32px -14px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.075);
+  --glass-bg: rgba(24, 29, 40, 0.82);
+  --glass-surface: rgba(26, 31, 43, 0.92);
+  --glass-rim: rgba(255, 255, 255, 0.09);
+  --glass-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.52), 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-pop: 0 20px 64px -12px rgba(0, 0, 0, 0.6), 0 6px 20px -6px rgba(0, 0, 0, 0.38);
+  --elev-card: 0 1px 3px rgba(0, 0, 0, 0.24);
 }
 
 /* 真实弹簧：支持 linear() 的浏览器用弹簧积分曲线替换固定 cubic-bezier。
@@ -412,75 +409,69 @@ select:focus-visible {
   position: relative;
   background: var(--surface);
   border: 1px solid var(--outline);
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--elev-card);
 }
 .ranking-panel {
   position: relative;
   overflow: hidden;
-  border-radius: 24px;
+  border-radius: 16px;
   border: 1px solid var(--outline);
   background: var(--surface);
   box-shadow: var(--elev-card);
-  padding: 1.15rem 1.25rem 1.05rem;
+  padding: 0.7rem 0.8rem 0.75rem;
 }
 @media (min-width: 768px) {
   .ranking-panel {
-    padding: 1.4rem 1.55rem 1.25rem;
+    padding: 0.8rem 0.95rem 0.85rem;
   }
 }
 .ranking-intro {
   display: flex;
   flex-direction: column;
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.45rem;
 }
 .ranking-heading {
-  font-size: clamp(18px, 2.2vw, 24px);
-  font-weight: 700;
-  letter-spacing: -0.028em;
-  line-height: 1.25;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
   color: var(--on-surface);
 }
-.ranking-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.6rem;
-  margin-top: 0.25rem;
-  font-size: 12px;
-  color: var(--on-surface-2);
+@media (min-width: 768px) {
+  .ranking-heading {
+    font-size: 16px;
+  }
 }
 .ranking-actions {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: 0.25rem;
   flex-shrink: 0;
 }
 .ranking-action {
   display: grid;
   place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 9999px;
-  border: 1px solid var(--outline);
-  background: var(--surface);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  background: transparent;
   color: var(--on-surface-2);
-  transition: color var(--dur-1), border-color var(--dur-1);
+  transition: color var(--dur-1), background-color var(--dur-1);
 }
 .ranking-action:hover {
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 38%, var(--outline));
 }
 .ranking-paper {
   position: relative;
-  border-radius: 16px;
+  border-radius: 10px;
   background: var(--ranking-paper);
-  padding: 0.65rem;
+  padding: 0.3rem;
   border: 1px solid var(--outline);
   overflow: hidden;
 }
-.dark .ranking-paper { filter: brightness(.94); }
+.dark .ranking-paper { filter: brightness(.95); }
 
 :where(.lucide[stroke-width="2"]) { stroke-width: 1.85; }
 
@@ -496,17 +487,16 @@ select:focus-visible {
 [data-tool-icon="media"] { --tool-tint: #94557e; }
 .dark [data-tool-icon] { color: color-mix(in srgb, var(--tool-tint) 50%, white); }
 
-.tool-bento-card {
+.tool-list-card {
   position: relative;
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--outline);
-  border-radius: 20px;
-  box-shadow: var(--elev-card);
-  transition: border-color var(--dur-1) var(--ease-standard);
+  border-radius: 14px;
+  transition: border-color var(--dur-1) var(--ease-standard), background-color var(--dur-1) var(--ease-standard);
 }
 @media (hover: hover) {
-  .tool-bento-card:hover, .card-hover:hover {
+  .tool-list-card:hover, .card-hover:hover {
     border-color: var(--outline-strong);
   }
 }
@@ -515,38 +505,34 @@ select:focus-visible {
 }
 .tool-icon-tile {
   background: var(--surface-2);
-  border: 1px solid var(--tool-rim);
 }
 .tool-icon-tile [data-tool-icon] {
-  width: 68%;
-  height: 68%;
+  width: 64%;
+  height: 64%;
 }
-.tool-icon-tile:has(image) { background: var(--brand-tile); }
+.tool-icon-tile:has(image) { background: transparent; }
 .tool-arrow {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 9999px;
   font-size: 13px;
   color: var(--on-surface-2);
-  opacity: 0.42;
+  opacity: 0.4;
   flex-shrink: 0;
-}
-@media (max-width: 639px) {
-  .tool-arrow { display: none; }
 }
 
 .task-card { box-shadow: none; }
 .task-list-group {
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--elev-card);
 }
 .task-list-group .task-card { border: 0; border-radius: 0; box-shadow: none; }
 .task-list-group .task-card:hover { transform: none; background: color-mix(in srgb, var(--primary-soft) 36%, var(--surface)); }
-.task-list-group > li:first-child .task-card { border-radius: 20px 20px 0 0; }
-.task-list-group > li:last-child .task-card { border-end-start-radius: 20px; border-end-end-radius: 20px; }
-.task-list-group > li:only-child .task-card { border-radius: 20px; }
+.task-list-group > li:first-child .task-card { border-radius: 16px 16px 0 0; }
+.task-list-group > li:last-child .task-card { border-end-start-radius: 16px; border-end-end-radius: 16px; }
+.task-list-group > li:only-child .task-card { border-radius: 16px; }
 .task-list-group > li + li::before {
   content: '';
   position: absolute;
@@ -576,11 +562,10 @@ select:focus-visible {
 }
 
 .btn-primary-glow {
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 56%);
-  box-shadow: 0 8px 22px -8px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  box-shadow: 0 4px 14px -6px var(--primary-glow);
 }
 .group:hover .btn-primary-glow {
-  box-shadow: 0 12px 26px -8px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  box-shadow: 0 6px 18px -6px var(--primary-glow);
 }
 
 /* 导航栏和弹层的半透明背景 */
@@ -856,16 +841,15 @@ select:focus-visible {
 .workspace-sidebar {
   background: var(--surface);
   border: 1px solid var(--outline);
-  border-radius: 24px;
+  border-radius: 16px;
   box-shadow: var(--elev-card);
 }
 .sidebar-link {
-  transition: background-color var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-spring), box-shadow var(--dur-2) var(--ease-standard);
+  transition: background-color var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-spring);
 }
 .sidebar-link:focus-visible { outline-offset: -2px; }
 .sidebar-link[aria-current='page'] {
-  background: linear-gradient(135deg, var(--primary-soft), color-mix(in srgb, var(--primary-soft) 56%, transparent));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 14px -8px var(--primary-glow);
+  background: var(--primary-soft);
 }
 .sidebar-link[aria-current='page']::before {
   content: '';
@@ -877,10 +861,6 @@ select:focus-visible {
   border-radius: 9999px;
   background: var(--primary);
   transform: translateY(-50%);
-  box-shadow: 0 0 10px var(--primary-glow);
-}
-.dark .sidebar-link[aria-current='page'] {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 4px 16px -8px var(--primary-glow);
 }
 @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
   :root:not(.no-motion) .sidebar-label { animation: fade-in var(--dur-2) var(--ease-standard); }
@@ -893,24 +873,24 @@ select:focus-visible {
     --mobile-tab-clearance: calc(5.25rem + env(safe-area-inset-bottom, 0px));
   }
   .card {
-    border-radius: 17px;
+    border-radius: 14px;
   }
   .task-list-group {
-    border-radius: 17px;
+    border-radius: 14px;
   }
-  .task-list-group > li:first-child .task-card { border-radius: 17px 17px 0 0; }
-  .task-list-group > li:last-child .task-card { border-end-start-radius: 17px; border-end-end-radius: 17px; }
-  .task-list-group > li:only-child .task-card { border-radius: 17px; }
+  .task-list-group > li:first-child .task-card { border-radius: 14px 14px 0 0; }
+  .task-list-group > li:last-child .task-card { border-end-start-radius: 14px; border-end-end-radius: 14px; }
+  .task-list-group > li:only-child .task-card { border-radius: 14px; }
   .ranking-panel {
-    border-radius: 20px;
-    padding: 0.85rem 0.9rem 0.8rem;
+    border-radius: 14px;
+    padding: 0.6rem 0.65rem 0.65rem;
   }
   .ranking-intro {
-    margin-bottom: 0.6rem;
+    margin-bottom: 0.4rem;
   }
   .ranking-paper {
-    border-radius: 13px;
-    padding: 0.45rem;
+    border-radius: 9px;
+    padding: 0.25rem;
   }
   .mobile-toolbar {
     grid-template-columns: 2.25rem minmax(0, 1fr) 2.25rem;
@@ -983,10 +963,6 @@ select:focus-visible {
   inset: 1px 3px;
   border-radius: 9999px;
   background: var(--primary-soft);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-}
-.dark .tab-pill::before {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 .mobile-tab-link { transition: color var(--dur-1) var(--ease-standard); }
 .mobile-tab-link:focus-visible { outline-offset: -3px; }
@@ -1572,13 +1548,24 @@ select:focus-visible {
 
 /* Office / WPS P1: clean multi-page printing for readers and Markdown documents */
 @media print {
+  @page {
+    @bottom-left {
+      content: "";
+    }
+  }
+
   header,
   aside,
   nav,
   [role="toolbar"],
   [role="search"],
   .sel-popover,
-  .pdf-floating-pill {
+  .pdf-floating-pill,
+  #fab-add,
+  .mobile-dock-scrim,
+  .mobile-tab-bar,
+  .toast-card,
+  a[href="#main-scroll"] {
     display: none !important;
   }
 

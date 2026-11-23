@@ -30,12 +30,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Apple Liquid Glass × Google Material You 今日待办小组件：
- * - 自适应系统浅/深色（Porcelain Frost / Obsidian Sapphire）
- * - 顶栏：四色星阵微标 + 今日待办 + 计数胶囊 + 日期进度副标 + 蓝宝石「+」
- * - 列表：悬浮 Bento 小卡 + 优先级语义勾选圆环 + 打卡/截止时间胶囊
- * - 完成特效：勾选瞬间小组件内闪现翠绿对勾与删除线（340ms），同步触发 WidgetCompleteActivity
- *   从点击坐标原地绽放翡翠光环、四色星芒微粒与灵动确认胶囊，不打开主应用
+ * 极简今日待办桌面小组件：
+ * - 自适应系统浅/深色纯色留白容器，无渐变与多层嵌套卡片
+ * - 单行顶栏：标题 + 轻量计数 + 极简圆形「+」
+ * - 扁平任务行：细空心勾选圆 + 单行标题 + 右侧轻量纯文本进度/时间
+ * - 保留 340ms 完成微反馈与 WidgetCompleteActivity 原位动效
  */
 public class TaskWidgetProvider extends AppWidgetProvider {
 
@@ -238,38 +237,20 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_add,
             widgetActivityIntent(context, WidgetAddTaskActivity.class, null, base + 1));
 
-        // 顶栏计数胶囊与日期副标
+        // 极简顶栏轻量计数（无胶囊底色）
         if (activeCount > 0) {
             views.setViewVisibility(R.id.widget_count, View.VISIBLE);
             views.setTextViewText(R.id.widget_count, String.valueOf(activeCount));
-            views.setInt(R.id.widget_count, "setBackgroundResource", R.drawable.widget_count_pill);
-            views.setTextColor(R.id.widget_count, ContextCompat.getColor(context, R.color.widget_badge_text));
-        } else if (doneCount > 0) {
-            views.setViewVisibility(R.id.widget_count, View.VISIBLE);
-            views.setTextViewText(R.id.widget_count, "✓ " + doneCount);
-            views.setInt(R.id.widget_count, "setBackgroundResource", R.drawable.widget_count_done_pill);
-            views.setTextColor(R.id.widget_count, ContextCompat.getColor(context, R.color.widget_badge_done_text));
+            views.setTextColor(R.id.widget_count, ContextCompat.getColor(context, R.color.widget_text_secondary));
         } else {
-            views.setViewVisibility(R.id.widget_count, View.GONE);
-        }
-
-        if (dateLabel != null && !dateLabel.isEmpty()) {
-            String sub = doneCount > 0 ? dateLabel + " · 已完成 " + doneCount : dateLabel;
-            views.setViewVisibility(R.id.widget_date, View.VISIBLE);
-            views.setTextViewText(R.id.widget_date, sub);
-        } else if (doneCount > 0) {
-            views.setViewVisibility(R.id.widget_date, View.VISIBLE);
-            views.setTextViewText(R.id.widget_date, "已完成 " + doneCount + " 项");
-        } else {
-            views.setViewVisibility(R.id.widget_date, View.GONE);
+            views.setViewVisibility(R.id.widget_count, View.INVISIBLE);
+            views.setTextViewText(R.id.widget_count, "");
         }
 
         views.removeAllViews(R.id.widget_tasks);
         if (rows == 0) {
             views.setViewVisibility(R.id.widget_empty_wrap, View.VISIBLE);
             views.setTextViewText(R.id.widget_empty, doneCount > 0 ? context.getString(R.string.task_widget_all_done) : hint);
-            views.setTextViewText(R.id.widget_empty_sub,
-                doneCount > 0 ? "今天已完成 " + doneCount + " 项任务" : context.getString(R.string.task_widget_empty_hint));
             return views;
         }
         views.setViewVisibility(R.id.widget_empty_wrap, View.GONE);
@@ -277,7 +258,6 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         int colorPrimaryText = ContextCompat.getColor(context, R.color.widget_text_primary);
         int colorDoneText = ContextCompat.getColor(context, R.color.widget_text_done);
         int colorDanger = ContextCompat.getColor(context, R.color.widget_danger);
-        int colorBadge = ContextCompat.getColor(context, R.color.widget_badge_text);
         int colorChip = ContextCompat.getColor(context, R.color.widget_chip_text);
 
         for (int i = 0; i < rows; i++) {
@@ -323,23 +303,20 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                 row.setOnClickPendingIntent(R.id.widget_check, completeIntent(context, id, title, count + 1, total));
             }
 
-            // 右侧辅助胶囊：打卡进度优先，其次逾期标记，最后截止时间
+            // 右侧轻量纯文本：打卡进度 / 逾期 / 截止时间（无多余胶囊底色）
             if (total > 1) {
                 row.setViewVisibility(R.id.widget_progress, View.VISIBLE);
                 row.setTextViewText(R.id.widget_progress, count + "/" + total);
-                row.setInt(R.id.widget_progress, "setBackgroundResource", R.drawable.widget_count_pill);
-                row.setTextColor(R.id.widget_progress, colorBadge);
+                row.setTextColor(R.id.widget_progress, colorChip);
                 row.setOnClickPendingIntent(R.id.widget_progress, open);
             } else if (overdue && !completing) {
                 row.setViewVisibility(R.id.widget_progress, View.VISIBLE);
                 row.setTextViewText(R.id.widget_progress, "逾期");
-                row.setInt(R.id.widget_progress, "setBackgroundResource", R.drawable.widget_chip_overdue_bg);
                 row.setTextColor(R.id.widget_progress, colorDanger);
                 row.setOnClickPendingIntent(R.id.widget_progress, open);
             } else if (!time.isEmpty()) {
                 row.setViewVisibility(R.id.widget_progress, View.VISIBLE);
                 row.setTextViewText(R.id.widget_progress, time);
-                row.setInt(R.id.widget_progress, "setBackgroundResource", R.drawable.widget_chip_bg);
                 row.setTextColor(R.id.widget_progress, colorChip);
                 row.setOnClickPendingIntent(R.id.widget_progress, open);
             } else {

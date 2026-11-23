@@ -1,15 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Kairos Obsidian Sapphire 深色毛玻璃小组件容器 -->
+<!-- 极简深色小组件底卡 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="270"
-        android:startColor="#F0141B2D"
-        android:centerColor="#F2111726"
-        android:endColor="#F50B101C"
-        android:type="linear" />
-    <corners android:radius="26dp" />
+    <solid android:color="#F018181B" />
+    <corners android:radius="20dp" />
     <stroke
-        android:width="1dp"
-        android:color="#283552" />
+        android:width="0.75dp"
+        android:color="#1AFFFFFF" />
 </shape>

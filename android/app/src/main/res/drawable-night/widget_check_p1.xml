@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- P1 重要勾选圆环（深色琥珀金） -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="20dp"
-    android:height="20dp"
+    android:width="18dp"
+    android:height="18dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#22FBBF24"
-        android:pathData="M12,3a9,9 0 1,0 0,18a9,9 0 1,0 0,-18z"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M12,3.5a8.5,8.5 0 1,0 0,17a8.5,8.5 0 1,0 0,-17z"
         android:strokeColor="#FBBF24"
-        android:strokeWidth="2.1" />
+        android:strokeWidth="1.85" />
 </vector>

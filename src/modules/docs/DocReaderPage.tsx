@@ -10,6 +10,7 @@ import { READER_PANEL_LIMITS, useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { readDocumentText } from '@/lib/readDocumentText'
 import { shareMarkdown } from '@/lib/shareDoc'
+import { useDocumentPrintTitle } from '@/lib/printDocument'
 import { Skeleton } from '@/shared/ui/Skeleton'
 import { recognizeImageDataUrl } from '@/modules/tools/ocr/ocrClient'
 import { AnnotationReviewDialog } from './AnnotationReviewDialog'
@@ -59,6 +60,7 @@ export function DocReaderPage() {
   const toast = useUi((s) => s.toast)
 
   const doc = useDoc(docId)
+  useDocumentPrintTitle(doc?.title)
   const annotations = useAnnotations(doc?.hash)
   const backlinks = useDocBacklinks(docId)
 

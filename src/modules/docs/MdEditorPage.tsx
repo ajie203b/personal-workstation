@@ -17,6 +17,7 @@ import { db, type Doc } from '@/db/db'
 import { addTask } from '@/db/tasks'
 import { saveMarkdownDoc } from '@/db/docs'
 import { shareMarkdown } from '@/lib/shareDoc'
+import { useDocumentPrintTitle } from '@/lib/printDocument'
 import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
@@ -75,6 +76,7 @@ export function MdEditorPage() {
   const toast = useUi((s) => s.toast)
   const [existing, setExisting] = useState<Doc | null>(null)
   const [title, setTitle] = useState('')
+  useDocumentPrintTitle(title || existing?.title)
   const [ready, setReady] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)

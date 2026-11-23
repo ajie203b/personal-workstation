@@ -7,6 +7,7 @@ import { openExternal } from '@/lib/links'
 import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
 import { useThemeEffect } from '@/shared/theme'
+import { useDocumentPrintTitle } from '@/lib/printDocument'
 import { LocalReadingPane } from './LocalReadingPane'
 import { LocalRichEditor } from './LocalRichEditor'
 import { LocalFilePreview, LocalTextEditor } from './LocalFilePreview'
@@ -342,6 +343,8 @@ export function LocalMarkdownPage() {
     setTrail(prev => prev.slice(0, -1))
     setParams(previous.params, { replace: true })
   }
+
+  useDocumentPrintTitle(docPath ? fileName(docPath) : undefined)
 
   useEffect(() => {
     if (!isTauri()) return

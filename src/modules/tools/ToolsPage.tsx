@@ -114,39 +114,28 @@ export function ToolsPage() {
         tabIndex={overlay ? -1 : undefined}
         aria-label={t.title}
         className={cn(
-          'tool-bento-card flex h-full w-full select-none',
-          'flex-col items-start gap-2 p-3 rounded-[18px] min-h-[112px]',
-          'sm:flex-row sm:items-center sm:gap-3.5 sm:px-4 sm:py-3.5 sm:rounded-[20px] sm:min-h-[94px]',
+          'tool-list-card flex h-full w-full select-none',
+          'flex-row items-center gap-3 px-3.5 py-3 rounded-[14px] min-h-[68px]',
+          'sm:gap-3.5 sm:px-4 sm:py-3.5 sm:min-h-[82px]',
         )}
       >
-        <div className="flex w-full items-start justify-between gap-1.5 sm:w-auto sm:block shrink-0">
-          <ToolIconTile
-            icon={t.icon}
-            size="lg"
-            className="max-sm:size-[42px] max-sm:rounded-[12px]"
-          />
-          {badge.text && (
-            <span className={cn('sm:hidden rounded-full px-1.5 py-0.5 text-[11px] font-medium leading-none max-w-[84px] truncate', badge.tone)}>
-              {badge.text}
-            </span>
-          )}
-        </div>
-        <span className="min-w-0 flex-1 w-full">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[14px] sm:text-[15px] font-semibold tracking-[-0.01em] leading-snug text-on-surface max-sm:truncate max-sm:w-full">
+        <ToolIconTile icon={t.icon} size="md" />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="text-[14.5px] font-semibold tracking-[-0.01em] leading-snug text-on-surface">
               {t.title}
             </span>
             {badge.text && (
-              <span className={cn('hidden sm:inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-none', badge.tone)}>
+              <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-none', badge.tone)}>
                 {badge.text}
               </span>
             )}
           </span>
-          <span className="mt-0.5 sm:mt-1 block text-[12px] sm:text-[12.5px] leading-[1.38] sm:leading-[1.45] text-on-surface-2 line-clamp-2">
+          <span className="mt-0.5 block text-[12px] sm:text-[12.5px] leading-[1.4] text-on-surface-2 line-clamp-2">
             {t.sub}
           </span>
         </span>
-        <span aria-hidden className="tool-arrow hidden sm:grid">
+        <span aria-hidden className="tool-arrow">
           <ArrowUpRight size={15} strokeWidth={2} />
         </span>
       </Link>
@@ -203,13 +192,13 @@ export function ToolsPage() {
           renderOverlay={(id) => {
             const tool = tools.find((t) => t.to === id)
             return tool ? (
-              <div aria-hidden="true" className="h-full overflow-hidden rounded-[18px] sm:rounded-[20px] shadow-2xl ring-2 ring-primary/25">
+              <div aria-hidden="true" className="h-full overflow-hidden rounded-[14px] shadow-xl ring-1 ring-primary/25">
                 {toolCard(tool, true)}
               </div>
             ) : null
           }}
         >
-          <div key={category} className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 sm:gap-3 cascade">
+          <div key={category} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 sm:gap-2.5 cascade">
             {tools.map((t) => (
               <DragSortItem key={t.to} id={t.to} label={t.title} className="w-full min-w-0">
                 {toolCard(t)}

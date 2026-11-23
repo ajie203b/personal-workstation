@@ -33,7 +33,7 @@ export function DocCard({
   return (
     <article id={`doc-${d.id}`} className="card card-hover group relative flex h-full items-center overflow-hidden">
       <button type="button" onClick={onOpen} aria-label={`${d.kind === 'md' && !hit ? '继续写作' : '阅读'} ${d.title}`} className="flex flex-1 min-w-0 items-center gap-3.5 px-3.5 py-3 pr-1 self-stretch text-left cursor-pointer">
-        <span className="grid place-items-center w-11 h-12 rounded-[13px] bg-surface-2 ring-1 ring-inset ring-outline/80 shrink-0 transition-transform duration-200 group-hover:scale-105" aria-hidden>
+        <span className="grid place-items-center w-10 h-11 shrink-0 transition-transform duration-200 group-hover:scale-105" aria-hidden>
           <FileTypeIcon kind={d.kind} size={30} />
         </span>
         <span className="flex-1 min-w-0">

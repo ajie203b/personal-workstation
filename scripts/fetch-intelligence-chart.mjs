@@ -148,14 +148,53 @@ try {
       if (!hasPublicMeta) await fs.writeFile(PUBLIC_META, metaPayload, 'utf8')
       console.log('官方图表内容没有变化，跳过截图')
     } else {
-      // 官网图表底色是页面白卡，SVG 本身是透明的；补上白底，深色主题下文字才看得清
-      await chart.evaluate((el) => {
+      // 官网图表底色是页面白卡，SVG 本身默认 overflow:hidden 会裁掉最左侧斜排标签（如 Claude 的 C）；
+      // 放开 overflow 并按 SVG 及全部子文本的联合包围盒向外微扩，确保最左文字完整且不带上方的图例或卡片边框。
+      const clip = await chart.evaluate((el) => {
+        el.style.overflow = 'visible'
         el.style.background = '#ffffff'
+        const parent = el.parentElement
+        if (parent) {
+          parent.style.overflow = 'visible'
+          if (!parent.style.background) parent.style.background = '#ffffff'
+        }
+        const base = el.getBoundingClientRect()
+        let minX = base.left
+        let maxX = base.right
+        let maxY = base.bottom
+        for (const node of el.querySelectorAll('text, tspan, image, rect, path')) {
+          const r = node.getBoundingClientRect()
+          if (r.width === 0 && r.height === 0) continue
+          if (r.left < minX) minX = r.left
+          if (r.right > maxX) maxX = r.right
+          if (r.bottom > maxY) maxY = r.bottom
+        }
+        const x = Math.max(0, Math.floor(Math.min(base.left, minX - 8)))
+        const y = Math.max(0, Math.floor(base.top))
+        const right = Math.ceil(Math.max(base.right, maxX + 8))
+        const bottom = Math.ceil(Math.max(base.bottom, maxY + 8))
+        return {
+          x,
+          y,
+          width: right - x,
+          height: bottom - y,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        }
       })
-      const box = await chart.boundingBox()
-      if (!box || box.width < 1_000) throw new Error(`图表尺寸异常：${box?.width ?? 0}×${box?.height ?? 0}`)
+      if (!clip || clip.width < 1_000) throw new Error(`图表尺寸异常：${clip?.width ?? 0}×${clip?.height ?? 0}`)
 
-      await chart.screenshot({ path: TMP, animations: 'disabled' })
+      await page.screenshot({
+        path: TMP,
+        clip: {
+          x: clip.x + clip.scrollX,
+          y: clip.y + clip.scrollY,
+          width: clip.width,
+          height: clip.height,
+        },
+        fullPage: true,
+        animations: 'disabled',
+      })
       const stat = await fs.stat(TMP)
       if (stat.size < 30_000) throw new Error(`截图文件异常过小（${stat.size} 字节），可能只截到了空白`)
 
@@ -163,7 +202,7 @@ try {
       const metaPayload = `${JSON.stringify({ fingerprint: hash, generatedAt: new Date().toISOString() }, null, 2)}\n`
       await fs.writeFile(META, metaPayload, 'utf8')
       await fs.writeFile(PUBLIC_META, metaPayload, 'utf8')
-      console.log(`已更新官方图表 ${Math.round(box.width)}×${Math.round(box.height)} → ${OUT}（${Math.round(stat.size / 1024)} KB）`)
+      console.log(`已更新官方图表 ${Math.round(clip.width)}×${Math.round(clip.height)} → ${OUT}（${Math.round(stat.size / 1024)} KB）`)
     }
   } finally {
     await context.close().catch(() => {})

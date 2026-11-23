@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Apple Liquid Glass × Google Material You 今日待办小组件 -->
+<!-- 极简今日待办小组件 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -8,7 +8,7 @@
     android:orientation="vertical"
     android:padding="@dimen/widget_padding">
 
-    <!-- 顶栏：四色星阵微标 + 今日待办 + 计数胶囊 + 日期副标 + 发光蓝宝石「+」 -->
+    <!-- 极简单行顶栏：标题 + 轻量计数 + 简洁加号 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="@dimen/widget_header_height"
@@ -16,82 +16,46 @@
         android:orientation="horizontal"
         android:paddingBottom="4dp">
 
-        <LinearLayout
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:text="@string/task_widget_name"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/widget_count"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
             android:layout_weight="1"
-            android:orientation="vertical"
-            android:paddingEnd="8dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <ImageView
-                    android:layout_width="13dp"
-                    android:layout_height="13dp"
-                    android:layout_marginEnd="6dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_widget_brand_dots" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:fontFamily="sans-serif-medium"
-                    android:maxLines="1"
-                    android:text="@string/task_widget_name"
-                    android:textColor="@color/widget_text_primary"
-                    android:textSize="14.5sp" />
-
-                <TextView
-                    android:id="@+id/widget_count"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
-                    android:background="@drawable/widget_count_pill"
-                    android:fontFamily="sans-serif-medium"
-                    android:paddingStart="6.5dp"
-                    android:paddingTop="1dp"
-                    android:paddingEnd="6.5dp"
-                    android:paddingBottom="1dp"
-                    android:textColor="@color/widget_badge_text"
-                    android:textSize="10.5sp"
-                    android:visibility="gone" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/widget_date"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="1dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/widget_text_secondary"
-                android:textSize="10.5sp"
-                android:visibility="gone" />
-        </LinearLayout>
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="12sp"
+            android:visibility="invisible" />
 
         <ImageView
             android:id="@+id/widget_add"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
             android:background="@drawable/widget_add_fab"
             android:contentDescription="快速添加任务"
-            android:padding="8dp"
+            android:padding="6dp"
             android:src="@drawable/ic_widget_add" />
     </LinearLayout>
 
-    <!-- 任务 Bento 卡片行容器 -->
+    <!-- 极简扁平任务列表 -->
     <LinearLayout
         android:id="@+id/widget_tasks"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical" />
 
-    <!-- 空态 / 今日全部完成 -->
+    <!-- 极简空态 -->
     <LinearLayout
         android:id="@+id/widget_empty_wrap"
         android:layout_width="match_parent"
@@ -99,36 +63,15 @@
         android:layout_weight="1"
         android:gravity="center"
         android:orientation="vertical"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
         android:visibility="gone">
-
-        <ImageView
-            android:id="@+id/widget_empty_icon"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_widget_all_done" />
 
         <TextView
             android:id="@+id/widget_empty"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:fontFamily="sans-serif-medium"
             android:gravity="center"
             android:text="@string/task_widget_all_done"
-            android:textColor="@color/widget_text_primary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/widget_empty_sub"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:gravity="center"
-            android:text="@string/task_widget_empty_hint"
             android:textColor="@color/widget_text_secondary"
-            android:textSize="11sp" />
+            android:textSize="13sp" />
     </LinearLayout>
 </LinearLayout>

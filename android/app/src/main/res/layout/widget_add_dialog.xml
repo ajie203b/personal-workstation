@@ -1,71 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Apple × Google 悬浮快速添加卡片：自适应浅/深色 + 优先级快选 -->
+<!-- 极简悬浮快速添加卡片 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/widget_add_bg"
-    android:elevation="20dp"
+    android:elevation="12dp"
     android:orientation="vertical"
     android:padding="20dp">
 
-    <LinearLayout
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <ImageView
-            android:layout_width="16dp"
-            android:layout_height="16dp"
-            android:layout_marginEnd="8dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_widget_brand_dots" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:fontFamily="sans-serif-medium"
-            android:text="@string/task_widget_add_title"
-            android:textColor="@color/widget_dialog_text"
-            android:textSize="17sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/widget_count_pill"
-            android:fontFamily="sans-serif-medium"
-            android:paddingStart="8dp"
-            android:paddingTop="2.5dp"
-            android:paddingEnd="8dp"
-            android:paddingBottom="2.5dp"
-            android:text="@string/task_widget_add_hint"
-            android:textColor="@color/widget_badge_text"
-            android:textSize="10.5sp" />
-    </LinearLayout>
+        android:fontFamily="sans-serif-medium"
+        android:text="@string/task_widget_add_title"
+        android:textColor="@color/widget_dialog_text"
+        android:textSize="16sp" />
 
     <EditText
         android:id="@+id/widget_add_input"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="12dp"
         android:background="@drawable/widget_add_input_bg"
         android:gravity="top|start"
         android:hint="@string/task_widget_add_placeholder"
         android:imeOptions="actionDone"
         android:inputType="textCapSentences"
         android:maxLines="3"
-        android:minHeight="48dp"
-        android:paddingStart="14dp"
-        android:paddingTop="12dp"
-        android:paddingEnd="14dp"
-        android:paddingBottom="12dp"
+        android:minHeight="46dp"
+        android:paddingStart="12dp"
+        android:paddingTop="11dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="11dp"
         android:textColor="@color/widget_dialog_text"
         android:textColorHint="@color/widget_dialog_placeholder"
         android:textSize="15sp" />
 
-    <!-- 快捷优先级胶囊 -->
+    <!-- 轻量优先级选择 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -78,11 +49,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/widget_prio_chip"
-            android:fontFamily="sans-serif-medium"
-            android:paddingStart="12dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="6dp"
+            android:paddingStart="11dp"
+            android:paddingTop="5dp"
+            android:paddingEnd="11dp"
+            android:paddingBottom="5dp"
             android:text="@string/task_widget_prio_normal"
             android:textColor="@color/widget_dialog_hint"
             android:textSize="12sp" />
@@ -93,11 +63,10 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:background="@drawable/widget_prio_chip"
-            android:fontFamily="sans-serif-medium"
-            android:paddingStart="12dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="6dp"
+            android:paddingStart="11dp"
+            android:paddingTop="5dp"
+            android:paddingEnd="11dp"
+            android:paddingBottom="5dp"
             android:text="@string/task_widget_prio_high"
             android:textColor="@color/widget_warn"
             android:textSize="12sp" />
@@ -108,11 +77,10 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:background="@drawable/widget_prio_chip"
-            android:fontFamily="sans-serif-medium"
-            android:paddingStart="12dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="6dp"
+            android:paddingStart="11dp"
+            android:paddingTop="5dp"
+            android:paddingEnd="11dp"
+            android:paddingBottom="5dp"
             android:text="@string/task_widget_prio_urgent"
             android:textColor="@color/widget_danger"
             android:textSize="12sp" />
@@ -130,11 +98,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/widget_add_cancel_bg"
-            android:fontFamily="sans-serif-medium"
-            android:paddingStart="18dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="18dp"
-            android:paddingBottom="10dp"
+            android:paddingStart="16dp"
+            android:paddingTop="9dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="9dp"
             android:text="@string/task_widget_add_cancel"
             android:textColor="@color/widget_cancel_text"
             android:textSize="14sp" />
@@ -146,13 +113,12 @@
             android:layout_marginStart="8dp"
             android:background="@drawable/widget_add_button_bg"
             android:fontFamily="sans-serif-medium"
-            android:paddingStart="24dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="24dp"
-            android:paddingBottom="10dp"
+            android:paddingStart="20dp"
+            android:paddingTop="9dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="9dp"
             android:text="@string/task_widget_add_save"
             android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:textSize="14sp" />
     </LinearLayout>
 </LinearLayout>

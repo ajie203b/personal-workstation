@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Kairos Obsidian Sapphire Dark（与主应用深色曜石蓝令牌一致） -->
-    <color name="widget_text_primary">#F1F5F9</color>
-    <color name="widget_text_secondary">#94A3B8</color>
-    <color name="widget_text_done">#64748B</color>
-    <color name="widget_primary">#7CA7FF</color>
+    <!-- 极简深色 -->
+    <color name="widget_text_primary">#F4F4F5</color>
+    <color name="widget_text_secondary">#A1A1AA</color>
+    <color name="widget_text_done">#71717A</color>
+    <color name="widget_primary">#F4F4F5</color>
     <color name="widget_ok">#34D399</color>
-    <color name="widget_danger">#FB7185</color>
+    <color name="widget_danger">#F87171</color>
     <color name="widget_warn">#FBBF24</color>
-    <color name="widget_badge_text">#93C5FD</color>
+    <color name="widget_badge_text">#A1A1AA</color>
     <color name="widget_badge_done_text">#34D399</color>
-    <color name="widget_chip_text">#CBD5E1</color>
-    <color name="widget_dialog_text">#F1F5F9</color>
-    <color name="widget_dialog_hint">#94A3B8</color>
-    <color name="widget_dialog_placeholder">#64748B</color>
-    <color name="widget_cancel_text">#CBD5E1</color>
+    <color name="widget_chip_text">#A1A1AA</color>
+    <color name="widget_dialog_text">#F4F4F5</color>
+    <color name="widget_dialog_hint">#A1A1AA</color>
+    <color name="widget_dialog_placeholder">#71717A</color>
+    <color name="widget_cancel_text">#A1A1AA</color>
 </resources>

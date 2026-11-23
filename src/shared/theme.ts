@@ -26,7 +26,7 @@ function apply() {
   // 同步 meta theme-color
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) {
-    const canvas = getComputedStyle(root).getPropertyValue('--canvas').trim() || (dark ? '#0B0E16' : '#F3F5FA')
+    const canvas = getComputedStyle(root).getPropertyValue('--canvas').trim() || (dark ? '#12151C' : '#F6F7F9')
     meta.setAttribute('content', canvas)
   }
 }

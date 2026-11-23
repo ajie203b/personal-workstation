@@ -36,7 +36,6 @@ const localMeta = `${import.meta.env.BASE_URL}intelligence/chart-meta.json`
 
 export function IntelligenceCard() {
   const toast = useUi((s) => s.toast)
-  const [dragging, setDragging] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
   const [zoomed, setZoomed] = useState(false)
   const [fitWidth, setFitWidth] = useState(false)
@@ -145,7 +144,14 @@ export function IntelligenceCard() {
     <section aria-labelledby="ranking-heading" data-pinned-leaderboard="true" className="ranking-panel">
       <header className="ranking-intro">
         <div className="flex items-center justify-between gap-2">
-          <h2 id="ranking-heading" className="ranking-heading min-w-0">AI 模型智能排行榜</h2>
+          <div className="flex items-baseline gap-2 min-w-0">
+            <h2 id="ranking-heading" className="ranking-heading truncate">AI 模型智能排行榜</h2>
+            {updatedLabel && (
+              <time dateTime={updatedAt} className="hidden sm:inline text-[11.5px] text-on-surface-2 tabular-nums shrink-0">
+                {updatedLabel}
+              </time>
+            )}
+          </div>
           <div className="ranking-actions">
             <button
               type="button"
@@ -155,17 +161,17 @@ export function IntelligenceCard() {
               onClick={() => void refresh()}
               className="ranking-action cursor-pointer disabled:opacity-60"
             >
-              <RefreshCw size={15} aria-hidden className={cn(refreshing && 'animate-spin')} />
+              <RefreshCw size={14} aria-hidden className={cn(refreshing && 'animate-spin')} />
             </button>
             <button
               type="button"
-              aria-label="大图查看原图"
-              title="查看大图"
+              aria-label="查看原图"
+              title="查看原图"
               disabled={!chartSrc}
               onClick={openOriginal}
               className="ranking-action cursor-pointer"
             >
-              <Maximize2 size={15} aria-hidden />
+              <Maximize2 size={14} aria-hidden />
             </button>
             <a
               href="https://artificialanalysis.ai/leaderboards/models"
@@ -175,16 +181,10 @@ export function IntelligenceCard() {
               onClick={(e) => { e.preventDefault(); openExternal('https://artificialanalysis.ai/leaderboards/models') }}
               className="ranking-action"
             >
-              <ExternalLink size={15} aria-hidden />
+              <ExternalLink size={14} aria-hidden />
             </a>
           </div>
         </div>
-        <p className="ranking-meta">
-          <span>Artificial Analysis 官方指数</span>
-          {updatedLabel && (
-            <time dateTime={updatedAt} className="tabular-nums">· 更新于 {updatedLabel}</time>
-          )}
-        </p>
       </header>
 
       <div className="ranking-plot">
@@ -200,11 +200,10 @@ export function IntelligenceCard() {
               aria-label="模型排名图表，可左右滑动或用方向键滚动"
               tabIndex={0}
               onScroll={syncScrollEdge}
-              className="overflow-x-auto overscroll-x-contain pb-0.5 md:pb-1 rounded-[10px] cursor-grab active:cursor-grabbing select-none"
+              className="overflow-x-auto overscroll-x-contain rounded-[8px] cursor-grab active:cursor-grabbing select-none"
               onPointerDown={(event) => {
                 if (event.pointerType !== 'mouse' || event.button !== 0) return
                 dragRef.current = { x: event.clientX, left: event.currentTarget.scrollLeft }
-                setDragging(true)
                 event.currentTarget.setPointerCapture(event.pointerId)
               }}
               onPointerMove={(event) => {
@@ -215,54 +214,39 @@ export function IntelligenceCard() {
               }}
               onPointerUp={(event) => {
                 dragRef.current = null
-                setDragging(false)
                 if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
               }}
-              onPointerCancel={() => { dragRef.current = null; setDragging(false) }}
-              onLostPointerCapture={() => { dragRef.current = null; setDragging(false) }}
+              onPointerCancel={() => { dragRef.current = null }}
+              onLostPointerCapture={() => { dragRef.current = null }}
             >
               <img
                 src={chartSrc}
                 alt="Artificial Analysis 模型智能指数排名官方原图"
-                width={2732}
-                height={640}
+                width={2288}
+                height={658}
                 draggable={false}
                 onLoad={syncScrollEdge}
                 onError={() => {
                   if (remoteChart) setRemoteChart(null)
                   else setImageFailed(true)
                 }}
-                className="h-[clamp(158px,23dvh,210px)] md:h-[clamp(200px,32dvh,292px)] w-auto max-w-none rounded-[8px] select-none pointer-events-none"
+                className="h-[clamp(220px,34dvh,300px)] md:h-[clamp(280px,44dvh,380px)] w-auto max-w-none rounded-[6px] select-none pointer-events-none"
               />
             </div>
             {scrollEdge.left && (
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ranking-paper)] to-transparent"
+                className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[var(--ranking-paper)] to-transparent"
               />
             )}
             {scrollEdge.right && (
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-[var(--ranking-paper)] to-transparent"
+                className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ranking-paper)] to-transparent"
               />
             )}
           </div>
         )}
-
-        <div className="flex items-center justify-between gap-2.5 text-[12px] text-on-surface-2 mt-2 md:mt-2.5 px-0.5">
-          <span className="min-w-0 truncate">
-            {dragging ? '拖动浏览中…' : '左右滑动或拖拽查看完整排名'}
-          </span>
-          <button
-            type="button"
-            disabled={!chartSrc}
-            onClick={openOriginal}
-            className="inline-flex min-h-11 items-center gap-1 px-2.5 -mr-1 rounded-full text-[12px] font-medium text-primary bg-primary-soft/75 hover:bg-primary-soft transition-colors shrink-0"
-          >
-            查看原图 <Maximize2 size={12} aria-hidden />
-          </button>
-        </div>
       </div>
 
       <Dialog open={zoomed} onOpenChange={setZoomed} title="模型排名图表原图" widthClass="w-[94vw]">
@@ -270,7 +254,7 @@ export function IntelligenceCard() {
           <button
             type="button"
             onClick={() => setFitWidth((value) => !value)}
-            className="min-h-11 rounded-lg bg-surface-2 px-3 hover:bg-surface-3"
+            className="min-h-10 rounded-lg bg-surface-2 px-3 hover:bg-surface-3 cursor-pointer"
           >
             {fitWidth ? '原图横向滚动' : '适应屏幕宽度'}
           </button>
@@ -278,7 +262,7 @@ export function IntelligenceCard() {
             <button
               type="button"
               onClick={() => openExternal(isTauri() ? INTEL_CHART_URLS[0] : chartSrc ?? localChart)}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-primary hover:bg-primary-soft"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-primary hover:bg-primary-soft cursor-pointer"
             >
               {isTauri() ? '查看线上原图' : '新窗口打开'} <ExternalLink size={14} aria-hidden />
             </button>
@@ -288,7 +272,7 @@ export function IntelligenceCard() {
           <img
             src={chartSrc}
             alt="Artificial Analysis 模型智能指数排名官方原图"
-            className={fitWidth ? 'w-full h-auto' : 'h-[min(500px,55dvh)] w-auto max-w-none'}
+            className={fitWidth ? 'w-full h-auto' : 'h-[min(620px,70dvh)] w-auto max-w-none'}
             draggable={false}
           />
         </div>

@@ -277,8 +277,7 @@ function ProgressRing({ done, total, onClick, className }: {
   // 今天一件都没有时不画环：0/0 的圆环看着像出错
   if (total === 0) return null
   const pct = done / total
-  const pctNum = Math.round(pct * 100)
-  const R = 16
+  const R = 15
   const C = 2 * Math.PI * R
   const full = done >= total
   return (
@@ -289,12 +288,11 @@ function ProgressRing({ done, total, onClick, className }: {
       title="跳到番茄钟"
       className={cn(
         className,
-        'press relative grid place-items-center w-12 h-12 rounded-full cursor-pointer',
-        'bg-surface ring-1 ring-outline/80 shadow-[var(--elev-card)]',
+        'press relative grid place-items-center w-10 h-10 rounded-full cursor-pointer',
       )}
     >
-      <svg viewBox="0 0 40 40" className="w-10 h-10 -rotate-90" aria-hidden>
-        <circle cx="20" cy="20" r={R} fill="none" stroke="var(--outline-strong)" strokeWidth="3.2" opacity="0.65" />
+      <svg viewBox="0 0 40 40" className="w-9 h-9 -rotate-90" aria-hidden>
+        <circle cx="20" cy="20" r={R} fill="none" stroke="var(--outline-strong)" strokeWidth="3.2" opacity="0.45" />
         <circle
           cx="20" cy="20" r={R} fill="none"
           stroke={full ? 'var(--ok)' : 'var(--primary)'}
@@ -304,9 +302,6 @@ function ProgressRing({ done, total, onClick, className }: {
           style={{ transition: 'stroke-dashoffset var(--dur-3) var(--ease-standard)' }}
         />
       </svg>
-      <span aria-hidden className="absolute text-[11px] font-bold tabular-nums tracking-tight text-on-surface">
-        {pctNum}%
-      </span>
     </button>
   )
 }

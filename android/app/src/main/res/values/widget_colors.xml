@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Kairos Porcelain Light（与主应用浅色极简瓷白令牌一致） -->
-    <color name="widget_text_primary">#0F172A</color>
-    <color name="widget_text_secondary">#64748B</color>
-    <color name="widget_text_done">#94A3B8</color>
-    <color name="widget_primary">#2563EB</color>
-    <color name="widget_ok">#059669</color>
-    <color name="widget_danger">#E11D48</color>
+    <!-- 极简浅色 -->
+    <color name="widget_text_primary">#18181B</color>
+    <color name="widget_text_secondary">#71717A</color>
+    <color name="widget_text_done">#A1A1AA</color>
+    <color name="widget_primary">#18181B</color>
+    <color name="widget_ok">#10B981</color>
+    <color name="widget_danger">#DC2626</color>
     <color name="widget_warn">#D97706</color>
-    <color name="widget_badge_text">#2563EB</color>
-    <color name="widget_badge_done_text">#059669</color>
-    <color name="widget_chip_text">#475569</color>
-    <color name="widget_dialog_text">#0F172A</color>
-    <color name="widget_dialog_hint">#64748B</color>
-    <color name="widget_dialog_placeholder">#94A3B8</color>
-    <color name="widget_cancel_text">#475569</color>
+    <color name="widget_badge_text">#71717A</color>
+    <color name="widget_badge_done_text">#10B981</color>
+    <color name="widget_chip_text">#71717A</color>
+    <color name="widget_dialog_text">#18181B</color>
+    <color name="widget_dialog_hint">#71717A</color>
+    <color name="widget_dialog_placeholder">#A1A1AA</color>
+    <color name="widget_cancel_text">#52525B</color>
 </resources>
