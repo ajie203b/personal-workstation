@@ -24,6 +24,8 @@ import {
   computePdfRenderDpr,
   computeTrimTransform,
   findRowAtY,
+  PDF_ROW_GAP,
+  PDF_TOP_PADDING,
 } from './pdf/pdfLayout'
 import { PdfPageNavigator } from './pdf/PdfPageNavigator'
 import { usePdfFind } from './pdf/usePdfFind'
@@ -296,6 +298,7 @@ export function PdfReader({
         } else {
           commit(await Promise.all(allIdx.map(ratioOf)))
         }
+        setLoadPct(1)
 
         const outlineItems: TocItem[] = []
         try {
@@ -322,7 +325,6 @@ export function PdfReader({
         } catch {
           /* 无大纲 */
         }
-        setLoadPct(1)
         onLoaded(n, outlineItems)
       } catch (e) {
         setLoadError(e instanceof Error && e.message ? `解析失败：${e.message}` : '这份 PDF 解析失败，可能已损坏。')
@@ -381,20 +383,21 @@ export function PdfReader({
   }, [initialTarget, localScrollProgress, numPages, ratios, scrollRef, onRestored, pageOffsets, pageH])
 
   useEffect(() => {
-    if (!jump || jump.ts === lastJumpTs.current || !numPages || !ratios.length) return
-    lastJumpTs.current = jump.ts
+    if (!jump || jump.ts === lastJumpTs.current || !numPages || !containerW || loadPct < 1) return
     const container = scrollRef.current
     if (!container) return
+    lastJumpTs.current = jump.ts
     const m = jump.anchor.match(/^p(\d+)/)
     const target = m ? Math.min(numPages, Math.max(1, Number(m[1]))) : 1
-    container.scrollTo({ top: Math.max(0, (pageOffsets[target - 1] ?? 0) - 12), behavior: 'smooth' })
+    // A local file link opens directly on its cited page, even while the view is centering horizontally.
+    container.scrollTo({ top: Math.max(0, (pageOffsets[target - 1] ?? 0) - 12), behavior: localBlob ? 'instant' : 'smooth' })
     setCenter(target)
     if (jump.hl) {
       setFlashId(jump.hl)
       const t = setTimeout(() => setFlashId(null), 2200)
       return () => clearTimeout(t)
     }
-  }, [jump, numPages, ratios, scrollRef, pageOffsets, pageH])
+  }, [jump, numPages, containerW, loadPct, scrollRef, pageOffsets, localBlob])
 
   const onPageMouseUp = useCallback(
     (page: number, wrapper: HTMLElement) => {
@@ -558,7 +561,7 @@ export function PdfReader({
         style={{ touchAction: 'pan-x pan-y', display: loadError ? 'none' : undefined }}
         className="h-full overflow-auto overscroll-contain bg-surface-3/45"
       >
-        <div ref={transformRef} style={{ transformOrigin: 'top center', backfaceVisibility: 'hidden' }}>
+        <div ref={transformRef} style={{ transformOrigin: 'top center', backfaceVisibility: 'hidden', paddingTop: PDF_TOP_PADDING }}>
           <Document
             key={reloadKey}
             file={data ?? undefined}
@@ -570,12 +573,12 @@ export function PdfReader({
             onLoadError={(e) => setLoadError(e?.message || '文件可能已损坏，或格式不受支持')}
             loading={<div className="grid place-items-center h-40 text-on-surface-2 text-[13px]">正在载入 PDF…</div>}
             error={null}
-            className="flex flex-col items-center py-5 gap-4 min-w-full w-max"
+            className="flex flex-col items-center min-w-full w-max"
             options={PDF_OPTIONS}
           >
         {numPages > 0 &&
           layoutMetrics.rows.map((row, rowIdx) => (
-            <div key={rowIdx} className="flex items-start justify-center gap-3 mx-auto">
+            <div key={rowIdx} style={{ height: row.height + PDF_ROW_GAP }} className="flex items-start justify-center gap-3 mx-auto">
               {row.pages.map((p) => {
                 const inWindow = p >= lo && p <= hi
                 const pageAnns = annotationsByPage.get(p)

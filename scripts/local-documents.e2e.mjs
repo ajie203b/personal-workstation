@@ -7,12 +7,12 @@ import { mkdirSync } from 'node:fs'
 // Start npm run dev -- --host 127.0.0.1 --port 5174 before running this check.
 mkdirSync('testdata-sample.docs', { recursive: true })
 const pdf = await PDFDocument.create()
-pdf.addPage().drawText('Kairos local PDF preview')
+for (let page = 1; page <= 66; page++) pdf.addPage([720, 540]).drawText(`Slide ${page}`)
 const word = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('本地 Word 文件预览')] }] }))
 const fixture = {
-  'D:/notes/a.md': { markdown: Array.from({ length: 65 }, (_, i) => `## 章节 ${i + 1}\n\n${i === 29 ? '[打开说明](说明.txt) · [打开 PDF](示例.pdf) · [打开网页](说明.html#target)' : '这是用于验证滚动定位的长文档内容。'.repeat(5)}`).join('\n\n'), version: '1' },
+  'D:/notes/a.md': { markdown: Array.from({ length: 65 }, (_, i) => `## 章节 ${i + 1}\n\n${i === 29 ? '[打开说明](说明.txt) · [打开 PDF](<课件/第2章 示例.pdf>) · [p62–65](<课件/第2章 示例.pdf#page=62>) · [p61–66](<课件/第2章 示例.pdf#page=61>) · [打开网页](说明.html#target)' : '这是用于验证滚动定位的长文档内容。'.repeat(5)}`).join('\n\n'), version: '1' },
   'D:/notes/说明.txt': { markdown: '本地文本预览', version: '1' },
-  'D:/notes/示例.pdf': { markdown: '', base64: await pdf.saveAsBase64(), version: '1' },
+  'D:/notes/课件/第2章 示例.pdf': { markdown: '', base64: await pdf.saveAsBase64(), version: '1' },
   'D:/notes/示例.docx': { markdown: '', base64: word.toString('base64'), version: '1' },
   'D:/notes/说明.html': { markdown: '<h1>本地网页预览</h1><script>window.unsafePreview = true</script>' + '<p>安全显示</p>'.repeat(30) + '<h2 id="target">链接目标</h2>', version: '1' },
 }
@@ -86,13 +86,24 @@ try {
     return el && Math.abs(el.getBoundingClientRect().top - el.closest('.overflow-y-auto').getBoundingClientRect().top) < 12
   })
   await page.getByRole('link', { name: '打开 PDF', exact: true }).click()
-  await page.locator('.react-pdf__Page__canvas').waitFor().catch(async error => {
+  await page.locator('[data-page="1"] canvas').first().waitFor().catch(async error => {
     console.error((await page.locator('body').innerText()).slice(0, 500), errors)
     throw error
   })
   await page.getByRole('button', { name: '用其他应用编辑' }).click()
-  assert(await page.evaluate(() => window.testNativeCalls.some(x => x.command === 'local_document_open_with' && x.args.path === 'D:/notes/示例.pdf')))
+  assert(await page.evaluate(() => window.testNativeCalls.some(x => x.command === 'local_document_open_with' && x.args.path === 'D:/notes/课件/第2章 示例.pdf')))
   await back.click()
+  for (const [name, target] of [['p62–65', 62], ['p61–66', 61]]) {
+    await page.getByRole('link', { name, exact: true }).click()
+    await page.waitForFunction(n => {
+      const slot = document.querySelector(`[data-page-slot="${n}"]`)
+      const view = slot?.closest('.overflow-auto')
+      if (!view || !slot.querySelector('canvas')) return false
+      const gap = slot.getBoundingClientRect().top - view.getBoundingClientRect().top
+      return Math.abs(gap - 12) < 2 && document.querySelector('[aria-label="跳转页码"]')?.value === String(n)
+    }, target)
+    await back.click()
+  }
   await page.getByRole('link', { name: '打开网页', exact: true }).click()
   await page.getByRole('heading', { name: '本地网页预览' }).waitFor()
   await page.waitForFunction(() => {

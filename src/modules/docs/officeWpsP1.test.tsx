@@ -118,14 +118,10 @@ describe('Office / WPS & Performance P1', () => {
     expect(computePdfDisplayWidth(singleFit, 1)).toBeGreaterThanOrEqual(180)
     expect(computePdfDisplayWidth(singleFit, 10)).toBe(2600)
 
-    const metrics = computePdfLayout(5, [1.5, 1.5, 1.5, 1.5, 1.5], 400, true, 16)
+    const metrics = computePdfLayout(5, [1.5, 1.5, 1.5, 1.5, 1.5], 400, true)
     expect(metrics.rows).toHaveLength(3)
-    expect(metrics.pageOffsets[0]).toBe(0)
-    expect(metrics.pageOffsets[1]).toBe(0)
-    expect(metrics.pageOffsets[2]).toBe(616)
-    expect(metrics.pageOffsets[3]).toBe(616)
-    expect(metrics.pageOffsets[4]).toBe(1232)
-    expect(findRowAtY(metrics.rows, 620)).toBe(1)
+    expect(metrics.pageOffsets).toEqual([20, 20, 658, 658, 1296])
+    expect(findRowAtY(metrics.rows, 660)).toBe(1)
     expect(findRowAtY(metrics.rows, 1400)).toBe(2)
 
     const tf = computeTrimTransform(true, 1.25)

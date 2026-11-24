@@ -4,18 +4,19 @@ import { localFileKind, type LocalDocument } from '@/lib/localMarkdown'
 import { mdContentHash } from '@/db/docs'
 import { parseFlowDoc, type FlowDoc } from './flowDoc'
 import { FlowReader } from './FlowReader'
-import { DEFAULT_SETTINGS } from './reader/useReadingPosition'
+import { DEFAULT_SETTINGS, type JumpTarget } from './reader/useReadingPosition'
 import { MarkdownWordCount } from './MarkdownWordCount'
 import { restoreLocalPosition, type LocalScrollPosition } from './localScrollPosition'
 
 const noop = () => {}
 const PdfReader = lazy(() => import('./PdfReader').then(module => ({ default: module.PdfReader })))
 
-export function LocalFilePreview({ doc, scrollRef, onLink, position }: {
+export function LocalFilePreview({ doc, scrollRef, onLink, position, jump }: {
   doc: LocalDocument
   scrollRef: RefObject<HTMLDivElement>
   onLink: (href: string) => void
   position?: LocalScrollPosition
+  jump: JumpTarget | null
 }) {
   const kind = localFileKind(doc.path)
   const blob = useMemo(() => doc.base64 === undefined ? undefined : new Blob([Uint8Array.from(atob(doc.base64), c => c.charCodeAt(0))], { type: kind === 'pdf' ? 'application/pdf' : undefined }), [doc.base64, kind])
@@ -41,7 +42,7 @@ export function LocalFilePreview({ doc, scrollRef, onLink, position }: {
 
   if (error) return <p role="alert" className="p-6 text-danger">{error}</p>
   if (kind === 'pdf') return <Suspense fallback={<p role="status" className="p-6 text-on-surface-2">正在打开 PDF…</p>}>
-    <PdfReader hash={hash} localBlob={blob} localScrollProgress={position?.progress} settings={DEFAULT_SETTINGS} annotations={[]} jump={null} onSelection={noop} onProgress={noop} onRestored={noop} onLoaded={noop} scrollRef={scrollRef} initialTarget={null} />
+    <PdfReader hash={hash} localBlob={blob} localScrollProgress={position?.progress} settings={DEFAULT_SETTINGS} annotations={[]} jump={jump} onSelection={noop} onProgress={noop} onRestored={noop} onLoaded={noop} scrollRef={scrollRef} initialTarget={null} />
   </Suspense>
   if (kind === 'docx' || kind === 'pptx' || kind === 'epub') {
     return flow ? <FlowReader hash={hash} flow={flow} settings={DEFAULT_SETTINGS} annotations={[]} jump={null} onSelection={noop} onProgress={noop} onRestored={noop} onLoaded={noop} scrollRef={scrollRef} initialTarget={null} /> : <p role="status" className="p-6 text-on-surface-2">正在生成预览…</p>

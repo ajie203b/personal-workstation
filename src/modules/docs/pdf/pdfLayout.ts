@@ -1,7 +1,9 @@
 export const PDF_TRIM_SCALE = 1.14
 export const PDF_SPREAD_MIN_WIDTH = 960
 export const PDF_SPREAD_COL_GAP = 12
-export const PDF_ROW_GAP = 16
+export const PDF_TOP_PADDING = 20
+// Space below the canvas row for its page number and the gap before the next row.
+export const PDF_ROW_GAP = 38
 
 export interface PdfLayoutRow {
   pages: number[]
@@ -67,7 +69,7 @@ export function computePdfLayout(
   const rowIndexOfPage = new Array<number>(Math.max(0, numPages)).fill(0)
   const pageH = (idx: number) => (ratios[idx] ? Math.round(dispW * ratios[idx]) : Math.round(dispW * 1.414))
 
-  let acc = 0
+  let acc = numPages ? PDF_TOP_PADDING : 0
   rowPages.forEach((pages, rowIdx) => {
     let height = 0
     for (const p of pages) {
