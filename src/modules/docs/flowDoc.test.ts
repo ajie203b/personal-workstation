@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
-import { parseFlowDoc } from './flowDoc'
+import { parseFlowDoc, splitTxtParagraphs } from './flowDoc'
 
 // jsdom has no MathMLElement/CSSStyleDeclaration; real Chromium provides both.
 beforeAll(() => {
@@ -71,6 +71,30 @@ describe('parseFlowDoc(epub) 清洗', () => {
     expect(html).toContain('正常正文内容')
     // 纯文本索引不受影响
     expect(doc.text).toContain('正常正文内容')
+  })
+
+  it('normalizes fixed-width EPUB tables and single-newline Chinese TXT paragraphs', async () => {
+    const blob = await makeEpub(
+      '<html><body>'
+      + '<div style="width: 640px"><table width="600" style="width: 600px">'
+      + '<colgroup><col style="width: 150px"><col style="width: 450px"></colgroup>'
+      + '<tr><td style="width: 150px">A</td><td style="width: 450px">B</td></tr></table></div>'
+      + '</body></html>',
+    )
+    const epub = await parseFlowDoc('epub', blob)
+    const parsed = new DOMParser().parseFromString(epub.segments[0].html, 'text/html')
+    expect(parsed.querySelector('div')?.style.width).toBe('')
+    expect(parsed.querySelector('table')?.style.width).toBe('')
+    expect(Array.from(parsed.querySelectorAll('col')).map((c) => c.style.width)).toEqual(['25%', '75%'])
+
+    const chineseNovel = '　　第一章 楔子\n　　这是第一段很长的中文小说正文内容。\n　　这是第二段紧接着单换行的正文内容。\n　　这是第三段正文。'
+    expect(splitTxtParagraphs(chineseNovel)).toHaveLength(4)
+
+    const poemWithBlankLines = '床前明月光\n疑是地上霜\n\n举头望明月\n低头思故乡'
+    expect(splitTxtParagraphs(poemWithBlankLines)).toEqual([
+      '床前明月光\n疑是地上霜',
+      '举头望明月\n低头思故乡',
+    ])
   })
 })
 

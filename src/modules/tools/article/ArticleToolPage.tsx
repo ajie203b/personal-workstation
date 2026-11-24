@@ -242,7 +242,7 @@ export function ArticleToolPage() {
   }, [])
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
+    <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
       <BackButton text="工具" label="返回工具" onClick={() => navigate('/tools')} className="hidden md:inline-flex -mt-1 w-fit" />
 
       <header className="flex items-start gap-3.5">
@@ -372,15 +372,10 @@ export function ArticleToolPage() {
             {sourceUrl && <p className="text-[11px] text-on-surface-2 break-all leading-relaxed">来源：{sourceUrl}</p>}
           </section>
 
-          <section className="card p-4">
+          <section className="card p-5 md:p-7">
             <div
-              className="article-preview text-[13.5px] leading-relaxed overflow-x-auto
-                [&_img]:max-w-full [&_img]:rounded-[10px] [&_img]:my-2
-                [&_p]:my-2 [&_h1]:text-[17px] [&_h2]:text-[15.5px] [&_h3]:text-[14px]
-                [&_a]:text-primary [&_blockquote]:border-l-2 [&_blockquote]:border-outline [&_blockquote]:pl-3 [&_blockquote]:text-on-surface-2
-                [&_pre]:rounded-[10px] [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:text-[12.5px]
-                [&_table]:text-[12.5px] [&_td]:border [&_td]:border-outline [&_td]:px-2 [&_td]:py-1
-                [&_th]:border [&_th]:border-outline [&_th]:px-2 [&_th]:py-1"
+              className="article-preview md-body text-[15px] leading-[1.82]
+                [&_div]:max-w-full [&_section]:max-w-full [&_table]:w-full"
               dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
           </section>

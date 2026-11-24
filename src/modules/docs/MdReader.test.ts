@@ -106,4 +106,17 @@ describe('Markdown reading highlights', () => {
     // Highlighting must preserve the Markdown block structure.
     expect(container.querySelectorAll('.md-body > p')).toHaveLength(2)
   })
+
+  it('strips rigid pixel widths from embedded HTML blocks while keeping colors and syncing --reader-width', () => {
+    renderAnnotation('', '<div style="width: 720px; background-color: #f4f1ea"><table width="680" style="width: 680px"><tr><td width="300" style="width: 300px">自适应单元格</td></tr></table></div>')
+    const prose = container.querySelector<HTMLElement>('.reader-prose')!
+    expect(prose.style.getPropertyValue('--reader-width')).toBe('72%')
+    const rawDiv = container.querySelector<HTMLElement>('.md-body div')!
+    expect(rawDiv.style.width).toBe('')
+    expect(rawDiv.style.backgroundColor).toBe('rgb(244, 241, 234)')
+    const table = container.querySelector<HTMLTableElement>('.md-body table')!
+    expect(table.getAttribute('width')).toBeNull()
+    expect(table.style.width).toBe('')
+    expect(table.querySelector('td')?.style.width).toBe('')
+  })
 })

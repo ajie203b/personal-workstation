@@ -50,6 +50,7 @@ interface Props {
   findQuery?: string
   findActive?: number
   onFindState?: (state: { total: number; searching: boolean }) => void
+  onSelectAnnotation?: (sel: { ann: Annotation; popover: { left: number; y: number; below: boolean } } | null) => void
 }
 
 const blockParser = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
@@ -107,7 +108,7 @@ export function splitMdBlocks(md: string): { source: string; complex: boolean }[
 
 /** MD 阅读器：块锚点渲染 + 沉浸排版 + 划词高亮 */
 export function MdReader({
-  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange, onLink, renderImage, findQuery = '', findActive = 0, onFindState,
+  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange, onLink, renderImage, findQuery = '', findActive = 0, onFindState, onSelectAnnotation,
 }: Props) {
   const source = useMemo(() => normalizeMarkdown(md), [md])
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -118,43 +119,106 @@ export function MdReader({
   const lastWriteRef = useRef(0)
 
   // 双指缩放 = 改字号（正文重排，比整体放大清晰，也不需要横向拖动）
+  const proseRef = useRef<HTMLDivElement | null>(null)
   const [liveFont, setLiveFont] = useState(settings.fontSize)
   const liveFontRef = useRef(settings.fontSize)
   const baseFontRef = useRef(settings.fontSize)
-  const fontAnchor = useRef<{ el: HTMLElement; top: number } | null>(null)
+  const typoStateRef = useRef({ widthPct: settings.widthPct, fontSize: liveFont, leading: settings.leading })
+  typoStateRef.current = { widthPct: settings.widthPct, fontSize: liveFont, leading: settings.leading }
+  const appliedTypoRef = useRef<{ widthPct: number; fontSize: number; leading: number } | null>(null)
+  const typoAnchorRef = useRef<{ el: HTMLElement; gap: number; ratio: number; at: number } | null>(null)
+  const fontAnchor = useRef<{ el: HTMLElement; gap: number; ratio: number } | null>(null)
+
+  const applyProseTypography = useCallback((el: HTMLElement, s: { widthPct: number; fontSize: number; leading: number }) => {
+    el.style.setProperty('--reader-width', `${s.widthPct}%`)
+    el.style.fontSize = `${s.fontSize}px`
+    el.style.setProperty('--md-leading', String(s.leading))
+  }, [])
+
+  const setProseNode = useCallback((el: HTMLDivElement | null) => {
+    proseRef.current = el
+    if (el && !appliedTypoRef.current) {
+      const s = typoStateRef.current
+      applyProseTypography(el, s)
+      appliedTypoRef.current = { ...s }
+    }
+  }, [applyProseTypography])
+
   useEffect(() => {
     liveFontRef.current = settings.fontSize
     setLiveFont(settings.fontSize)
   }, [settings.fontSize])
 
-  const captureFontAnchor = useCallback(() => {
+  const captureFontAnchor = useCallback((): { el: HTMLElement; gap: number; ratio: number } | null => {
     const c = scrollRef.current
     const body = bodyRef.current
-    if (!c || !body) return
+    if (!c || !body) return null
     const cr = c.getBoundingClientRect()
+    if (cr.height <= 0) return null
     const kids = Array.from(body.children) as HTMLElement[]
-    const hit = kids.find((k) => k.getBoundingClientRect().bottom > cr.top + 8) ?? kids[0]
-    fontAnchor.current = hit ? { el: hit, top: hit.getBoundingClientRect().top - cr.top } : null
+    const hit = kids.find((k) => {
+      const r = k.getBoundingClientRect()
+      return r.height > 0 && r.bottom > cr.top + 8 && r.top < cr.bottom
+    }) ?? kids[0]
+    if (!hit) return null
+    const r = hit.getBoundingClientRect()
+    const gap = r.top - cr.top
+    const ratio = gap < 0 && r.height > 0 ? Math.min(1, (cr.top - r.top) / r.height) : 0
+    return { el: hit, gap, ratio }
   }, [scrollRef])
 
   usePinch(scrollRef, {
-    onStart: () => { baseFontRef.current = liveFontRef.current; captureFontAnchor() },
+    onStart: () => { baseFontRef.current = liveFontRef.current; fontAnchor.current = captureFontAnchor() },
     onScale: (ratio) => {
       const px = Math.round(Math.min(32, Math.max(14, baseFontRef.current * ratio)))
       liveFontRef.current = px
       setLiveFont(px)
     },
-    onEnd: () => { onFontSizeChange?.(liveFontRef.current) },
+    onEnd: () => {
+      fontAnchor.current = null
+      onFontSizeChange?.(liveFontRef.current)
+    },
   })
 
-  // 字号变了以后把缩放前盯着的那一行留在原地
+  // 宽度 / 字号 / 行距变化时把当前阅读块钉在原地
   useLayoutEffect(() => {
-    const a = fontAnchor.current
+    const prose = proseRef.current
+    if (!prose) return
+    const prev = appliedTypoRef.current
+    const next = { widthPct: settings.widthPct, fontSize: liveFont, leading: settings.leading }
+    if (!prev || (prev.widthPct === next.widthPct && prev.fontSize === next.fontSize && prev.leading === next.leading)) {
+      applyProseTypography(prose, next)
+      appliedTypoRef.current = next
+      return
+    }
+
     const c = scrollRef.current
-    if (!a || !c || !a.el.isConnected) return
-    const cr = c.getBoundingClientRect()
-    c.scrollTop += (a.el.getBoundingClientRect().top - cr.top) - a.top
-  }, [liveFont, scrollRef])
+    const now = performance.now()
+    let anchor: { el: HTMLElement; gap: number; ratio: number } | null = null
+    if (fontAnchor.current?.el.isConnected) {
+      anchor = fontAnchor.current
+    } else if (c && c.scrollTop > 2) {
+      if (typoAnchorRef.current && now - typoAnchorRef.current.at < 280 && typoAnchorRef.current.el.isConnected) {
+        anchor = typoAnchorRef.current
+      } else {
+        anchor = captureFontAnchor()
+      }
+    }
+
+    applyProseTypography(prose, next)
+    appliedTypoRef.current = next
+
+    if (anchor && c && anchor.el.isConnected) {
+      const cr = c.getBoundingClientRect()
+      const nr = anchor.el.getBoundingClientRect()
+      if (cr.height > 0 && nr.height > 0) {
+        const desiredTop = anchor.gap >= 0 ? anchor.gap : -anchor.ratio * nr.height
+        const delta = (nr.top - cr.top) - desiredTop
+        if (Math.abs(delta) > 0.5) c.scrollTop = Math.max(0, c.scrollTop + delta)
+        typoAnchorRef.current = { ...anchor, at: now }
+      }
+    }
+  }, [settings.widthPct, liveFont, settings.leading, applyProseTypography, captureFontAnchor, scrollRef])
 
   // 顶级块分配锚点 id
   useLayoutEffect(() => {
@@ -225,17 +289,6 @@ export function MdReader({
     }
   }, [findQuery, findActive, annotations, md, scrollRef])
 
-  // 批注闪烁
-  useEffect(() => {
-    if (!jump?.hl) return
-    const el = bodyRef.current?.querySelector(`[data-ann="${jump.hl}"]`)
-    if (el) {
-      el.classList.add('ann-flash')
-      const t = setTimeout(() => el.classList.remove('ann-flash'), 2000)
-      return () => clearTimeout(t)
-    }
-  }, [jump, annotations])
-
   // 首次挂载：恢复深度阅读进度（保存以视口上 1/3 为阅读点，恢复用同一基准）
   // layout effect：定位要在绘制之前，避免先闪一下顶部再瞬移到上次阅读处
   useLayoutEffect(() => {
@@ -250,16 +303,29 @@ export function MdReader({
     }
   }, [initialTarget, scrollRef, onRestored])
 
-  // 目录 / 批注跳转
+  // 目录 / 批注精确定位与闪烁
   useEffect(() => {
     if (!jump || jump.ts === lastJumpTs.current) return
     lastJumpTs.current = jump.ts
     const container = scrollRef.current
+    if (!container) return
+    if (jump.hl) {
+      const safeHl = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(jump.hl) : jump.hl.replace(/"/g, '\\"')
+      const marks = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>(`[data-ann="${safeHl}"]`) ?? [])
+      const firstMark = marks[0]
+      if (firstMark) {
+        const top = container.scrollTop + (firstMark.getBoundingClientRect().top - container.getBoundingClientRect().top) - container.clientHeight * 0.28
+        container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+        marks.forEach((m) => m.classList.add('ann-flash'))
+        const t = setTimeout(() => marks.forEach((m) => m.classList.remove('ann-flash')), 2000)
+        return () => clearTimeout(t)
+      }
+    }
     const m = jump.anchor.match(/^b(\d+)/)
-    if (!container || !m) return
+    if (!m) return
     const block = bodyRef.current?.querySelector(`#b${m[1]}`) as HTMLElement | null
-    if (block) container.scrollTo({ top: Math.max(0, block.offsetTop - 60), behavior: 'smooth' }) // 目录跳转保持 smooth
-  }, [jump, scrollRef])
+    if (block) container.scrollTo({ top: Math.max(0, block.offsetTop - 60), behavior: 'smooth' })
+  }, [jump, annotations, scrollRef])
 
   // 滚动：双坐标保存 + 进度上报
   const onScroll = useCallback(() => {
@@ -367,11 +433,34 @@ export function MdReader({
       className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
       <div
-        // 宽度完全交给滑块：100% 就是可用宽度，不再被固定 maxWidth 卡在 900px
-        style={{ ['--reader-width' as string]: `${settings.widthPct}%`, fontSize: liveFont, ['--md-leading' as string]: String(settings.leading) }}
+        ref={setProseNode}
+        // 宽度完全交给滑块与居中版心：100% 占满可用画布并留出对称呼吸边距，窄栏居中且不裁切
         className="reader-prose mx-auto py-8 md:py-12 min-w-0"
       >
-        <div ref={bodyRef} className="md-body" onMouseUp={onMouseUp}>
+        <div
+          ref={bodyRef}
+          className="md-body"
+          onMouseUp={onMouseUp}
+          onClick={(e) => {
+            if (!onSelectAnnotation || window.getSelection()?.isCollapsed === false) return
+            const target = e.target as Element
+            if (target.closest('a[href]')) return
+            const mark = target.closest('mark[data-ann]') as HTMLElement | null
+            if (mark?.dataset.ann) {
+              const ann = annotations.find((item) => item.id === mark.dataset.ann)
+              if (ann) {
+                const rect = mark.getBoundingClientRect()
+                const below = rect.top < 110
+                onSelectAnnotation({
+                  ann,
+                  popover: { left: rect.left + rect.width / 2, y: below ? rect.bottom : rect.top, below },
+                })
+                return
+              }
+            }
+            onSelectAnnotation(null)
+          }}
+        >
           <MarkdownContent source={source} onLink={onLink} renderImage={renderImage} />
         </div>
       </div>

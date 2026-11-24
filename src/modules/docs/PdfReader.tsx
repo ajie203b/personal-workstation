@@ -99,7 +99,7 @@ export function PdfReader({
   const [data, setData] = useState<Blob | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [ratios, setRatios] = useState<number[]>([]) // 每页 高/宽
-  const [containerW, setContainerW] = useState(0)
+  const [containerW, setContainerW] = useState(() => scrollRef.current?.clientWidth ?? 0)
   // 与排版弹层一致：<768 视为手机，按屏宽适配并隐藏宽度设置；桌面窗口收起侧栏后仍保留滑块
   const [phoneLayout, setPhoneLayout] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
@@ -115,6 +115,8 @@ export function PdfReader({
   const liveZoomRef = useRef(zoom)
   const transformRef = useRef<HTMLDivElement>(null)
   const zoomAnchor = useRef<{ ratio: number } | null>(null)
+  const prevPdfLayoutRef = useRef<{ metrics: ReturnType<typeof computePdfLayout>; dispW: number; spreadActive: boolean } | null>(null)
+  const pdfAnchorRef = useRef<{ page: number; offsetRatio: number; at: number } | null>(null)
   const lastScrollTop = useRef(0)
   const restoredRef = useRef(false)
   const lastJumpTs = useRef(0)
@@ -223,15 +225,48 @@ export function PdfReader({
       box.style.willChange = ''
     }
     const el = scrollRef.current
-    if (!el) return
+    if (!el || !numPages || !ratios.length) return
+
+    const prev = prevPdfLayoutRef.current
     const anchor = zoomAnchor.current
     if (anchor) {
       zoomAnchor.current = null
       const max = el.scrollHeight - el.clientHeight
       el.scrollTop = Math.max(0, anchor.ratio * max)
+    } else if (
+      prev &&
+      (prev.dispW !== dispW || prev.spreadActive !== spreadActive) &&
+      (restoredRef.current || el.scrollTop > 4) &&
+      el.clientHeight > 0
+    ) {
+      // 调节正文宽度、点击缩放按钮或切换单/双页时：将上一版面视口上 30% 处的页码与页内比例
+      // 精确映射到新版面行坐标，杜绝单双页切换或缩窄页宽时跳飞几十页。
+      const now = performance.now()
+      let targetAnchor: { page: number; offsetRatio: number }
+      if (pdfAnchorRef.current && now - pdfAnchorRef.current.at < 280) {
+        targetAnchor = pdfAnchorRef.current
+      } else {
+        const probe = el.scrollTop + el.clientHeight * 0.3
+        const prevRowIdx = findRowAtY(prev.metrics.rows, probe)
+        const prevRow = prev.metrics.rows[prevRowIdx]
+        const page = prevRow?.pages[0] ?? 1
+        const offsetRatio = prevRow && prevRow.height > 0
+          ? Math.min(1, Math.max(0, (probe - prevRow.y) / prevRow.height))
+          : 0
+        targetAnchor = { page, offsetRatio }
+      }
+      const nextRowIdx = layoutMetrics.rowIndexOfPage[targetAnchor.page - 1] ?? 0
+      const nextRow = layoutMetrics.rows[nextRowIdx]
+      if (nextRow) {
+        const nextTop = nextRow.y + targetAnchor.offsetRatio * nextRow.height - el.clientHeight * 0.3
+        el.scrollTop = Math.max(0, nextTop)
+        pdfAnchorRef.current = { ...targetAnchor, at: now }
+      }
     }
+
+    prevPdfLayoutRef.current = { metrics: layoutMetrics, dispW, spreadActive }
     el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2)
-  }, [dispW, scrollRef])
+  }, [dispW, spreadActive, layoutMetrics, numPages, ratios.length, scrollRef])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -673,7 +708,13 @@ export function PdfReader({
           </Document>
         </div>
       </div>
-      <PdfPageNavigator center={center} numPages={numPages} scrollToPdfPage={scrollToPdfPage} />
+      <PdfPageNavigator
+        center={center}
+        numPages={numPages}
+        spreadActive={spreadActive}
+        currentRowPages={layoutMetrics.rows[layoutMetrics.rowIndexOfPage[center - 1] ?? 0]?.pages}
+        scrollToPdfPage={scrollToPdfPage}
+      />
       {zoom !== 1 && (
         <button
           onClick={() => onZoom?.(1)}

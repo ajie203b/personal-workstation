@@ -14,11 +14,18 @@ interface Props {
   onResetLayout: () => void
 }
 
+const WIDTH_PRESETS = [
+  { label: '专注', value: 62 },
+  { label: '标准', value: 80 },
+  { label: '宽敞', value: 92 },
+  { label: '铺满', value: 100 },
+] as const
+
 /**
  * 排版弹层（从 DocReaderPage 表头抽出）：主题、字号/行距（PDF 为缩放）、正文宽度、重置布局。
  *
- * 正文宽度是「拖动预览、松手落库」：Range 的每次 input 都写 IndexedDB 会卡，
- * 所以拖动中只 setState 预览（PDF 连预览都不做，重排一次 canvas 太贵），松手才持久化。
+ * 正文宽度是「拖动实时预览、松手落库」：Range 的每次 input 都写 IndexedDB 会卡，
+ * 拖动中走 rAF 实时预览（PDF 由 PdfReader 用 CSS scale 预览、停手 160ms 再重栅格化），松手持久化。
  */
 export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, onResetLayout, placement = 'top' }: Props) {
   const isPdf = doc.kind === 'pdf'
@@ -58,13 +65,12 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
   const previewWidth = (v: number) => {
     widthDraftRef.current = v
     setWidthDraft(v)
-    // PDF 重排一次 canvas 很贵，拖动中只改数字，松手才真正换页宽
-    if (isPdf) return
     cancelAnimationFrame(widthRaf.current)
     widthRaf.current = requestAnimationFrame(() => updateSettings({ widthPct: v }, false))
   }
 
   const commitWidth = useCallback((v: number) => {
+    cancelAnimationFrame(widthRaf.current)
     widthDraftRef.current = v
     setWidthDraft(v)
     updateSettings({ widthPct: v }, true)
@@ -158,10 +164,30 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
         )}
         {/* 手机端固定按屏幕宽度排版，宽度滑块只在桌面出现 */}
         <div className="hidden md:block">
-          <p className="text-[12px] font-medium text-on-surface-2 mb-1.5 flex items-center justify-between">
-            <span>正文宽度</span>
-            <span className="text-on-surface tabular-nums">{widthDraft}%</span>
-          </p>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[12px] font-medium text-on-surface-2">正文宽度</span>
+            <span className="text-[12px] font-medium text-on-surface tabular-nums">{widthDraft}%</span>
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2" role="group" aria-label="正文宽度预设">
+            {WIDTH_PRESETS.map((preset) => {
+              const active = Math.abs(widthDraft - preset.value) <= 1
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => commitWidth(preset.value)}
+                  aria-pressed={active}
+                  className={`h-7 rounded-[8px] text-[11.5px] font-medium transition-colors cursor-pointer ${
+                    active
+                      ? 'bg-primary-soft text-primary'
+                      : 'bg-surface-2 text-on-surface-2 hover:bg-surface-3 hover:text-on-surface'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+          </div>
           <input
             type="range"
             min={50}
@@ -181,7 +207,7 @@ export function ReaderSettingsPanel({ doc, settings, updateSettings, onClose, on
           />
           <div className="flex justify-between text-[10.5px] text-on-surface-2 mt-0.5">
             <span>窄</span>
-            <span>{isPdf ? '松开后应用页宽' : '拖动实时预览'}</span>
+            <span>拖动实时预览</span>
             <span>宽</span>
           </div>
         </div>

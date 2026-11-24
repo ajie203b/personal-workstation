@@ -305,8 +305,63 @@ export function DocReaderPage() {
 
   const addCurrentBookmark = useCallback(() => {
     if (!doc) return
-    void addBookmarkAt(doc, currentLocator).then(() => toast('已添加书签'))
-  }, [doc, currentLocator, toast])
+    let sectionTitle: string | undefined
+    if (doc.kind === 'md' && mdHeadings.length > 0) {
+      const curBlock = currentLocator.startsWith('b') ? Number(currentLocator.slice(1)) : 0
+      for (const h of mdHeadings) {
+        if (h.blockIdx <= curBlock) sectionTitle = h.text
+      }
+    } else if (toc.length > 0) {
+      if (activeTocAnchor) {
+        sectionTitle = toc.find((t) => t.anchor === activeTocAnchor)?.title
+      } else if (doc.kind !== 'pdf') {
+        const segNum = currentLocator.startsWith('f') ? Number(currentLocator.slice(1)) : 0
+        for (const t of toc) {
+          if (t.page - 1 <= segNum) sectionTitle = t.title
+        }
+      }
+    }
+    void addBookmarkAt(doc, currentLocator, {
+      scrollEl: scrollRef.current,
+      sectionTitle,
+      progressPct,
+    }).then(() => toast('已添加书签'))
+  }, [doc, currentLocator, mdHeadings, toc, activeTocAnchor, progressPct, toast])
+
+  // 滚动正文时收起已点开的批注管理浮条，并同步更新或收起划词浮条，防止 fixed 浮条悬空遮挡无关文字
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || (!selection && !selectedPdfAnn)) return
+    let raf = 0
+    const onScrollSync = () => {
+      if (selectedPdfAnn) setSelectedPdfAnn(null)
+      if (!selection || raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        const sel = window.getSelection()
+        if (!sel || sel.isCollapsed || !sel.rangeCount) {
+          setSelection(null)
+          return
+        }
+        const rect = sel.getRangeAt(0).getBoundingClientRect()
+        const cr = el.getBoundingClientRect()
+        if (rect.width === 0 || rect.bottom < cr.top + 8 || rect.top > cr.bottom - 8) {
+          setSelection(null)
+          return
+        }
+        const below = rect.top < 90
+        setSelection((prev) => (prev ? {
+          ...prev,
+          popover: { left: rect.left + rect.width / 2, y: below ? rect.bottom : rect.top, below },
+        } : null))
+      })
+    }
+    el.addEventListener('scroll', onScrollSync, { passive: true })
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      el.removeEventListener('scroll', onScrollSync)
+    }
+  }, [selection, selectedPdfAnn, content?.kind])
 
   const shareDoc = useCallback(() => {
     if (!doc || content?.kind !== 'md') { toast('文档还没载入完成'); return }
@@ -477,7 +532,14 @@ export function DocReaderPage() {
               settings={settings}
               annotations={annotations}
               jump={jump}
-              onSelection={(sel) => setSelection(sel ? { kind: 'md', ...sel } : null)}
+              onSelection={(sel) => {
+                if (sel) setSelectedPdfAnn(null)
+                setSelection(sel ? { kind: 'md', ...sel } : null)
+              }}
+              onSelectAnnotation={(sel) => {
+                if (sel) setSelection(null)
+                setSelectedPdfAnn(sel)
+              }}
               onProgress={onProgress}
               onRestored={onRestored}
               scrollRef={scrollRef}
@@ -529,7 +591,14 @@ export function DocReaderPage() {
                 settings={settings}
                 annotations={annotations}
                 jump={jump}
-                onSelection={(sel) => setSelection(sel ? { kind: 'flow', ...sel } : null)}
+                onSelection={(sel) => {
+                  if (sel) setSelectedPdfAnn(null)
+                  setSelection(sel ? { kind: 'flow', ...sel } : null)
+                }}
+                onSelectAnnotation={(sel) => {
+                  if (sel) setSelection(null)
+                  setSelectedPdfAnn(sel)
+                }}
                 onProgress={onProgress}
                 onRestored={onRestored}
                 onLoaded={(n) => setNumPages(n)}
@@ -573,6 +642,15 @@ export function DocReaderPage() {
             <SelectionPopover
               selection={selection}
               onHighlight={(c, toTask) => void createAnnotation(c, toTask)}
+              onComment={() => {
+                void createAnnotation('yellow').then((ann) => {
+                  if (!ann) return
+                  setRightTab('anns')
+                  if (readerPanels.rightCollapsed) toggleReaderPanel('right')
+                  if (window.matchMedia('(max-width: 1279px)').matches) setMobilePanel('anns')
+                  setFocusAnnId({ id: ann.id, ts: Date.now() })
+                })
+              }}
               onCopy={(text) => {
                 void navigator.clipboard.writeText(text)
                 toast('已复制')

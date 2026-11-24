@@ -260,7 +260,7 @@ export function LocalRichEditor({ markdown, onChange, renderImage, scrollRef, in
     {mode === 'source' ? <textarea ref={el => { textareaRef.current = el; scrollRef.current = el }} value={markdown} onChange={e => onChange(e.target.value)}
       className="flex-1 min-h-0 w-full resize-none bg-surface px-6 md:px-12 py-8 font-mono leading-7 outline-none" style={{ fontSize }} spellCheck={false} aria-label="编辑 Markdown 原文" />
       : <div ref={el => { richContainerRef.current = el; scrollRef.current = el }} className="flex-1 min-h-0 overflow-y-auto relative">
-        <div className={cn('reader-prose mx-auto py-8 min-w-0', focusMode && 'typora-focus-mode')} style={{ ['--reader-width' as string]: '90%', fontSize }}><EditorContent editor={editor} /></div>
+        <div className={cn('reader-prose mx-auto py-8 min-w-0', focusMode && 'typora-focus-mode')} style={{ ['--reader-width' as string]: '80%', fontSize }}><EditorContent editor={editor} /></div>
         {editor && slashTrigger && (
           <SlashCommandMenu
             editor={editor}

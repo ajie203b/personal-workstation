@@ -182,3 +182,18 @@ it('阅读态关窗不拦截也不触发保存', async () => {
   expect(write).not.toHaveBeenCalled()
   expect(win.destroy).not.toHaveBeenCalled()
 })
+
+it('本地非 Markdown 文档（如 TXT/HTML）同样开放阅读排版设置面板', async () => {
+  HTMLElement.prototype.scrollTo = () => {}
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
+  list.mockResolvedValue({ directory: 'D:/notes', parent: null, entries: [{ name: 'readme.txt', path: 'D:/notes/readme.txt', directory: false }] })
+  read.mockResolvedValue({ path: 'D:/notes/readme.txt', version: '1', markdown: '纯文本第一行\n纯文本第二行' })
+  const host = document.createElement('div'); document.body.append(host)
+  const root = createRoot(host)
+  cleanup = () => { act(() => root.unmount()); host.remove() }
+  await act(async () => root.render(<MemoryRouter initialEntries={['/local-markdown?file=D%3A%2Fnotes%2Freadme.txt']}><LocalMarkdownPage /></MemoryRouter>))
+  const settingsBtn = host.querySelector<HTMLButtonElement>('[aria-label="阅读设置"]')
+  expect(settingsBtn).not.toBeNull()
+  await act(async () => settingsBtn!.click())
+  expect(document.querySelector('[role="dialog"][aria-label="排版设置"]')).not.toBeNull()
+})

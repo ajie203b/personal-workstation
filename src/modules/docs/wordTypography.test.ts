@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
+import { normalizeWordLayout } from './wordDoc'
 import { normalizeWordTypography } from './wordTypography'
 import { sanitizeHtml } from '@/lib/sanitizeHtml'
 
@@ -63,5 +64,47 @@ describe('Word reading typography', () => {
     expect(root.querySelector('p.docx_heading2')?.classList.contains('word-heading-2')).toBe(true)
     expect(root.querySelector('p:last-child')?.getAttribute('style')).toContain('text-indent:2em')
     expect(root.querySelector('span')?.getAttribute('style')).toContain('color:#c00000')
+  })
+
+  it('normalizes fixed-width Word callout tables, multi-column grids, and drawing boxes for fluid prose widths', () => {
+    const root = document.createElement('div')
+    root.innerHTML = [
+      '<section class="docx" style="width: 595.3pt; padding: 72pt 90pt;">',
+      '<article style="width: 415.3pt">',
+      '<table style="width: 453.55pt; margin-left: 12pt"><colgroup><col style="width: 453.55pt"></colgroup><tbody><tr><td style="width: 453.55pt; background-color: #f4f1ea"><p style="line-height: 22pt">夹注精读原文卡片</p></td></tr></tbody></table>',
+      '<table style="width: 400pt"><colgroup><col style="width: 100pt"><col style="width: 300pt"></colgroup><tbody><tr><td style="width: 100pt">项</td><td style="width: 300pt">说明</td></tr></tbody></table>',
+      '<table style="width: 480pt"><colgroup><col style="width: 120pt"><col style="width: 120pt"><col style="width: 120pt"><col style="width: 120pt"></colgroup><tbody><tr><td>A</td><td>B</td><td>C</td><td>D</td></tr></tbody></table>',
+      '<p><div style="display: inline-block; width: 420pt; height: 210pt"><img src="data:image/png;base64,iVBORw0KGgo=" style="width: 100%; height: 100%"></div></p>',
+      '</article>',
+      '</section>',
+    ].join('')
+
+    normalizeWordLayout(root)
+    const cleaned = sanitizeHtml(root.innerHTML)
+    const parsed = new DOMParser().parseFromString(cleaned, 'text/html')
+
+    const callout = parsed.querySelector<HTMLTableElement>('table.word-callout-table')!
+    expect(callout).not.toBeNull()
+    expect(callout.style.width).toBe('')
+    expect(callout.style.marginLeft).toBe('')
+    expect(callout.querySelector('col')?.style.width).toBe('100%')
+    expect(callout.querySelector('td')?.style.width).toBe('')
+    expect(callout.querySelector('td')?.style.backgroundColor).not.toBe('')
+    expect(callout.querySelector('p')?.style.lineHeight).toBe('')
+
+    const twoCol = parsed.querySelectorAll('table')[1]
+    const cols = Array.from(twoCol.querySelectorAll('col')).map((c) => c.style.width)
+    expect(cols).toEqual(['25%', '75%'])
+
+    const wideWrap = parsed.querySelector('.word-table-scroll')
+    expect(wideWrap).not.toBeNull()
+    expect(wideWrap?.querySelector('table')).not.toBeNull()
+
+    const figBox = parsed.querySelector<HTMLElement>('.word-figure-box')!
+    expect(figBox).not.toBeNull()
+    expect(figBox.style.maxWidth).toBe('100%')
+    expect(figBox.style.height).toBe('auto')
+    expect(figBox.style.getPropertyValue('aspect-ratio')).toContain('420 / 210')
+    expect(figBox.querySelector('img')?.style.height).toBe('auto')
   })
 })

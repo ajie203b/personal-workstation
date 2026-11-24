@@ -40,6 +40,7 @@ interface Props {
   findQuery?: string
   findActive?: number
   onFindState?: (state: { total: number; searching: boolean }) => void
+  onSelectAnnotation?: (sel: { ann: Annotation; popover: { left: number; y: number; below: boolean } } | null) => void
 }
 
 function startsWithTitleHeading(html: string, title: string): boolean {
@@ -64,7 +65,7 @@ function startsWithTitleHeading(html: string, title: string): boolean {
  * 流式阅读器（v1.3）：EPUB / DOCX / PPTX / TXT 统一滚动阅读。
  * 复用沉浸排版设置与批注体系（v1.3.1：划词高亮按章节/片定位，文本 mark 包裹）。
  */
-export function FlowReader({ hash, flow, settings, annotations, jump, onSelection, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onFontSizeChange, onActiveAnchor, findQuery = '', findActive = 0, onFindState }: Props) {
+export function FlowReader({ hash, flow, settings, annotations, jump, onSelection, onProgress, onRestored, onLoaded, scrollRef, initialTarget, onFontSizeChange, onActiveAnchor, findQuery = '', findActive = 0, onFindState, onSelectAnnotation }: Props) {
   const restoredRef = useRef(false)
   const lastWriteRef = useRef(0)
   const lastJumpTs = useRef(0)
@@ -75,13 +76,51 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
   const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null)
 
   // 双指缩放 = 改字号：手势中只写 CSS 变量，不触发 React 重渲染；松手才落库
-  const proseRef = useRef<HTMLDivElement>(null)
+  const proseRef = useRef<HTMLDivElement | null>(null)
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const appliedTypoRef = useRef<{ widthPct: number; fontSize: number; leading: number } | null>(null)
+  const typoAnchorRef = useRef<{ el: HTMLElement; gap: number; ratio: number; at: number } | null>(null)
   const liveFontRef = useRef(settings.fontSize)
   const baseFontRef = useRef(settings.fontSize)
-  const fontAnchor = useRef<{ el: HTMLElement; top: number } | null>(null)
+  const fontAnchor = useRef<{ el: HTMLElement; gap: number; ratio: number } | null>(null)
   const pinchTarget = useRef<HTMLElement | null>(null)
   /** 手势帧合并：touchmove 每秒上百次，直接每次写变量会逐帧强制重排；rAF 里一帧只写一次 */
   const pinchRaf = useRef(0)
+
+  const applyProseTypography = useCallback((el: HTMLElement, s: Pick<DocSettings, 'widthPct' | 'fontSize' | 'leading'>) => {
+    el.style.setProperty('--reader-width', `${s.widthPct}%`)
+    el.style.setProperty('--flow-font-size', `${s.fontSize}px`)
+    el.style.setProperty('--flow-leading', String(s.leading))
+    el.style.setProperty('--word-font-scale', String(s.fontSize / 16))
+    el.style.setProperty('--word-leading', String(s.leading))
+  }, [])
+
+  const setProseNode = useCallback((el: HTMLDivElement | null) => {
+    proseRef.current = el
+    if (el && !appliedTypoRef.current) {
+      const s = settingsRef.current
+      applyProseTypography(el, s)
+      appliedTypoRef.current = { widthPct: s.widthPct, fontSize: s.fontSize, leading: s.leading }
+    }
+  }, [applyProseTypography])
+
+  const findViewportBlock = useCallback((container: HTMLElement): { el: HTMLElement; gap: number; ratio: number } | null => {
+    const cr = container.getBoundingClientRect()
+    if (cr.height <= 0) return null
+    const root = proseRef.current ?? container
+    const candidates = root.querySelectorAll<HTMLElement>('.word-content .docx article > *, .flow-body > *, section[data-seg]')
+    for (const el of candidates) {
+      const r = el.getBoundingClientRect()
+      if (r.height > 0 && r.bottom > cr.top + 8 && r.top < cr.bottom) {
+        const gap = r.top - cr.top
+        const ratio = gap < 0 ? Math.min(1, (cr.top - r.top) / r.height) : 0
+        return { el, gap, ratio }
+      }
+    }
+    return null
+  }, [])
+
   useEffect(() => {
     liveFontRef.current = settings.fontSize
     // 松手落库后全局变量已经等于新字号，撤掉可见章节上的临时覆盖
@@ -111,9 +150,9 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       // 松手后的位置校正各调一次 scrollTop，互相打架；手势期间先关掉
       c.style.overflowAnchor = 'none'
       const cr = c.getBoundingClientRect()
-      const hit = segs.find((el) => el.getBoundingClientRect().bottom > cr.top + 8) ?? segs[0]
-      fontAnchor.current = hit ? { el: hit, top: hit.getBoundingClientRect().top - cr.top } : null
-      pinchTarget.current = hit ?? null
+      const hitSeg = segs.find((el) => el.getBoundingClientRect().bottom > cr.top + 8) ?? segs[0]
+      fontAnchor.current = findViewportBlock(c)
+      pinchTarget.current = hitSeg ?? null
     },
     onScale: (ratio) => {
       const px = Math.round(Math.min(32, Math.max(14, baseFontRef.current * ratio)))
@@ -123,7 +162,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       // 松手后 settings 更新，全局变量一次性落到所有章节。
       pinchRaf.current = requestAnimationFrame(() => {
         pinchRaf.current = 0
-        const target = fontAnchor.current?.el ?? proseRef.current
+        const target = pinchTarget.current ?? proseRef.current
         if (!target) return
         target.style.setProperty('--flow-font-size', `${liveFontRef.current}px`)
         target.style.setProperty('--word-font-scale', String(liveFontRef.current / 16))
@@ -137,21 +176,58 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       if (scrollRef.current) scrollRef.current.style.overflowAnchor = ''
       if (liveFontRef.current !== settings.fontSize) {
         onFontSizeChange?.(liveFontRef.current)
-      } else if (pinchTarget.current) {
-        pinchTarget.current.style.removeProperty('--flow-font-size')
-        pinchTarget.current.style.removeProperty('--word-font-scale')
-        pinchTarget.current = null
+      } else {
+        fontAnchor.current = null
+        if (pinchTarget.current) {
+          pinchTarget.current.style.removeProperty('--flow-font-size')
+          pinchTarget.current.style.removeProperty('--word-font-scale')
+          pinchTarget.current = null
+        }
       }
     },
   })
 
+  // 宽度 / 字号 / 行距变化时：先在旧排版下抓取视口顶部段落锚点，写入新 CSS 变量后在同一帧恢复滚动偏移，
+  // 杜绝长文档（如已读 36%）拖动宽度滑块或调字号时正文中途跳飞。
   useLayoutEffect(() => {
-    const a = fontAnchor.current
+    const prose = proseRef.current
+    if (!prose) return
+    const prev = appliedTypoRef.current
+    const next = { widthPct: settings.widthPct, fontSize: settings.fontSize, leading: settings.leading }
+    if (!prev || (prev.widthPct === next.widthPct && prev.fontSize === next.fontSize && prev.leading === next.leading)) {
+      applyProseTypography(prose, next)
+      appliedTypoRef.current = next
+      return
+    }
+
     const c = scrollRef.current
-    if (!a || !c || !a.el.isConnected) return
-    const cr = c.getBoundingClientRect()
-    c.scrollTop += (a.el.getBoundingClientRect().top - cr.top) - a.top
-  }, [settings.fontSize, scrollRef])
+    const now = performance.now()
+    let anchor: { el: HTMLElement; gap: number; ratio: number } | null = null
+    if (fontAnchor.current?.el.isConnected) {
+      anchor = fontAnchor.current
+      fontAnchor.current = null
+    } else if (c && c.scrollTop > 2) {
+      if (typoAnchorRef.current && now - typoAnchorRef.current.at < 280 && typoAnchorRef.current.el.isConnected) {
+        anchor = typoAnchorRef.current
+      } else {
+        anchor = findViewportBlock(c)
+      }
+    }
+
+    applyProseTypography(prose, next)
+    appliedTypoRef.current = next
+
+    if (anchor && c && anchor.el.isConnected) {
+      const cr = c.getBoundingClientRect()
+      const nr = anchor.el.getBoundingClientRect()
+      if (cr.height > 0 && nr.height > 0) {
+        const desiredTop = anchor.gap >= 0 ? anchor.gap : -anchor.ratio * nr.height
+        const delta = (nr.top - cr.top) - desiredTop
+        if (Math.abs(delta) > 0.5) c.scrollTop = Math.max(0, c.scrollTop + delta)
+        typoAnchorRef.current = { ...anchor, at: now }
+      }
+    }
+  }, [settings.widthPct, settings.fontSize, settings.leading, applyProseTypography, findViewportBlock, scrollRef])
 
   useEffect(() => { onLoaded(flow.segments.length) }, [flow.segments.length, onLoaded])
 
@@ -350,6 +426,7 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     restoredRef.current = false
     didInit.current = false
     fontAnchor.current = null
+    typoAnchorRef.current = null
     pinchTarget.current = null
   }, [flow])
   useLayoutEffect(() => {
@@ -369,12 +446,31 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
     return () => window.clearTimeout(t)
   }, [initialTarget, onRestored, scrollRef])
 
-  // 跳转锚点 f{n} / el:{id} / 批注闪烁
+  // 跳转锚点 f{n}[@ratio] / el:{id} / 批注精确定位闪烁
   useEffect(() => {
     if (!jump || jump.ts === lastJumpTs.current) return
     lastJumpTs.current = jump.ts
     const container = scrollRef.current
     if (!container) return
+
+    // 若携带具体批注 ID（如从侧栏点批注卡片或复习卡跳转），直接滚到对应的 <mark> 节点，
+    // 解决单段长文档（Word / TXT）原先只滚到 f0 顶部导致完全偏离批注位置的问题。
+    if (jump.hl) {
+      const safeHl = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(jump.hl) : jump.hl.replace(/"/g, '\\"')
+      const marks = Array.from(proseRef.current?.querySelectorAll<HTMLElement>(`mark[data-ann="${safeHl}"]`) ?? [])
+      const firstMark = marks[0]
+      if (firstMark) {
+        const seg = firstMark.closest<HTMLElement>('[data-seg]')
+        if (seg) seg.style.contentVisibility = 'visible'
+        const top = container.scrollTop + (firstMark.getBoundingClientRect().top - container.getBoundingClientRect().top) - container.clientHeight * 0.28
+        container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+        marks.forEach((m) => m.classList.add('ann-flash'))
+        const t1 = window.setTimeout(() => marks.forEach((m) => m.classList.remove('ann-flash')), 2000)
+        const t2 = seg ? window.setTimeout(() => seg.style.removeProperty('content-visibility'), 2000) : 0
+        return () => { window.clearTimeout(t1); if (t2) window.clearTimeout(t2) }
+      }
+    }
+
     if (jump.anchor.startsWith('el:')) {
       const id = jump.anchor.slice(3)
       const target = proseRef.current?.querySelector<HTMLElement>('#' + CSS.escape(id))
@@ -388,31 +484,23 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
       const t2 = seg ? window.setTimeout(() => seg.style.removeProperty('content-visibility'), 2000) : 0
       return () => { window.clearTimeout(t1); if (t2) window.clearTimeout(t2) }
     }
-    const m = jump.anchor.match(/^f(\d+)/)
+    const m = jump.anchor.match(/^f(\d+)(?:@(\d*\.?\d+))?/)
     if (!m) return
     const idx = Number(m[1])
+    const ratio = m[2] != null ? Number(m[2]) : null
     const el = segRefs.current[idx]
     if (el) {
-      // 目标章节可能还没被渲染过（占位高度），先拉出来再滚，落点才准；
-      // 滚完稍后恢复 auto，这一章短时间保持全渲染不影响性能
       el.style.contentVisibility = 'visible'
-      container.scrollTo({ top: Math.max(0, el.offsetTop - 8), behavior: 'smooth' })
-      setFlashSeg(idx)
+      const targetTop = ratio != null && Number.isFinite(ratio)
+        ? el.offsetTop + el.offsetHeight * ratio
+        : el.offsetTop - 8
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+      if (ratio == null) setFlashSeg(idx)
       const t1 = setTimeout(() => setFlashSeg(null), 1600)
       const t2 = setTimeout(() => el.style.removeProperty('content-visibility'), 2000)
       return () => { clearTimeout(t1); clearTimeout(t2) }
     }
-  }, [jump, scrollRef])
-
-  useEffect(() => {
-    if (!jump?.hl) return
-    const mark = document.querySelector(`mark[data-ann="${jump.hl}"]`)
-    if (mark) {
-      mark.classList.add('ann-flash')
-      const t = setTimeout(() => mark.classList.remove('ann-flash'), 2000)
-      return () => clearTimeout(t)
-    }
-  }, [jump, annotations])
+  }, [jump, annotations, scrollRef])
 
   // 划词检测（mouse + 移动端 selectionchange/touchend）
   const checkSelection = useCallback(() => {
@@ -507,21 +595,30 @@ export function FlowReader({ hash, flow, settings, annotations, jump, onSelectio
           }
         }
         const a = target.closest?.('a[href]')
-        if (a) handleDocLink(e, a.getAttribute('href'))
+        if (a) { handleDocLink(e, a.getAttribute('href')); return }
+        if (onSelectAnnotation && window.getSelection()?.isCollapsed !== false) {
+          const mark = target.closest?.('mark[data-ann]') as HTMLElement | null
+          if (mark?.dataset.ann) {
+            const ann = annotations.find((item) => item.id === mark.dataset.ann)
+            if (ann) {
+              const rect = mark.getBoundingClientRect()
+              const below = rect.top < 110
+              onSelectAnnotation({
+                ann,
+                popover: { left: rect.left + rect.width / 2, y: below ? rect.bottom : rect.top, below },
+              })
+              return
+            }
+          }
+          onSelectAnnotation(null)
+        }
       }}
       style={{ touchAction: 'pan-x pan-y' }}
       className={cn('h-full overflow-y-auto overscroll-contain', themeCls)}
     >
       <div
-        ref={proseRef}
+        ref={setProseNode}
         className="reader-prose mx-auto py-8 md:py-12"
-        style={{
-          ['--reader-width' as string]: `${settings.widthPct}%`,
-          ['--flow-font-size' as string]: `${settings.fontSize}px`,
-          ['--flow-leading' as string]: String(settings.leading),
-          ['--word-font-scale' as string]: String(settings.fontSize / 16),
-          ['--word-leading' as string]: String(settings.leading),
-        }}
       >
         {flow.styles && <style>{flow.styles}</style>}
         {segmentEls}

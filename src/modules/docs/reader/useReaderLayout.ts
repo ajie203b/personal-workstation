@@ -43,7 +43,9 @@ export function useReaderLayout(docId: string | undefined, scrollRef: React.RefO
     const container = scrollRef.current
     if (!container) return
     const cr = container.getBoundingClientRect()
-    const nodes = container.querySelectorAll<HTMLElement>('.md-body > *, section[data-seg], [data-page]')
+    const nodes = container.querySelectorAll<HTMLElement>(
+      '.md-body > *, .word-content .docx article > *, .flow-body > *, section[data-seg], [data-page]',
+    )
     let hit: HTMLElement | null = null
     for (const el of nodes) {
       const r = el.getBoundingClientRect()

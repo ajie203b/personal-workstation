@@ -10,10 +10,12 @@ import { HL_COLORS, type HlColor, type Selection } from './types'
 export function SelectionPopover({
   selection,
   onHighlight,
+  onComment,
   onCopy,
 }: {
   selection: Selection
   onHighlight: (color: HlColor, toTask?: boolean) => void
+  onComment?: () => void
   onCopy: (text: string) => void
 }) {
   return (
@@ -38,15 +40,25 @@ export function SelectionPopover({
       <button
         aria-label="复制选中文本"
         title="复制选中文本"
-        className="grid place-items-center w-7 h-7 rounded-lg text-on-surface-2 hover:bg-surface-3"
+        className="grid place-items-center w-7 h-7 rounded-lg text-on-surface-2 hover:bg-surface-3 cursor-pointer"
         onClick={() => onCopy(selection.text)}
       >
         <Copy size={15} />
       </button>
+      {onComment && (
+        <button
+          aria-label="高亮并评论"
+          title="高亮并写评论"
+          className="grid place-items-center w-7 h-7 rounded-lg text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+          onClick={onComment}
+        >
+          <MessageSquareText size={15} />
+        </button>
+      )}
       <button
         aria-label="高亮并转为任务"
         title="高亮并转为任务"
-        className="grid place-items-center w-7 h-7 rounded-lg text-primary hover:bg-primary-soft"
+        className="grid place-items-center w-7 h-7 rounded-lg text-primary hover:bg-primary-soft cursor-pointer"
         onClick={() => onHighlight('yellow', true)}
       >
         <ListPlus size={15} />

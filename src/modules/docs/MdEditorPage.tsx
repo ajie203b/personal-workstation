@@ -15,7 +15,8 @@ import {
 } from 'lucide-react'
 import { db, type Doc } from '@/db/db'
 import { addTask } from '@/db/tasks'
-import { saveMarkdownDoc } from '@/db/docs'
+import { getPosition, saveDocSettings, saveMarkdownDoc } from '@/db/docs'
+import { DEFAULT_SETTINGS } from './reader/useReadingPosition'
 import { shareMarkdown } from '@/lib/shareDoc'
 import { useDocumentPrintTitle } from '@/lib/printDocument'
 import { useUi } from '@/stores/ui'
@@ -91,6 +92,14 @@ export function MdEditorPage() {
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   const [typewriterMode, setTypewriterMode] = useState(false)
+  const [editorWidthPct, setEditorWidthPct] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem('ws-md-editor-width'))
+      return Number.isFinite(saved) && saved >= 50 && saved <= 100 ? saved : DEFAULT_SETTINGS.widthPct
+    } catch {
+      return DEFAULT_SETTINGS.widthPct
+    }
+  })
   const [slashTrigger, setSlashTrigger] = useState<SlashTriggerState | null>(null)
   const [docTick, setDocTick] = useState(0)
 
@@ -159,10 +168,14 @@ export function MdEditorPage() {
         return
       }
       const blob = await db.blobs.get(doc.hash)
-      const md = blob ? await readDocumentText(blob.blob) : ''
+      const [md, pos] = await Promise.all([
+        blob ? readDocumentText(blob.blob) : Promise.resolve(''),
+        getPosition(doc.hash),
+      ])
       if (cancelled) return
       loadedDocIdRef.current = doc.id
       setExisting(doc)
+      if (pos?.settings?.widthPct) setEditorWidthPct(pos.settings.widthPct)
       setTitle(doc.title)
       setContentSeed(md)
       setCountMarkdown(md)
@@ -647,6 +660,36 @@ export function MdEditorPage() {
               <ToolBtn label="切换源码模式" active={sourceMode} onClick={toggleSourceMode}>
                 <Code2 size={14} />
               </ToolBtn>
+              <div className="hidden md:block">
+                <SelectMenu
+                  ariaLabel="编辑区宽度"
+                  title="编辑区版心宽度"
+                  value={
+                    editorWidthPct <= 68 ? '62'
+                    : editorWidthPct <= 86 ? '80'
+                    : editorWidthPct < 98 ? '92'
+                    : '100'
+                  }
+                  options={[
+                    { value: '62', label: '窄栏 62%' },
+                    { value: '80', label: '标准 80%' },
+                    { value: '92', label: '宽敞 92%' },
+                    { value: '100', label: '铺满 100%' },
+                  ]}
+                  triggerClassName="h-7 shrink-0 border-transparent bg-transparent px-1.5 text-[12px] rounded-[7px]"
+                  onChange={(v) => {
+                    const pct = Number(v)
+                    setEditorWidthPct(pct)
+                    try { localStorage.setItem('ws-md-editor-width', String(pct)) } catch { /* ignore */ }
+                    if (existing?.hash) {
+                      void getPosition(existing.hash).then((pos) => {
+                        const base = pos?.settings ?? DEFAULT_SETTINGS
+                        return saveDocSettings(existing.hash, { ...base, widthPct: pct })
+                      })
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -773,7 +816,10 @@ export function MdEditorPage() {
           ref={bodyScrollRef}
           className={cn('flex-1 overflow-y-auto min-h-0', focusMode && !sourceMode && 'typora-focus-mode')}
         >
-          <div className="mx-auto w-full max-w-[820px] px-5 md:px-12 py-8 min-h-full">
+          <div
+            className="reader-prose mx-auto py-8 min-h-full"
+            style={{ ['--reader-width' as string]: `${editorWidthPct}%` }}
+          >
             {ready && editor ? (
               sourceMode ? (
                 <textarea

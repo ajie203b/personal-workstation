@@ -38,10 +38,10 @@ export function useDocAnnotations({ doc, resolveDoc, selection, clearSelection, 
   }, [taskSeed])
 
   const create = useCallback(
-    async (color: HlColor, withTask = false) => {
-      if (!selection) return
+    async (color: HlColor, withTask = false): Promise<Annotation | undefined> => {
+      if (!selection) return undefined
       const target = resolveDoc ? await resolveDoc() : doc
-      if (!target) return
+      if (!target) return undefined
       const base = target.kind === 'pdf'
         ? { docHash: target.hash, page: (selection as Extract<Selection, { kind: 'pdf' }>).page, rects: (selection as Extract<Selection, { kind: 'pdf' }>).rects, text: selection.text, color }
         : target.kind === 'md'
@@ -52,6 +52,7 @@ export function useDocAnnotations({ doc, resolveDoc, selection, clearSelection, 
       else toast('已添加高亮')
       clearSelection()
       window.getSelection()?.removeAllRanges()
+      return ann
     },
     [doc, resolveDoc, selection, toast, clearSelection],
   )

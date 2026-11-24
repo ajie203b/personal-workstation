@@ -24,6 +24,20 @@ export function scopeWordStyles(css: string, scope: string): string {
       let clean = sanitizeStyle(text)
       if (!clean && extra) clean = text
       if (!clean) return
+      // Drop fixed print-page widths and rigid point line-heights so Word blocks
+      // reflow smoothly with the reader's width slider and leading controls.
+      if (
+        (decl.property === 'width' || decl.property === 'min-width' || decl.property === 'max-width') &&
+        /^-?\d*\.?\d+(pt|px|in|cm|mm|pc)$/i.test(value)
+      ) {
+        return
+      }
+      if (
+        (decl.property === 'line-height' || decl.property === 'min-height') &&
+        /^\d*\.?\d+(pt|px)$/i.test(value)
+      ) {
+        return
+      }
       // Absolute Word sizes must still follow the reader's font-size control.
       if (decl.property === 'font-size' && /^\d*\.?\d+(pt|px)$/.test(value)) {
         clean = `font-size: calc(${value} * var(--word-font-scale, 1))`

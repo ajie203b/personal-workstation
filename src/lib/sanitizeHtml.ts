@@ -78,7 +78,7 @@ const ALLOWED_STYLE_PROPS = new Set([
   'border-top', 'border-right', 'border-bottom', 'border-left', 'border-collapse', 'border-spacing',
   'table-layout', 'text-decoration-color', 'text-decoration-style', 'text-decoration-line',
   'vertical-align', 'list-style-type', 'list-style-position', 'color', 'background-color',
-  'width', 'height', 'max-width', 'min-width', 'max-height', 'min-height', 'opacity', 'display',
+  'width', 'height', 'max-width', 'min-width', 'max-height', 'min-height', 'aspect-ratio', 'box-sizing', 'opacity', 'display',
 ])
 
 /** 允许的协议；相对地址（#、/、./、../、裸路径）单独判断 */

@@ -82,4 +82,98 @@ describe('FlowReader legacy annotation replay', () => {
     expect(container.querySelectorAll('.flow-seg-title')).toHaveLength(0)
     expect(container.querySelectorAll('.flow-body h1')).toHaveLength(2)
   })
+
+  it('syncs --reader-width CSS variable across width adjustments', () => {
+    const flow: FlowDoc = {
+      unit: 'doc',
+      segments: [{ title: '正文', html: '<div class="word-content"><section class="docx"><article><p>第一段</p><p>第二段</p></article></section></div>', text: '第一段 第二段' }],
+      text: '第一段 第二段',
+    }
+    const scrollRef = createRef<HTMLDivElement>()
+    act(() => root.render(createElement(FlowReader, {
+      hash: 'docx-width',
+      flow,
+      settings: { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 80 },
+      annotations: [],
+      jump: null,
+      onSelection: vi.fn(),
+      onProgress: vi.fn(),
+      onRestored: vi.fn(),
+      onLoaded: vi.fn(),
+      scrollRef,
+      initialTarget: null,
+    })))
+    const prose = container.querySelector<HTMLElement>('.reader-prose')!
+    expect(prose.style.getPropertyValue('--reader-width')).toBe('80%')
+
+    act(() => root.render(createElement(FlowReader, {
+      hash: 'docx-width',
+      flow,
+      settings: { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 100 },
+      annotations: [],
+      jump: null,
+      onSelection: vi.fn(),
+      onProgress: vi.fn(),
+      onRestored: vi.fn(),
+      onLoaded: vi.fn(),
+      scrollRef,
+      initialTarget: null,
+    })))
+    expect(prose.style.getPropertyValue('--reader-width')).toBe('100%')
+  })
+
+  it('opens annotation popover when clicking an inline highlight mark and supports f0@ratio bookmark jump', () => {
+    const flow: FlowDoc = {
+      unit: 'doc',
+      segments: [{ title: '正文', html: '<p>前置段落</p><p>高亮目标句子</p>', text: '前置段落 高亮目标句子' }],
+      text: '前置段落 高亮目标句子',
+    }
+    const annotation: Annotation = {
+      id: 'ann-click-1', docHash: 'docx-ann', blockIdx: 0, text: '高亮目标句子', color: 'green', createdAt: 1,
+    }
+    const onSelectAnnotation = vi.fn()
+    const scrollRef = createRef<HTMLDivElement>()
+    const scrollToSpy = vi.fn()
+    HTMLElement.prototype.scrollTo = scrollToSpy
+
+    act(() => root.render(createElement(FlowReader, {
+      hash: 'docx-ann',
+      flow,
+      settings: { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 80 },
+      annotations: [annotation],
+      jump: null,
+      onSelection: vi.fn(),
+      onSelectAnnotation,
+      onProgress: vi.fn(),
+      onRestored: vi.fn(),
+      onLoaded: vi.fn(),
+      scrollRef,
+      initialTarget: null,
+    })))
+
+    const mark = container.querySelector<HTMLElement>('mark[data-ann="ann-click-1"]')!
+    expect(mark).not.toBeNull()
+    act(() => { mark.click() })
+    expect(onSelectAnnotation).toHaveBeenCalledWith(expect.objectContaining({ ann: annotation }))
+
+    const segEl = container.querySelector<HTMLElement>('[data-seg="0"]')!
+    Object.defineProperty(segEl, 'offsetTop', { configurable: true, get: () => 40 })
+    Object.defineProperty(segEl, 'offsetHeight', { configurable: true, get: () => 2000 })
+
+    act(() => root.render(createElement(FlowReader, {
+      hash: 'docx-ann',
+      flow,
+      settings: { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 80 },
+      annotations: [annotation],
+      jump: { anchor: 'f0@0.36', ts: 99 },
+      onSelection: vi.fn(),
+      onSelectAnnotation,
+      onProgress: vi.fn(),
+      onRestored: vi.fn(),
+      onLoaded: vi.fn(),
+      scrollRef,
+      initialTarget: null,
+    })))
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 760, behavior: 'smooth' })
+  })
 })

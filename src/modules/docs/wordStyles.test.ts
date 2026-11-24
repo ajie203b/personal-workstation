@@ -16,4 +16,16 @@ describe('Word stylesheet isolation', () => {
     expect(css).toContain('.word-test body { color: red }')
     expect(css).not.toMatch(/@import|@font-face|evil\.test|position|expression/)
   })
+
+  it('strips fixed print-page widths and rigid point line-heights while keeping percentage widths and scaled fonts', () => {
+    const css = scopeWordStyles(
+      'table.docx_grid { width: 453.55pt; border-collapse: collapse; } p.docx_normal { font-size: 12pt; line-height: 20pt; min-height: 20pt; width: 100%; }',
+      'word-fluid',
+    )
+    expect(css).toContain('border-collapse: collapse')
+    expect(css).not.toContain('453.55pt')
+    expect(css).not.toContain('20pt')
+    expect(css).toContain('width: 100%')
+    expect(css).toContain('font-size: calc(12pt * var(--word-font-scale, 1))')
+  })
 })

@@ -393,7 +393,7 @@ export function LocalMarkdownPage() {
       {file && localFileKind(file) && !['md', 'text', 'html'].includes(localFileKind(file)!) && !loading && <Button size="sm" onClick={() => void localMarkdown.openWith(file).catch(e => toast(String(e)))}><ExternalLink size={15} />用其他应用编辑</Button>}
       <Button size="icon" state={refresh.state} disabled={!file && !folder} title="刷新文档和文件夹" aria-label="刷新文档" onClick={() => void refreshDocument()}><RefreshCw size={16} /></Button>
       {kind === 'md' && !loading && !editing && <button className={cn(iconButton, annotationsOpen && 'bg-surface-3')} title="批注与评论" aria-label="批注与评论" aria-expanded={annotationsOpen} onClick={() => setAnnotationsOpen(v => !v)}><MessageSquareText size={17} /></button>}
-      {kind === 'md' && <button className={cn(iconButton, settings && 'bg-surface-3', editing && 'opacity-40')} disabled={editing} title="阅读设置" aria-label="阅读设置" aria-controls="reader-settings" aria-expanded={settings} onClick={() => setSettings(v => !v)}><Settings2 size={17} /></button>}
+      {doc && <button className={cn(iconButton, settings && 'bg-surface-3', editing && 'opacity-40')} disabled={editing} title="阅读设置" aria-label="阅读设置" aria-controls="reader-settings" aria-expanded={settings} onClick={() => setSettings(v => !v)}><Settings2 size={17} /></button>}
     </header>
     <div className="flex-1 min-h-0 flex relative">
       {sideOpen && <aside className="w-64 max-w-[82vw] shrink-0 flex flex-col border-r border-outline/70 bg-surface absolute inset-y-0 left-0 z-10 shadow-lg md:static md:shadow-none" aria-label="文档导航">
@@ -424,7 +424,7 @@ export function LocalMarkdownPage() {
           : <LocalTextEditor text={draft} onChange={updateDraft} scrollRef={editorScroll} position={editPosition.current} />
         ) : doc ? (kind === 'md'
           ? <LocalReadingPane key={doc.path} document={doc} onLink={openLink} renderImage={renderImage} jump={jump} scrollRef={readerScroll} restorePosition={!!readerPosition} settingsOpen={settings} onCloseSettings={() => setSettings(false)} annotationsOpen={annotationsOpen} onCloseAnnotations={() => setAnnotationsOpen(false)} onOpenAnnotations={() => setAnnotationsOpen(true)} />
-          : <LocalFilePreview key={`${doc.path}:${doc.version}`} doc={doc} scrollRef={readerScroll} onLink={openLink} position={readerPosition} jump={jump} />
+          : <LocalFilePreview key={`${doc.path}:${doc.version}`} doc={doc} scrollRef={readerScroll} onLink={openLink} position={readerPosition} jump={jump} settingsOpen={settings} onCloseSettings={() => setSettings(false)} />
         ) : <div className="max-w-lg mx-auto px-8 py-24"><h1 className="text-2xl font-semibold">本地文档</h1><p className="mt-3 text-sm leading-6 text-on-surface-2">打开文件或文件夹。支持 Markdown、文本、HTML、PDF、DOCX、PPTX 和 EPUB。</p><div className="flex gap-3 mt-6"><button className="rounded-lg bg-primary-action text-on-primary-action px-4 py-2 text-sm" onClick={() => void pick(false)}>打开文件</button><button className="rounded-lg border border-outline px-4 py-2 text-sm" onClick={() => void pick(true)}>打开文件夹</button></div></div>}
       </div>
     </div>

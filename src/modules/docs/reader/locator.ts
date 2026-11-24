@@ -51,11 +51,30 @@ export function firstSentence(raw: string): string {
 }
 
 /**
- * 书签摘录：取该位置的第一句话。
- * 先读已渲染的 DOM（书签总是加在当前看到的页/块上），PDF 页不在渲染窗口时退回全文索引的分页文本。
+ * 书签摘录：优先取当前滚动视口内第一段可见文字；
+ * 未传滚动容器或不在渲染窗口时退回块/页首句与全文索引。
  */
-export async function quoteAtLocator(doc: Doc, anchor: string): Promise<string | undefined> {
-  const m = anchor.match(/^([pbf])(\d+)$/)
+export async function quoteAtLocator(
+  doc: Doc,
+  anchor: string,
+  scrollEl?: HTMLElement | null,
+): Promise<string | undefined> {
+  if (scrollEl && doc.kind !== 'pdf') {
+    const cr = scrollEl.getBoundingClientRect()
+    if (cr.height > 0) {
+      const candidates = scrollEl.querySelectorAll<HTMLElement>(
+        '.md-body > *, .word-content .docx article > *, .flow-body > *',
+      )
+      for (const el of candidates) {
+        const r = el.getBoundingClientRect()
+        if (r.height > 0 && r.bottom > cr.top + 12 && r.top < cr.bottom) {
+          const hit = firstSentence(el.textContent ?? '')
+          if (hit) return hit
+        }
+      }
+    }
+  }
+  const m = anchor.match(/^([pbf])(\d+)/)
   if (!m) return undefined
   const idx = Number(m[2])
   let raw: string
@@ -70,10 +89,29 @@ export async function quoteAtLocator(doc: Doc, anchor: string): Promise<string |
   return firstSentence(raw) || undefined
 }
 
-/** 在当前阅读位置加书签（单位名与摘录都按文档类型推导） */
-export async function addBookmarkAt(doc: Doc, currentLocator: string): Promise<void> {
+/** 在当前阅读位置加书签（支持流式长文档段内比例锚点 f0@0.36 与当前小节标题） */
+export async function addBookmarkAt(
+  doc: Doc,
+  currentLocator: string,
+  opts?: { scrollEl?: HTMLElement | null; sectionTitle?: string; progressPct?: number },
+): Promise<void> {
   const index = Number(currentLocator.slice(1) || '0')
-  const unitLabel = hrefLabelOf(doc, index)
-  const anchor = currentLocator || (doc.kind === 'pdf' ? 'p1' : doc.kind === 'md' ? 'b0' : 'f0')
-  await addBookmark(doc.hash, unitLabel, anchor, await quoteAtLocator(doc, anchor))
+  let anchor = currentLocator || (doc.kind === 'pdf' ? 'p1' : doc.kind === 'md' ? 'b0' : 'f0')
+  const scrollEl = opts?.scrollEl
+  if (FLOW_KINDS.includes(doc.kind) && scrollEl) {
+    const segIdx = Number.isFinite(index) ? index : 0
+    const segEl = scrollEl.querySelector<HTMLElement>(`[data-seg="${segIdx}"]`)
+    if (segEl && segEl.offsetHeight > 0) {
+      const ratio = Math.min(1, Math.max(0, (scrollEl.scrollTop - segEl.offsetTop) / segEl.offsetHeight))
+      if (ratio > 0.005) anchor = `f${segIdx}@${ratio.toFixed(4)}`
+    }
+  }
+  const baseLabel = hrefLabelOf(doc, index)
+  const pctSuffix = opts?.progressPct != null && opts.progressPct > 0
+    ? ` · ${Math.round(opts.progressPct * 100)}%`
+    : ''
+  const unitLabel = opts?.sectionTitle?.trim()
+    ? `${opts.sectionTitle.trim()}${pctSuffix}`
+    : `${baseLabel}${doc.kind !== 'pdf' ? pctSuffix : ''}`
+  await addBookmark(doc.hash, unitLabel, anchor, await quoteAtLocator(doc, anchor, scrollEl))
 }

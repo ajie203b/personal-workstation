@@ -187,9 +187,18 @@ describe('Office / WPS & Performance P1', () => {
       const trimBox = page1Slot.firstElementChild as HTMLElement
       expect(trimBox.style.transform).toBe(`scale(${PDF_TRIM_SCALE})`)
 
-      // 测试页码直达跳转输入与翻页按钮
+      // 测试页码直达跳转输入与翻页按钮（双页模式下第 1-2 页同排，点「下一页」应直接跨到第 3 页而不卡在同排）
       const jumpInput = host.querySelector<HTMLInputElement>('input[aria-label="跳转页码"]')!
       expect(jumpInput.value).toBe('1')
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>('button[aria-label="下一页"]')!.click()
+      })
+      expect(host.querySelector<HTMLInputElement>('input[aria-label="跳转页码"]')!.value).toBe('3')
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>('button[aria-label="上一页"]')!.click()
+      })
+      expect(host.querySelector<HTMLInputElement>('input[aria-label="跳转页码"]')!.value).toBe('2')
+
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
       await act(async () => {
         jumpInput.focus()

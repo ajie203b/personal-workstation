@@ -98,6 +98,91 @@ function imageMime(path: string): string {
   return 'image/jpeg'
 }
 
+const EPUB_FIXED_LEN_RE = /^(-?\d*\.?\d+)(pt|px|in|cm|mm|pc)$/i
+
+function parseEpubLengthPt(raw: string | null | undefined): number | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const px = Number(trimmed)
+    return px > 0 ? px * 0.75 : null
+  }
+  const m = trimmed.match(EPUB_FIXED_LEN_RE)
+  if (!m) return null
+  const n = Number(m[1])
+  if (!Number.isFinite(n) || n <= 0) return null
+  switch (m[2].toLowerCase()) {
+    case 'pt': return n
+    case 'px': return n * 0.75
+    case 'in': return n * 72
+    case 'cm': return n * (72 / 2.54)
+    case 'mm': return n * (72 / 25.4)
+    case 'pc': return n * 12
+    default: return null
+  }
+}
+
+/**
+ * 归一化 EPUB 章节内的固定像素/磅值布局（如 Calibre / 微信读书 / 出版社排版的固定宽表格与插图框），
+ * 确保正文在 50%–100% 任意栏宽下都能居中铺满且不发生右侧溢出裁切。
+ */
+function normalizeEpubLayout(body: Element): void {
+  const doc = body.ownerDocument
+  for (const table of Array.from(body.querySelectorAll<HTMLTableElement>('table'))) {
+    table.removeAttribute('width')
+    for (const prop of ['width', 'min-width', 'max-width']) table.style.removeProperty(prop)
+
+    const colgroup = Array.from(table.children).find((el): el is HTMLTableColElement => el.tagName.toLowerCase() === 'colgroup')
+    const cols = colgroup ? Array.from(colgroup.querySelectorAll<HTMLTableColElement>('col')) : []
+    const rows = Array.from(table.rows)
+    const maxRowCols = rows.reduce((max, row) => {
+      const span = Array.from(row.cells).reduce((acc, c) => acc + (c.colSpan || 1), 0)
+      return Math.max(max, span)
+    }, 0)
+    const colCount = Math.max(cols.reduce((acc, c) => acc + (c.span || 1), 0), maxRowCols)
+
+    if (cols.length === 1) {
+      cols[0].removeAttribute('width')
+      cols[0].style.width = '100%'
+    } else if (cols.length > 1) {
+      const parsed = cols.map((col) => parseEpubLengthPt(col.style.width) ?? parseEpubLengthPt(col.getAttribute('width')))
+      const allValid = parsed.every((v): v is number => v != null && v > 0)
+      const total = allValid ? parsed.reduce((a, b) => a + b, 0) : 0
+      cols.forEach((col, i) => {
+        col.removeAttribute('width')
+        if (total > 0 && parsed[i] != null) {
+          col.style.width = `${Number(((parsed[i]! / total) * 100).toFixed(2))}%`
+        } else if (EPUB_FIXED_LEN_RE.test(col.style.width.trim())) {
+          col.style.removeProperty('width')
+        }
+      })
+    }
+
+    for (const cell of Array.from(table.querySelectorAll<HTMLElement>('tr, td, th'))) {
+      cell.removeAttribute('width')
+      if (EPUB_FIXED_LEN_RE.test(cell.style.width.trim())) cell.style.removeProperty('width')
+      if (EPUB_FIXED_LEN_RE.test(cell.style.minWidth.trim())) cell.style.removeProperty('min-width')
+    }
+
+    if (colCount >= 4 && !table.parentElement?.closest('table, .flow-table-scroll')) {
+      const wrap = doc.createElement('div')
+      wrap.className = 'flow-table-scroll'
+      table.parentNode?.insertBefore(wrap, table)
+      wrap.appendChild(table)
+    }
+  }
+
+  for (const el of Array.from(body.querySelectorAll<HTMLElement>('div, section, article, aside, blockquote, figure, p'))) {
+    if (el.classList.contains('flow-table-scroll')) continue
+    if (EPUB_FIXED_LEN_RE.test(el.style.width.trim())) el.style.removeProperty('width')
+    if (EPUB_FIXED_LEN_RE.test(el.style.minWidth.trim())) el.style.removeProperty('min-width')
+  }
+
+  for (const img of Array.from(body.querySelectorAll<HTMLImageElement>('img'))) {
+    img.removeAttribute('height')
+    if (EPUB_FIXED_LEN_RE.test(img.style.height.trim())) img.style.removeProperty('height')
+  }
+}
 /**
  * 图片先改写成 data-epub-src 占位，由 FlowReader 用 IntersectionObserver 按需取。
  * 旧实现会在打开时逐张解压整本 EPUB 的图片，图多的书首屏要等所有字节读完。
@@ -175,6 +260,7 @@ async function parseEpub(blob: Blob): Promise<FlowDoc> {
     const h = doc.querySelector('h1,h2,h3')
     const title = h?.textContent?.trim() || `第 ${segments.length + 1} 章`
     prepareEpubImages(doc, entry, zip)
+    normalizeEpubLayout(doc.body)
     if (!text && !doc.querySelector('img')) continue
     const html = sanitizeHtmlBody(doc.body)
     segments.push({ title, html, text })
@@ -231,10 +317,33 @@ async function parsePptx(blob: Blob): Promise<FlowDoc> {
   return { unit: 'slide', segments, text: segments.map((s) => s.text).join('\n') }
 }
 
-/* ---- TXT：空行分段 ---- */
+/* ---- TXT：兼容双空行分段与中文单换行缩进分段 ---- */
+export function splitTxtParagraphs(raw: string): string[] {
+  const normalized = raw.replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n\s*\n/).map((s) => s.replace(/^\n+|\n+$/g, '')).filter((s) => s.trim().length > 0)
+  const out: string[] = []
+  for (const block of blocks) {
+    const lines = block.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim().length > 0)
+    if (lines.length <= 1) {
+      if (lines[0]) out.push(lines[0].trim())
+      continue
+    }
+    const indentedCount = lines.filter((l) => /^[\u3000\t ]{2,}/.test(l)).length
+    const avgLen = lines.reduce((sum, l) => sum + l.trim().length, 0) / lines.length
+    // 中文网文/小说/长文 TXT 常以单换行（或段首两格全角空格）自然分段，整篇无空行：
+    // 若合成单个 <p><br/>，既丢失段间距，又破坏 content-visibility 虚拟化与段落阅读锚点。
+    if (blocks.length <= 2 && lines.length >= 3 || indentedCount >= 2 || avgLen >= 38) {
+      for (const line of lines) out.push(line.trim())
+    } else {
+      out.push(lines.map((l) => l.trim()).join('\n'))
+    }
+  }
+  return out
+}
+
 async function parseTxt(blob: Blob): Promise<FlowDoc> {
   const raw = await readDocumentText(blob)
-  const paras = raw.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)
+  const paras = splitTxtParagraphs(raw)
   const html = paras.map((p) => `<p>${esc(p).replace(/\n/g, '<br/>')}</p>`).join('')
   return { unit: 'doc', segments: [{ title: '正文', html, text: raw }], text: raw }
 }

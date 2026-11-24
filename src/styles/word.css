@@ -29,20 +29,36 @@
 }
 
 .flow-body .word-content {
+  width: 100%;
   max-width: 100%;
-  overflow-x: auto;
+  box-sizing: border-box;
   color: var(--md-ink);
   font-family: "STIX Two Text", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   letter-spacing: 0;
+  overflow-wrap: break-word;
   text-wrap: pretty;
 }
-.flow-body .word-content .docx { color: inherit; }
+.flow-body .word-content .docx,
+.flow-body .word-content .docx > article {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  color: inherit;
+}
+.flow-body .word-content .docx :is(article, section, div, p, table, figure, blockquote, img, svg, math, pre) {
+  max-width: 100%;
+  box-sizing: border-box;
+}
 .flow-body .word-content .docx p {
   margin-block: 0.8em;
   line-height: var(--word-leading, 1.85);
+  overflow-wrap: break-word;
 }
 .flow-body .word-content .docx article > p:first-child { margin-top: 0; }
-.flow-body .word-content .docx span { white-space: pre-wrap; }
+.flow-body .word-content .docx span {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
 .flow-body .word-content .docx p.word-title {
   margin-block: 0 0.9em;
   line-height: 1.4;
@@ -63,8 +79,18 @@
   text-align: center;
 }
 .flow-body .word-content .docx p[style*="background-color"] {
-  padding: 0.35em 0.6em;
-  border-radius: 3px;
+  padding: 0.4em 0.7em;
+  border-radius: 6px;
+}
+.flow-body .word-content .docx .word-figure-box {
+  display: block !important;
+  margin-inline: auto;
+}
+.flow-body .word-content .docx .word-figure-box img {
+  width: 100%;
+  height: auto !important;
+  max-height: none;
+  margin: 0;
 }
 
 /* Native MathML uses the same local math font on Windows, Android and offline. */
@@ -109,14 +135,63 @@
   text-indent: 0;
 }
 .flow-body .word-content .docx table {
-  margin-block: 1.3em;
+  width: 100% !important;
+  max-width: 100%;
+  margin-block: 1.25em;
   font-size: 0.95em;
+  border-collapse: collapse;
 }
 .flow-body .word-content .docx :is(td, th) {
-  padding: 0.55em 0.75em;
-  line-height: 1.65;
+  padding: 0.6em 0.85em;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
-.flow-body .word-content .docx :is(td, th) p { margin-block: 0.2em; }
+.flow-body .word-content .docx :is(td, th) p { margin-block: 0.3em; }
+.flow-body .word-content .docx :is(td, th) > p:first-child { margin-top: 0; }
+.flow-body .word-content .docx :is(td, th) > p:last-child { margin-bottom: 0; }
+
+/* 单列夹注/引文框（如精读原文框、批注左线框）：跟随正文行距与字号铺满当前栏宽 */
+.flow-body .word-content .docx table.word-callout-table {
+  font-size: 1em;
+  line-height: var(--word-leading, 1.85);
+  table-layout: fixed;
+}
+.flow-body .word-content .docx table.word-callout-table :is(td, th) {
+  padding: 0.8em 1.05em;
+  line-height: var(--word-leading, 1.85);
+}
+.flow-body .word-content .docx table.word-callout-table tbody tr:nth-child(even) {
+  background: transparent;
+}
+
+/* 多列宽表外层就地横向滚动：宽屏铺满栏宽，窄栏下局部可滚而不被外层裁切 */
+.flow-body .word-content .word-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-block: 1.25em;
+  overscroll-behavior-inline: contain;
+}
+.flow-body .word-content .word-table-scroll > table {
+  margin-block: 0;
+  min-width: max(100%, 34rem);
+}
+
+/* 夜间 / 暮色主题适配：消除 Word 自带浅色底纹（如米白原文框）的刺眼反白，
+   并将自动黑色 / 深蓝标题字色平滑切换到高对比度暗色阅读文字。 */
+:is(.theme-night, .theme-dusk) .flow-body .word-content .docx :is(td, th, p)[style*="background-color"] {
+  background-color: var(--md-quote) !important;
+  color: var(--md-ink);
+}
+:is(.theme-night, .theme-dusk) .flow-body .word-content .docx p:is(.word-title, .word-heading-1, .word-heading-2, .word-heading-3, .word-heading-4, .word-heading-5, .word-heading-6),
+:is(.theme-night, .theme-dusk) .flow-body .word-content .docx p:is(.word-title, .word-heading-1, .word-heading-2, .word-heading-3, .word-heading-4, .word-heading-5, .word-heading-6) span {
+  color: var(--md-ink) !important;
+}
+:is(.theme-night, .theme-dusk) .flow-body .word-content .docx :is(p, span, td, th, li)[style*="color: black"],
+:is(.theme-night, .theme-dusk) .flow-body .word-content .docx :is(p, span, td, th, li)[style*="color: rgb(0, 0, 0)"],
+:is(.theme-night, .theme-dusk) .flow-body .word-content .docx :is(p, span, td, th, li)[style*="color: #000"] {
+  color: var(--md-ink) !important;
+}
 
 /* 手机：Word 正文按屏宽排版，不再出现横向滚动。
    固定宽度的表格 / 图片 / 文本框统一收到 100%，表格列宽均分，长串就地折行。 */
@@ -126,15 +201,16 @@
     overflow-x: clip;
     overflow-wrap: anywhere;
   }
-  .flow-body .word-content .docx :is(article, section, div, p, table, figure, blockquote, img, svg, math, pre) {
-    max-width: 100%;
-    box-sizing: border-box;
+  .flow-body .word-content .word-table-scroll {
+    overflow-x: clip;
   }
   .flow-body .word-content .docx :is(td, th, span) {
     overflow-wrap: anywhere;
     word-break: break-word;
   }
+  .flow-body .word-content .word-table-scroll > table,
   .flow-body .word-content .docx table {
+    min-width: 0;
     width: 100% !important;
     max-width: 100% !important;
     table-layout: fixed;

@@ -31,3 +31,31 @@ it('opens settings outside the clipped header and provides an explicit close con
     vi.unstubAllGlobals()
   }
 })
+
+it('applies one-click width presets including full 100% width', () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const updateSettings = vi.fn()
+  try {
+    act(() => root.render(createElement(ReaderSettingsPanel, {
+      doc: { kind: 'docx' },
+      settings: { theme: 'day', fontSize: 17, leading: 1.85, widthPct: 80 },
+      updateSettings, onClose: vi.fn(), onResetLayout: vi.fn(),
+    })))
+    const group = document.querySelector('[role="group"][aria-label="正文宽度预设"]')!
+    expect(group).not.toBeNull()
+    const fullBtn = Array.from(group.querySelectorAll('button')).find((b) => b.textContent === '铺满')!
+    const focusBtn = Array.from(group.querySelectorAll('button')).find((b) => b.textContent === '专注')!
+    act(() => fullBtn.click())
+    expect(updateSettings).toHaveBeenCalledWith({ widthPct: 100 }, true)
+    act(() => focusBtn.click())
+    expect(updateSettings).toHaveBeenCalledWith({ widthPct: 62 }, true)
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    vi.unstubAllGlobals()
+  }
+})

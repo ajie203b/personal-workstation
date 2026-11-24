@@ -33,7 +33,7 @@ export function computePdfFitWidth(
   widthPct: number | undefined,
   spreadActive: boolean,
 ): number {
-  const widthRatio = phoneLayout ? 1 : Math.min(1, Math.max(0.5, (widthPct ?? 90) / 100))
+  const widthRatio = phoneLayout ? 1 : Math.min(1, Math.max(0.5, (widthPct ?? 80) / 100))
   if (!spreadActive) return Math.max(180, (containerW - 24) * widthRatio)
   return Math.max(180, ((containerW - 36 - PDF_SPREAD_COL_GAP) / 2) * widthRatio)
 }
