@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router'
 import {
-  CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun, Wrench,
+  CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun, Wrench, X,
 } from 'lucide-react'
 import { db, type Doc, type DocKind, type DocText, type Task } from '@/db/db'
 import { useUi, togglePalette } from '@/stores/ui'
@@ -12,6 +12,7 @@ import { Skeleton } from '@/shared/ui/Skeleton'
 import { cn } from '@/lib/cn'
 import { guardNavigation } from '@/lib/unsavedGuard'
 import { isNative, isTauri } from '@/lib/native'
+import { modKeyLabel } from '@/lib/shortcut'
 import { TOOL_CATALOG } from '@/modules/tools/toolCatalog'
 
 interface PaletteItem {
@@ -253,7 +254,10 @@ export function CommandPalette() {
     <div className="fixed inset-0 z-50" onClick={() => setOpen(false)}>
       <div className="absolute inset-0 bg-black/28 backdrop-blur-[6px]" />
       <div
-        className="pop absolute left-1/2 top-[14%] -translate-x-1/2 w-[min(600px,92vw)] overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="命令面板"
+        className="pop absolute left-1/2 top-[max(3.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:top-[13%] -translate-x-1/2 w-[min(600px,92vw)] overflow-hidden"
         style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -265,11 +269,28 @@ export function CommandPalette() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="搜索任务、文档、全文，或输入动作…"
-            className="flex-1 bg-transparent outline-none text-[15px] placeholder:text-on-surface-2/70"
+            className="flex-1 min-w-0 bg-transparent outline-none text-[15px] placeholder:text-on-surface-2/70"
           />
-          <kbd className="kbd">Esc</kbd>
+          {query && (
+            <button
+              type="button"
+              aria-label="清空搜索"
+              onClick={() => { setQuery(''); inputRef.current?.focus() }}
+              className="grid place-items-center size-7 rounded-full text-on-surface-2 hover:bg-surface-3 hover:text-on-surface cursor-pointer shrink-0"
+            >
+              <X size={14} />
+            </button>
+          )}
+          <kbd className="kbd hidden sm:inline-block">Esc</kbd>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="sm:hidden text-[13px] font-medium text-on-surface-2 px-1 py-1 cursor-pointer shrink-0"
+          >
+            关闭
+          </button>
         </div>
-        <div ref={listRef} className="max-h-[52vh] overflow-y-auto p-2">
+        <div ref={listRef} className="max-h-[min(52vh,calc(100dvh-9rem))] overflow-y-auto p-2">
           {searching && (
             <div className="flex flex-col gap-1 px-1 py-1" aria-hidden>
               {Array.from({ length: 3 }).map((_, i) => (
@@ -314,10 +335,10 @@ export function CommandPalette() {
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-3 px-4 py-2 border-t border-outline text-[11px] text-on-surface-2">
+        <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-outline text-[11px] text-on-surface-2">
           <span><kbd className="kbd">↑↓</kbd> 选择</span>
           <span><kbd className="kbd">↵</kbd> 打开</span>
-          <span className="ml-auto"><kbd className="kbd">{typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd> 呼出/关闭</span>
+          <span className="ml-auto"><kbd className="kbd">{modKeyLabel('K')}</kbd> 呼出/关闭</span>
         </div>
       </div>
     </div>

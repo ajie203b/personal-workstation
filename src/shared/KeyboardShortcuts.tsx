@@ -1,11 +1,10 @@
 import { useUi } from '@/stores/ui'
 import { Dialog } from '@/shared/ui/Sheet'
-
-const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+import { modKeyLabel } from '@/lib/shortcut'
 
 const ROWS: [string, string][] = [
-  [isMac ? '⌘K' : 'Ctrl K', '命令面板'],
-  [isMac ? '⌘Z' : 'Ctrl Z', '撤销最近一次操作'],
+  [modKeyLabel('K'), '命令面板'],
+  [modKeyLabel('Z'), '撤销最近一次操作'],
   ['N 或 /', '聚焦快速添加'],
   ['Enter', '保存任务'],
   ['↑ ↓ 或 J K', '在列表中移动选择'],

@@ -1,10 +1,11 @@
 import { NavLink, useLocation, useNavigate } from 'react-router'
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { IconSettings } from '@/shared/icons'
 import { NAV_ITEMS } from './nav'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
+import { modKeyLabel } from '@/lib/shortcut'
 import { ThemeButton } from './ThemeButton'
 import { useState } from 'react'
 import { BrandMark } from '@/shared/BrandMark'
@@ -21,12 +22,15 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const savedCollapsed = useUi((s) => s.sidebarCollapsed)
+  const setPaletteOpen = useUi((s) => s.setPaletteOpen)
   const [readerExpanded, setReaderExpanded] = useState(false)
   const reading = /^\/docs\/.+/.test(pathname)
   const collapsed = reading ? !readerExpanded : savedCollapsed
   const setCollapsed = useUi((s) => s.setSidebarCollapsed)
+  const modK = modKeyLabel('K')
 
   const onBrandClick = () => guardNavigation(() => navigate('/today'))
+  const badgeText = todayCount > 99 ? '99+' : String(todayCount)
 
   return (
     <aside
@@ -35,26 +39,51 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
         !collapsed && 'lg:w-[228px]',
       )}
     >
-      <div className="flex items-center gap-1.5 h-15 px-2.5 shrink-0 overflow-hidden">
+      <div className="flex items-center h-14 px-2.5 pt-1 shrink-0 overflow-hidden">
         <button
           type="button"
           aria-label="回到今日"
-          title="今日"
+          title="Kairos · 回到今日"
           onClick={onBrandClick}
-          className="chrome-button press shrink-0 cursor-pointer rounded-2xl select-none"
+          className={cn(
+            'chrome-button press flex items-center gap-1.5 h-11 rounded-[14px] cursor-pointer select-none transition-colors',
+            collapsed ? 'w-11 justify-center mx-auto' : 'w-11 justify-center mx-auto lg:mx-0 lg:w-full lg:justify-start lg:px-1',
+          )}
         >
           <BrandMark />
-        </button>
-        {!collapsed && (
-          <div className="sidebar-label hidden lg:flex flex-col min-w-0 leading-none">
-            <span className="text-[17px] font-bold tracking-[-0.025em] text-on-surface whitespace-nowrap">
+          {!collapsed && (
+            <span className="sidebar-label hidden lg:block text-[18px] font-bold tracking-[-0.03em] text-on-surface whitespace-nowrap">
               Kairos
             </span>
-            <span className="text-[10.5px] font-medium tracking-[0.06em] uppercase text-on-surface-2/80 mt-0.5 whitespace-nowrap">
-              Workstation
-            </span>
-          </div>
-        )}
+          )}
+        </button>
+      </div>
+
+      <div className="px-2.5 pt-1 pb-1 shrink-0">
+        <button
+          type="button"
+          aria-label="搜索与快速跳转"
+          title={`搜索与快速跳转 (${modK})`}
+          onClick={() => setPaletteOpen(true)}
+          className={cn(
+            'press flex items-center rounded-[12px] cursor-pointer transition-colors',
+            collapsed
+              ? 'chrome-button w-11 h-10 justify-center mx-auto text-on-surface-2 hover:text-on-surface'
+              : 'chrome-button w-11 h-10 justify-center mx-auto text-on-surface-2 hover:text-on-surface lg:mx-0 lg:w-full lg:h-9 lg:justify-start lg:gap-2.5 lg:px-3 lg:bg-surface-2/80 lg:border lg:border-outline/80 lg:hover:border-primary/35 lg:hover:bg-surface-2',
+          )}
+        >
+          <Search size={17} strokeWidth={1.9} className="shrink-0 lg:size-[15px]" aria-hidden />
+          {!collapsed && (
+            <>
+              <span className="sidebar-label hidden lg:block text-[13px] text-on-surface-2 truncate">
+                搜索 / 跳转
+              </span>
+              <kbd className="sidebar-label hidden lg:inline-block ml-auto rounded-[6px] bg-surface/90 px-1.5 py-0.5 font-mono text-[10.5px] leading-none text-on-surface-2/85 border border-outline/75">
+                {modK}
+              </kbd>
+            </>
+          )}
+        </button>
       </div>
 
       <nav aria-label="主导航" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 px-2.5 py-1.5">
@@ -67,7 +96,8 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
             title={item.label}
             className={({ isActive }) =>
               cn(
-                'sidebar-link relative flex items-center gap-3 h-11 px-3 rounded-[14px] shrink-0',
+                'sidebar-link relative flex items-center h-11 rounded-[14px] shrink-0',
+                collapsed ? 'justify-center px-0' : 'justify-center px-0 lg:justify-start lg:gap-3 lg:px-3',
                 isActive
                   ? 'text-primary font-semibold'
                   : 'text-on-surface-2 hover:bg-surface-3/70 hover:text-on-surface',
@@ -76,7 +106,20 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
           >
             {({ isActive }) => (
               <>
-                <item.icon size={20} strokeWidth={isActive ? 2.1 : 1.8} className="shrink-0" aria-hidden />
+                <span className="relative grid place-items-center size-6 shrink-0">
+                  <item.icon size={20} strokeWidth={isActive ? 2.1 : 1.8} className="shrink-0" aria-hidden />
+                  {item.path === '/tasks' && todayCount > 0 && (
+                    <span
+                      aria-hidden={!collapsed ? undefined : false}
+                      className={cn(
+                        'absolute -top-1 -right-2 grid place-items-center min-w-4 h-4 px-1 rounded-full bg-primary text-on-primary text-[10px] font-semibold tabular-nums leading-none ring-2 ring-surface',
+                        !collapsed && 'lg:hidden',
+                      )}
+                    >
+                      {badgeText}
+                    </span>
+                  )}
+                </span>
                 <span
                   className={cn('sidebar-label text-ui-label whitespace-nowrap', collapsed ? 'hidden' : 'hidden lg:block')}
                 >
@@ -89,7 +132,7 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
                       isActive ? 'bg-primary text-on-primary' : 'bg-surface-3 text-on-surface-2',
                     )}
                   >
-                    {todayCount}
+                    {badgeText}
                   </span>
                 )}
               </>

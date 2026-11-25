@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { FolderOpen, FolderPlus, Import, LayoutGrid, MoreHorizontal, PenLine, Plus, Search, Settings2, SlidersHorizontal, Sparkles, Table2, Trash2 } from 'lucide-react'
+import { FolderOpen, FolderPlus, Import, LayoutGrid, MoreHorizontal, PenLine, Plus, Search, Settings2, SlidersHorizontal, Sparkles, Table2, Trash2, X } from 'lucide-react'
+import { cn } from '@/lib/cn'
 import { isTauri } from '@/lib/native'
 import { IconDocs } from '@/shared/icons'
 import { DOC_KIND_LABEL, type Annotation, type Doc, type DocKind, type DocReadStatus, type Folder } from '@/db/db'
@@ -373,16 +374,32 @@ export function DocsPage() {
     }}>
     <div className="mx-auto w-full max-w-[1500px] px-3.5 md:px-8 pt-3 md:pt-4 pb-28 lg:pb-14 flex flex-col gap-3 md:gap-4 cascade">
       {/* 桌面：标题 + 搜索 / 写作 / 导入 一行放得下 */}
-      <div className="hidden lg:flex lg:items-start gap-3">
+      <div className="hidden lg:flex lg:items-center gap-3">
         <h1 className="text-[28px] font-semibold leading-tight tracking-tight">文档工作站</h1>
         <div className="ml-auto flex items-center gap-2">
-          <input
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="搜索标题、作者、标签或全文…"
-            aria-label="搜索文档"
-            className="h-9 w-60 px-3.5 rounded-[12px] bg-surface border border-outline shadow-[var(--elev-card)] text-[13px] outline-none transition-colors focus:border-primary/60"
-          />
+          <div className="relative flex items-center">
+            <Search size={14.5} className="pointer-events-none absolute left-3 text-on-surface-2/75" aria-hidden />
+            <input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜索标题、作者、标签或全文…"
+              aria-label="搜索文档"
+              className={cn(
+                'h-9 w-64 focus:w-72 pl-9 rounded-[12px] bg-surface border border-outline shadow-[var(--elev-card)] text-[13px] outline-none transition-[width,border-color] focus:border-primary/60',
+                keyword ? 'pr-8' : 'pr-3.5',
+              )}
+            />
+            {keyword && (
+              <button
+                type="button"
+                aria-label="清空文档搜索"
+                onClick={() => setKeyword('')}
+                className="absolute right-2 grid place-items-center size-5 rounded-full text-on-surface-2 hover:bg-surface-3 hover:text-on-surface cursor-pointer"
+              >
+                <X size={12.5} />
+              </button>
+            )}
+          </div>
           {allAnnotations.length > 0 && (
             <Button size="sm" onClick={() => setReviewOpen(true)}>
               <Sparkles size={14} /> 批注复习
@@ -409,8 +426,21 @@ export function DocsPage() {
             onChange={(e) => setKeyword(e.target.value)}
             placeholder="搜索标题、作者或全文…"
             aria-label="搜索文档"
-            className="w-full h-10 pl-9 pr-3 rounded-[13px] bg-surface/95 border border-outline shadow-[var(--elev-card)] text-[14px] outline-none focus:border-primary/60"
+            className={cn(
+              'w-full h-10 pl-9 rounded-[13px] bg-surface/95 border border-outline shadow-[var(--elev-card)] text-[14px] outline-none focus:border-primary/60',
+              keyword ? 'pr-9' : 'pr-3',
+            )}
           />
+          {keyword && (
+            <button
+              type="button"
+              aria-label="清空文档搜索"
+              onClick={() => setKeyword('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center size-6 rounded-full text-on-surface-2 hover:bg-surface-3 hover:text-on-surface cursor-pointer"
+            >
+              <X size={13.5} />
+            </button>
+          )}
         </div>
         {!inTrash && (
           <button type="button" aria-label="筛选文档" aria-haspopup="dialog" onClick={() => setFiltersOpen(true)}

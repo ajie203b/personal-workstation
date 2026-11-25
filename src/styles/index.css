@@ -64,7 +64,8 @@
   --ease-spring: cubic-bezier(.22, 1.08, .36, 1);
   --ease-soft-spring: cubic-bezier(.22, 1.06, .36, 1);
 
-  --elev-card: 0 1px 3px rgba(15, 23, 42, 0.04);
+  --elev-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px -6px rgba(15, 23, 42, 0.05);
+  --elev-card-hover: 0 6px 20px -8px rgba(15, 23, 42, 0.10), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
   /* 玻璃模糊半径集中管理，便于低端设备与减弱透明度时收敛 */
   --glass-blur: 20px;
   --glass-sat: 1.6;
@@ -103,7 +104,8 @@
   --glass-rim: rgba(255, 255, 255, 0.09);
   --glass-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.52), 0 2px 8px rgba(0, 0, 0, 0.28);
   --shadow-pop: 0 20px 64px -12px rgba(0, 0, 0, 0.6), 0 6px 20px -6px rgba(0, 0, 0, 0.38);
-  --elev-card: 0 1px 3px rgba(0, 0, 0, 0.24);
+  --elev-card: 0 1px 3px rgba(0, 0, 0, 0.26), 0 6px 16px -8px rgba(0, 0, 0, 0.28);
+  --elev-card-hover: 0 10px 26px -10px rgba(0, 0, 0, 0.48), 0 3px 8px -3px rgba(0, 0, 0, 0.32);
 }
 
 /* 真实弹簧：支持 linear() 的浏览器用弹簧积分曲线替换固定 cubic-bezier。
@@ -493,11 +495,22 @@ select:focus-visible {
   background: var(--surface);
   border: 1px solid var(--outline);
   border-radius: 14px;
-  transition: border-color var(--dur-1) var(--ease-standard), background-color var(--dur-1) var(--ease-standard);
+  box-shadow: var(--elev-card);
+  transition:
+    border-color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    box-shadow var(--dur-2) var(--ease-standard);
 }
 @media (hover: hover) {
   .tool-list-card:hover, .card-hover:hover {
-    border-color: var(--outline-strong);
+    border-color: color-mix(in srgb, var(--primary) 26%, var(--outline-strong));
+    box-shadow: var(--elev-card-hover);
+  }
+  .tool-list-card:hover .tool-arrow {
+    opacity: 0.95;
+    color: var(--primary);
+    background: var(--primary-soft);
+    transform: translate(1.5px, -1.5px);
   }
 }
 @media (any-pointer: coarse) {
@@ -514,13 +527,27 @@ select:focus-visible {
 .tool-arrow {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 9999px;
   font-size: 13px;
   color: var(--on-surface-2);
-  opacity: 0.4;
+  opacity: 0.42;
   flex-shrink: 0;
+  transition:
+    opacity var(--dur-1) var(--ease-standard),
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    transform var(--dur-2) var(--ease-spring);
+}
+
+.ranking-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+  animation: ai-pulse 1.8s ease-in-out infinite;
 }
 
 .task-card { box-shadow: none; }
@@ -893,7 +920,7 @@ select:focus-visible {
     padding: 0.25rem;
   }
   .mobile-toolbar {
-    grid-template-columns: 2.25rem minmax(0, 1fr) 2.25rem;
+    grid-template-columns: 1fr auto 1fr;
     height: var(--mobile-toolbar-height);
     padding-top: env(safe-area-inset-top, 0px);
     background: color-mix(in srgb, var(--canvas) 76%, transparent);

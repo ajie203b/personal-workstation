@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { Check, ChevronRight, Clock3, History, Keyboard, Plus, Search, X } from 'lucide-react'
+import { Check, ChevronRight, Clock3, History, Keyboard, Plus, Search, TrendingUp, X } from 'lucide-react'
+import { DOC_KIND_LABEL } from '@/db/db'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, todayStr } from '@/lib/date'
@@ -10,6 +11,7 @@ import { docPath } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { GettingStarted } from './GettingStarted'
 import { prefersReducedMotion } from '@/lib/motion'
+import { modKeyLabel } from '@/lib/shortcut'
 import { cn } from '@/lib/cn'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
@@ -151,7 +153,7 @@ export function TodayPage() {
               <Search size={14} className="text-on-surface-2/80" aria-hidden />
               <span>快速搜索与跳转</span>
               <kbd className="rounded-md bg-surface-3/90 px-1.5 py-0.5 font-mono text-[10.5px] text-on-surface-2 border border-outline/80">
-                ⌘K
+                {modKeyLabel('K')}
               </kbd>
             </button>
             <button
@@ -170,17 +172,17 @@ export function TodayPage() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-4 items-start">
         {/* 今日任务 */}
         <section className="md:col-span-3 min-w-0">
-          <div className="flex items-baseline gap-2 px-1 mb-1.5 md:mb-2">
+          <div className="flex items-center gap-2 min-h-8 px-1 mb-1.5 md:mb-2">
             <h2 className="text-[15px] md:text-[16px] font-semibold">今日任务</h2>
             {todayDone.length > 0 && (
-              <span className="text-[12px] text-ok font-medium">已完成 {todayDone.length}</span>
+              <span className="text-[12px] text-ok font-medium tabular-nums">已完成 {todayDone.length}</span>
             )}
             {todayTasks.length > 0 && (
               <button
                 type="button"
                 disabled={rolling}
                 onClick={() => void roll()}
-                className="ml-auto min-h-11 rounded-lg px-3 text-[12px] text-on-surface-2 hover:text-on-surface disabled:opacity-50 cursor-pointer"
+                className="ml-auto h-8 rounded-lg px-2.5 text-[12px] font-medium text-on-surface-2 hover:bg-surface-3/80 hover:text-on-surface transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {rolling ? '挪动中…' : '挪到明天'}
               </button>
@@ -237,10 +239,15 @@ export function TodayPage() {
           </div>
 
           <section className="hidden md:block card p-4 order-3 md:order-none">
-            <div className="flex items-center justify-between gap-2 mb-2.5">
-              <h2 className="text-[13px] font-semibold text-on-surface-2">进度</h2>
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="grid size-9 place-items-center rounded-[12px] bg-primary-soft text-primary shrink-0">
+                <TrendingUp size={17} aria-hidden />
+              </span>
+              <h2 className="text-[13.5px] font-semibold">任务概览</h2>
               {todayTotal > 0 && (
-                <span className="text-[11.5px] font-semibold tabular-nums text-primary">{todayPct}%</span>
+                <span className="ml-auto rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
+                  {todayPct}%
+                </span>
               )}
             </div>
             {todayTotal > 0 && (
@@ -254,7 +261,7 @@ export function TodayPage() {
                 />
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <Kpi value={todayTasks.length} label="今日待办" />
               <Kpi value={todayDone.length} label="今日完成" accent={todayDone.length > 0 ? 'var(--ok)' : undefined} />
               <Kpi value={weekDone} label="本周完成" />
@@ -399,31 +406,34 @@ function RecentReads() {
   const recent = useRecentDocs(3)
   return (
     <section aria-label="最近阅读" className="card w-full p-4">
-      <div className="flex items-center gap-2.5">
-        <span className="grid size-9 place-items-center rounded-[12px] bg-primary-soft text-primary">
+      <div className="flex items-center gap-2.5 mb-2">
+        <span className="grid size-9 place-items-center rounded-[12px] bg-primary-soft text-primary shrink-0">
           <History size={17} aria-hidden />
         </span>
-        <h2 className="text-[13px] font-medium">最近阅读</h2>
-        <Link to="/docs" className="ml-auto inline-flex min-h-11 items-center rounded-lg px-2 text-[12px] text-primary hover:bg-primary-soft">
+        <h2 className="text-[13.5px] font-semibold">最近阅读</h2>
+        <Link to="/docs" className="ml-auto inline-flex h-8 items-center rounded-lg px-2.5 text-[12px] font-medium text-primary hover:bg-primary-soft transition-colors">
           文档库
         </Link>
       </div>
       {recent.length > 0 ? (
-        <ul>
+        <ul className="flex flex-col gap-0.5">
           {recent.map((doc) => (
             <li key={doc.id}>
               <Link
                 to={docPath({ docId: doc.id })}
-                className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-[13px] hover:bg-surface-3"
+                className="group flex min-h-10 items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-[13px] hover:bg-surface-2 transition-colors"
               >
-                <span className="min-w-0 flex-1 truncate">{doc.title}</span>
-                <ChevronRight size={14} aria-hidden className="text-on-surface-2" />
+                <span className="min-w-0 flex-1 truncate font-medium text-on-surface">{doc.title}</span>
+                <span className="rounded-md bg-surface-3/85 px-1.5 py-0.5 text-[10.5px] font-medium text-on-surface-2 shrink-0">
+                  {DOC_KIND_LABEL[doc.kind]}
+                </span>
+                <ChevronRight size={14} aria-hidden className="text-on-surface-2 transition-transform group-hover:translate-x-0.5 shrink-0" />
               </Link>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-2 text-[12px] text-on-surface-2">在文档库导入或撰写文档后，这里会显示最近打开的内容。</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-on-surface-2">在文档库导入或撰写文档后，这里会显示最近打开的内容。</p>
       )}
     </section>
   )

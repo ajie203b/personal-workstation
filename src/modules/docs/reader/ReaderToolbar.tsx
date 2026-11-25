@@ -248,6 +248,14 @@ export function ReaderToolbar({
       </IconBtn>
       <IconBtn label="目录与高亮" className="lg:hidden" active={mobilePanel === 'toc'} onClick={() => onOpenMobilePanel('toc')}><List size={18} /></IconBtn>
       <IconBtn label="批注与反链" className="xl:hidden" active={mobilePanel === 'anns'} onClick={() => onOpenMobilePanel('anns')}><MessageSquareText size={18} /></IconBtn>
+      {progressPct > 0 && !chromeHidden && (
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[1.5px] bg-transparent">
+          <span
+            className="block h-full bg-primary/65 transition-[width] duration-300 ease-standard"
+            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+          />
+        </span>
+      )}
     </header>
   )
 }
