@@ -1,43 +1,43 @@
 {
-  "generatedAt": "2026-11-19T08:15:07.081Z",
+  "generatedAt": "2026-11-25T00:50:15.827Z",
   "source": "https://artificialanalysis.ai/",
   "indexVersion": "v5.0",
   "models": [
     {
       "name": "Claude Fable 5.2 (Max)",
-      "score": 64.6
+      "score": 64.8
+    },
+    {
+      "name": "GPT-6.2 Astra (Max)",
+      "score": 62.2
     },
     {
       "name": "Claude Fable 5.2 (Xhigh)",
       "score": 62.2
     },
     {
-      "name": "GPT-6.2 Astra (Max)",
-      "score": 62.1
-    },
-    {
       "name": "Claude Fable 5.2 (High)",
-      "score": 61.8
+      "score": 61.9
     },
     {
       "name": "GPT-6.2 Astra (Xhigh)",
-      "score": 61.6
+      "score": 61.8
     },
     {
       "name": "Gemini 4 Neon (Xhigh)",
-      "score": 61.4
+      "score": 61.5
     },
     {
       "name": "GPT-6.2 Astra (High)",
-      "score": 60.1
+      "score": 60.3
     },
     {
       "name": "Gemini 4 Carbon (High)",
-      "score": 60
+      "score": 60.1
     },
     {
       "name": "Gemini 4 Neon (High)",
-      "score": 59.6
+      "score": 59.8
     },
     {
       "name": "Claude Opus 5.5 (Max)",
@@ -45,11 +45,11 @@
     },
     {
       "name": "Gemini 4 Carbon (Medium)",
-      "score": 58.3
+      "score": 58.4
     },
     {
       "name": "Claude Opus 5.5 (Xhigh)",
-      "score": 57.4
+      "score": 57.5
     },
     {
       "name": "GPT-6.2 Sol (Max)",
@@ -65,55 +65,55 @@
     },
     {
       "name": "Claude Fable 5.2 (Medium)",
-      "score": 56.4
+      "score": 56.3
     },
     {
       "name": "GPT-6.2 Sol (Xhigh)",
-      "score": 55.7
+      "score": 55.6
     },
     {
       "name": "GPT-6 Astra (Xhigh)",
-      "score": 55.3
+      "score": 55.4
     },
     {
       "name": "Gemini 4 Neon (Medium)",
       "score": 54.9
     },
     {
-      "name": "GPT-6.2 Sol (High)",
+      "name": "GPT-6 Astra (High)",
       "score": 54.9
     },
     {
-      "name": "GPT-6 Astra (High)",
+      "name": "GPT-6.2 Sol (High)",
       "score": 54.8
     },
     {
-      "name": "GPT-6.1 Sol (Max)",
-      "score": 54.6
+      "name": "Claude Sonnet 5.5 (Max)",
+      "score": 54.7
     },
     {
-      "name": "Claude Sonnet 5.5 (Max)",
-      "score": 54.5
+      "name": "GPT-6.1 Sol (Max)",
+      "score": 54.7
     },
     {
       "name": "Gemini 4 Carbon (Low)",
       "score": 54.2
     },
     {
+      "name": "Gemini 4 Hydrogen (Xhigh)",
+      "score": 54.1
+    },
+    {
       "name": "Claude Fable 5.2 (Low)",
       "score": 53.9
     },
     {
-      "name": "Gemini 4 Hydrogen (Xhigh)",
-      "score": 53.9
+      "name": "GPT-6.1 Sol (Xhigh)",
+      "score": 52.4
     },
     {
       "name": "GPT-6.2 Sol (Medium)",
-      "score": 52.7
-    },
-    {
-      "name": "GPT-6.1 Sol (Xhigh)",
-      "score": 52.5
+      "score": 52.4
     },
     {
       "name": "Claude Opus 5.5 (High)",
@@ -121,7 +121,7 @@
     },
     {
       "name": "GPT-6 Astra (Medium)",
-      "score": 51.6
+      "score": 51.7
     }
   ]
 }
