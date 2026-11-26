@@ -57,7 +57,7 @@ const READER_SKELETON = (
 export function DocReaderPage() {
   const { docId } = useParams()
   const doc = useDoc(docId)
-  if (doc?.kind === 'html') return <HtmlDocumentPage doc={doc} />
+  if (doc?.kind === 'html') return <HtmlDocumentPage key={doc.hash} doc={doc} />
   return <StandardDocReader doc={doc} docId={docId} />
 }
 

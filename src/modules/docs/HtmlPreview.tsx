@@ -8,12 +8,16 @@ import { readDocumentText } from '@/lib/readDocumentText'
 import { useDocumentPrintTitle } from '@/lib/printDocument'
 
 const nativePreview = registerPlugin<{ open(options: { html: string; title: string }): Promise<void> }>('HtmlPreview')
-const policy = "default-src 'none'; script-src 'unsafe-inline' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; media-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'"
+const policy = "default-src 'none'; script-src 'unsafe-inline' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; media-src data: blob:; font-src data:; form-action 'none'"
 
 export function HtmlPreview({ source, title }: { source: string; title: string }) {
   const [error, setError] = useState('')
-  const html = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="viewport" content="width=device-width, initial-scale=1">${source}`
-  if (Capacitor.getPlatform() === 'android') {
+  const android = Capacitor.getPlatform() === 'android'
+  // A srcdoc frame inherits the app's base URL. Pin fragment links to the frame
+  // itself, before any base supplied by the document. Android sets its URL natively.
+  const base = android ? '' : '<base href="about:srcdoc" target="_self">'
+  const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy}; base-uri ${android ? "'none'" : 'about:'}">${base}<meta name="viewport" content="width=device-width, initial-scale=1">${source}`
+  if (android) {
     return <div className="m-auto p-4 text-center">
       <button className="rounded-lg bg-primary-action text-on-primary-action px-4 py-2" onClick={() => {
         setError('')

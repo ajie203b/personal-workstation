@@ -1,7 +1,6 @@
 package com.personal.workstation;
 
 import android.app.Dialog;
-import android.util.Base64;
 import android.view.ViewGroup;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -15,11 +14,10 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import java.nio.charset.StandardCharsets;
-
 /** Imported scripts run in their own offline WebView, without Capacitor plugins. */
 @CapacitorPlugin(name = "HtmlPreview")
 public class HtmlPreviewPlugin extends Plugin {
+    private static final String DOCUMENT_URL = "https://html-preview.invalid/document";
     private Dialog preview;
 
     @PluginMethod
@@ -50,12 +48,12 @@ public class HtmlPreviewPlugin extends Plugin {
             web.setWebViewClient(new WebViewClient() {
                 @Override
                 public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                    return true;
+                    return !request.isForMainFrame() || !request.getUrl().toString().startsWith(DOCUMENT_URL + "#");
                 }
 
                 @Override
                 public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                    return true;
+                    return !url.startsWith(DOCUMENT_URL + "#");
                 }
             });
             layout.addView(web, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -66,8 +64,7 @@ public class HtmlPreviewPlugin extends Plugin {
                 if (preview == dialog) preview = null;
             });
             dialog.show();
-            String encoded = Base64.encodeToString(html.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-            web.loadData(encoded, "text/html; charset=utf-8", "base64");
+            web.loadDataWithBaseURL(DOCUMENT_URL, html, "text/html", "UTF-8", DOCUMENT_URL);
             call.resolve();
         });
     }
