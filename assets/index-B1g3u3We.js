@@ -1,1 +1,0 @@
-import{t}from"./index-B5XFyqHo.js";async function o(n,e){await t("plugin:opener|open_url",{url:n,with:e})}async function r(n,e){await t("plugin:opener|open_path",{path:n,with:e})}async function p(n){return t("plugin:opener|reveal_item_in_dir",{paths:typeof n=="string"?[n]:n})}export{r as openPath,o as openUrl,p as revealItemInDir};
