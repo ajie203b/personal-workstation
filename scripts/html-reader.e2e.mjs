@@ -55,6 +55,29 @@ try {
   await frame.getByRole('button', { name: '运行动画' }).waitFor()
   await page.getByRole('button', { name: '返回文档库' }).click()
   await page.getByRole('button', { name: '阅读 演示', exact: true }).waitFor()
+  // Android providers may omit the extension. Older versions saved these pages as Markdown.
+  const legacyId = await page.evaluate(async () => {
+    const { db } = await import('/src/db/db.ts')
+    const { importDoc } = await import('/src/db/docs.ts')
+    const html = '<!doctype html><button>旧网页</button>'
+    const { doc } = await importDoc(new File([html], '安卓文档', { type: 'application/octet-stream' }))
+    if (doc.kind !== 'html') throw new Error('extensionless HTML was not recognized')
+    const note = await importDoc(new File([html + '\n'], '示例.md'))
+    if (note.doc.kind !== 'md') throw new Error('Markdown example was reclassified')
+    await db.docs.update(doc.id, { kind: 'md' })
+    return doc.id
+  })
+  for (const path of [`/docs/${legacyId}`, `/docs/edit/${legacyId}`]) {
+    await page.evaluate(async id => {
+      const { db } = await import('/src/db/db.ts')
+      await db.docs.update(id, { kind: 'md' })
+    }, legacyId)
+    await page.goto(server.resolvedUrls.local[0] + '#' + path)
+    await page.frameLocator('iframe[title="安卓文档"]').getByRole('button', { name: '旧网页' }).waitFor()
+    assert(page.url().endsWith('#/docs/' + legacyId))
+    await page.getByRole('button', { name: '返回文档库' }).click()
+    await page.getByRole('button', { name: '阅读 安卓文档', exact: true }).waitFor()
+  }
   console.log('PASS HTML import, animation state, five section links, Chinese and legacy anchors, top, missing target, keyboard, mobile width, reload and return')
 } finally {
   await browser?.close()

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { db, type Doc } from '@/db/db'
 import { addTask } from '@/db/tasks'
-import { getPosition, saveDocSettings, saveMarkdownDoc } from '@/db/docs'
+import { getPosition, repairHtmlKind, saveDocSettings, saveMarkdownDoc } from '@/db/docs'
 import { DEFAULT_SETTINGS } from './reader/useReadingPosition'
 import { shareMarkdown } from '@/lib/shareDoc'
 import { useDocumentPrintTitle } from '@/lib/printDocument'
@@ -162,12 +162,20 @@ export function MdEditorPage() {
     void (async () => {
       const doc = await db.docs.get(docId)
       if (cancelled) return
+      if (doc?.kind === 'html' && !doc.deletedAt) {
+        navigate(`/docs/${doc.id}`, { replace: true })
+        return
+      }
       if (!doc || doc.deletedAt || doc.kind !== 'md') {
         toast('文档不存在或不是 Markdown')
         navigate('/docs')
         return
       }
       const blob = await db.blobs.get(doc.hash)
+      if (blob && await repairHtmlKind(doc, blob.blob)) {
+        if (!cancelled) navigate(`/docs/${doc.id}`, { replace: true })
+        return
+      }
       const [md, pos] = await Promise.all([
         blob ? readDocumentText(blob.blob) : Promise.resolve(''),
         getPosition(doc.hash),

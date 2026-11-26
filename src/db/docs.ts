@@ -2,6 +2,7 @@ import { db, type Annotation, type Doc, type DocKind, type DocSettings, type Rea
 import { annotationAnchor } from '@/lib/docLocator'
 import { uid } from '@/lib/id'
 import { markDeleted } from '@/lib/tombstones'
+import { readDocumentText } from '@/lib/readDocumentText'
 
 /** SHA-256 内容指纹；非安全上下文降级为 FNV-1a */
 async function hashBuffer(buf: ArrayBuffer): Promise<string> {
@@ -27,18 +28,42 @@ export interface ImportResult {
   duplicated: boolean
 }
 
+async function isImportedWebpage(blob: Blob): Promise<boolean> {
+  const mime = blob.type.split(';')[0].trim().toLowerCase()
+  if (mime === 'text/html') return true
+  if (mime === 'text/markdown') return false
+  const start = await readDocumentText(blob.slice(0, 4096))
+  return /^\s*(?:<!--[\s\S]*?-->\s*)*(?:<!doctype\s+html(?:\s|>)|<html(?:\s|>))/i.test(start)
+}
+
+/** Older imports and some Android providers label complete webpages as Markdown. */
+export async function repairHtmlKind(doc: Pick<Doc, 'id' | 'hash' | 'kind'>, blob: Blob, knownHtml = false): Promise<boolean> {
+  if (doc.kind !== 'md' || doc.hash.startsWith('md-') || !(knownHtml || await isImportedWebpage(blob))) return false
+  return db.transaction('rw', db.docs, db.docText, async () => {
+    const current = await db.docs.get(doc.id)
+    if (!current || current.deletedAt || current.hash !== doc.hash) return false
+    if (current.kind !== 'md') return current.kind === 'html'
+    await db.docs.update(doc.id, { kind: 'html', updatedAt: Date.now() })
+    await db.docText.delete(doc.hash) // Rebuild the search index without styles and scripts.
+    return true
+  })
+}
+
 /** 导入文档：内容去重（同 hash 复用），文件本体存 blobs；异步建全文索引 */
 export async function importDoc(file: File): Promise<ImportResult> {
   const buf = await file.arrayBuffer()
   const hash = await hashBuffer(buf)
   const existing = await db.docs.where('hash').equals(hash).first()
+  const markdownFile = /\.(md|markdown)$/i.test(file.name)
   if (existing) {
     if (existing.deletedAt) await restoreDoc(existing.id)
+    if (!markdownFile) await repairHtmlKind(existing, file, /\.html?$/i.test(file.name))
     return { doc: (await db.docs.get(existing.id))!, duplicated: !existing.deletedAt }
   }
 
   const { detectKind } = await import('@/lib/docTextIndex')
-  const kind: DocKind = detectKind(file.name)
+  let kind: DocKind = detectKind(file.name)
+  if (kind === 'md' && !markdownFile && await isImportedWebpage(file)) kind = 'html'
   const title = file.name.replace(/\.(pdf|md|markdown|txt|epub|docx|pptx|html?)$/i, '')
   const doc: Doc = {
     id: uid(),
@@ -49,7 +74,7 @@ export async function importDoc(file: File): Promise<ImportResult> {
     addedAt: Date.now(),
     updatedAt: Date.now(),
   }
-  const blob = new Blob([buf], { type: file.type || 'application/octet-stream' })
+  const blob = new Blob([buf], { type: markdownFile ? 'text/markdown' : file.type || 'application/octet-stream' })
   await db.transaction('rw', db.docs, db.blobs, async () => {
     // 事务内复检（防并发导入同文件产生双行）
     const recheck = await db.docs.where('hash').equals(hash).first()

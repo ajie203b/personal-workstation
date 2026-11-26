@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import type { Annotation, Doc, Task } from '@/db/db'
-import { addAnnotation, deleteBookmark, getDocBlob, touchDoc, updateAnnotation } from '@/db/docs'
+import { addAnnotation, deleteBookmark, getDocBlob, repairHtmlKind, touchDoc, updateAnnotation } from '@/db/docs'
 import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
 import { toggleDone } from '@/db/tasks'
 import { MORPH_NAME, morphClose } from '@/lib/viewTransition'
@@ -218,6 +218,7 @@ function StandardDocReader({ doc, docId }: { doc?: Doc; docId?: string }) {
           setActiveTocAnchor(flow.toc?.[0]?.anchor ?? '')
           setContent({ kind: 'flow', data: flow })
         } else {
+          if (await repairHtmlKind({ id: docContentId, hash: docHash, kind: docKind }, blob)) return
           const text = await readDocumentText(blob)
           if (!alive) return
           setMdHeadings(parseMdBlocks(text).headings)
