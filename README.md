@@ -38,7 +38,8 @@ Kairos（个人工作站）：任务清单 × 文档工作站 × 本地工具合
 
 ### 文档工作站
 
-- **导入**：PDF / Markdown / TXT / EPUB / Word（DOCX）/ PowerPoint（PPTX），按内容指纹（SHA-256）去重，文件本体存 IndexedDB；文章离线与 OCR 的结果也能直接进文档库
+- **导入**支持 PDF、Markdown、TXT、EPUB、Word（DOCX）、PowerPoint（PPTX）与 HTML，按内容指纹（SHA-256）去重，文件本体存 IndexedDB。文章离线与 OCR 的结果也能直接进文档库。
+- **交互网页**支持单文件 `.html` 和 `.htm`，可播放 CSS 动画、操作按钮和 Canvas 演示。脚本、样式、图片及字体请打包在文件内。安卓打开文档后点「打开交互网页」，Windows 的「本地文档」预览可切换「交互预览」。
 - **Word 格式与公式**：保留 DOCX 原生公式、文字颜色、加粗、底纹和文档样式，按阅读区宽度连续排版；字号可继续调整。旧式 OLE/MathType 对象、复杂浮动绘图和 Word 的精确分页仍受浏览器能力限制。
 - **Word 阅读排版**：内置 STIX Two 数学及西文字库，手机离线可用；独立公式居中并保留右侧编号，复合上下标对齐，长公式在正文内部横向滚动。正文段距、标题和表格留白统一优化，作者指定的颜色、加粗和底纹继续保留。字体来源和授权见 `public/fonts/stix/OFL.txt`。
 - **Markdown 阅读兼容**：支持 `$…$` / `$$…$$` 数学公式、安全 HTML 加粗与颜色/底纹，并容错恢复复制时被空行拆散的管道表格；不改写原始文件或代码块。Markdown/TXT 导入支持 UTF-8、GBK/GB18030 与 UTF-16。

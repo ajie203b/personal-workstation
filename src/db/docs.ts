@@ -39,7 +39,7 @@ export async function importDoc(file: File): Promise<ImportResult> {
 
   const { detectKind } = await import('@/lib/docTextIndex')
   const kind: DocKind = detectKind(file.name)
-  const title = file.name.replace(/\.(pdf|md|markdown|txt|epub|docx|pptx)$/i, '')
+  const title = file.name.replace(/\.(pdf|md|markdown|txt|epub|docx|pptx|html?)$/i, '')
   const doc: Doc = {
     id: uid(),
     hash,

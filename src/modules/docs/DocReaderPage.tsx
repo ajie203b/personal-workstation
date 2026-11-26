@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import type { Annotation, Task } from '@/db/db'
+import type { Annotation, Doc, Task } from '@/db/db'
 import { addAnnotation, deleteBookmark, getDocBlob, touchDoc, updateAnnotation } from '@/db/docs'
 import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
 import { toggleDone } from '@/db/tasks'
@@ -29,6 +29,7 @@ import { PanelHead, PanelSplitter, RightContent, TocContent } from './reader/Rea
 import { AnnotationTaskDialog } from './reader/AnnotationTaskDialog'
 import { ReaderToolbar } from './reader/ReaderToolbar'
 import { ReaderFindBar } from './reader/ReaderFindBar'
+import { HtmlDocumentPage } from './HtmlPreview'
 import { FinishReadingDialog, PdfAnnotationPopover, ReaderMobileSheets, SelectionPopover } from './reader/ReaderOverlays'
 
 const PdfReader = lazy(() => import('./PdfReader').then((m) => ({ default: m.PdfReader })))
@@ -55,11 +56,16 @@ const READER_SKELETON = (
  */
 export function DocReaderPage() {
   const { docId } = useParams()
+  const doc = useDoc(docId)
+  if (doc?.kind === 'html') return <HtmlDocumentPage doc={doc} />
+  return <StandardDocReader doc={doc} docId={docId} />
+}
+
+function StandardDocReader({ doc, docId }: { doc?: Doc; docId?: string }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const toast = useUi((s) => s.toast)
 
-  const doc = useDoc(docId)
   useDocumentPrintTitle(doc?.title)
   const annotations = useAnnotations(doc?.hash)
   const backlinks = useDocBacklinks(docId)

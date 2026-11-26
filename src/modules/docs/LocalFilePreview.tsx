@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState, type RefObject, type MutableRefObject } from 'react'
 import type { DocKind } from '@/db/db'
 import { sanitizeHtml } from '@/lib/sanitizeHtml'
+import { HtmlPreview } from './HtmlPreview'
 import { localFileKind, type LocalDocument } from '@/lib/localMarkdown'
 import { mdContentHash } from '@/db/docs'
 import { parseFlowDoc, type FlowDoc } from './flowDoc'
@@ -29,6 +30,7 @@ export function LocalFilePreview({ doc, scrollRef, onLink, position, jump = null
   const reading = useReadingPosition({ docHash: hash, paramP: null, paramHl: undefined })
   const [flow, setFlow] = useState<FlowDoc>()
   const [error, setError] = useState('')
+  const [interactive, setInteractive] = useState(false)
   const html = useMemo(() => kind === 'html' ? sanitizeHtml(doc.markdown) : '', [kind, doc.markdown])
   useEffect(() => {
     if (!blob || (kind !== 'docx' && kind !== 'pptx' && kind !== 'epub')) return
@@ -102,6 +104,10 @@ export function LocalFilePreview({ doc, scrollRef, onLink, position, jump = null
     </>
   }
   return <>
+    {kind === 'html' && <button type="button" aria-pressed={interactive}
+      className="self-end mx-3 my-1 rounded-lg px-3 py-2 text-sm text-primary chrome-button"
+      onClick={() => setInteractive(value => !value)}>{interactive ? '返回阅读模式' : '交互预览'}</button>}
+    {kind === 'html' && interactive ? <HtmlPreview source={doc.markdown} title={doc.path.split(/[\\/]/).pop() || 'HTML'} /> :
     <div ref={scrollRef} className={`flex-1 min-h-0 overflow-auto theme-${reading.settings.theme}`}>
       <div
         className="reader-prose mx-auto py-8 min-w-0"
@@ -116,7 +122,7 @@ export function LocalFilePreview({ doc, scrollRef, onLink, position, jump = null
           if (link) { e.preventDefault(); onLink(link.getAttribute('href') ?? '') }
         }} dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="whitespace-pre-wrap break-words font-sans" style={{ lineHeight: reading.settings.leading }}>{doc.markdown}</pre>}
       </div>
-    </div>
+    </div>}
     {settingsModal}
   </>
 }

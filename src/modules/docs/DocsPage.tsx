@@ -513,7 +513,7 @@ export function DocsPage() {
             <EmptyState
               icon={IconDocs}
               title="文档库还是空的"
-              hint="导入 PDF / EPUB / Word / PPT / Markdown / TXT，或直接用编辑器写一篇。支持划词高亮、批注转任务、关掉重开自动回到上次位置。"
+              hint="导入 PDF、EPUB、Word、PPT、Markdown、TXT 或单文件 HTML。HTML 可以播放动画和运行交互演示。"
             >
               <div className="flex gap-2 justify-center">
                 <Button variant="primary" size="sm" className="rounded-[9px]" onClick={() => navigate('/docs/new')}>
@@ -632,7 +632,7 @@ export function DocsPage() {
         ref={fileRef}
         type="file"
         multiple
-        accept=".pdf,.md,.markdown,.txt,.epub,.docx,.pptx"
+        accept=".pdf,.md,.markdown,.txt,.epub,.docx,.pptx,.html,.htm,text/html"
         className="hidden"
         onChange={(e) => {
           void onImport(e.target.files)

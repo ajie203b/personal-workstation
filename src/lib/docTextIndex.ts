@@ -14,6 +14,7 @@ const MAX_INDEX_CHARS = 2_000_000
 /** 按扩展名/类型判 kind（与 importDoc 一致） */
 export function detectKind(name: string): DocKind {
   const n = name.toLowerCase()
+  if (/\.html?$/.test(n)) return 'html'
   if (n.endsWith('.pdf')) return 'pdf'
   if (n.endsWith('.epub')) return 'epub'
   if (n.endsWith('.docx')) return 'docx'
@@ -29,6 +30,13 @@ export async function extractDocText(kind: DocKind, blob: Blob): Promise<{ text:
   if (kind === 'docx') return extractDocx(blob)
   if (kind === 'pptx') return extractPptx(blob)
   const raw = await readDocumentText(blob)
+  if (kind === 'html') {
+    // Template contents are inert, including embedded images and scripts.
+    const template = document.createElement('template')
+    template.innerHTML = raw
+    template.content.querySelectorAll('title,script,style,noscript,template').forEach(el => el.remove())
+    return { text: (template.content.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_INDEX_CHARS) }
+  }
   // 正文里的 data URL 图片不是可搜索内容：去掉再建索引，否则 base64 会把索引撑爆
   return { text: raw.replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').slice(0, MAX_INDEX_CHARS) }
 }

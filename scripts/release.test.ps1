@@ -14,11 +14,19 @@ $suiteRoot = Join-Path $testRoot "release-tests-$suiteId 中文 user's path"
 New-Item -ItemType Directory $suiteRoot | Out-Null
 Set-Content (Join-Path $suiteRoot '.test-owner') $suiteId
 $remotes = @{}
+$mainPush = "git push origin $('a' * 40):refs/heads/main"
 
 function script:git {
     $global:LASTEXITCODE = 0
     $command = $args -join ' '
     $global:ReleaseTest.events.Add("git $command")
+    if ($global:ReleaseTest.options.GitTlsEof -and
+        ($command -like 'ls-remote --tags *' -or "git $command" -eq $mainPush) -and
+        @($global:ReleaseTest.events -eq "git $command").Count -eq 1) {
+        'fatal: TLS connect error: error:0A000126:SSL routines::unexpected eof while reading'
+        $global:LASTEXITCODE = 128
+        return
+    }
     switch -Wildcard ($command) {
         'status --porcelain' { return }
         'checkout main' { return }
@@ -48,7 +56,7 @@ function script:git {
         'rev-parse refs/tags/v9.9.9^{commit}' { $global:ReleaseTest.remote.LocalTag; return }
         'tag v9.9.9' { $global:ReleaseTest.remote.LocalTag = 'a' * 40; return }
         'push origin v9.9.9' { $global:ReleaseTest.remote.RemoteTag = 'a' * 40; return }
-        'push origin main' {
+        "push origin $('a' * 40):refs/heads/main" {
             if ($global:ReleaseTest.options.MainPushFails) { $global:LASTEXITCODE = 7; 'main push rejected' }
             return
         }
@@ -322,7 +330,12 @@ try {
             Assert ($first.Code -eq 1 -and $first.Json.retry -and -not $first.Events.Contains('git tag v9.9.9')) 'Expected interruption before tag'
             $result = Invoke-Scenario 'cli-main-push' @{} -CliMode default -Reuse
             Assert ($result.Code -eq 0 -and $result.Json.ok -and -not $result.Events.Contains('npm install')) 'APK unnecessarily rebuilt'
-            Assert ($result.Events.Contains('git push origin main') -and $result.Events.IndexOf('git push origin main') -lt $result.Events.IndexOf('git push origin v9.9.9')) 'Retry skipped main push'
+            Assert ($result.Events.Contains($mainPush) -and $result.Events.IndexOf($mainPush) -lt $result.Events.IndexOf('git push origin v9.9.9')) 'Retry skipped main push'
+        }
+        'v4.1.5 TLS failures recover within one publish invocation' = {
+            $result = Invoke-Scenario 'git-openssl-eof' @{ GitTlsEof = $true } -CliMode default
+            Assert ($result.Json.ok -and @($result.Events -like 'git ls-remote --tags *').Count -eq 2 -and
+                @($result.Events -eq $mainPush).Count -eq 2 -and @($result.Events -eq 'npm install').Count -eq 1) 'Transient Git failure escaped to the agent or rebuilt the APK'
         }
         'wrong release digest blocks the first publish before Pages' = {
             $result = Invoke-Scenario 'cli-digest' @{ WrongApkDigest = $true } -CliMode default

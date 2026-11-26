@@ -18,7 +18,7 @@ const TIERS = new Set(['today', 'upcoming', 'anytime', 'someday'])
 const STATUSES = new Set(['todo', 'doing', 'done'])
 const PRIORITIES = new Set([0, 1, 2, 3])
 const COLORS = new Set(['yellow', 'green', 'blue', 'red'])
-const DOC_KINDS = new Set(['pdf', 'md', 'epub', 'docx', 'pptx', 'txt'])
+const DOC_KINDS = new Set(['pdf', 'md', 'epub', 'docx', 'pptx', 'txt', 'html'])
 const REPEATS = new Set(['daily', 'weekly', 'weekdays', 'monthly'])
 const ROLES = new Set(['user', 'assistant', 'system'])
 

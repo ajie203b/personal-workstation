@@ -88,9 +88,10 @@ export interface SettingKV {
 
 /* ============ 文档工作站（M2） ============ */
 
-export type DocKind = 'pdf' | 'md' | 'epub' | 'docx' | 'pptx' | 'txt'
+export type DocKind = 'pdf' | 'md' | 'epub' | 'docx' | 'pptx' | 'txt' | 'html'
 
 export const DOC_KIND_LABEL: Record<DocKind, string> = {
+  html: 'HTML',
   pdf: 'PDF',
   md: 'Markdown',
   epub: 'EPUB',

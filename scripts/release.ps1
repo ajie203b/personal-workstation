@@ -72,7 +72,7 @@ function Run($exe, [string[]]$argv, [switch]$Capture, [switch]$Retry, [string]$D
                 $writer.WriteLine($safeLine)
                 $lines.Enqueue($line)
                 if (-not $Capture -and $lines.Count -gt 12) { [void]$lines.Dequeue() }
-                if ($isRemoteTool -and $line -match '(?i)timed?\s*out|timeout|connection (?:reset|refused|closed)|(?:connection.*forcibly closed|connected host has failed to respond)|\bEOF\s*$|context deadline exceeded|temporary failure|HTTP (?:429|502|503|504)\b|\b(?:502|503|504) (?:Bad Gateway|Service Unavailable|Gateway Timeout)') {
+                if ($isRemoteTool -and $line -match '(?i)timed?\s*out|timeout|connection (?:reset|refused|closed)|(?:connection.*forcibly closed|connected host has failed to respond)|unexpected EOF while reading|\bEOF\s*$|context deadline exceeded|temporary failure|HTTP (?:429|502|503|504)\b|\b(?:502|503|504) (?:Bad Gateway|Service Unavailable|Gateway Timeout)') {
                     $transient = $true
                     $diagnostic = $safeLine -replace 'https?://[^\s"]+', '[URL]'
                 } elseif ($exe -eq 'git' -and $line -match 'Not possible to fast-forward') {
@@ -380,7 +380,8 @@ if ($Exe) {
         $publishBranch = (Run git @('rev-parse', '--abbrev-ref', 'HEAD') -Capture).Trim()
         if ($publishBranch -eq 'main' -and -not $remoteTagCommit -and -not $state.mainPushed) {
             Step '推送 main，确保发布源码与远端同步'
-            Run git @('push', 'origin', 'main')
+            # Every retry proposes the same verified commit, even if a previous push succeeded.
+            Run git @('push', 'origin', "${commit}:refs/heads/main") -Retry
             $state.mainPushed = $true
             Save-Checkpoint
         }
