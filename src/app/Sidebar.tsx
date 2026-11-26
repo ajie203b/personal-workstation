@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router'
-import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { IconSettings } from '@/shared/icons'
 import { NAV_ITEMS } from './nav'
 import { useUi } from '@/stores/ui'
@@ -29,54 +29,32 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
   const setCollapsed = useUi((s) => s.setSidebarCollapsed)
   const modK = modKeyLabel('K')
 
-  const onBrandClick = () => guardNavigation(() => navigate('/today'))
   const badgeText = todayCount > 99 ? '99+' : String(todayCount)
 
   return (
     <aside
       className={cn(
-        'workspace-sidebar hidden md:flex flex-col shrink-0 w-[68px] z-30 overflow-hidden ml-3 mb-3 mt-[calc(.75rem+env(safe-area-inset-top,0px))]',
+        'workspace-sidebar hidden md:flex flex-col shrink-0 w-[68px] z-30 ml-3 mb-3 mt-[calc(.75rem+env(safe-area-inset-top,0px))]',
         !collapsed && 'lg:w-[228px]',
       )}
     >
-      <div className="flex items-center h-14 px-2.5 pt-1 shrink-0 overflow-hidden">
+      <div className="flex items-center h-14 px-2.5 pt-1 shrink-0">
         <button
           type="button"
-          aria-label="回到今日"
-          title="Kairos · 回到今日"
-          onClick={onBrandClick}
+          aria-label="Kairos 全局搜索与快速跳转"
+          aria-haspopup="dialog"
+          data-tip={`全局搜索（${modK}）`}
+          onClick={() => setPaletteOpen(true)}
           className={cn(
-            'chrome-button press flex items-center gap-1.5 h-11 rounded-[14px] cursor-pointer select-none transition-colors',
+            'chrome-button tip press flex items-center gap-1.5 h-11 rounded-[14px] cursor-pointer select-none transition-colors',
             collapsed ? 'w-11 justify-center mx-auto' : 'w-11 justify-center mx-auto lg:mx-0 lg:w-full lg:justify-start lg:px-1',
           )}
         >
           <BrandMark />
           {!collapsed && (
-            <span className="sidebar-label hidden lg:block text-[18px] font-bold tracking-[-0.03em] text-on-surface whitespace-nowrap">
-              Kairos
-            </span>
-          )}
-        </button>
-      </div>
-
-      <div className="px-2.5 pt-1 pb-1 shrink-0">
-        <button
-          type="button"
-          aria-label="搜索与快速跳转"
-          title={`搜索与快速跳转 (${modK})`}
-          onClick={() => setPaletteOpen(true)}
-          className={cn(
-            'press flex items-center rounded-[12px] cursor-pointer transition-colors',
-            collapsed
-              ? 'chrome-button w-11 h-10 justify-center mx-auto text-on-surface-2 hover:text-on-surface'
-              : 'chrome-button w-11 h-10 justify-center mx-auto text-on-surface-2 hover:text-on-surface lg:mx-0 lg:w-full lg:h-9 lg:justify-start lg:gap-2.5 lg:px-3 lg:bg-surface-2/80 lg:border lg:border-outline/80 lg:hover:border-primary/35 lg:hover:bg-surface-2',
-          )}
-        >
-          <Search size={17} strokeWidth={1.9} className="shrink-0 lg:size-[15px]" aria-hidden />
-          {!collapsed && (
             <>
-              <span className="sidebar-label hidden lg:block text-[13px] text-on-surface-2 truncate">
-                搜索 / 跳转
+              <span className="sidebar-label hidden lg:block text-[18px] font-bold tracking-[-0.03em] text-on-surface whitespace-nowrap">
+                Kairos
               </span>
               <kbd className="sidebar-label hidden lg:inline-block ml-auto rounded-[6px] bg-surface/90 px-1.5 py-0.5 font-mono text-[10.5px] leading-none text-on-surface-2/85 border border-outline/75">
                 {modK}

@@ -871,6 +871,7 @@ select:focus-visible {
   border-radius: 16px;
   box-shadow: var(--elev-card);
 }
+.workspace-sidebar .tip::after { left: 0; translate: 0; }
 .sidebar-link {
   transition: background-color var(--dur-1) var(--ease-standard), color var(--dur-1) var(--ease-standard), transform var(--dur-1) var(--ease-spring);
 }

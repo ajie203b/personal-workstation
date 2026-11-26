@@ -167,6 +167,6 @@ src-tauri/          # Windows 桌面版（Tauri 2，原生 WebDAV）
 
 ## 开发与发版
 
-构建、打包、签名与发布流程见 **[docs/构建与发版.md](docs/构建与发版.md)**。日常改 `src/` 只想本地看效果：`npm run build && npx cap sync android`。
+在配置好签名和 GitHub CLI 的 Windows 机器上，提交改动到 `main` 后运行 `npm run --silent release` 即可发布新版。脚本返回一行 JSON。打包模式见 [AGENTS.md](AGENTS.md)，环境与签名配置见 [构建与发版](docs/构建与发版.md)。
 
 设计侧资料在 `docs/`：产品方案、动效方案、UI / 动效评审报告。

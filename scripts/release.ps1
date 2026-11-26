@@ -6,7 +6,7 @@
 #   加 -SkipPull 不切 main、不拉代码（测某个分支时用）
 #   发布中断后加 -Resume：校验本地检查点并继续，不重复构建 APK
 #   已发布版本会自动准备下一个补丁版本；匹配的未完成检查点会自动续跑。
-# GitHub 只读请求遇到临时网络错误时最多尝试三次；发布写操作失败后可用 -Resume 安全续跑。
+# GitHub 读取遇到临时网络错误最多尝试三次；写入中断会先核对远端状态。
 # 产物都放在仓库的 apk\ 目录（已在 .gitignore 里）。
 # -Exe / -Publish 需要 GitHub CLI：winget install GitHub.cli，然后 gh auth login
 [CmdletBinding()]
@@ -14,7 +14,8 @@ param(
     [switch]$Exe,
     [switch]$Publish,
     [switch]$Resume,
-    [switch]$SkipPull
+    [switch]$SkipPull,
+    [hashtable]$Result = @{}
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,6 +28,7 @@ $outDir = Join-Path $Root 'apk'
 $logDir = Join-Path $outDir 'logs'
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $LogFile = Join-Path $logDir "release-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$([guid]::NewGuid().ToString('N').Substring(0, 8)).log"
+$Result.log = $LogFile
 Write-Host "详细日志：$LogFile"
 trap {
     $failureRecord = $_
@@ -39,6 +41,7 @@ trap {
 }
 
 function Step($msg) {
+    $Result.stage = $msg
     Write-Host "`n==> $msg" -ForegroundColor Cyan
     Add-Content -LiteralPath $LogFile -Value "`n[$(Get-Date -Format 'HH:mm:ss')] $msg" -Encoding UTF8
 }
@@ -55,25 +58,45 @@ function Run($exe, [string[]]$argv, [switch]$Capture, [switch]$Retry, [string]$D
             $attemptArgs[$destinationIndex + 1] = $attemptDirectory
         }
         Add-Content -LiteralPath $LogFile -Value "> $exe $($attemptArgs -join ' ')" -Encoding UTF8
-        $lines = [Collections.Generic.List[string]]::new()
-        & $exe @attemptArgs 2>&1 | ForEach-Object {
-            $line = $_.ToString()
-            $lines.Add($line)
-            Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
-            if (-not $Capture -and $VerbosePreference -eq 'Continue') { Write-Host $line }
-            elseif (-not $Capture -and $line -match '\b\d+ (high|critical) severity vulnerabilities\b') {
-                Write-Host "依赖审计提示：$line（详情见日志）" -ForegroundColor Yellow
+        $lines = [Collections.Generic.Queue[string]]::new()
+        $transient = $false
+        $isRemoteTool = $exe -in 'git', 'gh'
+        $diagnostic = $null
+        $kind = $null
+        $writer = [IO.File]::AppendText($LogFile)
+        try {
+            & $exe @attemptArgs 2>&1 | ForEach-Object {
+                $line = $_.ToString()
+                # Signed artifact download URLs can contain temporary credentials.
+                $safeLine = $line -replace '(https?://[^\s"?]+)\?[^\s"]+', '$1?[redacted]'
+                $writer.WriteLine($safeLine)
+                $lines.Enqueue($line)
+                if (-not $Capture -and $lines.Count -gt 12) { [void]$lines.Dequeue() }
+                if ($isRemoteTool -and $line -match '(?i)timed?\s*out|timeout|connection (?:reset|refused|closed)|(?:connection.*forcibly closed|connected host has failed to respond)|\bEOF\s*$|context deadline exceeded|temporary failure|HTTP (?:429|502|503|504)\b|\b(?:502|503|504) (?:Bad Gateway|Service Unavailable|Gateway Timeout)') {
+                    $transient = $true
+                    $diagnostic = $safeLine -replace 'https?://[^\s"]+', '[URL]'
+                } elseif ($exe -eq 'git' -and $line -match 'Not possible to fast-forward') {
+                    $kind = 'git_diverged'
+                    $diagnostic = $safeLine
+                } elseif ($isRemoteTool -and $line -match '\bHTTP 401\b|authentication failed|token.*invalid') {
+                    $kind = 'authentication'
+                    $diagnostic = $safeLine
+                } elseif ($exe -eq 'npm' -and $line -match '\berror TS\d+:|^\s*- .+won.t be precached|^\s*(?:Error:|npm error code)\s+\S') {
+                    $diagnostic = $safeLine.Trim()
+                }
+                if (-not $Capture -and $line -match '\b\d+ (high|critical) severity vulnerabilities\b') {
+                    $Result.warning = $line.Trim()
+                    Write-Host "依赖审计提示：$line（详情见日志）" -ForegroundColor Yellow
+                } elseif (-not $Capture -and $VerbosePreference -eq 'Continue') { Write-Host $safeLine }
             }
-        }
-        $exitCode = $LASTEXITCODE
+            $exitCode = $LASTEXITCODE
+        } finally { $writer.Dispose() }
         if ($exitCode -eq 0) {
             if ($DownloadDirectory) { return $attemptDirectory }
             if ($Capture) { return $lines }
             return
         }
-        $failureText = $lines -join "`n"
-        $transient = $failureText -match '(?i)timed?\s*out|timeout|connection (?:reset|refused|closed)|unexpected EOF|context deadline exceeded|temporary failure|HTTP (?:429|502|503|504)\b|\b(?:502|503|504) (?:Bad Gateway|Service Unavailable|Gateway Timeout)'
-        if ($Retry -and $transient -and $attempt -lt $maxAttempts) {
+        if ($Retry -and $transient -and -not $kind -and $attempt -lt $maxAttempts) {
             $delay = 3 * $attempt
             $message = "网络暂时失败，${delay} 秒后重试（$attempt/$maxAttempts）：$exe $($argv[0..([math]::Min(1, $argv.Count - 1))] -join ' ')"
             Write-Host $message -ForegroundColor Yellow
@@ -81,8 +104,15 @@ function Run($exe, [string[]]$argv, [switch]$Capture, [switch]$Retry, [string]$D
             Start-Sleep -Seconds $delay
             continue
         }
-        $lines | Select-Object -Last 12 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
-        throw "失败：$exe $($argv -join ' ')（退出码 $exitCode）"
+        $tail = @($lines | Select-Object -Last 12 | ForEach-Object {
+            $_ -replace '(https?://[^\s"?]+)\?[^\s"]+', '$1?[redacted]'
+        })
+        $tail | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        $detail = $diagnostic ?? ($tail | Where-Object { $_.Trim() } | Select-Object -Last 1)
+        $failure = [Exception]::new("$exe $($argv[0]) 失败（退出码 $exitCode） $detail")
+        if ($kind) { $failure.Data['kind'] = $kind }
+        elseif ($transient) { $failure.Data['kind'] = 'network' }
+        throw $failure
     }
 }
 function Get-DistHash {
@@ -100,7 +130,34 @@ function Save-Checkpoint {
     Move-Item -LiteralPath $temporary -Destination $statePath -Force
 }
 function Read-Release {
-    Run gh @('api', "repos/{owner}/{repo}/releases/tags/$tag") -Capture -Retry | ConvertFrom-Json
+    $release = Run gh @('api', "repos/{owner}/{repo}/releases/tags/$tag") -Capture -Retry | ConvertFrom-Json
+    if ($release.tag_name -ne $tag) { throw "GitHub 返回的 Release 标签与 $tag 不一致" }
+    if ($release.draft) { throw "Release $tag 是草稿，请核对并发布该草稿后续跑" }
+    return $release
+}
+function Find-Release {
+    $filter = ".[] | select(.tag_name == $($tag | ConvertTo-Json -Compress)) | .tag_name"
+    if (Run gh @('api', '--paginate', 'repos/{owner}/{repo}/releases?per_page=100', '--jq', $filter) -Capture -Retry) {
+        return Read-Release
+    }
+}
+function Sync-ReleaseApk($existing) {
+    $name = Split-Path $apkOut -Leaf
+    for ($attempt = 0; ; $attempt++) {
+        $asset = $existing.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+        if ($asset) {
+            if ($asset.digest -ne "sha256:$($state.apkHash)") { throw '远端 APK 与检查点不一致，已停止，不会覆盖附件' }
+            return
+        }
+        if ($attempt -eq 2) { throw $uploadFailure }
+        try { Run gh @('release', 'upload', $tag, $apkOut); return }
+        catch {
+            if ($_.Exception.Data['kind'] -ne 'network') { throw }
+            $uploadFailure = $_
+        }
+        Start-Sleep -Seconds 3
+        $existing = Read-Release
+    }
 }
 
 # ---------- 预检 ----------
@@ -122,9 +179,10 @@ if (-not $SkipPull -and -not $Resume) {
     $dirty = Run git @('status', '--porcelain') -Capture
     if ($dirty) { throw "工作区有未提交改动，先处理：`n$dirty" }
     Run git @('checkout', 'main')
-    Run git @('pull', '--ff-only')
+    Run git @('pull', '--ff-only') -Retry
 }
 
+$Result.stage = '校验版本和检查点'
 $pkgVer = (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $lockPath = Join-Path $Root 'package-lock.json'
 if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { throw '缺少 package-lock.json，不能确认发布版本' }
@@ -141,6 +199,7 @@ $verCode = [regex]::Match($gradle, 'versionCode\s+(\d+)').Groups[1].Value
 Write-Host "package.json $pkgVer / versionName $verName / versionCode $verCode"
 if ($pkgVer -ne $verName) { throw "版本不一致：package.json=$pkgVer，build.gradle=$verName" }
 $tag = "v$verName"
+$Result.tag = $tag
 $apkOut = Join-Path $outDir "personal-workstation-$tag.apk"
 $statePath = Join-Path $outDir "release-$tag.json"
 $updaterConfigured = $false
@@ -156,12 +215,12 @@ if ($Publish) {
     # 只查询本次标签，避免历史标签差异阻塞；未完成发布可以复用本地检查点。
     $localTag = Run git @('tag', '--list', $tag) -Capture
     $remoteTags = @(Run git @('ls-remote', '--tags', 'origin', "refs/tags/$tag", "refs/tags/$tag^{}") -Capture -Retry)
-    if (-not $Resume -and ($localTag -or $remoteTags.Count)) {
+    if (-not $Resume) {
         $checkpoint = if (Test-Path -LiteralPath $statePath) { Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json -AsHashtable } else { $null }
         if ($checkpoint -and $checkpoint.schema -eq 1 -and $checkpoint.commit -eq $commit -and $checkpoint.version -eq $verName) {
             Write-Host "发现匹配的发布检查点，自动续跑 $tag"
             $Resume = $true
-        } else {
+        } elseif ($localTag -or $remoteTags.Count) {
             if (-not $localTag) { Run git @('fetch', 'origin', "refs/tags/${tag}:refs/tags/${tag}") -Retry }
             if ($verName -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw '自动升级仅支持数字版本号，请手动处理' }
             $major = [int]$Matches[1]; $minor = [int]$Matches[2]; $patch = [int]$Matches[3]
@@ -173,10 +232,11 @@ if ($Publish) {
                 $nextRemote = @(Run git @('ls-remote', '--tags', 'origin', "refs/tags/$nextTag", "refs/tags/$nextTag^{}") -Capture -Retry)
             } while ($nextLocal -or $nextRemote.Count)
             Step "准备新版本 $nextTag"
-            & (Join-Path $PSScriptRoot 'prepare-release.ps1') -PreviousTag $tag -Version $nextVersion
+            & (Join-Path $PSScriptRoot 'prepare-release.ps1') -PreviousTag $tag -Version $nextVersion 2>&1 |
+                ForEach-Object { Add-Content -LiteralPath $LogFile -Value $_ -Encoding UTF8 }
             Write-Host "版本准备完成，继续发布 $nextTag"
             # 重新执行完整预检，让版本、提交和所有产物始终对应。
-            & $PSCommandPath -Publish -SkipPull
+            & $PSCommandPath -Publish -SkipPull -Result $Result
             return
         }
     }
@@ -189,6 +249,7 @@ if ($Publish) {
         if (-not (Test-Path -LiteralPath $apkOut) -or (Get-FileHash -LiteralPath $apkOut).Hash -ne $state.apkHash -or
             (Get-DistHash) -ne $state.distHash) { throw '本地构建产物已改变，不能续跑，请恢复原产物或升版本重新发布' }
         Step "从检查点继续 $tag（提交 $($commit.Substring(0, 7))）"
+        $Result.resume = $true
     }
     if ($Resume) {
         if ($localTag -and (Run git @('rev-parse', "refs/tags/$tag^{commit}") -Capture) -ne $commit) { throw '本地标签指向不同提交，已停止' }
@@ -207,7 +268,12 @@ if ($Publish) {
     $gitPath = (Get-Command git -CommandType Application | Select-Object -First 1).Source
     $gitRoot = Split-Path (Split-Path $gitPath -Parent) -Parent
     $gitBash = Join-Path $gitRoot 'bin/bash.exe'
-    if (-not (Test-Path -LiteralPath $gitBash)) { throw '找不到 Git Bash，请安装 Git for Windows 后再发布' }
+    if (-not (Test-Path -LiteralPath $gitBash)) {
+        # A PATH shim may live outside Git for Windows. Ask Git for its own installation.
+        $execPath = (Run git @('--exec-path') -Capture).Trim()
+        $gitBash = [IO.Path]::GetFullPath((Join-Path $execPath '../../../bin/bash.exe'))
+        if (-not (Test-Path -LiteralPath $gitBash -PathType Leaf)) { throw '找不到 Git Bash，请安装 Git for Windows 后再发布' }
+    }
     if (-not (Test-Path -LiteralPath './scripts/deploy-gh-pages.sh')) { throw '缺少 Pages 部署脚本' }
     $pagesUrl = ((Run gh @('api', 'repos/{owner}/{repo}/pages', '--jq', '.html_url') -Capture -Retry) | Out-String).Trim()
     $pagesUri = $null
@@ -262,24 +328,25 @@ if (-not $sha.StartsWith($ExpectedSha256Prefix)) {
 Write-Host '签名一致，可以覆盖安装' -ForegroundColor Green
 
 if (-not $Resume) { Copy-Item $apk $apkOut -Force }
+$Result.apk = $apkOut
 Write-Host "APK：$apkOut（$([math]::Round((Get-Item $apkOut).Length / 1MB, 1)) MB）" -ForegroundColor Green
 if ($Publish -and -not $Resume) {
     $state = @{ schema = 1; commit = $commit; version = $verName; apkHash = (Get-FileHash -LiteralPath $apkOut).Hash;
         distHash = Get-DistHash; runId = $null; pagesPushed = $false }
     Save-Checkpoint
+    $Result.resume = $true
 }
 
 # ---------- 发布 / 触发 exe ----------
-function Wait-DesktopRun($event, $since) {
+function Wait-DesktopRun($event, $since, $ref, $sha) {
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 4
         $arguments = @('run', 'list', '--workflow', $DesktopWorkflow, '--event', $event, '--limit', '5',
-            '--json', 'databaseId,createdAt,headSha,headBranch')
-        if ($Publish) { $arguments += @('--branch', $tag, '--commit', $commit) }
+            '--json', 'databaseId,createdAt,headSha,headBranch', '--branch', $ref, '--commit', $sha)
         $runs = Run gh $arguments -Capture -Retry | ConvertFrom-Json
         $run = $runs | Where-Object {
-            if ($Publish) { $_.headSha -eq $commit -and $_.headBranch -eq $tag }
-            else { ([datetime]$_.createdAt).ToUniversalTime() -ge $since }
+            $_.headSha -eq $sha -and $_.headBranch -eq $ref -and
+                ($Publish -or ([datetime]$_.createdAt).ToUniversalTime() -ge $since)
         } |
             Select-Object -First 1
         if ($run) { return $run.databaseId }
@@ -303,7 +370,7 @@ function Wait-OnlineVersion([string]$siteUrl, [string]$expectedVersion) {
         } catch { $lastSeen = "读取失败：$($_.Exception.Message)" }
         if ($attempt -lt 35 -and [datetime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 4 }
     }
-    throw "Release 已创建，但 Pages 更新未确认：期望 $expectedVersion，最后读到 $lastSeen。请检查 Pages 部署后重发网页版，本次发布未完成。"
+    throw "Pages 更新未确认：期望 $expectedVersion，最后读到 $lastSeen。请检查 Pages 部署状态，部署生效后续跑以核验线上版本。"
 }
 
 if ($Exe) {
@@ -311,39 +378,38 @@ if ($Exe) {
 
     if ($Publish) {
         $publishBranch = (Run git @('rev-parse', '--abbrev-ref', 'HEAD') -Capture).Trim()
-        if (-not $Resume -and $publishBranch -eq 'main') {
+        if ($publishBranch -eq 'main' -and -not $remoteTagCommit -and -not $state.mainPushed) {
             Step '推送 main，确保发布源码与远端同步'
             Run git @('push', 'origin', 'main')
+            $state.mainPushed = $true
+            Save-Checkpoint
         }
         Step "推送标签 $tag 并创建 Release"
         if (-not $Resume -or -not $remoteTagCommit) {
             if (-not $localTag) { Run git @('tag', $tag) }
             Run git @('push', 'origin', $tag)
         }
-        $releaseExists = $false
-        if ($Resume) {
-            $filter = ".[] | select(.tag_name == $($tag | ConvertTo-Json -Compress)) | .tag_name"
-            $releaseExists = [bool](Run gh @('api', '--paginate', 'repos/{owner}/{repo}/releases?per_page=100', '--jq', $filter) -Capture -Retry)
-        }
-        if ($releaseExists) {
-            $existing = Read-Release
-            $asset = $existing.assets | Where-Object { $_.name -eq (Split-Path $apkOut -Leaf) } | Select-Object -First 1
-            if ($asset -and $asset.digest -ne "sha256:$($state.apkHash)") { throw '远端 APK 与检查点不一致，已停止，不会覆盖附件' }
-            if (-not $asset) { Run gh @('release', 'upload', $tag, $apkOut) }
-            Write-Host "复用已有 Release：$tag"
-        } else {
+        $existing = if ($Resume) { Find-Release }
+        if (-not $existing) {
             $notesFile = Join-Path $env:TEMP "kairos-notes-$tag.md"
             Set-Content -LiteralPath $notesFile -Value $notes -Encoding UTF8
-            Run gh @('release', 'create', $tag, $apkOut, '--title', $tag, '--notes-file', $notesFile)
+            try { Run gh @('release', 'create', $tag, $apkOut, '--title', $tag, '--notes-file', $notesFile) }
+            catch {
+                if ($_.Exception.Data['kind'] -ne 'network') { throw }
+                $existing = Find-Release
+                if (-not $existing) { throw }
+            }
         }
-        $runId = if ($Resume -and $state.runId) { $state.runId } else { Wait-DesktopRun 'push' $since }
+        if ($existing) { Sync-ReleaseApk $existing }
+        $runId = if ($Resume -and $state.runId) { $state.runId } else { Wait-DesktopRun 'push' $since $tag $commit }
         $state.runId = $runId
         Save-Checkpoint
     } else {
         $branch = (Run git @('rev-parse', '--abbrev-ref', 'HEAD') -Capture).Trim()
+        $head = (Run git @('rev-parse', 'HEAD') -Capture).Trim()
         Step "在云端打 exe（分支 $branch）"
         Run gh @('workflow', 'run', $DesktopWorkflow, '--ref', $branch)
-        $runId = Wait-DesktopRun 'workflow_dispatch' $since
+        $runId = Wait-DesktopRun 'workflow_dispatch' $since $branch $head
     }
 
     $desktopComplete = $false
@@ -388,8 +454,10 @@ if ($Exe) {
         }
     }
     Write-Host "exe：$exeOut" -ForegroundColor Green
+    $Result.exe = $exeOut
 
     if ($Publish) {
+        $Result.stage = '核验 Release 附件'
         $release = Read-Release
         $assets = @($release.assets | ForEach-Object { $_.name })
         Write-Host "`nRelease $tag 附件：" -ForegroundColor Green
@@ -398,14 +466,16 @@ if ($Exe) {
             throw "Release $tag 缺少本次 APK 或 EXE 附件，请检查桌面打包任务，本次发布未完成"
         }
         Write-Host $release.html_url
+        foreach ($artifact in @(@{ name = (Split-Path $apkOut -Leaf); hash = $state.apkHash }, @{ name = $expectedExe; hash = $state.exeHash })) {
+            $asset = $release.assets | Where-Object { $_.name -eq $artifact.name } | Select-Object -First 1
+            if ($asset.digest -ne "sha256:$($artifact.hash)") { throw "Release 附件与本机产物不一致：$($artifact.name)" }
+        }
 
         if ($updaterConfigured) {
             Step '核验桌面自动更新签名和清单'
             foreach ($required in @("$expectedExe.sig", 'latest.json')) {
                 if ($assets -notcontains $required) { throw "Release 缺少 $required，不能发布不完整的自动更新" }
             }
-            $exeAsset = $release.assets | Where-Object { $_.name -eq $expectedExe } | Select-Object -First 1
-            if ($exeAsset.digest -ne "sha256:$($state.exeHash)") { throw 'Release EXE 与本机下载的构建附件不一致' }
             $updaterDirectory = Join-Path $outDir "updater-$tag"
             New-Item -ItemType Directory -Force $updaterDirectory | Out-Null
             Run gh @('release', 'download', $tag, '--pattern', 'latest.json', '--pattern', "$expectedExe.sig", '--dir', $updaterDirectory, '--clobber') -Retry
@@ -425,6 +495,8 @@ if ($Exe) {
         }
         Step '等待 GitHub Pages 生效（最多约三分钟）'
         Wait-OnlineVersion $pagesUrl $verName
+        $Result.pages = $pagesUrl
+        $Result.release = $release.html_url
     }
 }
 

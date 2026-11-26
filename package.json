@@ -8,6 +8,7 @@
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
+    "release": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/release-cli.ps1",
     "dev": "vite",
     "dev:lan": "vite --host --mode lan",
     "build": "tsc -b && vite build",

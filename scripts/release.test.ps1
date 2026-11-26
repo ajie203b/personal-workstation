@@ -22,7 +22,11 @@ function script:git {
     switch -Wildcard ($command) {
         'status --porcelain' { return }
         'checkout main' { return }
-        'pull*' { return }
+        'pull*' {
+            if ($global:ReleaseTest.options.Diverged) { 'fatal: Not possible to fast-forward, aborting.'; $global:LASTEXITCODE = 128 }
+            return
+        }
+        '--exec-path' { Join-Path $global:ReleaseTest.root 'git/mingw64/libexec/git-core'; return }
         'fetch origin refs/tags/*' { return }
         'fetch --tags*' {
             if ($global:ReleaseTest.options.HistoricalTagConflict) { $global:LASTEXITCODE = 1 }
@@ -31,15 +35,23 @@ function script:git {
         'tag --list *' { if ($global:ReleaseTest.remote.LocalTag) { 'v9.9.9' }; return }
         'ls-remote --tags origin refs/tags/*' {
             if ($global:ReleaseTest.options.RemoteTagMismatch) { "$('b' * 40) refs/tags/v9.9.9" }
+            elseif ($global:ReleaseTest.options.AutoBump -and $command -like '*refs/tags/v9.9.8*') { 'abc123 refs/tags/v9.9.8' }
             elseif ($global:ReleaseTest.options.RemoteTagExists -and $command -like '*refs/tags/v9.9.9*') { 'abc123 refs/tags/v9.9.9' }
             elseif ($global:ReleaseTest.remote.RemoteTag) { "$($global:ReleaseTest.remote.RemoteTag) refs/tags/v9.9.9" }
             return
         }
+        'log --no-merges --format=%s v9.9.8..HEAD' { 'fix: improve search'; return }
+        'log --no-merges --format=%s v9.9.9..HEAD' { return }
+        'add package.json package-lock.json android/app/build.gradle CHANGELOG.md' { return }
+        'commit -m chore: prepare v9.9.9 release' { 'mock version commit'; return }
         'rev-parse HEAD' { if ($global:ReleaseTest.options.DifferentCommit) { 'b' * 40 } else { 'a' * 40 }; return }
         'rev-parse refs/tags/v9.9.9^{commit}' { $global:ReleaseTest.remote.LocalTag; return }
         'tag v9.9.9' { $global:ReleaseTest.remote.LocalTag = 'a' * 40; return }
         'push origin v9.9.9' { $global:ReleaseTest.remote.RemoteTag = 'a' * 40; return }
-        'push origin main' { return }
+        'push origin main' {
+            if ($global:ReleaseTest.options.MainPushFails) { $global:LASTEXITCODE = 7; 'main push rejected' }
+            return
+        }
         'rev-parse --abbrev-ref HEAD' { 'main'; return }
         default { throw "Unexpected git command: $command" }
     }
@@ -48,6 +60,11 @@ function script:npm {
     $global:LASTEXITCODE = 0
     $global:ReleaseTest.events.Add("npm $($args -join ' ')")
     'npm log marker'
+    if ($global:ReleaseTest.options.OversizeAsset -and $args[0] -eq 'run') {
+        "  - assets/plot.worker.js is 5.92 MB, and won't be precached."
+        1..15 | ForEach-Object { "    at stack frame $_" }
+        $global:LASTEXITCODE = 1
+    }
     if ($global:ReleaseTest.options.AuditWarning) { '6 high severity vulnerabilities' }
 }
 function script:npx { $global:LASTEXITCODE = 0 }
@@ -74,6 +91,7 @@ function script:Get-Command {
     [CmdletBinding()]
     param([string]$Name, [object]$CommandType)
     if ($Name -eq 'git' -and $CommandType -eq 'Application') {
+        if ($global:ReleaseTest.options.GitShim) { return [pscustomobject]@{ Source = (Join-Path $global:ReleaseTest.root 'shims/cmd/git.exe') } }
         return [pscustomobject]@{ Source = (Join-Path $global:ReleaseTest.root 'git/cmd/git.exe') }
     }
     Microsoft.PowerShell.Core\Get-Command @PSBoundParameters
@@ -121,7 +139,7 @@ function script:gh {
         'api repos/{owner}/{repo}/releases/tags/v9.9.9' {
             $apkHash = (Get-FileHash (Join-Path $global:ReleaseTest.root 'apk/personal-workstation-v9.9.9.apk')).Hash.ToLowerInvariant()
             if ($global:ReleaseTest.options.WrongApkDigest) { $apkHash = '0' * 64 }
-            @{ tag_name = 'v9.9.9'; html_url = 'https://example.test/release/v9.9.9'; assets = @(Get-TestAssets | ForEach-Object {
+            @{ tag_name = 'v9.9.9'; draft = [bool]$global:ReleaseTest.options.Draft; html_url = 'https://example.test/release/v9.9.9'; assets = @(Get-TestAssets | ForEach-Object {
                 $digest = $apkHash
                 $localExe = Join-Path $global:ReleaseTest.root 'apk/Kairos_9.9.9_x64-setup.exe'
                 if ($_ -like '*.exe' -and (Test-Path $localExe)) { $digest = (Get-FileHash $localExe).Hash.ToLowerInvariant() }
@@ -131,9 +149,17 @@ function script:gh {
         }
         'release create *' {
             if ($global:ReleaseTest.options.CreateFails) { $global:LASTEXITCODE = 1; return }
-            $global:ReleaseTest.remote.ReleaseExists = $true; return
+            $global:ReleaseTest.remote.ReleaseExists = $true
+            if ($global:ReleaseTest.options.CreateAckLost) { 'Post "https://example.test/?sig=fixture-secret": EOF'; $global:LASTEXITCODE = 1 }
+            return
         }
-        'release upload *' { $global:ReleaseTest.remote.ApkRepaired = $true; return }
+        'release upload *' {
+            if (-not $global:ReleaseTest.options.UploadDropped) { $global:ReleaseTest.remote.ApkRepaired = $true }
+            if ($global:ReleaseTest.options.UploadDropped -or $global:ReleaseTest.options.UploadAckLost) {
+                'wsasend: An existing connection was forcibly closed by the remote host.'; $global:LASTEXITCODE = 1
+            }
+            return
+        }
         'release download *' {
             $destination = $argv[[array]::IndexOf($argv, '--dir') + 1]
             New-Item -ItemType Directory -Force $destination | Out-Null
@@ -143,7 +169,10 @@ function script:gh {
         }
         'workflow run *' { return }
         'run list *' {
-            ConvertTo-Json -InputObject @(@{ databaseId = 123; createdAt = [datetime]::UtcNow.ToString('o'); headSha = ('a' * 40); headBranch = 'v9.9.9' }) -Compress
+            $ref = if ($command -like '*workflow_dispatch*') { 'main' } else { 'v9.9.9' }
+            $run = @{ databaseId = 123; createdAt = [datetime]::UtcNow.ToString('o'); headSha = ('a' * 40); headBranch = $ref }
+            $unrelated = @{ databaseId = 456; createdAt = $run.createdAt; headSha = ('b' * 40); headBranch = $ref }
+            ConvertTo-Json -InputObject @($unrelated, $run) -Compress
             return
         }
         'run view *' {
@@ -187,7 +216,7 @@ function script:Invoke-RestMethod {
     return @{ version = $version }
 }
 
-function Invoke-Scenario([string]$Name, [hashtable]$Options = @{}, [string[]]$Flags = @('-Publish', '-SkipPull'), [switch]$Reuse) {
+function Invoke-Scenario([string]$Name, [hashtable]$Options = @{}, [string[]]$Flags = @('-Publish', '-SkipPull'), [switch]$Reuse, [string]$CliMode) {
     $fixture = Join-Path $suiteRoot $Name
     if (-not $Reuse) {
     foreach ($directory in @('scripts', 'android/app/build/outputs/apk/release', 'local/jdk-21/bin',
@@ -199,15 +228,18 @@ function Invoke-Scenario([string]$Name, [hashtable]$Options = @{}, [string[]]$Fl
         Set-Content (Join-Path $fixture 'src-tauri/tauri.conf.json') '{"plugins":{"updater":{"pubkey":"fixture-key"}}}'
     }
     Set-Content (Join-Path $fixture 'scripts/release.ps1') $source
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release-cli.ps1') -Destination (Join-Path $fixture 'scripts')
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'prepare-release.ps1') -Destination (Join-Path $fixture 'scripts')
     Set-Content (Join-Path $fixture 'scripts/deploy-gh-pages.sh') '# mocked at process boundary'
-    Set-Content (Join-Path $fixture 'package.json') '{"version":"9.9.9"}'
+    $version = if ($Options.AutoBump) { '9.9.8' } else { '9.9.9' }
+    @{ version = $version } | ConvertTo-Json | Set-Content (Join-Path $fixture 'package.json')
     if (-not $Options.MissingLock) {
-        $lockVersion = if ($Options.WrongLockVersion) { '9.9.8' } else { '9.9.9' }
-        $rootVersion = if ($Options.WrongLockRootVersion) { '9.9.8' } else { '9.9.9' }
+        $lockVersion = if ($Options.WrongLockVersion) { '9.9.8' } else { $version }
+        $rootVersion = if ($Options.WrongLockRootVersion) { '9.9.8' } else { $version }
         @{ version = $lockVersion; packages = @{ '' = @{ version = $rootVersion } } } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $fixture 'package-lock.json')
     }
-    Set-Content (Join-Path $fixture 'android/app/build.gradle') "versionName `"9.9.9`"`nversionCode 999"
-    Set-Content (Join-Path $fixture 'CHANGELOG.md') "## v9.9.9`n`nTest release."
+    Set-Content (Join-Path $fixture 'android/app/build.gradle') "versionName `"$version`"`nversionCode 999"
+    Set-Content (Join-Path $fixture 'CHANGELOG.md') "# 更新记录`n`n## v$version`n`nTest release."
     foreach ($file in @('local/jdk-21/bin/java.exe', 'sdk/build-tools/35.0.0/apksigner.bat', 'git/cmd/git.exe',
         'git/bin/bash.exe', 'android/app/build/outputs/apk/release/app-release.apk', 'dist/index.html')) {
         Set-Content (Join-Path $fixture $file) 'fixture'
@@ -227,11 +259,20 @@ function Invoke-Scenario([string]$Name, [hashtable]$Options = @{}, [string[]]$Fl
         # Switches must be splatted as parameters, rather than string arguments.
         $parameters = @{}
         foreach ($flag in $Flags) { $parameters[$flag.TrimStart('-')] = $true }
-        & (Join-Path $fixture 'scripts/release.ps1') @parameters 6>&1 |
-            ForEach-Object { $messages.Add($_.ToString()) }
+        if ($CliMode) {
+            $cliArgs = @()
+            if ($CliMode -ne 'default') { $cliArgs += $CliMode }
+            $messages = @(& (Join-Path $fixture 'scripts/release-cli.ps1') @cliArgs *>&1)
+            $code = $LASTEXITCODE
+            if ($messages.Count -ne 1) { throw "Expected one JSON line, got $($messages.Count)" }
+            $json = $messages[0] | ConvertFrom-Json
+        } else {
+            & (Join-Path $fixture 'scripts/release.ps1') @parameters 6>&1 |
+                ForEach-Object { $messages.Add($_.ToString()) }
+        }
     } catch { $failure = "$($_.Exception.Message) at $($_.ScriptStackTrace)" }
     $logFiles = @(Get-ChildItem (Join-Path $fixture 'apk/logs') -Filter '*.log' -ErrorAction SilentlyContinue)
-    [pscustomobject]@{ Error = $failure; Events = $global:ReleaseTest.events; Reads = $global:ReleaseTest.reads;
+    [pscustomobject]@{ Error = $failure; Json = $json; Code = $code; Events = $global:ReleaseTest.events; Reads = $global:ReleaseTest.reads;
         Completed = ($messages -join "`n") -match '(?m)^完成。\r?$'; Messages = $messages -join "`n";
         Log = ($logFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n" }
 }
@@ -240,6 +281,53 @@ function Assert($Condition, [string]$Message) { if (-not $Condition) { throw $Me
 $failed = 0
 try {
     $cases = [ordered]@{
+        'one-command publish returns verified artifacts and URLs in one JSON line' = {
+            $result = Invoke-Scenario 'cli-publish' @{ UpdaterEnabled = $true } -CliMode default
+            Assert (-not $result.Error -and $result.Code -eq 0 -and $result.Json.ok -and $result.Reads -gt 0) "CLI publish failed: $($result.Messages) $($result.Error)"
+            Assert ($result.Json.tag -eq 'v9.9.9' -and (Test-Path -LiteralPath $result.Json.apk) -and (Test-Path -LiteralPath $result.Json.exe)) 'Missing local artifact'
+            Assert ($result.Json.pages -eq 'https://example.github.io/workstation/' -and $result.Json.release -eq 'https://example.test/release/v9.9.9') 'Missing release URL'
+        }
+        'CLI build modes stay within their requested scope' = {
+            foreach ($mode in 'apk', 'windows') {
+                $result = Invoke-Scenario "cli-$mode" @{ AuditWarning = $true } -CliMode $mode
+                Assert ($result.Code -eq 0 -and $result.Json.ok -and $result.Json.apk -and $result.Json.warning -and $result.Reads -eq 0) "$mode mode failed: $($result.Error)"
+                Assert (([bool]$result.Json.exe -eq ($mode -eq 'windows')) -and -not ($result.Events -match '^git push|^gh release create|deploy pages')) "$mode did extra work"
+                if ($mode -eq 'windows') { Assert ($result.Events -match '^gh run download 123 ' ) 'Downloaded an unrelated workflow build' }
+            }
+        }
+        'CLI automatically prepares a patch and reports the new release' = {
+            $result = Invoke-Scenario 'cli-bump' @{ AutoBump = $true } -CliMode default
+            Assert ($result.Json.ok -and $result.Code -eq 0 -and $result.Json.tag -eq 'v9.9.9' -and $result.Reads -gt 0) "Wrong result after bump: $($result.Messages) $($result.Error)"
+            Assert ($result.Events.Contains('git commit -m chore: prepare v9.9.9 release') -and $result.Events.Contains('git push origin v9.9.9')) 'Version not prepared/published'
+        }
+        'a second CLI invocation cannot overwrite an active build' = {
+            $null = Invoke-Scenario 'cli-lock' @{} -CliMode apk
+            $guard = [IO.File]::Open((Join-Path $suiteRoot 'cli-lock/apk/.release.lock'), 'Open', 'ReadWrite', 'None')
+            try { $result = Invoke-Scenario 'cli-lock' @{} -CliMode default -Reuse } finally { $guard.Dispose() }
+            Assert ($result.Code -eq 1 -and $result.Json.error -match 'lock' -and -not $result.Events.Count) 'Concurrent build was allowed'
+        }
+        'CLI preflight errors give the cause and log before building' = {
+            $result = Invoke-Scenario 'cli-preflight' @{ AuthDenied = $true } -CliMode default
+            Assert ($result.Code -eq 1 -and $result.Json.ok -eq $false -and $result.Json.error -match '401' -and (Test-Path -LiteralPath $result.Json.log)) 'Missing failure diagnostics'
+            Assert (-not $result.Json.retry -and -not $result.Events.Contains('npm install')) 'Preflight cannot resume'
+        }
+        'CLI emits a working resume command after a Pages timeout' = {
+            $first = Invoke-Scenario 'cli-timeout' @{ Stale = $true } -CliMode default
+            Assert ($first.Code -eq 1 -and -not $first.Json.ok -and $first.Json.retry -eq 'npm run --silent release -- resume') 'Missing recovery command'
+            $result = Invoke-Scenario 'cli-timeout' @{} -CliMode resume -Reuse
+            Assert ($result.Code -eq 0 -and $result.Json.ok -and $result.Reads -gt 0 -and -not $result.Events.Contains('deploy pages') -and -not $result.Events.Contains('npm install')) 'CLI resume repeated work or missed verification'
+        }
+        'ordinary retry resumes a checkpoint created before the tag' = {
+            $first = Invoke-Scenario 'cli-main-push' @{ MainPushFails = $true } -CliMode default
+            Assert ($first.Code -eq 1 -and $first.Json.retry -and -not $first.Events.Contains('git tag v9.9.9')) 'Expected interruption before tag'
+            $result = Invoke-Scenario 'cli-main-push' @{} -CliMode default -Reuse
+            Assert ($result.Code -eq 0 -and $result.Json.ok -and -not $result.Events.Contains('npm install')) 'APK unnecessarily rebuilt'
+            Assert ($result.Events.Contains('git push origin main') -and $result.Events.IndexOf('git push origin main') -lt $result.Events.IndexOf('git push origin v9.9.9')) 'Retry skipped main push'
+        }
+        'wrong release digest blocks the first publish before Pages' = {
+            $result = Invoke-Scenario 'cli-digest' @{ WrongApkDigest = $true } -CliMode default
+            Assert ($result.Code -eq 1 -and $result.Json.error -match '附件' -and -not $result.Events.Contains('deploy pages')) 'Wrong APK was accepted'
+        }
         'transient GitHub API timeout retries safely' = {
             $result = Invoke-Scenario 'github-api-retry' @{ TransientCommand = 'api repos/{owner}/{repo}/pages*' }
             Assert (-not $result.Error -and $result.Completed -and @($result.Events | Where-Object { $_ -like 'gh api repos/{owner}/{repo}/pages*' }).Count -eq 2) "Expected API retry: $($result.Error)"
@@ -260,6 +348,34 @@ try {
         'release creation is never automatically repeated after a timeout' = {
             $result = Invoke-Scenario 'github-create-timeout' @{ PermanentCommand = 'release create *' }
             Assert ($result.Error -and -not $result.Completed -and @($result.Events | Where-Object { $_ -like 'gh release create *' }).Count -eq 1) 'Release creation must not be blindly repeated'
+        }
+        'lost create and upload acknowledgements reconcile the exact remote APK' = {
+            $result = Invoke-Scenario 'lost-acks' @{ CreateAckLost = $true; UploadAckLost = $true; MissingApk = $true } -CliMode default
+            Assert ($result.Json.ok -and $result.Reads -gt 0 -and $result.Log -notmatch 'fixture-secret') "Did not recover safely: $($result.Messages)"
+            Assert (@($result.Events -match '^gh release create').Count -eq 1 -and @($result.Events -match '^gh release upload').Count -eq 1) 'Repeated an accepted write'
+        }
+        'failed upload retries only while the remote asset is missing' = {
+            $result = Invoke-Scenario 'lost-upload' @{ CreateAckLost = $true; UploadDropped = $true; MissingApk = $true } -CliMode default
+            Assert ($result.Code -eq 1 -and $result.Json.hint -match '网络' -and $result.Reads -eq 0 -and @($result.Events -match '^gh release upload').Count -eq 2) "Unexpected retry policy: $($result.Messages)"
+        }
+        'ambiguous create rejects a conflicting asset or a draft' = {
+            foreach ($option in 'WrongApkDigest', 'Draft') {
+                $settings = @{ CreateAckLost = $true; $option = $true }
+                $result = Invoke-Scenario "conflict-$option" $settings -CliMode default
+                Assert ($result.Code -eq 1 -and $result.Json.error -match '检查点|草稿' -and -not ($result.Events -match '^gh release upload|deploy pages')) 'Accepted an unsafe remote state'
+            }
+        }
+        'Git shim locates Git Bash through the real git exec path' = {
+            $result = Invoke-Scenario 'git-shim' @{ GitShim = $true } -CliMode default
+            Assert ($result.Json.ok -and $result.Events.Contains('git --exec-path')) "Git Bash fallback failed: $($result.Messages)"
+        }
+        'diverged main returns actionable diagnostics before build' = {
+            $result = Invoke-Scenario 'diverged' @{ Diverged = $true } -CliMode default
+            Assert ($result.Json.hint -match 'main\.\.\.origin/main' -and $result.Code -eq 1 -and @($result.Events -match '^git pull').Count -eq 1 -and -not $result.Events.Contains('npm install')) 'Divergence did not stop cleanly'
+        }
+        'PWA build failure names the oversized asset above the stack trace' = {
+            $result = Invoke-Scenario 'oversize' @{ OversizeAsset = $true } -CliMode default
+            Assert ($result.Code -eq 1 -and $result.Json.error -match 'plot\.worker\.js is 5.92 MB' -and -not $result.Json.retry) 'Build cause was lost'
         }
         'missing or mismatched lockfile stops before build and tag' = {
             foreach ($option in @('MissingLock', 'WrongLockVersion', 'WrongLockRootVersion')) {
@@ -403,9 +519,9 @@ try {
             $result = Invoke-Scenario 'old-tag' @{ HistoricalTagConflict = $true }
             Assert (-not $result.Error -and $result.Completed) "Unrelated tag blocked release: $($result.Error)"
         }
-        'existing remote release tag prepares a new version before build' = {
+        'existing tag with no new commits stops before build' = {
             $result = Invoke-Scenario 'existing-tag' @{ RemoteTagExists = $true }
-            Assert ($result.Error -match 'prepare-release.ps1' -and -not $result.Events.Contains('npm install') -and -not $result.Events.Contains('git push origin v9.9.9')) 'A conflicting tag must invoke version preparation before build/push'
+            Assert ($result.Error -match '没有新提交' -and -not $result.Events.Contains('npm install') -and -not $result.Events.Contains('git push origin v9.9.9')) 'Empty release should stop before build/push'
         }
         'matching interrupted checkpoint resumes automatically' = {
             $null = Invoke-Scenario 'auto-resume' @{ DeployFails = $true }

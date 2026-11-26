@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { Check, ChevronRight, Clock3, History, Keyboard, Plus, Search, TrendingUp, X } from 'lucide-react'
+import { Check, ChevronRight, Clock3, History, Keyboard, Plus, TrendingUp, X } from 'lucide-react'
 import { DOC_KIND_LABEL } from '@/db/db'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
 import { rolloverTasks, sortTasks } from '@/db/tasks'
@@ -11,7 +11,6 @@ import { docPath } from '@/shared/DeepLink'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { GettingStarted } from './GettingStarted'
 import { prefersReducedMotion } from '@/lib/motion'
-import { modKeyLabel } from '@/lib/shortcut'
 import { cn } from '@/lib/cn'
 
 /** 今日 Dashboard：日期 + 加号添加 + 今日任务 + 进度 + 最近阅读 */
@@ -76,7 +75,6 @@ export function TodayPage() {
 
   const todayTotal = todayTasks.length + todayDone.length
   const todayPct = todayTotal > 0 ? Math.round((todayDone.length / todayTotal) * 100) : 0
-  const openPalette = useUi((s) => s.setPaletteOpen)
 
   const roll = async () => {
     if (rolling || !todayTasks.length) return
@@ -143,29 +141,15 @@ export function TodayPage() {
           </div>
           {/* 点击进度环可跳到番茄钟。 */}
           <ProgressRing done={todayDone.length} total={todayTotal} onClick={jumpToFocus} className="md:hidden shrink-0" />
-          <div className="hidden md:flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => openPalette(true)}
-              aria-label="打开命令面板快速跳转"
-              className="press h-10 px-3.5 rounded-full bg-surface border border-outline shadow-[var(--elev-card)] hover:border-primary/40 hover:text-on-surface text-on-surface-2 inline-flex items-center gap-2.5 text-[13px] transition-colors cursor-pointer"
-            >
-              <Search size={14} className="text-on-surface-2/80" aria-hidden />
-              <span>快速搜索与跳转</span>
-              <kbd className="rounded-md bg-surface-3/90 px-1.5 py-0.5 font-mono text-[10.5px] text-on-surface-2 border border-outline/80">
-                {modKeyLabel('K')}
-              </kbd>
-            </button>
-            <button
-              type="button"
-              aria-label="添加任务"
-              title="添加任务（单次 / 打卡）"
-              onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
-              className="press btn-primary-glow grid place-items-center size-11 rounded-full bg-primary-action text-on-primary-action shrink-0 cursor-pointer transition-transform duration-150 hover:scale-105"
-            >
-              <Plus size={22} strokeWidth={2.2} />
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label="添加任务"
+            title="添加任务（单次 / 打卡）"
+            onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
+            className="press btn-primary-glow hidden md:grid place-items-center size-11 rounded-full bg-primary-action text-on-primary-action shrink-0 cursor-pointer transition-transform duration-150 hover:scale-105"
+          >
+            <Plus size={22} strokeWidth={2.2} />
+          </button>
         </div>
       </header>
 

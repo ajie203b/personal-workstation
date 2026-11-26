@@ -19,7 +19,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Release script regression tests (offline)
         shell: pwsh
-        run: ./scripts/release.test.ps1
+        run: |
+          ./scripts/prepare-release.test.ps1
+          ./scripts/release.test.ps1
 
   verify:
     runs-on: ubuntu-latest
