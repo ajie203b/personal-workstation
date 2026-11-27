@@ -1,0 +1,1 @@
+import{n,o as r}from"./index-Ud-Fo_Iv.js";function t({icon:o,size:e="md",className:s}){const i=e==="lg"?40:36;return n.jsx("span",{"aria-hidden":!0,className:r("tool-icon-tile grid shrink-0 place-items-center overflow-hidden",e==="lg"?"size-10 rounded-[10px]":"size-9 rounded-[9px]",s),children:n.jsx(o,{size:i,className:"size-full"})})}export{t as T};
