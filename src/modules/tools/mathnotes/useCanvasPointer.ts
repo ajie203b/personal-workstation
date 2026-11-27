@@ -75,10 +75,20 @@ export function useCanvasPointer({
     const right = sx + (w + 20) / z
     const top = sy - 20 / z
     const bottom = sy + (h + 20) / z
+    const colorCache = new Map<string, string>()
+    const colorOf = (c?: string) => {
+      const k = c || 'auto'
+      let hit = colorCache.get(k)
+      if (!hit) {
+        hit = resolveStrokeColor(k)
+        colorCache.set(k, hit)
+      }
+      return hit
+    }
     for (const s of strokesRef.current) {
       const b = strokeBox(s)
       if (b.maxY < top || b.minY > bottom || b.maxX < left || b.minX > right) continue
-      const color = resolveStrokeColor(s.color)
+      const color = colorOf(s.color)
       ctx.strokeStyle = color
       ctx.fillStyle = color
       drawStroke(ctx, s)
@@ -86,7 +96,7 @@ export function useCanvasPointer({
     const lasso = lassoRef.current
     if (lasso && lasso.points.length > 1) {
       ctx.save()
-      ctx.strokeStyle = resolveStrokeColor('auto')
+      ctx.strokeStyle = colorOf('auto')
       ctx.lineWidth = 1.5 / z
       ctx.setLineDash([5 / z, 4 / z])
       ctx.beginPath()

@@ -461,10 +461,13 @@ export function RightContent({
   const [kindFilter, setKindFilter] = useState<AnnotationKindFilter>('all')
   const [sortBy, setSortBy] = useState<AnnotationSortMode>('position')
 
+  const lastFocusTsRef = useRef(0)
+
   useEffect(() => {
-    if (!focusAnnId) return
+    if (!focusAnnId || focusAnnId.ts === lastFocusTsRef.current) return
     const target = annotations.find((a) => a.id === focusAnnId.id)
     if (!target) return
+    lastFocusTsRef.current = focusAnnId.ts
     setEditing(target.id)
     setCommentDraft(target.comment ?? '')
   }, [focusAnnId, annotations])

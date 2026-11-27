@@ -67,17 +67,41 @@ public class AppUpdatePlugin extends Plugin {
         .retryOnConnectionFailure(true)
         .build();
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService checkExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService downloadExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean downloading = new AtomicBoolean(false);
+
+    private static boolean isAllowedCheckUrl(String raw) {
+        if (raw == null || !raw.startsWith("https://")) return false;
+        Uri uri = Uri.parse(raw);
+        String host = uri.getHost();
+        if (host == null) return false;
+        return "ajie203b.github.io".equalsIgnoreCase(host)
+            || "api.github.com".equalsIgnoreCase(host)
+            || "github.com".equalsIgnoreCase(host)
+            || "raw.githubusercontent.com".equalsIgnoreCase(host);
+    }
+
+    private static boolean isAllowedReleaseApkUrl(String raw) {
+        if (raw == null || !raw.startsWith("https://")) return false;
+        Uri uri = Uri.parse(raw);
+        String host = uri.getHost();
+        String path = uri.getPath();
+        if (host == null || path == null) return false;
+        if ("github.com".equalsIgnoreCase(host)) {
+            return path.startsWith("/ajie203b/personal-workstation/releases/");
+        }
+        return host.endsWith(".githubusercontent.com");
+    }
 
     @PluginMethod
     public void checkUpdate(PluginCall call) {
         final String url = call.getString("url");
-        if (url == null || !url.startsWith("https://")) {
+        if (!isAllowedCheckUrl(url)) {
             call.reject("缺少或非法的 url");
             return;
         }
-        executor.execute(() -> {
+        checkExecutor.execute(() -> {
             Request req = new Request.Builder()
                 .url(url)
                 .header("Accept", "application/vnd.github+json")
@@ -103,7 +127,7 @@ public class AppUpdatePlugin extends Plugin {
             return;
         }
         final String url = call.getString("url");
-        if (url == null || !url.startsWith("https://")) {
+        if (!isAllowedReleaseApkUrl(url)) {
             call.reject("缺少或非法的下载地址");
             return;
         }
@@ -123,7 +147,7 @@ public class AppUpdatePlugin extends Plugin {
             call.reject("已有更新正在下载");
             return;
         }
-        executor.execute(() -> {
+        downloadExecutor.execute(() -> {
             try {
                 File dir = new File(getContext().getCacheDir(), UPDATE_DIR);
                 if (!dir.exists() && !dir.mkdirs()) {
@@ -171,57 +195,64 @@ public class AppUpdatePlugin extends Plugin {
         }
         final Context ctx = getContext();
         final File file = new File(path);
-        try {
-            File dir = new File(ctx.getCacheDir(), UPDATE_DIR);
-            // 只允许安装自己下载到缓存目录里的包
-            if (!file.getCanonicalPath().startsWith(dir.getCanonicalPath() + File.separator) || !file.isFile()) {
-                call.reject("安装包不存在，请重新下载");
-                return;
-            }
-            // 授权返回或复用缓存时也重新核对，拒绝已损坏或被替换的文件。
-            verifyApk(file, expectedVersion);
-        } catch (IOException e) {
-            call.reject("安装包校验失败，请重新下载：" + e.getMessage());
-            return;
-        }
-
-        if (!canInstall(ctx)) {
-            openUnknownSourcesSettings();
-            JSObject out = new JSObject();
-            out.put("status", "needPermission");
-            call.resolve(out);
-            return;
-        }
-
-        final Uri uri;
-        try {
-            uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", file);
-        } catch (IllegalArgumentException e) {
-            call.reject("无法共享安装包：" + e.getMessage());
-            return;
-        }
-        getActivity().runOnUiThread(() -> {
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(uri, MIME_APK);
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        checkExecutor.execute(() -> {
             try {
-                getActivity().startActivity(intent);
-            } catch (ActivityNotFoundException e) {
-                // 个别 ROM 不响应 ACTION_VIEW + APK 类型时，退回已废弃但仍可用的 ACTION_INSTALL_PACKAGE
-                try {
-                    @SuppressWarnings("deprecation")
-                    Intent legacy = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-                    legacy.setData(uri);
-                    legacy.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-                    getActivity().startActivity(legacy);
-                } catch (ActivityNotFoundException e2) {
-                    call.reject("系统没有可用的安装器");
+                File dir = new File(ctx.getCacheDir(), UPDATE_DIR);
+                // 只允许安装自己下载到缓存目录里的包
+                if (!file.getCanonicalPath().startsWith(dir.getCanonicalPath() + File.separator) || !file.isFile()) {
+                    call.reject("安装包不存在，请重新下载");
                     return;
                 }
+                // 授权返回或复用缓存时也重新核对，拒绝已损坏或被替换的文件。
+                verifyApk(file, expectedVersion);
+            } catch (IOException e) {
+                call.reject("安装包校验失败，请重新下载：" + e.getMessage());
+                return;
             }
-            JSObject out = new JSObject();
-            out.put("status", "started");
-            call.resolve(out);
+
+            if (!canInstall(ctx)) {
+                openUnknownSourcesSettings();
+                JSObject out = new JSObject();
+                out.put("status", "needPermission");
+                call.resolve(out);
+                return;
+            }
+
+            final Uri uri;
+            try {
+                uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", file);
+            } catch (IllegalArgumentException e) {
+                call.reject("无法共享安装包：" + e.getMessage());
+                return;
+            }
+            android.app.Activity act = getActivity();
+            if (act == null || act.isFinishing()) {
+                call.reject("当前窗口不可用，请重试");
+                return;
+            }
+            act.runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(uri, MIME_APK);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    act.startActivity(intent);
+                } catch (ActivityNotFoundException e) {
+                    // 个别 ROM 不响应 ACTION_VIEW + APK 类型时，退回已废弃但仍可用的 ACTION_INSTALL_PACKAGE
+                    try {
+                        @SuppressWarnings("deprecation")
+                        Intent legacy = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+                        legacy.setData(uri);
+                        legacy.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        act.startActivity(legacy);
+                    } catch (ActivityNotFoundException e2) {
+                        call.reject("系统没有可用的安装器");
+                        return;
+                    }
+                }
+                JSObject out = new JSObject();
+                out.put("status", "started");
+                call.resolve(out);
+            });
         });
     }
 
@@ -240,7 +271,8 @@ public class AppUpdatePlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
-        executor.shutdownNow();
+        checkExecutor.shutdownNow();
+        downloadExecutor.shutdownNow();
         super.handleOnDestroy();
     }
 
@@ -253,7 +285,9 @@ public class AppUpdatePlugin extends Plugin {
 
     private void openUnknownSourcesSettings() {
         final Context ctx = getContext();
-        getActivity().runOnUiThread(() -> {
+        android.app.Activity act = getActivity();
+        if (act == null || act.isFinishing()) return;
+        act.runOnUiThread(() -> {
             Intent intent;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,

@@ -303,8 +303,15 @@ export function parseQuickAdd(raw: string): ParsedTask {
     if (clocks.length === 1) dayOffset = clock.dayOffset
     timeFromClock = true
   }
-  if (clocks.length) p.dueTime = clocks[0]
-  if (p.repeat && clocks.length > 1) p.repeatTimes = [...new Set(clocks)].sort()
+  if (clocks.length) {
+    const uniqueSorted = [...new Set(clocks)].sort()
+    if (p.repeat && uniqueSorted.length > 1) {
+      p.repeatTimes = uniqueSorted
+      p.dueTime = uniqueSorted[0]
+    } else {
+      p.dueTime = clocks[0]
+    }
+  }
 
   // 只写了时段、没写几点（「明天上午 交材料」）：按常识补一个默认时刻，并标注是猜的
   if (!p.dueTime) {
@@ -330,17 +337,19 @@ export function parseQuickAdd(raw: string): ParsedTask {
     { re: /\s(大后天)(?=\s)/, handle: (_m, q) => { q.due = addDaysStr(3) } },
     {
       re: /\s([0-9一二两三四五六七八九十]+)天[后後](?=\s)/,
+      guard: (m) => { const n = cnToNumber(m[1]); return n != null && Number.isFinite(n) && n >= 0 && n <= 3650 },
       handle: (m, q) => {
         const n = cnToNumber(m[1])
-        if (n != null) q.due = addDaysStr(n)
+        if (n != null && Number.isFinite(n)) q.due = addDaysStr(n)
       },
     },
     {
       // 「两周后 / 一个星期后」：按 7 天一周推
       re: /\s([0-9一二两三四五六七八九十]+)个?(?:周|星期|礼拜)后(?=\s)/,
+      guard: (m) => { const n = cnToNumber(m[1]); return n != null && Number.isFinite(n) && n > 0 && n <= 520 },
       handle: (m, q) => {
         const n = cnToNumber(m[1])
-        if (n != null && n > 0) q.due = addDaysStr(n * 7)
+        if (n != null && Number.isFinite(n) && n > 0) q.due = addDaysStr(n * 7)
       },
     },
     {
@@ -444,10 +453,12 @@ export function parseQuickAdd(raw: string): ParsedTask {
     },
     {
       re: /\s(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?=\s)/,
+      guard: (m) => isValidCalendarDate(Number(m[1]), Number(m[2]), Number(m[3])),
       handle: (m, q) => { q.due = `${m[1]}-${pad(m[2])}-${pad(m[3])}` },
     },
     {
       re: /\s(\d{1,2})月(\d{1,2})[日号](?=\s)/,
+      guard: (m) => isValidMonthDay(Number(m[1]), Number(m[2])),
       handle: (m, q) => {
         const year = new Date().getFullYear()
         const due = `${year}-${pad(m[1])}-${pad(m[2])}`
@@ -457,8 +468,12 @@ export function parseQuickAdd(raw: string): ParsedTask {
     {
       re: /\s(\d{1,2})[-/](\d{1,2})(?=\s)/,
       // 两边都不超过 12 时是歧义写法（「7-11 买咖啡」），不当日期；
-      // 「12-25」「3-15」这种能唯一确定才认。要写月份请用「7月11日」。
-      guard: (m) => Number(m[1]) > 12 || Number(m[2]) > 12,
+      // 仅月份 1~12 且日期 13~当月最大天数（如「12-25」「3-15」）才认。要写月份请用「7月11日」。
+      guard: (m) => {
+        const mon = Number(m[1])
+        const day = Number(m[2])
+        return mon >= 1 && mon <= 12 && day > 12 && isValidMonthDay(mon, day)
+      },
       handle: (m, q) => {
         const year = new Date().getFullYear()
         const due = `${year}-${pad(m[1])}-${pad(m[2])}`
@@ -600,15 +615,36 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-/** 「十五」→15；「3」→3 */
+function isValidMonthDay(month: number, day: number): boolean {
+  if (!Number.isInteger(month) || !Number.isInteger(day) || month < 1 || month > 12 || day < 1) return false
+  // 2 月放行到 29 日（支持闰年）
+  const maxDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= maxDays[month - 1]
+}
+
+function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  if (!Number.isInteger(year) || year < 1970 || year > 2100) return false
+  if (!isValidMonthDay(month, day)) return false
+  return day <= daysInMonth(year, month - 1)
+}
+
+/** 「十五」→15；「3」→3；非法串（如「十十」）返回 null 防 NaN 透传到日期库 */
 function cnToNumber(s: string): number | null {
   s = s.replace(/[〇零]/g, '0').replace(/[一二两三四五六七八九]/g, c => String(CN_NUM[c]))
-  if (/^\d+$/.test(s)) return Number(s)
+  if (/^\d+$/.test(s)) {
+    const n = Number(s)
+    return Number.isSafeInteger(n) ? n : null
+  }
   if (s === '十') return 10
-  if (s.startsWith('十')) return 10 + Number(s.slice(1) || 0)
+  if (s.startsWith('十')) {
+    const tail = s.slice(1)
+    if (!/^\d*$/.test(tail)) return null
+    return 10 + Number(tail || 0)
+  }
   if (s.includes('十')) {
-    const [a, b] = s.split('十')
-    return Number(a || 1) * 10 + Number(b || 0)
+    const parts = s.split('十')
+    if (parts.length !== 2 || !/^\d*$/.test(parts[0]) || !/^\d*$/.test(parts[1])) return null
+    return Number(parts[0] || 1) * 10 + Number(parts[1] || 0)
   }
   return CN_NUM[s] ?? null
 }

@@ -9,6 +9,7 @@ import { modKeyLabel } from '@/lib/shortcut'
 import { ThemeButton } from './ThemeButton'
 import { useState } from 'react'
 import { BrandMark } from '@/shared/BrandMark'
+import { DesktopFocusPill } from '@/shared/FocusMiniBar'
 import { guardNavigation } from '@/lib/unsavedGuard'
 
 /**
@@ -118,6 +119,8 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
           </NavLink>
         ))}
       </nav>
+
+      <DesktopFocusPill collapsed={collapsed} />
 
       <div className={cn('flex items-center gap-1 px-2.5 py-2.5 border-t border-outline/80 shrink-0 flex-col', !collapsed && 'lg:flex-row')}>
         <button

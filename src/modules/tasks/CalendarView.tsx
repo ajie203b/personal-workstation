@@ -5,7 +5,7 @@ import { TIERS, TIER_LABEL } from '@/db/db'
 import { sortTasks, updateTask } from '@/db/tasks'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
-import { fmtDate, fmtMonth, toDateStr } from '@/lib/date'
+import { fmtDate, fmtMonth, isFutureTask, toDateStr } from '@/lib/date'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 
 interface Props {
@@ -178,7 +178,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
                             e.dataTransfer.setData('text/task-id', t.id)
                             e.dataTransfer.effectAllowed = 'move'
                           }}
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); onOpenTask(t.id) }}
                           className={cn(
                             'text-[10px] leading-[1.35] truncate px-1.5 py-0.5 rounded-[5px] cursor-grab active:cursor-grabbing font-medium',
                             t.priority === 0
@@ -240,7 +240,7 @@ export function CalendarView({ tasks, onOpenTask, onToggleDone }: Props) {
                   {t.due && <span className="text-[11px] text-on-surface-2">{t.due}</span>}
                 </span>
                 {t.status !== 'done' && (
-                  <CheckCircle checked={false} onChange={() => onToggleDone(t)} label="完成任务" />
+                  <CheckCircle checked={false} disabled={isFutureTask(t)} onChange={() => onToggleDone(t)} label="完成任务" />
                 )}
               </div>
             ))}

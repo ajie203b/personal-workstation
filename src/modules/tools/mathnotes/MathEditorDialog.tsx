@@ -80,24 +80,22 @@ export function MathEditorDialog({
 
   useEffect(() => {
     const trimmed = value.trim()
-    if (!open || !trimmed) {
+    if (!open || !trimmed || !previewCompute) {
       setLivePreview(null)
       return
     }
     let alive = true
     const expr = manualExpression(trimmed, false)
-    const run = async () => {
-      try {
-        const res = previewCompute
-          ? await previewCompute(expr)
-          : (await import('./compute')).computeLatex(expr, { angleMode, variables })
-        if (alive) setLivePreview(res)
-      } catch {
-        if (alive) setLivePreview(null)
-      }
+    const timer = window.setTimeout(() => {
+      void previewCompute(expr).then(
+        (res) => { if (alive) setLivePreview(res) },
+        () => { if (alive) setLivePreview(null) },
+      )
+    }, 120)
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
     }
-    void run()
-    return () => { alive = false }
   }, [open, value, angleMode, variables, previewCompute])
 
   const copyText = (text: string, kind: 'result' | 'formula') => {

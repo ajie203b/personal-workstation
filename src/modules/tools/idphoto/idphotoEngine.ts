@@ -256,6 +256,7 @@ function looksCorruptedOnnx(buf: ArrayBuffer): boolean {
 async function runModnetOnce(
   image: RgbaImage,
   onProgress?: (ratio: number) => void,
+  onPrepared?: () => void,
 ): Promise<Float32Array> {
   onProgress?.(0)
   const buf = await getModel({ ...MODNET_SPEC, onProgress: (r) => onProgress?.(Math.max(0, r) * 0.6) })
@@ -265,6 +266,7 @@ async function runModnetOnce(
   const runner = getOnnxRunner()
   // prepare 会 transfer buffer，留副本，缓存里的原件才能继续用
   await runner.prepare('modnet', buf.slice(0))
+  onPrepared?.()
   onProgress?.(0.7)
 
   const { data, size } = toModnetTensor(image)
@@ -289,10 +291,16 @@ async function runModnet(
   image: RgbaImage,
   onProgress?: (ratio: number) => void,
 ): Promise<Float32Array> {
+  let prepared = false
   try {
-    return await runModnetOnce(image, onProgress)
-  } catch {
-    // 坏缓存 / 推理建会话失败时清理缓存并释放受损会话，重下一次再试
+    return await runModnetOnce(image, onProgress, () => { prepared = true })
+  } catch (err) {
+    // 只有模型读取或建会话阶段失败才怀疑缓存损坏并清缓存重下；
+    // 推理阶段若因内存不足/运行时异常失败，不要误删有效的 25MB 本地模型缓存。
+    if (prepared) {
+      getOnnxRunner().dispose()
+      throw err
+    }
     await deleteModel(MODNET_SPEC.id, MODNET_SPEC.version).catch(() => undefined)
     getOnnxRunner().dispose()
     return runModnetOnce(image, onProgress)

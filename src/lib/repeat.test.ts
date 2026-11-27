@@ -67,6 +67,9 @@ describe('nextDueForRepeat', () => {
     it('没有 due 时从今天往后找', () => {
       expect(nextDueForRepeat(undefined, 'weekly', TODAY, sched)).toBe('2026-10-21')
     })
+    it('逾期超过两周时仍推进到今天之后的下一个目标星期，而不是停在过去', () => {
+      expect(nextDueForRepeat('2026-09-01', 'weekly', TODAY, sched)).toBe('2026-10-21')
+    })
   })
 
   describe('monthly（每月15号）', () => {

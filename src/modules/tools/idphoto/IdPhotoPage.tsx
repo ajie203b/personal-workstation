@@ -112,7 +112,10 @@ export function IdPhotoPage() {
   const sheetCanvasRef = useRef<HTMLCanvasElement>(null)
   const pickIdRef = useRef(0)
 
-  const allSpecs = useMemo(() => [...BUILTIN_SPECS, ...customSpecs], [customSpecs])
+  const allSpecs = useMemo(() => {
+    const customIds = new Set(customSpecs.map((s) => s.id))
+    return [...BUILTIN_SPECS.filter((s) => !customIds.has(s.id)), ...customSpecs]
+  }, [customSpecs])
   const spec = allSpecs.find((s) => s.id === specId) ?? BUILTIN_SPECS[0]
   const effectiveFormat: PhotoFormat = bg === 'transparent' ? 'png' : spec.format
 

@@ -433,6 +433,10 @@ export function FanqiePage() {
     setConfirmDelete(null)
     setBusyAction(`del:${b.id}`)
     try {
+      if (job?.bookId === b.id) {
+        pause()
+        clearJob()
+      }
       await deleteFanqieBook(b.id)
       if (book?.bookId === b.id) setBook(null)
       toast(`已删除《${b.title}》的本地正文`)

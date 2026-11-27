@@ -34,10 +34,32 @@ export function NotifyCard() {
   }
 
   useEffect(() => {
+    let active = true
+    let removeNative: (() => void) | null = null
     void getNotifyEnabled().then((v) => {
+      if (!active) return
       setOn(v)
       if (v) void refreshStatus()
     })
+    const onResume = () => {
+      if (document.visibilityState === 'visible') {
+        void getNotifyEnabled().then((v) => { if (active && v) void refreshStatus() })
+      }
+    }
+    document.addEventListener('visibilitychange', onResume)
+    void import('@capacitor/app').then(({ App }) =>
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive && active) void getNotifyEnabled().then((v) => { if (active && v) void refreshStatus() })
+      }),
+    ).then((handle) => {
+      if (active) removeNative = () => void handle.remove()
+      else void handle.remove()
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      document.removeEventListener('visibilitychange', onResume)
+      removeNative?.()
+    }
   }, [])
 
   /**

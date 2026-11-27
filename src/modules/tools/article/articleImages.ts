@@ -1,6 +1,6 @@
 import { LOCAL_PROXY, fetchBytes } from '@/lib/netFetch'
 import { fileToDataUrl } from '@/lib/image'
-import { isNative } from '@/lib/native'
+import { isNative, isTauri } from '@/lib/native'
 
 /**
  * 图片本地化（v3.3 文章离线）：把正文里的外链图片下载下来转 dataURL，
@@ -70,6 +70,10 @@ export function sniffImageMime(bytes: Uint8Array): string {
   if (/^(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!doctype\s+svg\b|<svg[\s>])/i.test(textHead)) {
     return 'image/svg+xml'
   }
+  // 防盗链/错误响应常返回 HTML/XML/JSON 文本页，不能误当成 JPEG 嵌入正文
+  if (/^(?:<!doctype\s+html\b|<html[\s>]|<head[\s>]|<body[\s>]|<script[\s>]|<\?xml\b|\{\s*")/i.test(textHead)) {
+    return ''
+  }
   // 嗅不出来按 JPEG 处理：保底仍是 image/*，能过 URL 白名单
   return 'image/jpeg'
 }
@@ -95,7 +99,7 @@ async function fetchImageBytes(url: string, referer?: string): Promise<ArrayBuff
   try {
     return await fetchBytes(url, opts)
   } catch (e) {
-    if (isNative()) throw e
+    if (isNative() || isTauri()) throw e
     try {
       return await fetchBytes(LOCAL_PROXY + encodeURIComponent(url), { accept: opts.accept, timeoutMs: 30_000 })
     } catch {

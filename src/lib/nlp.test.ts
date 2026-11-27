@@ -498,3 +498,22 @@ describe('X点整与习惯动词', () => {
     expect(parse('冥想20次')).toMatchObject({ repeat: 'daily', repeatCount: 20, guesses: ['每天'] })
   })
 })
+
+describe('异常日期与超大偏移不崩溃', () => {
+  it('非法月日与年月日不生成越界日期', () => {
+    expect(parse('20-50 会议').due).toBeUndefined()
+    expect(parse('2026-99-99 会议').due).toBeUndefined()
+    expect(parse('2月30日 体检').due).toBeUndefined()
+  })
+  it('超大相对偏移与异常中文数字不抛错', () => {
+    expect(() => parse('999999999天后 纪念')).not.toThrow()
+    expect(parse('999999999天后 纪念').due).toBeUndefined()
+    expect(() => parse('十十天后 开会')).not.toThrow()
+    expect(parse('十十天后 开会').due).toBeUndefined()
+  })
+  it('多个倒序打卡时间点会按升序取 dueTime', () => {
+    const p = parse('每天21:00、08:00 喝水')
+    expect(p.repeatTimes).toEqual(['08:00', '21:00'])
+    expect(p.dueTime).toBe('08:00')
+  })
+})

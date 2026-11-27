@@ -100,8 +100,11 @@ export function getCustomFqwebBase(): string {
   }
 }
 
+let chapterBase = ''
+
 export function setCustomFqwebBase(raw: string): string {
   const normalized = normalizeFqwebBase(raw)
+  chapterBase = ''
   try {
     if (typeof localStorage !== 'undefined') {
       if (normalized) localStorage.setItem(CUSTOM_NODE_KEY, normalized)
@@ -170,7 +173,7 @@ async function fetchText(
   proxyFallback = !url.startsWith(LOCAL_PROXY),
 ) {
   const target = dedupeQueryParams(url)
-  const headers: Record<string, string> = isNative() ? { 'User-Agent': BROWSER_UA, Accept: accept } : { Accept: accept }
+  const headers: Record<string, string> = isNative() || isTauri() ? { 'User-Agent': BROWSER_UA, Accept: accept } : { Accept: accept }
   const { body } = await httpText(target, {
     headers,
     timeoutMs,
@@ -180,8 +183,6 @@ async function fetchText(
   })
   return body
 }
-
-let chapterBase = ''
 
 async function fqwebRequest<T>(
   path: string,

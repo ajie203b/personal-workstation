@@ -225,7 +225,10 @@ const DOUYIN_BASES = [
 ]
 
 function rand19(): string {
-  return String(Math.floor(Math.random() * 8e18) + 1e18)
+  // 逐位生成 19 位十进制数字，避开 IEEE-754 双精度整数（2^53 ≈ 9e15）尾数截断为 0 的精度损失
+  let out = String(1 + Math.floor(Math.random() * 9))
+  for (let i = 1; i < 19; i++) out += String(Math.floor(Math.random() * 10))
+  return out
 }
 
 function obj(v: unknown): Record<string, unknown> {
@@ -319,7 +322,7 @@ export function douyinMediaFromItem(item: Record<string, unknown>, awemeId: stri
     }
   }
 
-  const rawCover = firstUrl(video.cover) || firstUrl(video.origin_cover) || firstUrl(item.images) || imageList[0] || ''
+  const rawCover = firstUrl(video.cover) || firstUrl(video.origin_cover) || imageList[0] || ''
   const cover = toHttps(rawCover) || undefined
   return {
     platform: 'douyin',
@@ -556,18 +559,20 @@ export async function parseBilibili(input: string, opts?: ParseShareOptions): Pr
   const aid = (typeof view.aid === 'number' && view.aid > 0 ? view.aid : undefined) ?? ref.aid
   const playIdQuery = bvid ? `bvid=${bvid}` : `aid=${aid}`
 
+  const fetchBiliPlay = async (url: string): Promise<Record<string, unknown>> => {
+    const res = obj(await httpGetJson(url, headers, signal))
+    if (typeof res.code === 'number' && res.code !== 0) {
+      throw new Error(str(res.message) || '视频流暂不可用（可能需要登录或受地区限制）')
+    }
+    return obj(res.data)
+  }
+
   if (opts?.allPages && pages.length > 1 && !opts?.audioOnly) {
     const allAssets: ParsedAsset[] = []
     for (const p of pages) {
       throwIfAborted(signal)
-      const play = obj(
-        obj(
-          await httpGetJson(
-            `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${p.cid}&qn=80&fnval=1&fourk=1`,
-            headers,
-            signal,
-          ),
-        ).data,
+      const play = await fetchBiliPlay(
+        `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${p.cid}&qn=80&fnval=1&fourk=1`,
       )
       const partMedia = biliMediaFromData(
         view,
@@ -599,38 +604,20 @@ export async function parseBilibili(input: string, opts?: ParseShareOptions): Pr
   const activeRef: BiliRef = bvid ? { bvid, page: targetPage } : { aid: aid!, page: targetPage }
 
   if (opts?.audioOnly) {
-    const play = obj(
-      obj(
-        await httpGetJson(
-          `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${cid}&qn=80&fnval=16&fourk=1`,
-          headers,
-          signal,
-        ),
-      ).data,
+    const play = await fetchBiliPlay(
+      `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${cid}&qn=80&fnval=16&fourk=1`,
     )
     return biliMediaFromData(view, play, activeRef, { audioOnly: true })
   }
 
   // qn=80 请求最高（未登录自动降到 720P 档）；fnval=1 出单文件 durl
-  const play = obj(
-    obj(
-      await httpGetJson(
-        `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${cid}&qn=80&fnval=1&fourk=1`,
-        headers,
-        signal,
-      ),
-    ).data,
+  const play = await fetchBiliPlay(
+    `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${cid}&qn=80&fnval=1&fourk=1`,
   )
   const durl = Array.isArray(play.durl) ? play.durl : []
   if (!durl.length && obj(play.dash).video) {
-    const dashPlay = obj(
-      obj(
-        await httpGetJson(
-          `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${cid}&qn=80&fnval=16&fourk=1`,
-          headers,
-          signal,
-        ),
-      ).data,
+    const dashPlay = await fetchBiliPlay(
+      `https://api.bilibili.com/x/player/playurl?${playIdQuery}&cid=${cid}&qn=80&fnval=16&fourk=1`,
     )
     return biliMediaFromData(view, dashPlay, activeRef, { fallbackAudio: true })
   }

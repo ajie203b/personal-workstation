@@ -52,6 +52,11 @@ export function planReconcile<T>({ merged, base, current, key, ts }: ReconcileIn
     seen.add(k)
     const cur = currentMap.get(k)
     const baseAt = baseTs.get(k)
+    // 同步期间本地删掉了这条记录（base 里有、current 里已不存在）→ 不得复活，等下一轮同步推送墓碑
+    if (!cur && baseAt !== undefined) {
+      pending++
+      continue
+    }
     // 同步期间本地改过（或本地新建）→ 本地版本更新，留本地
     if (cur && (baseAt === undefined || ts(cur) > baseAt)) {
       put.push(cur)

@@ -283,4 +283,18 @@ describe('parseShareText 裸号解析、取消与 Web 跨域提示', () => {
       filename: 'B站-多P合集-封面.jpg',
     })
   })
+
+  it('B 站 playurl 返回非零错误码时给出接口错误消息', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = new URL(input)
+      if (url.pathname.includes('/x/web-interface/view')) {
+        return Response.json({
+          code: 0,
+          data: { bvid: 'BV1xx411c7mD', aid: 1, title: '大会员视频', cid: 111, pages: [{ page: 1, cid: 111, part: 'P1' }] },
+        })
+      }
+      return Response.json({ code: -10403, message: '大会员专享内容' })
+    }))
+    await expect(parseShareText('BV1xx411c7mD')).rejects.toThrow('大会员专享内容')
+  })
 })

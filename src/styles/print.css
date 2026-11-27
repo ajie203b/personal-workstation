@@ -1,0 +1,88 @@
+/* Office / WPS P1: clean multi-page printing for readers and Markdown documents */
+@media print {
+  @page {
+    @bottom-left {
+      content: "";
+    }
+  }
+
+  header,
+  aside,
+  nav,
+  [role="toolbar"],
+  [role="search"],
+  .sel-popover,
+  .pdf-floating-pill,
+  #fab-add,
+  .mobile-dock-scrim,
+  .mobile-tab-bar,
+  .toast-card,
+  a[href="#main-scroll"] {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root,
+  main,
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-hidden {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .theme-night,
+  .theme-dusk,
+  .theme-sepia {
+    --md-ink: #111 !important;
+    --md-ink-2: #555 !important;
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .pdf-dark canvas {
+    filter: none !important;
+  }
+
+  .flow-doc,
+  .flow-body > * {
+    content-visibility: visible !important;
+    contain-intrinsic-size: auto !important;
+  }
+
+  .md-body,
+  .flow-body,
+  .reader-prose {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .md-body pre,
+  .md-body blockquote,
+  .md-body tr,
+  .md-body img,
+  .flow-body pre,
+  .flow-body blockquote,
+  .flow-body tr,
+  .flow-body img,
+  [data-page-slot] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  [data-page-slot] {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

@@ -55,6 +55,18 @@ function moveToNextTableRow(state: EditorState, dispatch: (tr: Transaction) => v
   return true
 }
 
+function parseCellAlign(dom: HTMLElement): 'left' | 'center' | 'right' | null {
+  const raw = (dom.style?.textAlign || dom.getAttribute('align') || '').trim().toLowerCase()
+  return raw === 'left' || raw === 'center' || raw === 'right' ? raw : null
+}
+
+function alignSeparator(align: unknown): string {
+  if (align === 'center') return ':---:'
+  if (align === 'right') return '---:'
+  if (align === 'left') return ':---'
+  return '---'
+}
+
 export const MdTableCell = Node.create({
   name: 'tableCell',
   content: 'inline*',
@@ -66,6 +78,11 @@ export const MdTableCell = Node.create({
     return {
       colspan: { default: 1 },
       rowspan: { default: 1 },
+      textAlign: {
+        default: null,
+        parseHTML: (el) => parseCellAlign(el),
+        renderHTML: (attrs) => (attrs.textAlign ? { style: `text-align: ${attrs.textAlign}` } : {}),
+      },
     }
   },
   parseHTML() {
@@ -87,6 +104,11 @@ export const MdTableHeader = Node.create({
     return {
       colspan: { default: 1 },
       rowspan: { default: 1 },
+      textAlign: {
+        default: null,
+        parseHTML: (el) => parseCellAlign(el),
+        renderHTML: (attrs) => (attrs.textAlign ? { style: `text-align: ${attrs.textAlign}` } : {}),
+      },
     }
   },
   parseHTML() {
@@ -140,13 +162,20 @@ export const MdTable = Node.create({
               if (columnIndex) state.write(' | ')
               const start = output.out.length
               state.renderInline(cell, false)
-              const value = output.out.slice(start).replace(/\|/g, '\\|').replace(/\\?\r?\n/g, ' ')
+              const value = output.out
+                .slice(start)
+                .replace(/(\\*)(\|)/g, (_m, bs: string) => (bs.length % 2 === 1 ? `${bs}|` : `${bs}\\|`))
+                .replace(/\\?\r?\n/g, ' ')
               output.out = output.out.slice(0, start) + value
             })
             state.write(' |')
             state.ensureNewLine()
             if (rowIndex === 0) {
-              state.write(`| ${Array(row.childCount).fill('---').join(' | ')} |`)
+              const seps: string[] = []
+              row.forEach((cell) => {
+                seps.push(alignSeparator(cell.attrs.textAlign))
+              })
+              state.write(`| ${seps.join(' | ')} |`)
               state.ensureNewLine()
             }
           })

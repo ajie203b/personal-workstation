@@ -43,43 +43,89 @@ function imageRun(img: BinaryImage, widthPx: number, heightPx: number): ImageRun
   })
 }
 
+async function measureBlob(blob: Blob): Promise<{ width: number; height: number }> {
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(blob)
+    try {
+      return { width: bitmap.width, height: bitmap.height }
+    } finally {
+      bitmap.close?.()
+    }
+  }
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const url = URL.createObjectURL(blob)
+    const img = new Image()
+    img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(url) }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法解码')) }
+    img.src = url
+  })
+}
+
+async function transcodeToPng(blob: Blob): Promise<BinaryImage> {
+  if (typeof document === 'undefined') throw new Error('WebP 图片暂不支持，请导出为 PNG 后重试')
+  const bitmap = typeof createImageBitmap === 'function' ? await createImageBitmap(blob) : null
+  const canvas = document.createElement('canvas')
+  try {
+    let width = 0
+    let height = 0
+    if (bitmap) {
+      width = bitmap.width
+      height = bitmap.height
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('画布不可用')
+      ctx.drawImage(bitmap, 0, 0)
+    } else {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const url = URL.createObjectURL(blob)
+        const el = new Image()
+        el.onload = () => { URL.revokeObjectURL(url); resolve(el) }
+        el.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法解码')) }
+        el.src = url
+      })
+      width = img.naturalWidth
+      height = img.naturalHeight
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('画布不可用')
+      ctx.drawImage(img, 0, 0)
+    }
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('WebP 转 PNG 失败'))), 'image/png')
+    })
+    return { data: new Uint8Array(await pngBlob.arrayBuffer()), type: 'png', width, height }
+  } finally {
+    bitmap?.close?.()
+    canvas.width = 0
+    canvas.height = 0
+  }
+}
+
 async function blobToImage(blob: Blob): Promise<BinaryImage> {
-  const data = new Uint8Array(await blob.arrayBuffer())
   if (blob.type.includes('svg')) throw new Error('SVG 图片暂不支持，请导出为 PNG 后重试')
+  if (blob.type.includes('webp')) return transcodeToPng(blob)
+  const data = new Uint8Array(await blob.arrayBuffer())
   const type = blob.type.includes('jpeg') || blob.type.includes('jpg') ? 'jpg'
     : blob.type.includes('gif') ? 'gif'
       : blob.type.includes('bmp') ? 'bmp' : 'png'
-  const bitmap = typeof createImageBitmap === 'function'
-    ? await createImageBitmap(blob)
-    : await new Promise<{ width: number; height: number }>((resolve, reject) => {
-        const url = URL.createObjectURL(blob)
-        const img = new Image()
-        img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(url) }
-        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法解码')) }
-        img.src = url
-      })
-  return { data, type, width: bitmap.width, height: bitmap.height }
+  const { width, height } = await measureBlob(blob)
+  return { data, type, width, height }
 }
 
 async function dataUrlImage(src: string): Promise<BinaryImage | null> {
-  const match = /^data:image\/(png|jpeg|jpg|gif|bmp);base64,([\s\S]+)$/i.exec(src)
+  const match = /^data:image\/(png|jpeg|jpg|gif|bmp|webp);base64,([\s\S]+)$/i.exec(src)
   if (!match) return null
   const mime = match[1].toLowerCase()
   const binary = atob(match[2])
   const data = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i)
-  const type = mime === 'jpeg' || mime === 'jpg' ? 'jpg' : mime === 'gif' ? 'gif' : mime === 'bmp' ? 'bmp' : 'png'
   const blob = new Blob([data], { type: mime === 'jpg' || mime === 'jpeg' ? 'image/jpeg' : `image/${mime}` })
-  const bitmap = typeof createImageBitmap === 'function'
-    ? await createImageBitmap(blob)
-    : await new Promise<{ width: number; height: number }>((resolve, reject) => {
-        const url = URL.createObjectURL(blob)
-        const img = new Image()
-        img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(url) }
-        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法解码')) }
-        img.src = url
-      })
-  return { data, type, width: bitmap.width, height: bitmap.height }
+  if (mime === 'webp') return transcodeToPng(blob)
+  const type = mime === 'jpeg' || mime === 'jpg' ? 'jpg' : mime === 'gif' ? 'gif' : mime === 'bmp' ? 'bmp' : 'png'
+  const { width, height } = await measureBlob(blob)
+  return { data, type, width, height }
 }
 
 function fitImage(img: BinaryImage, maxW: number, maxH: number, minW = 24, minH = 16) {
@@ -277,12 +323,16 @@ export async function buildReport(input: BuildInput): Promise<{ blob: Blob; warn
     const wSum = widths.reduce((a, b) => a + b, 0)
     widths = widths.map((w) => (w * 17) / wSum)
 
-    const tableRows = await Promise.all(rows.map(async (cells, rowIndex) => {
+    // 串行渲染单元格，避免多个回退公式同时挂在 (0,0) 导致 html-to-image 截串图
+    const tableRows: TableRow[] = []
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const cells = rows[rowIndex]
       const isHeader = rowIndex === 0
       const isLast = rowIndex === rows.length - 1
-      const builtCells = await Promise.all(cells.map(async (cell, i) => {
-        const { children } = await inlineChildren(cell, 10.5, isHeader)
-        return new TableCell({
+      const builtCells: TableCell[] = []
+      for (let i = 0; i < cells.length; i++) {
+        const { children } = await inlineChildren(cells[i], 10.5, isHeader)
+        builtCells.push(new TableCell({
           width: { size: cm(widths[i]), type: WidthType.DXA },
           verticalAlign: VerticalAlign.CENTER,
           margins: { top: 20, bottom: 20, left: 80, right: 80 },
@@ -297,15 +347,15 @@ export async function buildReport(input: BuildInput): Promise<{ blob: Blob; warn
             spacing: { before: pt(1), after: pt(1), line: 240, lineRule: LineRuleType.AUTO },
             children: children.length ? children : [run(' ', { size: 10.5, bold: isHeader })],
           })],
-        })
-      }))
-      return new TableRow({
+        }))
+      }
+      tableRows.push(new TableRow({
         cantSplit: true,
         tableHeader: isHeader,
         height: { value: cm(0.62), rule: HeightRule.ATLEAST },
         children: builtCells,
-      })
-    }))
+      }))
+    }
 
     return [
       tableCaption(block.caption || fallbackTitle, chapter, seq),

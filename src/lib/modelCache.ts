@@ -24,6 +24,8 @@ export interface ModelSpec {
    * - 读缓存时核对「已校验」标记与长度；没有标记（旧版本写的缓存）就当场算一遍，不符删掉重下
    */
   sha256?: string
+  /** 损坏重试时绕过浏览器 HTTP 缓存，防止再次命中代理错误页 */
+  bypassHttpCache?: boolean
 }
 
 const VERIFIED_HEADER = 'x-model-sha256'
@@ -74,19 +76,46 @@ function keyUrl(id: string, version: string): Request {
   return new Request(`https://model-cache.local/${encodeURIComponent(id)}@${encodeURIComponent(version)}`)
 }
 
-async function cache(): Promise<Cache> {
-  return caches.open(CACHE_NAME)
+async function openCache(): Promise<Cache | null> {
+  if (typeof caches === 'undefined') return null
+  try {
+    return await caches.open(CACHE_NAME)
+  } catch {
+    return null
+  }
+}
+
+/** 快速检查模型是否已缓存在本机（不读入完整大文件，不触发网络） */
+export async function hasVerifiedModel(id: string, version: string, sha256?: string): Promise<boolean> {
+  const c = await openCache()
+  if (!c) return false
+  try {
+    const hit = await c.match(keyUrl(id, version))
+    if (!hit) return false
+    if (!sha256) return true
+    const marked = hit.headers.get(VERIFIED_HEADER)
+    const markedLen = Number(hit.headers.get(LENGTH_HEADER))
+    return marked === sha256 && Number.isFinite(markedLen) && markedLen > 0
+  } catch {
+    return false
+  }
 }
 
 /** 取模型字节；没有缓存就按镜像顺序下载 */
 export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
-  const c = await cache()
+  const c = await openCache()
   const key = keyUrl(spec.id, spec.version)
-  const hit = await c.match(key)
-  if (hit) {
-    const buf = await readVerified(c, key, hit, spec.sha256)
-    if (buf) return buf
-    await c.delete(key)
+  if (c) {
+    try {
+      const hit = await c.match(key)
+      if (hit) {
+        const buf = await readVerified(c, key, hit, spec.sha256)
+        if (buf) return buf
+        await c.delete(key).catch(() => undefined)
+      }
+    } catch {
+      // Cache Storage 不可用或读失败时回退网络下载
+    }
   }
 
   const errors: string[] = []
@@ -106,9 +135,9 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
       const timer = setTimeout(() => ctrl.abort(), 20000)
       let res: Response
       try {
-        // 带校验值的大模型自己存 Cache Storage，不再经 HTTP 缓存：否则镜像回过一次错误内容，
+        // 带校验值的大模型或损坏重试自己存 Cache Storage，不再经 HTTP 缓存：否则镜像回过一次错误内容，
         // 换回同一来源重试时浏览器还会把那份坏响应原样再给一遍
-        res = await fetch(url, { cache: spec.sha256 ? 'no-store' : 'force-cache', signal: ctrl.signal })
+        res = await fetch(url, { cache: spec.sha256 || spec.bypassHttpCache ? 'no-store' : 'force-cache', signal: ctrl.signal })
       } finally {
         clearTimeout(timer)
       }
@@ -141,7 +170,11 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
           errors.push(`${host} 返回的文件校验不符（可能是错误页或被截断）`)
           continue
         }
-        await c.put(key, verifiedResponse(buf.buffer, spec.sha256))
+        try {
+          await c?.put(key, verifiedResponse(buf.buffer, spec.sha256))
+        } catch {
+          // 缓存配额不足或无痕模式不阻塞本次使用，避免误换镜像重下
+        }
         return buf.buffer
       }
       const buf = await res.arrayBuffer()
@@ -149,7 +182,11 @@ export async function getModel(spec: ModelSpec): Promise<ArrayBuffer> {
         errors.push(`${host} 返回的文件校验不符（可能是错误页或被截断）`)
         continue
       }
-      await c.put(key, verifiedResponse(buf, spec.sha256))
+      try {
+        await c?.put(key, verifiedResponse(buf, spec.sha256))
+      } catch {
+        // 缓存配额不足或无痕模式不阻塞本次使用
+      }
       spec.onProgress?.(1)
       return buf
     } catch (e) {
@@ -167,8 +204,8 @@ async function acceptDownload(buf: ArrayBuffer, sha256?: string): Promise<boolea
 
 /** 删掉某个模型文件的缓存（加载 / 建会话失败、用户点「重试 / 换源」时用） */
 export async function deleteModel(id: string, version: string): Promise<void> {
-  if (typeof caches === 'undefined') return
-  const c = await cache()
+  const c = await openCache()
+  if (!c) return
   await c.delete(keyUrl(id, version))
 }
 
@@ -179,8 +216,8 @@ export async function deleteModel(id: string, version: string): Promise<void> {
  * 返回 true = 保留（已校验），false = 不存在或已删除。
  */
 export async function pruneModel(id: string, version: string, sha256: string): Promise<boolean> {
-  if (typeof caches === 'undefined') return false
-  const c = await cache()
+  const c = await openCache()
+  if (!c) return false
   const key = keyUrl(id, version)
   let ok = false
   try {
@@ -226,7 +263,8 @@ async function responseByteLength(res: Response): Promise<number> {
 /** 当前模型缓存占用（字节） */
 export async function modelCacheBytes(): Promise<number> {
   if (typeof caches === 'undefined' || !(await caches.has(CACHE_NAME))) return 0
-  const c = await cache()
+  const c = await openCache()
+  if (!c) return 0
   const keys = await c.keys()
   let total = 0
   for (const req of keys) {

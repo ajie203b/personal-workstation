@@ -67,7 +67,7 @@ function KatexPreview({ latex, displayMode, emptyHint }: { latex: string; displa
       return
     }
     try {
-      katex.render(latex, el, { displayMode, throwOnError: false, output: 'htmlAndMathml' })
+      katex.render(latex, el, { displayMode, throwOnError: false, output: 'htmlAndMathml', trust: false, maxSize: 20, maxExpand: 1000 })
     } catch {
       el.textContent = latex
     }

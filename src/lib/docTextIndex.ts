@@ -48,12 +48,19 @@ async function extractPdf(blob: Blob): Promise<{ text: string; segments: string[
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
   const pdf = await pdfjs.getDocument({ data: await blob.arrayBuffer() }).promise
   const segments: string[] = []
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    segments.push(content.items.map((it) => ('str' in it ? it.str : '')).join(' '))
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      try {
+        const content = await page.getTextContent()
+        segments.push(content.items.map((it) => ('str' in it ? it.str : '')).join(' '))
+      } finally {
+        page.cleanup()
+      }
+    }
+  } finally {
+    await pdf.destroy()
   }
-  await pdf.destroy()
   return { text: segments.join('\n'), segments, segmentUnit: 'page' }
 }
 
@@ -129,12 +136,22 @@ async function extractPptx(blob: Blob): Promise<{ text: string; segments: string
 
 /* ---- 落库 ---- */
 
-export async function indexDoc(doc: Doc, blob: Blob): Promise<void> {
+/** 本会话内抽取失败的文档 hash，防止损坏/加密 PDF 在 backfill 轮询中死循环重试并阻塞后续文档 */
+const failedIndexHashes = new Set<string>()
+
+export function resetFailedDocTextHashes(): void {
+  failedIndexHashes.clear()
+}
+
+export async function indexDoc(doc: Doc, blob: Blob): Promise<boolean> {
   try {
     const { text, segments, segmentUnit } = await extractDocText(doc.kind, blob)
     await db.docText.put({ hash: doc.hash, kind: doc.kind, text: text.slice(0, MAX_INDEX_CHARS), segments, segmentUnit, indexedAt: Date.now() })
+    failedIndexHashes.delete(doc.hash)
+    return true
   } catch {
-    // 抽取失败不阻塞导入；下次打开搜索时回填重试
+    failedIndexHashes.add(doc.hash)
+    return false
   }
 }
 
@@ -144,13 +161,16 @@ export async function backfillDocTextIndex(limit = 5): Promise<number> {
   let done = 0
   for (const doc of docs) {
     if (doc.deletedAt) continue
+    if (failedIndexHashes.has(doc.hash)) continue
     const has = await db.docText.get(doc.hash)
     if (has) continue
     const row = await db.blobs.get(doc.hash)
     if (!row?.blob) continue
-    await indexDoc(doc, row.blob)
-    done++
-    if (done >= limit) break
+    const ok = await indexDoc(doc, row.blob)
+    if (ok) {
+      done++
+      if (done >= limit) break
+    }
   }
   return done
 }

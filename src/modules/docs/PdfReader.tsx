@@ -468,14 +468,17 @@ export function PdfReader({
     }
   }, [onSelection, scrollRef])
 
-  const onShotMouseDown = useCallback((e: React.MouseEvent, page: number, wrapper: HTMLElement) => {
-    if (!shotMode) return
+  const onShotPointerDown = useCallback((e: React.PointerEvent, page: number, wrapper: HTMLElement) => {
+    if (!shotMode || e.button > 0) return
     e.preventDefault()
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
     const r = wrapper.getBoundingClientRect()
-    setDrag({ page, x0: (e.clientX - r.left) / r.width, y0: (e.clientY - r.top) / r.height, x1: (e.clientX - r.left) / r.width, y1: (e.clientY - r.top) / r.height })
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+    const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+    setDrag({ page, x0: x, y0: y, x1: x, y1: y })
   }, [shotMode])
 
-  const onShotMouseMove = useCallback((e: React.MouseEvent, page: number, wrapper: HTMLElement) => {
+  const onShotPointerMove = useCallback((e: React.PointerEvent, page: number, wrapper: HTMLElement) => {
     setDrag((d) => {
       if (!d || d.page !== page) return d
       const r = wrapper.getBoundingClientRect()
@@ -483,7 +486,7 @@ export function PdfReader({
     })
   }, [])
 
-  const onShotMouseUp = useCallback((_e: React.MouseEvent, page: number, wrapper: HTMLElement) => {
+  const onShotPointerUp = useCallback((_e: React.PointerEvent, page: number, wrapper: HTMLElement) => {
     if (!shotMode || !drag || drag.page !== page) return
     const x = Math.min(drag.x0, drag.x1)
     const y = Math.min(drag.y0, drag.y1)
@@ -647,10 +650,12 @@ export function PdfReader({
                             opacity: inWindow && !drawn.has(p) ? 0.55 : 1,
                             transition: 'filter 260ms ease-out, opacity 260ms ease-out',
                           }}
-                          className={`relative ${shotMode ? 'cursor-crosshair select-none' : ''}`}
-                          onMouseUp={(e) => (shotMode ? onShotMouseUp(e, p, e.currentTarget) : onPageMouseUp(p, e.currentTarget))}
-                          onMouseDown={(e) => onShotMouseDown(e, p, e.currentTarget)}
-                          onMouseMove={(e) => onShotMouseMove(e, p, e.currentTarget)}
+                          className={`relative ${shotMode ? 'cursor-crosshair select-none touch-none' : ''}`}
+                          onMouseUp={() => { if (!shotMode) onPageMouseUp(p, pageWrappersRef.current.get(p)!) }}
+                          onPointerDown={(e) => onShotPointerDown(e, p, e.currentTarget)}
+                          onPointerMove={(e) => onShotPointerMove(e, p, e.currentTarget)}
+                          onPointerUp={(e) => onShotPointerUp(e, p, e.currentTarget)}
+                          onPointerCancel={() => setDrag(null)}
                         >
                           {inWindow ? (
                             <Page
@@ -693,7 +698,7 @@ export function PdfReader({
                               }}
                             />
                           )}
-                          {!shotMode && <SelectionLayer page={p} />}
+                          {inWindow && !shotMode && <SelectionLayer page={p} />}
                         </div>
                       </div>
                     </div>

@@ -283,18 +283,25 @@ export function QrGenerateTab({
     setSelfCheck('checking')
     const timer = window.setTimeout(() => {
       void (async () => {
-        const previewOptions = buildQrOptions(content, style, PREVIEW_SIZE)
-        container.innerHTML = ''
-        new QRCodeStyling(previewOptions).append(container)
-        if (mobileContainer) {
-          mobileContainer.innerHTML = ''
-          new QRCodeStyling({ ...buildQrOptions(content, style, 192), type: 'svg' }).append(mobileContainer)
+        try {
+          const previewOptions = buildQrOptions(content, style, PREVIEW_SIZE)
+          container.innerHTML = ''
+          new QRCodeStyling(previewOptions).append(container)
+          if (mobileContainer) {
+            mobileContainer.innerHTML = ''
+            new QRCodeStyling({ ...buildQrOptions(content, style, 192), type: 'svg' }).append(mobileContainer)
+          }
+          // 在最小导出分辨率（512px）上做 jsQR 自检，避免高密度码被 260px 预览缩放误判
+          const checkOptions = buildQrOptions(content, style, Math.max(512, PREVIEW_SIZE))
+          const check = await selfCheckQr(checkOptions, content)
+          if (seqRef.current !== seq) return
+          setSelfCheck(check)
+        } catch {
+          if (seqRef.current !== seq) return
+          container.innerHTML = ''
+          if (mobileContainer) mobileContainer.innerHTML = ''
+          setSelfCheck('unreadable')
         }
-        // 在最小导出分辨率（512px）上做 jsQR 自检，避免高密度码被 260px 预览缩放误判
-        const checkOptions = buildQrOptions(content, style, Math.max(512, PREVIEW_SIZE))
-        const check = await selfCheckQr(checkOptions, content)
-        if (seqRef.current !== seq) return
-        setSelfCheck(check)
       })()
     }, 320)
     return () => window.clearTimeout(timer)

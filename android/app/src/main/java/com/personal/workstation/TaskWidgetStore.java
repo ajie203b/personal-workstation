@@ -46,9 +46,7 @@ final class TaskWidgetStore {
 
     static synchronized void complete(Context context, String id) {
         if (id == null || id.isEmpty()) return;
-        // JS may already have taken the add. Keep a check even when the add can
-        // be removed locally so the next batch also completes that captured task.
-        removePendingAdd(context, id);
+        // 保留 pending_adds，让 App 同步时先落库再归档进日志与统计，避免离线新增又勾选的任务直接蒸发。
         addPendingCheck(context, id, System.currentTimeMillis());
     }
 
@@ -86,26 +84,31 @@ final class TaskWidgetStore {
     }
 
     /**
-     * 同一条任务只保留一次待同步勾选：小格子连点两下不应在 App 里完成两次。
-     * 打卡任务的一次点击仍由 App 的 checkInTask 决定是 +1 还是归档。
+     * 追加待同步勾选事件：
+     * - 400ms 内对同一任务的误触连点去抖；
+     * - 超过去抖窗口的多次点击保留独立记录（时间戳严格递增供 ack 精确匹配），
+     *   避免多次打卡任务（如每天 8 次）在打开 App 前丢失第 2~N 次打卡。
      */
     static synchronized void addPendingCheck(Context context, String id, long at) {
         if (id == null || id.isEmpty()) return;
         JSONArray checks = readArray(context, KEY_PENDING_CHECKS);
+        long lastSameAt = 0;
+        long maxAt = 0;
         for (int i = 0; i < checks.length(); i++) {
             JSONObject item = checks.optJSONObject(i);
-            if (item != null && id.equals(item.optString("id"))) {
-                try {
-                    if (at > item.optLong("at", 0)) item.put("at", at);
-                } catch (JSONException ignored) { /* 保留原时间 */ }
-                writeArray(context, KEY_PENDING_CHECKS, checks);
-                return;
+            if (item == null) continue;
+            long itemAt = item.optLong("at", 0);
+            if (itemAt > maxAt) maxAt = itemAt;
+            if (id.equals(item.optString("id")) && itemAt > lastSameAt) {
+                lastSameAt = itemAt;
             }
         }
+        if (lastSameAt > 0 && at - lastSameAt < 400L) return;
+        long stamp = Math.max(at, maxAt + 1);
         JSONObject check = new JSONObject();
         try {
             check.put("id", id);
-            check.put("at", at);
+            check.put("at", stamp);
         } catch (JSONException ignored) {
             return;
         }

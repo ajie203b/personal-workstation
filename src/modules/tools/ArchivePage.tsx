@@ -287,10 +287,12 @@ export function ArchivePage() {
     setRevision((value) => value + 1)
   }
 
+  const shouldPoll = desktopOpen || androidOpen || downloads.downloading
+
   useEffect(() => {
     if (!supported) return
     let active = true
-    let timer: ReturnType<typeof setTimeout>
+    let timer: ReturnType<typeof setTimeout> | undefined
     const refresh = async () => {
       try {
         const snapshot = await listArchiveDownloads()
@@ -298,12 +300,25 @@ export function ArchivePage() {
       } catch (error) {
         if (active) setError(errorText(error, '无法读取下载列表'))
       } finally {
-        if (active) timer = setTimeout(refresh, 1200)
+        if (active && shouldPoll && document.visibilityState === 'visible') {
+          timer = setTimeout(refresh, 1200)
+        }
       }
     }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        clearTimeout(timer)
+        void refresh()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
     void refresh()
-    return () => { active = false; clearTimeout(timer) }
-  }, [supported, revision])
+    return () => {
+      active = false
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [supported, revision, shouldPoll])
 
   async function openBrowser() {
     setError('')

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { boxH, boxW, clusterStrokes, detectTrailingEquals, estimateCharHeight } from './geometry'
 import { findGraphSource } from './graphLink'
 import { MathEngine } from './mathEngine'
+import { isMfrModelCached } from './pix2textMfr'
 import { RecognitionQueue } from './recognitionQueue'
 import { DEFAULT_SOURCE, type ModelSourceConfig } from './recognizer'
 import { getSource, setSource } from './store'
@@ -38,6 +39,8 @@ export function useMathRecognition({
   const engineRef = useRef<MathEngine | null>(null)
   const queueRef = useRef<RecognitionQueue<RecognizeJob> | null>(null)
   const [model, setModel] = useState<ModelState>({ phase: 'idle' })
+  const modelPhaseRef = useRef<ModelState['phase']>('idle')
+  modelPhaseRef.current = model.phase
   const [source, setSourceState] = useState<ModelSourceConfig>(DEFAULT_SOURCE)
   const [recognizing, setRecognizing] = useState(0)
   const [pageVariables, setPageVariables] = useState<Record<string, number>>({})
@@ -81,11 +84,15 @@ export function useMathRecognition({
     const engine = new MathEngine()
     engineRef.current = engine
     let alive = true
-    void getSource().then((cfg) => {
+    void Promise.all([getSource(), isMfrModelCached()]).then(([cfg, cached]) => {
       if (!alive) return
       setSourceState(cfg)
       engine.setSource(cfg)
-      void loadModel()
+      if (cached) {
+        void loadModel()
+      } else {
+        setModel({ phase: 'prompt' })
+      }
     })
     return () => {
       alive = false
@@ -200,6 +207,8 @@ export function useMathRecognition({
   const runRecognition = useCallback(() => {
     const page = pageRef.current
     if (!engineRef.current || !page) return
+    // 模型尚未经用户确认下载时，不偷偷触发 120MB 网络下载
+    if (modelPhaseRef.current === 'prompt' || modelPhaseRef.current === 'idle') return
     const strokes = strokesRef.current
     const h = estimateCharHeight(strokes)
     const blocks = clusterStrokes(strokes, { charHeight: h })
@@ -234,10 +243,10 @@ export function useMathRecognition({
 
   useEffect(() => () => window.clearTimeout(idleTimer.current), [idleTimer])
 
-  // 打开页面后补识别（例如上次识别到一半就退出了）
+  // 打开页面或模型刚就绪后补识别（例如上次识别到一半退出，或用户先手写后点击下载模型）
   useEffect(() => {
-    if (pageId) scheduleRecognition(false)
-  }, [pageId, scheduleRecognition])
+    if (pageId && model.phase === 'ready') scheduleRecognition(false)
+  }, [pageId, model.phase, scheduleRecognition])
 
   const afterChange = useCallback(
     (lastStroke?: Stroke) => {

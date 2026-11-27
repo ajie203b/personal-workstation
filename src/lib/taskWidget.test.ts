@@ -58,3 +58,17 @@ it('待添加任务在同步期间被完成，继续合并下一批完成动作'
   expect(bridge.ack).toHaveBeenCalledTimes(2)
   expect(JSON.parse(bridge.ack.mock.calls.at(-1)![0].payload).tasks).toEqual([])
 })
+
+it('同一批次多次习惯打卡全部累计，不会跳过第 2 次及以后', async () => {
+  await db.tasks.put({ id: 'h', title: '喝水', tier: 'today', priority: 2, status: 'todo', tags: [], repeat: 'daily', repeatCount: 3, createdAt: 1, updatedAt: 1 })
+  bridge.take.mockResolvedValueOnce({
+    checks: [
+      { id: 'h', at: 1000 },
+      { id: 'h', at: 2000 },
+    ],
+  })
+  await drainTaskWidgetActions()
+  const saved = await db.tasks.get('h')
+  expect(saved?.checkin?.count).toBe(2)
+  expect(saved?.status).toBe('todo')
+})

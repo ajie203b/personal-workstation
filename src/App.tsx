@@ -19,6 +19,7 @@ import { pruneTombstones } from '@/lib/tombstones'
 import { maybeAutoSync } from '@/lib/sync'
 import { initTaskWidgetActions, syncTaskWidget } from '@/lib/taskWidget'
 import { AppUpdateHost } from '@/shared/AppUpdate'
+import { FocusGlobalSettlement } from '@/shared/FocusMiniBar'
 import { isMainWindow, isNative } from '@/lib/native'
 
 // 重资源页面按路由分包：任务多视图/文档渲染库/编辑器/工具页仅在访问对应页面或弹窗时加载
@@ -152,6 +153,7 @@ export default function App() {
   }, [])
   // 小组件内的原生添加/完成先落在本地队列，启动和回前台时并进 IndexedDB
   useEffect(() => {
+    if (!isMainWindow()) return
     let dispose: (() => void) | undefined
     void initTaskWidgetActions().then((d) => { dispose = d })
     return () => dispose?.()
@@ -199,7 +201,8 @@ export default function App() {
       <CommandPaletteHost />
       <ToastHost />
       <KeyboardShortcutsDialog />
-      {/* 应用内更新：仅安卓 App / 桌面主窗口，网页版和独立文档窗口不渲染 */}
+      {/* 应用内更新与全局番茄结算：仅安卓 App / 桌面主窗口，独立文档窗口不重复触发 */}
+      {isMainWindow() && <FocusGlobalSettlement />}
       {isMainWindow() && <AppUpdateHost />}
     </>
   )

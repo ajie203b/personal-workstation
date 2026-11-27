@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { useUi, type Theme } from '@/stores/ui'
+import { flushSync } from 'react-dom'
+import { useUi, type Theme, type ThemeMode } from '@/stores/ui'
 import { prefersReducedMotion } from '@/lib/motion'
 
 /** 主题三档：跟随系统 / 固定浅色 / 固定深色（system 档实时监听系统切换） */
@@ -31,26 +32,38 @@ function apply() {
   }
 }
 
-/**
- * 主题切换：可用时走 View Transitions 的交叉淡入（macOS 气质，不再圆形扩散），
- * 不支持 / 减弱动效时保持原来的全站过渡，功能完全一致。
- */
-export function setThemeWithTransition(next: Theme) {
+function runThemeTransition(mutate: () => void) {
   const doc = document as Document & {
     startViewTransition?: (cb: () => void) => { finished: Promise<void> }
   }
   const reduced = prefersReducedMotion() || !useUi.getState().motion
   if (!doc.startViewTransition || reduced) {
-    useUi.getState().setTheme(next)
+    mutate()
+    apply()
     return
   }
   try {
-    doc.startViewTransition(() => useUi.getState().setTheme(next)).finished
-      .catch(() => { /* 转场被打断不影响状态已生效 */ })
+    doc.startViewTransition(() => {
+      flushSync(() => mutate())
+      apply()
+    }).finished.catch(() => { /* 转场被打断不影响状态已生效 */ })
   } catch {
     // 页面已有进行中的转场时 startViewTransition 会抛错：直接同步落状态，别吞掉切换
-    useUi.getState().setTheme(next)
+    mutate()
+    apply()
   }
+}
+
+/**
+ * 主题切换：可用时走 View Transitions 的交叉淡入（macOS 气质，不再圆形扩散），
+ * 不支持 / 减弱动效时保持原来的全站过渡，功能完全一致。
+ */
+export function setThemeWithTransition(next: Theme) {
+  runThemeTransition(() => useUi.getState().setTheme(next))
+}
+
+export function setThemeModeWithTransition(next: ThemeMode) {
+  runThemeTransition(() => useUi.getState().setThemeMode(next))
 }
 
 /** 应用主题 + 强调色 + 动效开关；system 档监听系统外观变化 */

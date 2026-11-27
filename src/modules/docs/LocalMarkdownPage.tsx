@@ -335,7 +335,7 @@ export function LocalMarkdownPage() {
         setError('')
         toast(changed ? '文档已更新' : '已刷新，当前内容是最新的')
       } catch (e) { setError(String(e)); toast('刷新失败，请重试'); throw e }
-    })
+    }).catch(() => undefined)
     refreshLock.current = false
   }
   const leavePage = async () => {
@@ -403,7 +403,9 @@ export function LocalMarkdownPage() {
         <div className="flex-1 overflow-y-auto py-2" role="tabpanel">
           {tab === 'files' ? <>
             <p className="truncate px-4 py-2 text-xs text-on-surface-2" title={folder?.directory}>{folder ? fileName(folder.directory) : '尚未打开文件夹'}</p>
-            {folder?.parent && <button className="flex w-full items-center gap-2 px-4 py-2 text-[13px] hover:bg-surface-2" onClick={() => void browse(folder.parent!)}><ArrowUp size={14} />上一级</button>}
+            {folder?.parent
+              ? <button className="flex w-full items-center gap-2 px-4 py-2 text-[13px] hover:bg-surface-2" onClick={() => void browse(folder.parent!)}><ArrowUp size={14} />上一级</button>
+              : folder && <button className="flex w-full items-center gap-2 px-4 py-2 text-[13px] text-on-surface-2 hover:bg-surface-2 hover:text-on-surface" aria-label="切换文件夹" disabled={picking} onClick={() => void pick(true)}><FolderOpen size={14} />切换文件夹</button>}
             {folder?.entries.map(entry => <button key={entry.path} aria-current={entry.path === doc?.path ? 'page' : undefined} className={cn('flex w-full min-w-0 items-center gap-2 border-l-2 px-4 py-2 text-left text-[13px] hover:bg-surface-2', entry.path === doc?.path ? 'border-primary text-primary bg-primary-soft' : 'border-transparent')} onClick={() => entry.directory ? void browse(entry.path) : void goFile(entry.path)}>
               {entry.directory ? <Folder size={14} className="shrink-0 text-on-surface-2" /> : <FileText size={14} className="shrink-0 text-on-surface-2" />}<span className="truncate">{entry.name}</span>
             </button>)}

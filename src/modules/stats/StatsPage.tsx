@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { CheckCircle2, Flame, Highlighter, Timer } from 'lucide-react'
 import { db } from '@/db/db'
@@ -38,7 +39,14 @@ function mondayOf(d: Date): Date {
 }
 
 export function StatsPage() {
-  const [view, setView] = useState<'tasks' | 'quota'>('tasks')
+  const [params, setParams] = useSearchParams()
+  const view: 'tasks' | 'quota' = params.get('tab') === 'quota' ? 'quota' : 'tasks'
+  const setView = (next: 'tasks' | 'quota') => {
+    const p = new URLSearchParams(params)
+    if (next === 'quota') p.set('tab', 'quota')
+    else p.delete('tab')
+    setParams(p, { replace: true })
+  }
   const [range, setRange] = useState<'week' | 'month'>('week')
   return (
     <div>
@@ -178,16 +186,17 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
   }, [doneTasks])
 
-  // 专注排行（按任务聚合）
+  // 专注排行（按任务聚合，使用唯一 id 作为 key 防同名/已删任务冲突）
   const focusRank = useMemo(() => {
     const byTask = new Map<string, number>()
+    const titleById = new Map((tasks ?? []).map((t) => [t.id, t.title]))
     let orphan = 0
     for (const s of sessions ?? []) {
       if (s.taskId) byTask.set(s.taskId, (byTask.get(s.taskId) ?? 0) + s.minutes)
       else orphan += s.minutes
     }
     const rows = [...byTask.entries()]
-      .map(([id, minutes]) => ({ title: (tasks ?? []).find((t) => t.id === id)?.title ?? '（已删除任务）', minutes }))
+      .map(([id, minutes]) => ({ id, title: titleById.get(id) ?? '（已删除任务）', minutes }))
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, 5)
     return { rows, orphan }
@@ -378,7 +387,7 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
           ) : (
             <div className="flex flex-col gap-2">
               {focusRank.rows.map((r) => (
-                <div key={r.title} className="flex items-center gap-2">
+                <div key={r.id} className="flex items-center gap-2">
                   <span className="flex-1 text-[13px] truncate">{r.title}</span>
                   <span className="text-[12px] tabular-nums text-on-surface-2">{r.minutes} 分钟</span>
                 </div>

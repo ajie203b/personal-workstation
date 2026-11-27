@@ -25,6 +25,12 @@
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) meta.setAttribute('content', '#12151C');
         }
+        if (st.accent && st.accent !== 'blue') {
+          document.documentElement.dataset.accent = st.accent;
+        }
+        if (st.motionEnabled === false) {
+          document.documentElement.classList.add('no-motion');
+        }
       } catch (e) { /* 忽略 */ }
     </script>
   </head>

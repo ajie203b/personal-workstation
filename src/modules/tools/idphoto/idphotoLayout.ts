@@ -35,14 +35,29 @@ export const SHEET_PRESETS: SheetPreset[] = [
   { id: 'a4', label: 'A4', spec: SHEET_A4 },
 ]
 
+/** 按物理尺寸换算单张照片在目标相纸 DPI 下的占用像素（如 350dpi 社保卡铺到 300dpi 相纸） */
+export function photoSizeOnSheet(
+  photo: { width: number; height: number; dpi?: number },
+  sheet: SheetSpec = SHEET_6IN,
+): { width: number; height: number } {
+  const srcDpi = photo.dpi && photo.dpi > 0 ? photo.dpi : sheet.dpi
+  if (srcDpi === sheet.dpi) return { width: photo.width, height: photo.height }
+  const ratio = sheet.dpi / srcDpi
+  return {
+    width: Math.max(1, Math.round(photo.width * ratio)),
+    height: Math.max(1, Math.round(photo.height * ratio)),
+  }
+}
+
 /** 计算指定相纸上最多可放多少张该规格照片 */
 export function maxSheetCount(
-  photo: { width: number; height: number },
+  photo: { width: number; height: number; dpi?: number },
   sheet: SheetSpec = SHEET_6IN,
   gap = SHEET_GAP,
 ): number {
-  const colsMax = Math.max(1, Math.floor((sheet.width + gap) / (photo.width + gap)))
-  const rowsMax = Math.max(1, Math.floor((sheet.height + gap) / (photo.height + gap)))
+  const { width, height } = photoSizeOnSheet(photo, sheet)
+  const colsMax = Math.max(1, Math.floor((sheet.width + gap) / (width + gap)))
+  const rowsMax = Math.max(1, Math.floor((sheet.height + gap) / (height + gap)))
   return colsMax * rowsMax
 }
 
@@ -97,17 +112,18 @@ export function pickGrid(
   return { cols: best.cols, rows: best.rows }
 }
 
-/** 排版布局：照片 1:1 原尺寸（与规格同像素，300dpi 一格一张），整组居中 */
+/** 排版布局：按物理尺寸换算到相纸 DPI 后整组居中 */
 export function computeSheetLayout(
-  photo: { width: number; height: number },
+  photo: { width: number; height: number; dpi?: number },
   sheet: SheetSpec = SHEET_6IN,
   count = 4,
   gap = SHEET_GAP,
 ): SheetLayout {
   const n = Math.max(1, Math.round(count))
-  const { cols, rows } = pickGrid(n, photo.width, photo.height, sheet, gap)
-  const totalW = cols * photo.width + (cols - 1) * gap
-  const totalH = rows * photo.height + (rows - 1) * gap
+  const sized = photoSizeOnSheet(photo, sheet)
+  const { cols, rows } = pickGrid(n, sized.width, sized.height, sheet, gap)
+  const totalW = cols * sized.width + (cols - 1) * gap
+  const totalH = rows * sized.height + (rows - 1) * gap
   const marginX = Math.round((sheet.width - totalW) / 2)
   const marginY = Math.round((sheet.height - totalH) / 2)
 
@@ -116,10 +132,10 @@ export function computeSheetLayout(
     for (let c = 0; c < cols; c++) {
       if (cells.length >= n) break
       cells.push({
-        x: marginX + c * (photo.width + gap),
-        y: marginY + r * (photo.height + gap),
-        width: photo.width,
-        height: photo.height,
+        x: marginX + c * (sized.width + gap),
+        y: marginY + r * (sized.height + gap),
+        width: sized.width,
+        height: sized.height,
       })
     }
   }

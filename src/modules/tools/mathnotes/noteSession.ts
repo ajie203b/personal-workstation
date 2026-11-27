@@ -90,6 +90,11 @@ export class NoteSession {
     this.seq++
   }
 
+  /** 原地同步页名变更，保留未保存笔迹草稿且避免 liveQuery 把自己的重命名误判成外部冲突 */
+  syncRename(title: string, updatedAt: number): void {
+    this.page = { ...this.page, title, updatedAt }
+  }
+
   /** 没有改动时什么都不写；有改动时按乐观并发写入（串行） */
   save(): Promise<CommitOutcome | null> {
     const run = this.chain.then(() => this.doSave())

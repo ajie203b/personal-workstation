@@ -28,7 +28,7 @@ import { FIELD_INPUT, Field, FilePicker, OutputBar, Panel, fileBytes, pdfBlob } 
 
 /** 把上传的签名/公章图片解码并规整为透明 PNG dataURL（超大图等比缩放到 1200px 以内）。 */
 async function normalizeSignatureImage(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
-  const bmp = await createImageBitmap(file)
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
   try {
     const maxEdge = 1200
     const scale = Math.min(1, maxEdge / Math.max(1, bmp.width, bmp.height))
@@ -39,12 +39,17 @@ async function normalizeSignatureImage(file: File): Promise<{ dataUrl: string; w
       return { dataUrl: bytesToDataUrl(raw, 'image/png'), width, height }
     }
     const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('当前环境不支持 canvas')
-    ctx.drawImage(bmp, 0, 0, width, height)
-    return { dataUrl: canvas.toDataURL('image/png'), width, height }
+    try {
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('当前环境不支持 canvas')
+      ctx.drawImage(bmp, 0, 0, width, height)
+      return { dataUrl: canvas.toDataURL('image/png'), width, height }
+    } finally {
+      canvas.width = 0
+      canvas.height = 0
+    }
   } finally {
     bmp.close?.()
   }
@@ -442,7 +447,7 @@ function PagePlacer({
         <div className="aspect-[3/4] animate-pulse bg-surface-3/60" />
       )}
 
-      {placements.map((p) => {
+      {preview && placements.map((p) => {
         const rect = placementRect(pageSize.width, pageSize.height, p.signature.width, p.signature.height, p)
         const selected = p.id === selectedId
         const leftPct = (rect.x / pageSize.width) * 100
@@ -666,13 +671,18 @@ function SignaturePad({ onSave }: { onSave: (dataUrl: string, width: number, hei
     }
     // 按包围盒把全部笔迹矢量重绘到透明画布（2×），四周留白已含在 box 里
     const out = document.createElement('canvas')
-    out.width = Math.max(1, Math.round(box.width * EXPORT_SCALE))
-    out.height = Math.max(1, Math.round(box.height * EXPORT_SCALE))
-    const ctx = out.getContext('2d')
-    if (!ctx) return
-    ctx.setTransform(EXPORT_SCALE, 0, 0, EXPORT_SCALE, -box.x * EXPORT_SCALE, -box.y * EXPORT_SCALE)
-    drawStrokes(ctx, strokes, inkColorRef.current)
-    onSave(out.toDataURL('image/png'), out.width, out.height)
+    try {
+      out.width = Math.max(1, Math.round(box.width * EXPORT_SCALE))
+      out.height = Math.max(1, Math.round(box.height * EXPORT_SCALE))
+      const ctx = out.getContext('2d')
+      if (!ctx) return
+      ctx.setTransform(EXPORT_SCALE, 0, 0, EXPORT_SCALE, -box.x * EXPORT_SCALE, -box.y * EXPORT_SCALE)
+      drawStrokes(ctx, strokes, inkColorRef.current)
+      onSave(out.toDataURL('image/png'), out.width, out.height)
+    } finally {
+      out.width = 0
+      out.height = 0
+    }
     clear()
   }
 

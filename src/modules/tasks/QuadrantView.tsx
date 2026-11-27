@@ -108,10 +108,10 @@ function TaskQuadItem({ task, onOpen }: { task: Task; onOpen: (id: string) => vo
           variant="ghost"
           size="icon"
           aria-label={`移动象限（当前${quad}）`}
-          title="移到下一象限"
+          title="切换重要程度（移至对应象限）"
           onClick={(e) => {
             e.stopPropagation()
-            const nextPriority: Record<Quadrant, 0 | 1 | 2 | 3> = { q1: 2, q2: 0, q3: 3, q4: 1 }
+            const nextPriority: Record<Quadrant, 0 | 1 | 2 | 3> = { q1: 2, q2: 2, q3: 1, q4: 1 }
             void updateTask(task.id, { priority: nextPriority[quad] })
           }}
           className="touch-target w-7 h-7 rounded-[7px] shrink-0 mt-0.5"

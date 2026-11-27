@@ -256,14 +256,24 @@ export function MathNotesPage() {
     return () => sub.unsubscribe()
   }, [pageId])
 
-  // 离开页面：有改动才保存，没编辑过不写库
-  useEffect(
-    () => () => {
+  // 离开页面 / 切到后台 / 关闭标签页：有改动才保存，没编辑过不写库
+  useEffect(() => {
+    const flush = () => {
+      window.clearTimeout(saveTimer.current)
+      void sessionRef.current?.save().catch(() => undefined)
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pagehide', flush)
       window.clearTimeout(saveTimer.current)
       void sessionRef.current?.close().catch(() => undefined)
-    },
-    [],
-  )
+    }
+  }, [])
 
   /* ---------- 编辑操作 ---------- */
 
@@ -724,12 +734,14 @@ export function MathNotesPage() {
   const renameCurrentPage = async (nextTitle: string) => {
     const page = pageRef.current
     if (!page || page.title === nextTitle) return
-    const updated = { ...page, title: nextTitle, updatedAt: Date.now() }
+    const updatedAt = Date.now()
+    const updated = { ...page, title: nextTitle, updatedAt }
     pageRef.current = updated
-    await db.mathNotes.update(page.id, { title: nextTitle, updatedAt: updated.updatedAt })
     if (sessionRef.current?.id === page.id) {
-      openPage(updated)
+      sessionRef.current.syncRename(nextTitle, updatedAt)
     }
+    await db.mathNotes.update(page.id, { title: nextTitle, updatedAt })
+    bump()
     toast(`已重命名为「${nextTitle}」`)
   }
 
@@ -1073,6 +1085,7 @@ export function MathNotesPage() {
           percent={percent}
           recognizing={recognizing}
           onOpenSettings={() => setSettingsOpen(true)}
+          onDownloadModel={() => void loadModel()}
           onRetryModel={() => void loadModel({ fresh: true })}
           onNewFormula={openNewManualFormula}
         />

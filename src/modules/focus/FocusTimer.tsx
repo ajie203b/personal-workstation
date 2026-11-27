@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Coffee, RotateCcw, Target, Timer } from 'lucide-react'
+import { Coffee, RotateCcw, Target, Timer, Volume2, VolumeX } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { db } from '@/db/db'
 import type { Task } from '@/db/db'
-import { addFocusSession } from '@/db/focus'
 import { cancelFocusEnd, scheduleFocusEnd } from '@/lib/notify'
-import { useAllTasks } from '@/db/hooks'
+import { useAllTasks, useDateTick } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
-import { todayStr } from '@/lib/date'
 import { haptic } from '@/lib/haptics'
-import { useUi } from '@/stores/ui'
+import { isNative } from '@/lib/native'
 import { Segmented } from '@/shared/ui/Segmented'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { PlayPauseIcon } from '@/shared/ui/PlayPauseIcon'
 import { Dialog } from '@/shared/ui/Sheet'
+import {
+  FOCUS_SYNC_EVENT,
+  isFocusSoundEnabled,
+  setFocusSoundEnabled,
+  settleExpiredFocusTimer,
+} from '@/shared/FocusMiniBar'
 
 type Phase = 'work' | 'break'
 
@@ -161,13 +165,9 @@ function CountdownDisplay({
 /** 番茄钟：按墙上时钟计时（跨刷新/后台继续跑）+ 可选专注时长 + 会话落库（可绑定任务） */
 export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   const [store, setStore] = useState<TimerStore>(loadStore)
-  const toast = useUi((s) => s.toast)
-  // StrictMode 会把 effect 吊两次，落库靠这个 ref 兜住，只记一次
-  const settledRef = useRef(0)
-
-  // 必须用本地日期：toISOString() 是 UTC，北京时间 0–8 点会取到昨天，
-  // 和落库用的 todayStr() 对不上，凌晨的专注会记到「今日」之外
-  const today = todayStr()
+  const [soundOn, setSoundOn] = useState<boolean>(isFocusSoundEnabled)
+  // 必须用本地日期 + 跨午夜自动刷新
+  const today = useDateTick()
   const todayStats = useLiveQuery(
     async () => {
       const rows = await db.focusSessions.where('day').equals(today).toArray()
@@ -189,10 +189,34 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   const [taskId, pickTask] = useFocusTaskId(initialTaskId)
   // 从任务详情点「开始专注」进来时，待选时的小框（值为任务 id）
   const [askTaskId, setAskTaskId] = useState<string | null>(null)
+  const skipNextWriteRef = useRef(false)
 
   useEffect(() => {
+    if (skipNextWriteRef.current) {
+      skipNextWriteRef.current = false
+      return
+    }
     localStorage.setItem(STORE_KEY, JSON.stringify(store))
+    window.dispatchEvent(new CustomEvent(FOCUS_SYNC_EVENT))
   }, [store])
+
+  // 当全局结算器在后台/本页完成结算后，立刻把本地视图同步到下一阶段
+  useEffect(() => {
+    const syncFromStorage = () => {
+      const latest = loadStore()
+      setStore((cur) => {
+        if (cur.phase === latest.phase && cur.running === latest.running && cur.endsAt === latest.endsAt && cur.left === latest.left && cur.workMin === latest.workMin) return cur
+        skipNextWriteRef.current = true
+        return latest
+      })
+    }
+    window.addEventListener(FOCUS_SYNC_EVENT, syncFromStorage)
+    window.addEventListener('storage', syncFromStorage)
+    return () => {
+      window.removeEventListener(FOCUS_SYNC_EVENT, syncFromStorage)
+      window.removeEventListener('storage', syncFromStorage)
+    }
+  }, [])
 
   // 消费任务详情写入的一次性「开始专注」指令：绑定任务（useFocusTaskId 负责）并弹出选时小框。
   // 依赖 initialTaskId 而非空数组：已在今日页时 hash 变化不会重挂本组件，参数变化才是可靠时机。
@@ -209,24 +233,25 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
     } catch { /* 忽略坏数据 */ }
   }, [initialTaskId])
 
-  // 到期（含离开期间就已到期）：落库 → 进入下一阶段停住等用户，不自动续跑
-  const handleExpire = useCallback((endsAt: number) => {
-    if (settledRef.current === endsAt) return
-    settledRef.current = endsAt
-    setStore((s) => {
-      if (!s.running || s.endsAt !== endsAt) return s
-      const finishedWork = s.phase === 'work'
-      if (finishedWork) void addFocusSession(s.workMin, taskId || undefined)
-      toast(finishedWork ? `专注 ${s.workMin} 分钟完成，休息 ${BREAK_MIN} 分钟` : '休息结束，可以开始下一个番茄')
-      haptic('success')
-      const phase: Phase = s.phase === 'work' ? 'break' : 'work'
-      return { ...s, phase, running: false, endsAt: 0, left: phaseSeconds(phase, s.workMin) }
-    })
-  }, [taskId, toast])
+  // 到期交由全局结算器单点落库、播铃声与通知，保证只记一次且离页也能正常结算
+  const handleExpire = useCallback((_endsAt: number) => {
+    void _endsAt
+    if (settleExpiredFocusTimer()) {
+      skipNextWriteRef.current = true
+      setStore(loadStore())
+    }
+  }, [])
+
+  const maybeRequestDesktopNotify = () => {
+    if (!isNative() && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      void Notification.requestPermission().catch(() => undefined)
+    }
+  }
 
   const toggle = useCallback(() => {
     setStore((s) => {
       if (s.running) return { ...s, running: false, left: remainingOf(s, Date.now()), endsAt: 0 }
+      maybeRequestDesktopNotify()
       const sec = remainingOf(s, Date.now()) || storeSeconds(s)
       return { ...s, running: true, endsAt: Date.now() + sec * 1000, left: sec }
     })
@@ -243,11 +268,13 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   /** 选时小框确认：设定时长并立即开跑（覆盖当前未跑的计时状态） */
   const startWithMinutes = useCallback((min: number) => {
     haptic('medium')
+    maybeRequestDesktopNotify()
     setAskTaskId(null)
     setStore({ phase: 'work', running: true, endsAt: Date.now() + min * 60_000, left: min * 60, workMin: min })
   }, [])
 
-  const boundTask = useMemo(() => all.find((t) => t.id === taskId), [all, taskId])
+  const boundTask = useMemo(() => all.find((t) => t.id === taskId && t.status !== 'done'), [all, taskId])
+  const boundTitle = boundTask?.title
   const askTask = useMemo(() => (askTaskId ? all.find((t) => t.id === askTaskId) : undefined), [all, askTaskId])
 
   // 专注结束提醒：按 endsAt 排一条本地通知（锁屏/后台也能收到）；暂停、重置、结束时撤销
@@ -256,12 +283,27 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
       void cancelFocusEnd()
       return
     }
-    const body = boundTask ? `「${boundTask.title}」完成一轮专注` : `专注 ${store.workMin} 分钟结束`
+    const body = boundTitle ? `「${boundTitle}」完成一轮专注` : `专注 ${store.workMin} 分钟结束`
     void scheduleFocusEnd(store.endsAt, body)
-  }, [store.running, store.phase, store.endsAt, store.workMin, boundTask])
+  }, [store.running, store.phase, store.endsAt, store.workMin, boundTitle])
+
+  const toggleSound = () => {
+    const next = !soundOn
+    setSoundOn(next)
+    setFocusSoundEnabled(next)
+  }
 
   return (
-    <div className="card p-4 md:p-5 flex flex-col items-center gap-3 md:gap-4">
+    <div className="card p-4 md:p-5 flex flex-col items-center gap-3 md:gap-4 relative">
+      <button
+        type="button"
+        onClick={toggleSound}
+        aria-label={soundOn ? '关闭番茄结束提示音' : '开启番茄结束提示音'}
+        title={soundOn ? '到点提示音：已开启' : '到点提示音：已静音'}
+        className="absolute right-3.5 top-3.5 grid place-items-center size-8 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
+      >
+        {soundOn ? <Volume2 size={15} /> : <VolumeX size={15} className="opacity-65" />}
+      </button>
       <div className={cn(
         'inline-flex items-center gap-2 rounded-full px-3 py-1 text-[12px] font-semibold border transition-colors',
         store.running
@@ -375,12 +417,17 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
 function useFocusTaskId(initialTaskId?: string): [string, (id: string) => void] {
   const [id, setId] = useState(() => initialTaskId ?? localStorage.getItem(TASK_KEY) ?? '')
   useEffect(() => {
-    if (initialTaskId) setId(initialTaskId)
+    if (initialTaskId) {
+      setId(initialTaskId)
+      try { localStorage.setItem(TASK_KEY, initialTaskId) } catch { /* ignore */ }
+      window.dispatchEvent(new CustomEvent(FOCUS_SYNC_EVENT))
+    }
   }, [initialTaskId])
   const pick = useCallback((next: string) => {
     setId(next)
     if (next) localStorage.setItem(TASK_KEY, next)
     else localStorage.removeItem(TASK_KEY)
+    window.dispatchEvent(new CustomEvent(FOCUS_SYNC_EVENT))
   }, [])
   return [id, pick]
 }

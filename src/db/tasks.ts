@@ -1,7 +1,7 @@
 import { db, type Annotation, type AiMessage, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type QrHistoryRow, type ReadingPosition, type Folder, type SettingKV, type SignatureRow, type Task, type Tier, type Tombstone } from './db'
 import type { Table } from 'dexie'
 import { uid } from '@/lib/id'
-import { addDaysStr, parseDateStr, todayStr } from '@/lib/date'
+import { addDaysStr, parseDateStr, todayStr, toDateStr } from '@/lib/date'
 import { nextDueForRepeat } from '@/lib/repeat'
 import { syncTaskNotification } from '@/lib/notify'
 import { markDeleted } from '@/lib/tombstones'
@@ -85,26 +85,33 @@ export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | 'c
 /** 勾选完成 / 恢复。完成时事务内写 doneAt + 生成下一次（返回该新任务供撤销）；恢复时事务内回收已生成的下一次 */
 export async function toggleDone(task: Task): Promise<Task | null> {
   if (task.status === 'done') {
-    await db.transaction('rw', db.tasks, async () => {
+    let removed: Task[] = []
+    await db.transaction('rw', [db.tasks, db.tombstones], async () => {
       await db.tasks.update(task.id, { status: 'todo', doneAt: undefined, updatedAt: Date.now() })
       if (!task.repeat) return
-      const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr(), { days: task.repeatDays, monthDay: task.repeatMonthDay })
+      const refDay = task.doneAt ? toDateStr(new Date(task.doneAt)) : todayStr()
+      const nextDue = nextDueForRepeat(task.due, task.repeat, refDay, { days: task.repeatDays, monthDay: task.repeatMonthDay })
       const spawned = await db.tasks
-        .filter((t) => t.title === task.title && t.repeat === task.repeat && t.due === nextDue && t.status === 'todo' && t.createdAt > (task.doneAt ?? 0) && t.id !== task.id)
+        .filter((t) => t.title === task.title && t.repeat === task.repeat && t.due === nextDue && t.status === 'todo' && t.createdAt >= (task.doneAt ?? 0) && t.id !== task.id)
         .toArray()
-      if (spawned.length) await db.tasks.bulkDelete(spawned.map((t) => t.id))
+      if (spawned.length) {
+        removed = spawned
+        await db.tasks.bulkDelete(spawned.map((t) => t.id))
+        await markDeleted(...spawned.map((t) => t.id))
+      }
     })
     void syncTaskNotification({ ...task, status: 'todo' })
+    for (const s of removed) void syncTaskNotification({ ...s, status: 'done' })
     return null
   }
   // 事务回调内的赋值需要非收窄载体
   const spawnedRef: { next: Task | null } = { next: null }
   await db.transaction('rw', db.tasks, async () => {
     const now = Date.now()
-    await db.tasks.update(task.id, { status: 'done', doneAt: now, updatedAt: now })
+    await db.tasks.update(task.id, { status: 'done', doneAt: now, updatedAt: now, ...(task.checkin ? { checkin: task.checkin } : {}) })
     if (!task.repeat) return
     const nextDue = nextDueForRepeat(task.due, task.repeat, todayStr(), { days: task.repeatDays, monthDay: task.repeatMonthDay })
-    const nextStart = nextCycleStart(nextDue, task.repeatTimes?.[0] ?? task.dueTime)
+    const nextStart = nextCycleStart(nextDue, task.startAt)
     const next: Task = {
       id: uid(),
       title: task.title,
@@ -122,6 +129,9 @@ export async function toggleDone(task: Task): Promise<Task | null> {
       repeatCount: task.repeatCount,
       repeatTimes: task.repeatTimes,
       estimateMinutes: task.estimateMinutes,
+      folderId: task.folderId,
+      pinned: task.pinned,
+      subtasks: task.subtasks?.map((s) => ({ ...s, done: false })),
       checkin: undefined,
       startAt: nextStart,
       docRef: task.docRef,
@@ -181,19 +191,31 @@ export async function checkInTask(task: Task): Promise<CheckInResult> {
   return { completed: false, count: count + 1, total, spawned: null }
 }
 
-/** 下一次任务的开始时刻：截止日当天 0 点，有打卡时间就取第一个时间点 */
-function nextCycleStart(due: string, time?: string): number {
-  const base = parseDateStr(due).getTime()
-  if (!time) return base
-  const [h, m] = time.split(':').map(Number)
-  return base + (h || 0) * 3600000 + (m || 0) * 60000
+/**
+ * 下一次任务的开始时刻：默认下一周期当天 00:00（防今天误勾明天，且明天任意时刻可提前完成）；
+ * 仅当原任务本身明确设过非零点的计划开始时刻时，才沿用对应的时分偏移。
+ */
+function nextCycleStart(due: string, prevStartAt?: number): number {
+  const base = parseDateStr(due)
+  if (prevStartAt != null && Number.isFinite(prevStartAt)) {
+    const prev = new Date(prevStartAt)
+    const h = prev.getHours()
+    const m = prev.getMinutes()
+    if (h !== 0 || m !== 0) {
+      return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, 0, 0).getTime()
+    }
+  }
+  return base.getTime()
 }
 
-/** 撤销「勾选完成」：回到原状态（含 doing），并删除完成时生成的下一次任务 */
+/** 撤销「勾选完成」：回到原状态（含 doing），并删除完成时生成的下一次任务（同步写墓碑防复活） */
 export async function undoToggleDone(task: Task, spawned: Task | null): Promise<void> {
-  await db.transaction('rw', db.tasks, async () => {
-    await db.tasks.update(task.id, { status: task.status, doneAt: undefined, updatedAt: Date.now() })
-    if (spawned) await db.tasks.delete(spawned.id)
+  await db.transaction('rw', [db.tasks, db.tombstones], async () => {
+    await db.tasks.update(task.id, { status: task.status, doneAt: undefined, checkin: task.checkin, updatedAt: Date.now() })
+    if (spawned) {
+      await db.tasks.delete(spawned.id)
+      await markDeleted(spawned.id)
+    }
   })
   void syncTaskNotification(task)
   if (spawned) void syncTaskNotification({ ...spawned, status: 'done' })
@@ -260,6 +282,7 @@ export async function restoreTask(task: Task): Promise<void> {
     await db.tasks.put(task)
     await db.tombstones.delete(task.id)
   })
+  void syncTaskNotification(task)
 }
 
 /** 排序：置顶沉顶 → 优先级 P0→P3 → 截止日期 → 创建时间 */
@@ -351,58 +374,69 @@ const SNAPSHOT_HEAD = { app: 'personal-workstation' as const, version: 4 as cons
 
 /** 只属于本机的设置：WebDAV 口令、同步/备份时间戳、通知权限状态 */
 // mathNotesSyncEpoch：本机的笔记清空纪元，只描述这台设备，跟着备份 / 同步走到别处会误判「对方清空过」
-const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastSyncError', 'lastAutoBackupAt', 'notifyEnabled', 'mathNotesSyncEpoch', 'mathNotesSyncBaseline', 'lastMathNotesSyncError', 'localMarkdownLinks'])
+const LOCAL_ONLY_SETTINGS = new Set(['webdav', 'lastSyncAt', 'lastSyncError', 'lastSyncBackoff', 'lastAutoBackupAt', 'lastManualBackupAt', 'syncEpoch', 'notifyEnabled', 'mathNotesSyncEpoch', 'mathNotesSyncBaseline', 'lastMathNotesSyncError', 'localMarkdownLinks'])
 
 /**
- * 一次读出所有表（手动导出与自动快照共用）。
+ * 一次读出所有表（手动导出与自动快照共用），单只读事务防跨表撕裂。
  *
  * 有意不含 aiProviders：那张表存的是明文 apiKey，AI 面板下线后已无用途，
- * 导出 / 自动快照 / WebDAV 同步（同样走这个函数）都不该把它带出去。
+ * 导出 / 自动快照 / WebDAV 同步都不该把它带出去。
  */
 type TableData = Pick<ExportPayload, 'tasks' | 'settings' | 'docs' | 'positions' | 'annotations' | 'bookmarks' | 'aiSessions' | 'aiMessages' | 'aiUsage' | 'docText' | 'focusSessions' | 'tombstones' | 'folders' | 'signatures' | 'qrHistory' | 'mathNotes'>
 
 async function collectAll(): Promise<{ data: TableData; blobs: BlobOut[] }> {
-  const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiSessions, aiMessages, aiUsage, docText, focusSessions] = await Promise.all([
-    db.tasks.toArray(),
-    db.settings.toArray(),
-    db.docs.toArray(),
-    db.blobs.toArray(),
-    db.positions.toArray(),
-    db.annotations.toArray(),
-    db.bookmarks.toArray(),
-    db.aiSessions.toArray(),
-    db.aiMessages.toArray(),
-    db.aiUsage.toArray(),
-    db.docText.toArray(),
-    db.focusSessions.toArray(),
-  ])
-  const tombstones = await db.tombstones.toArray()
-  const folders = await db.folders.toArray()
-  const signatures = await db.signatures.toArray()
-  const qrHistory = await db.qrHistory.toArray()
-  const mathNotes = (await db.mathNotes.toArray()).map(packMathNote)
-  return {
-    // 设备本地的口令 / 时间戳不进导出，避免同步或备份时把 WebDAV 口令带出去
-    data: {
-      tasks,
-      settings: settings.filter((s) => !LOCAL_ONLY_SETTINGS.has(s.key)),
-      docs,
-      positions,
-      annotations,
-      bookmarks,
-      aiSessions,
-      aiMessages,
-      aiUsage,
-      docText,
-      focusSessions,
-      tombstones,
-      folders,
-      signatures,
-      qrHistory,
-      mathNotes,
+  return db.transaction(
+    'r',
+    [
+      db.tasks, db.settings, db.docs, db.blobs, db.positions, db.annotations, db.bookmarks,
+      db.aiSessions, db.aiMessages, db.aiUsage, db.docText, db.focusSessions, db.tombstones,
+      db.folders, db.signatures, db.qrHistory, db.mathNotes,
+    ],
+    async () => {
+      const [tasks, settings, docs, blobs, positions, annotations, bookmarks, aiSessions, aiMessages, aiUsage, docText, focusSessions, tombstones, folders, signatures, qrHistory, rawMathNotes] = await Promise.all([
+        db.tasks.toArray(),
+        db.settings.toArray(),
+        db.docs.toArray(),
+        db.blobs.toArray(),
+        db.positions.toArray(),
+        db.annotations.toArray(),
+        db.bookmarks.toArray(),
+        db.aiSessions.toArray(),
+        db.aiMessages.toArray(),
+        db.aiUsage.toArray(),
+        db.docText.toArray(),
+        db.focusSessions.toArray(),
+        db.tombstones.toArray(),
+        db.folders.toArray(),
+        db.signatures.toArray(),
+        db.qrHistory.toArray(),
+        db.mathNotes.toArray(),
+      ])
+      const mathNotes = rawMathNotes.map(packMathNote)
+      return {
+        // 设备本地的口令 / 时间戳不进导出，避免同步或备份时把 WebDAV 口令带出去
+        data: {
+          tasks,
+          settings: settings.filter((s) => !LOCAL_ONLY_SETTINGS.has(s.key)),
+          docs,
+          positions,
+          annotations,
+          bookmarks,
+          aiSessions,
+          aiMessages,
+          aiUsage,
+          docText,
+          focusSessions,
+          tombstones,
+          folders,
+          signatures,
+          qrHistory,
+          mathNotes,
+        },
+        blobs: blobs.map((r) => ({ hash: r.hash, type: r.blob.type, blob: r.blob })),
+      }
     },
-    blobs: blobs.map((r) => ({ hash: r.hash, type: r.blob.type, blob: r.blob })),
-  }
+  )
 }
 
 /** 手动导出：单个 JSON（文档内联 base64），能拷到别的设备导入 */
@@ -455,6 +489,11 @@ export interface ImportResult {
 /** merge = 手动导入（同 id 覆盖，不动别的）；replace = 恢复快照（快照没覆盖的表保持原样） */
 export type ImportMode = 'merge' | 'replace'
 
+/** 选择性恢复分区 */
+export type BackupScope = 'tasks' | 'docs' | 'mathNotes' | 'settings'
+
+export const ALL_BACKUP_SCOPES: BackupScope[] = ['tasks', 'docs', 'mathNotes', 'settings']
+
 const IMPORT_TABLES: [string, Table<any, any>][] = [
   ['tasks', db.tasks],
   ['settings', db.settings],
@@ -475,21 +514,34 @@ const IMPORT_TABLES: [string, Table<any, any>][] = [
   ['mathNotes', db.mathNotes],
 ]
 
+function scopeAllowsKey(key: string, scopes?: readonly BackupScope[]): boolean {
+  if (!scopes || scopes.length === 0) return true
+  const set = new Set(scopes)
+  if (key === 'tasks' || key === 'focusSessions') return set.has('tasks')
+  if (key === 'docs' || key === 'blobs' || key === 'blobRows' || key === 'positions' || key === 'annotations' || key === 'bookmarks' || key === 'docText') return set.has('docs')
+  if (key === 'folders') return set.has('tasks') || set.has('docs')
+  if (key === 'mathNotes') return set.has('mathNotes')
+  if (key === 'settings' || key === 'signatures' || key === 'qrHistory') return set.has('settings')
+  if (key === 'tombstones') return set.size === ALL_BACKUP_SCOPES.length
+  return set.size === ALL_BACKUP_SCOPES.length
+}
+
 /**
  * 写入前的统一入口：
  * 1) 结构校验（应用标识 / 版本 / 字段类型 / 枚举）——不通过就一条数据都不写
- * 2) replace 模式只替换「备份负责的数据」，本机专属设置（WebDAV 口令、同步时间戳）保留
+ * 2) replace 模式只替换「备份及所选分区负责的数据」，本机专属设置（WebDAV 口令、同步时间戳）保留
+ * 3) merge 模式清理与刚导入记录冲突的本地墓碑，避免恢复出来的任务/文档下次 WebDAV 同步被秒删
  */
-async function writeAll(raw: unknown, mode: ImportMode): Promise<ImportResult> {
+async function writeAll(raw: unknown, mode: ImportMode, scopes?: readonly BackupScope[]): Promise<ImportResult> {
   const { data, warnings } = validateSnapshot(raw)
   const result: ImportResult = { tasks: 0, settings: 0, docs: 0, warnings }
-  const has = (k: string) => Array.isArray(data[k])
+  const has = (k: string) => scopeAllowsKey(k, scopes) && Array.isArray(data[k])
   await db.transaction(
     'rw',
     IMPORT_TABLES.map(([, t]) => t),
     async () => {
       if (mode === 'replace') {
-        // 真恢复：先清空快照覆盖到的表——快照之后新建的记录会消失，快照之后删掉的会回来。
+        // 真恢复：先清空快照与所选分区覆盖到的表——快照之后新建的记录会消失，快照之后删掉的会回来。
         // 老备份缺哪张表就不动哪张，避免顺手把现有数据清空。
         for (const [key, t] of IMPORT_TABLES) {
           if (key === 'blobs') {
@@ -507,9 +559,12 @@ async function writeAll(raw: unknown, mode: ImportMode): Promise<ImportResult> {
           if (has(key)) await t.clear()
         }
       }
+      const restoredIds: string[] = []
       if (has('tasks')) {
-        await db.tasks.bulkPut(data.tasks as Task[])
-        result.tasks = (data.tasks as Task[]).length
+        const list = data.tasks as Task[]
+        await db.tasks.bulkPut(list)
+        result.tasks = list.length
+        for (const t of list) restoredIds.push(t.id)
       }
       if (has('settings')) {
         // 备份本不该带本机专属项（导出时已排除），手改过的文件这里再挡一道，别让它覆盖本机口令
@@ -518,8 +573,10 @@ async function writeAll(raw: unknown, mode: ImportMode): Promise<ImportResult> {
         result.settings = rows.length
       }
       if (has('docs')) {
-        await db.docs.bulkPut(data.docs as Doc[])
-        result.docs = (data.docs as Doc[]).length
+        const list = data.docs as Doc[]
+        await db.docs.bulkPut(list)
+        result.docs = list.length
+        for (const d of list) restoredIds.push(d.id)
       }
       if (has('blobRows')) {
         const rows = (data.blobRows as { hash: string; type?: string; data?: string; blob?: Blob }[]).map((r) => ({
@@ -528,28 +585,60 @@ async function writeAll(raw: unknown, mode: ImportMode): Promise<ImportResult> {
         }))
         await db.blobs.bulkPut(rows)
       }
-      if (has('positions')) await db.positions.bulkPut(data.positions as ReadingPosition[])
-      if (has('annotations')) await db.annotations.bulkPut(data.annotations as Annotation[])
-      if (has('bookmarks')) await db.bookmarks.bulkPut(data.bookmarks as Bookmark[])
+      if (has('positions')) {
+        const list = data.positions as ReadingPosition[]
+        await db.positions.bulkPut(list)
+        for (const p of list) restoredIds.push(p.hash)
+      }
+      if (has('annotations')) {
+        const list = data.annotations as Annotation[]
+        await db.annotations.bulkPut(list)
+        for (const a of list) restoredIds.push(a.id)
+      }
+      if (has('bookmarks')) {
+        const list = data.bookmarks as Bookmark[]
+        await db.bookmarks.bulkPut(list)
+        for (const b of list) restoredIds.push(b.id)
+      }
       // 老备份里的 aiProviders 不还原：那是明文 apiKey，回来就等于把密钥又摊在磁盘上
       if (has('aiSessions')) await db.aiSessions.bulkPut(data.aiSessions as AiSession[])
       if (has('aiMessages')) await db.aiMessages.bulkPut(data.aiMessages as AiMessage[])
       if (has('aiUsage')) await db.aiUsage.bulkPut(data.aiUsage as AiUsageRow[])
       if (has('docText')) await db.docText.bulkPut(data.docText as DocText[])
-      if (has('focusSessions')) await db.focusSessions.bulkPut(data.focusSessions as FocusSession[])
+      if (has('focusSessions')) {
+        const list = data.focusSessions as FocusSession[]
+        await db.focusSessions.bulkPut(list)
+        for (const f of list) restoredIds.push(f.id)
+      }
       if (has('tombstones')) await db.tombstones.bulkPut(data.tombstones as Tombstone[])
-      if (has('folders')) await db.folders.bulkPut(data.folders as Folder[])
+      if (has('folders')) {
+        const list = data.folders as Folder[]
+        await db.folders.bulkPut(list)
+        for (const f of list) restoredIds.push(f.id)
+      }
       if (has('signatures')) await db.signatures.bulkPut(data.signatures as SignatureRow[])
       if (has('qrHistory')) await db.qrHistory.bulkPut(data.qrHistory as QrHistoryRow[])
       // 笔记页按 id 合并（merge 同 id 覆盖；replace 已先清表）；老备份没有这个字段就不动本机笔记
-      if (has('mathNotes')) await db.mathNotes.bulkPut((data.mathNotes as PackedMathNote[]).map(unpackMathNote))
+      if (has('mathNotes')) {
+        const list = (data.mathNotes as PackedMathNote[]).map(unpackMathNote)
+        await db.mathNotes.bulkPut(list)
+        for (const n of list) restoredIds.push(n.id)
+      }
+      if (mode === 'merge' && restoredIds.length) {
+        await db.tombstones.bulkDelete(restoredIds)
+      }
     },
   )
   return result
 }
 
-export async function importAll(json: string, mode: ImportMode = 'merge'): Promise<ImportResult> {
-  return writeAll(parseJson(json), mode)
+export async function importAll(json: string, mode: ImportMode = 'merge', scopes?: readonly BackupScope[]): Promise<ImportResult> {
+  return writeAll(parseJson(json), mode, scopes)
+}
+
+/** 供流式 ZIP 备份直接写入已校验好的对象（文档本体以原始 Blob 传入，跳过 Base64 编解码） */
+export async function importSnapshotObject(raw: unknown, mode: ImportMode = 'merge', scopes?: readonly BackupScope[]): Promise<ImportResult> {
+  return writeAll(raw, mode, scopes)
 }
 
 /** JSON 解析失败时给一句人话（文件截断、选错文件都落到这里） */

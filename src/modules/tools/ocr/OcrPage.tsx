@@ -30,6 +30,7 @@ import {
   type Quad,
 } from './ocrPipeline'
 import type { OcrLine, OcrProgress } from './ocrEngine'
+import { recognizePixelsOnSharedWorker } from './ocrClient'
 
 /** 送进 Worker 的像素与尺寸 */
 interface RgbaImage {
@@ -183,8 +184,8 @@ export function OcrPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const appendInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
-  const workerRef = useRef<Worker | null>(null)
-  const runIdRef = useRef(0)
+  const abortCtrlRef = useRef<AbortController | null>(null)
+  const manualEditedRef = useRef(false)
   const batchTokenRef = useRef(0)
   const pagesRef = useRef<OcrPageResult[]>([])
   const formatModeRef = useRef<OcrFormatMode>(formatMode)
@@ -198,110 +199,39 @@ export function OcrPage() {
     formatModeRef.current = formatMode
   }, [formatMode])
 
-  /** 显式销毁后台 Worker（仅用于用户点击「取消」或组件卸载） */
-  const terminateWorker = useCallback(() => {
-    const w = workerRef.current
-    if (w) {
-      try {
-        w.postMessage({ type: 'cancel', id: runIdRef.current })
-      } catch {
-        /* worker 已挂 */
-      }
-      w.terminate()
-    }
-    workerRef.current = null
+  /** 取消当前进行中的识别批次 */
+  const cancelActiveRun = useCallback(() => {
+    batchTokenRef.current++
+    abortCtrlRef.current?.abort()
+    abortCtrlRef.current = null
     setProgress(null)
     setQueuePos(null)
   }, [])
 
-  /** 取消当前进行中的识别批次 */
-  const cancelActiveRun = useCallback(() => {
+  /** 组件卸载时中止进行中的识别并释放所有图片 Blob URL（空闲共享 Worker 由 ocrClient 3 分钟后自动回收） */
+  const disposeOnUnmount = useCallback(() => {
     batchTokenRef.current++
-    terminateWorker()
-  }, [terminateWorker])
+    abortCtrlRef.current?.abort()
+    abortCtrlRef.current = null
+    for (const p of pagesRef.current) URL.revokeObjectURL(p.objectUrl)
+  }, [])
 
-  // 组件卸载时释放热 Worker 及所有图片 Blob URL
-  useEffect(() => {
-    return () => {
-      terminateWorker()
-      for (const p of pagesRef.current) URL.revokeObjectURL(p.objectUrl)
-    }
-  }, [terminateWorker])
+  useEffect(() => disposeOnUnmount, [disposeOnUnmount])
 
   const revokePages = useCallback((list: OcrPageResult[]) => {
     for (const p of list) URL.revokeObjectURL(p.objectUrl)
   }, [])
 
-  /** 获取或懒创建常驻热 Worker，跨图片复用 ppocr-det / ppocr-rec ONNX 会话 */
-  const getWarmWorker = useCallback((): Worker => {
-    if (!workerRef.current) {
-      workerRef.current = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' })
-    }
-    return workerRef.current
-  }, [])
-
-  /** 在热 Worker 上执行单张像素识别 */
-  const recognizePixelsOnWarmWorker = useCallback(
-    (px: RgbaImage): Promise<OcrLine[]> => {
-      const id = ++runIdRef.current
-      const worker = getWarmWorker()
-      return new Promise<OcrLine[]>((resolve, reject) => {
-        const cleanup = () => {
-          worker.removeEventListener('message', onMessage)
-          worker.removeEventListener('error', onError)
-        }
-        const onMessage = (e: MessageEvent) => {
-          const msg = e.data as
-            | { type: 'progress'; id: number; progress: OcrProgress }
-            | { type: 'done'; id: number; lines: OcrLine[] }
-            | { type: 'error'; id: number; message: string; aborted: boolean }
-          if (msg.id !== id) return
-          if (msg.type === 'progress') {
-            setProgress(msg.progress)
-            return
-          }
-          cleanup()
-          if (msg.type === 'done') {
-            resolve(msg.lines)
-            return
-          }
-          if (msg.aborted) {
-            reject(new DOMException('已取消', 'AbortError'))
-            return
-          }
-          reject(new Error(msg.message || '识别失败'))
-        }
-        const onError = () => {
-          cleanup()
-          if (workerRef.current === worker) {
-            worker.terminate()
-            workerRef.current = null
-          }
-          reject(new Error('识别进程异常退出，请重试'))
-        }
-        worker.addEventListener('message', onMessage)
-        worker.addEventListener('error', onError)
-        worker.postMessage({ type: 'run', id, width: px.width, height: px.height, rgba: px.data.buffer }, [px.data.buffer])
-      })
-    },
-    [getWarmWorker],
-  )
-
-  /** 图片队列统一入口：单张替换或多张顺序识别追加，全程复用热 Worker */
+  /** 图片队列统一入口：单张替换或多张顺序识别追加，全程复用 ocrClient 共享热 Worker */
   const handleFiles = useCallback(
     async (fileList: Blob[], append: boolean) => {
       if (!fileList.length) return
       const token = ++batchTokenRef.current
       lastInputRef.current = { files: fileList, append }
 
-      // 若上一批还在跑，发送协作取消，让 Worker 排空后接新批次
-      if (progress && workerRef.current) {
-        try {
-          workerRef.current.postMessage({ type: 'cancel', id: runIdRef.current })
-        } catch {
-          /* ignore */
-        }
-      }
+      abortCtrlRef.current?.abort()
+      const controller = new AbortController()
+      abortCtrlRef.current = controller
 
       setError('')
       setSearchQuery('')
@@ -311,6 +241,7 @@ export function OcrPage() {
         revokePages(pagesRef.current)
         setPages([])
         setActivePageIdx(0)
+        manualEditedRef.current = false
         setText('')
       }
 
@@ -337,7 +268,7 @@ export function OcrPage() {
           })
 
           try {
-            const recognized = await recognizePixelsOnWarmWorker(px)
+            const recognized = await recognizePixelsOnSharedWorker(px, setProgress, controller.signal)
             if (batchTokenRef.current !== token) return
 
             totalNewLines += recognized.length
@@ -370,12 +301,13 @@ export function OcrPage() {
         toast(msg)
       } finally {
         if (batchTokenRef.current === token) {
+          if (abortCtrlRef.current === controller) abortCtrlRef.current = null
           setProgress(null)
           setQueuePos(null)
         }
       }
     },
-    [progress, recognizePixelsOnWarmWorker, revokePages, toast],
+    [revokePages, toast],
   )
 
   // 粘贴图片识别（ref 转发最新处理函数，监听只挂一次）
@@ -403,6 +335,16 @@ export function OcrPage() {
       .map((p) => formatOcrLines(p.lines, nextMode))
       .filter(Boolean)
       .join('\n\n')
+    if (manualEditedRef.current) {
+      toast('检测到手动编辑，已保留修改', {
+        label: '按新排版重置',
+        run: () => {
+          manualEditedRef.current = false
+          setText(combined)
+        },
+      })
+      return
+    }
     setText(combined)
   }
 
@@ -724,7 +666,10 @@ export function OcrPage() {
 
             <textarea
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                manualEditedRef.current = true
+                setText(e.target.value)
+              }}
               rows={14}
               aria-label="识别结果文本编辑器"
               placeholder={progress ? '识别中…' : '识别出的文字会出现在这里，可直接编辑'}
@@ -736,7 +681,7 @@ export function OcrPage() {
               </Button>
               <Button
                 state={saveDocBtn.state}
-                onClick={() => void saveDocBtn.run(doSaveDoc)}
+                onClick={() => void saveDocBtn.run(doSaveDoc).catch(() => undefined)}
                 disabled={!text.trim() || savingTask}
                 variant="primary"
                 className="h-9 px-4"

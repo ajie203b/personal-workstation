@@ -40,6 +40,7 @@ export type Action =
   | { type: 'move'; before: Stroke[]; after: Stroke[] }
 export type ModelState =
   | { phase: 'idle' }
+  | { phase: 'prompt' }
   | { phase: 'loading'; ratio: number; file: string }
   | { phase: 'ready'; backend: string }
   | { phase: 'error'; message: string }

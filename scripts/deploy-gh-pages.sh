@@ -16,6 +16,7 @@ derive_site_url() {
   slug="${origin##*/}"
   slug="${slug%.git}"
   origin="${origin#*://}"; origin="${origin#git@}"   # 去掉协议 / git@ 前缀
+  origin="${origin/:/\/}"                            # SSH 形式 github.com:owner/repo → github.com/owner/repo
   origin="${origin#*/}"                              # 去掉 host（github.com/）
   owner="${origin%%/*}"                              # 剩下第一段即 owner
   echo "https://${owner}.github.io/${slug}/"
@@ -49,9 +50,37 @@ case "$PWD" in
   *) echo "!! 工作目录异常（$PWD），中止以免误删文件" >&2; exit 1 ;;
 esac
 
+# 备份 gh-pages 上由定时 Action 更新的榜单数据，避免被本地较旧 dist 覆盖
+mkdir -p "$WORK/prev-intel"
+[ -f intelligence.json ] && cp intelligence.json "$WORK/prev-intel/intelligence.json"
+[ -d intelligence ] && cp -r intelligence "$WORK/prev-intel/intelligence"
+
 # 用新构建替换旧的静态产物，只保留 .git
 find . -maxdepth 1 -mindepth 1 ! -name .git -exec rm -rf {} +
 cp -r "$ROOT/dist/"* .
+
+# 若远端 gh-pages 的榜单快照比本地 dist 更新，则保留远端较新版本
+is_newer_json() {
+  node -e '
+    const fs = require("fs");
+    const readTs = (p) => {
+      try {
+        const d = JSON.parse(fs.readFileSync(p, "utf8"));
+        const t = Date.parse(d && d.generatedAt ? d.generatedAt : "");
+        return Number.isFinite(t) ? t : 0;
+      } catch { return 0; }
+    };
+    process.exit(readTs(process.argv[1]) > readTs(process.argv[2]) ? 0 : 1);
+  ' "$1" "$2"
+}
+if [ -f "$WORK/prev-intel/intelligence.json" ] && is_newer_json "$WORK/prev-intel/intelligence.json" "intelligence.json"; then
+  cp "$WORK/prev-intel/intelligence.json" intelligence.json
+fi
+if [ -f "$WORK/prev-intel/intelligence/chart-meta.json" ] && is_newer_json "$WORK/prev-intel/intelligence/chart-meta.json" "intelligence/chart-meta.json"; then
+  rm -rf intelligence
+  cp -r "$WORK/prev-intel/intelligence" intelligence
+fi
+
 touch .nojekyll
 VERSION="$(grep '"version"' "$ROOT/package.json" | head -1 | sed 's/.*: "\([^"]*\)".*/\1/')"
 printf '{"version":"%s"}\n' "$VERSION" > version.json
@@ -81,4 +110,4 @@ fi
 echo "==> 完成！已推送 $BRANCH"
 echo "    站点地址：$SITE_URL"
 echo "    线上版本核对（Pages 重建约需几十秒）："
-curl -fsS "$SITE_URL/version.json?cb=$(date +%s)" 2>/dev/null || echo "    暂时取不到 version.json，稍后手动确认"
+curl -fsS "${SITE_URL%/}/version.json?cb=$(date +%s)" 2>/dev/null || echo "    暂时取不到 version.json，稍后手动确认"

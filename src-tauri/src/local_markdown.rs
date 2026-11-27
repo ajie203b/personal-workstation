@@ -50,6 +50,12 @@ fn grant(state: &LocalMarkdownState, label: &str, directory: PathBuf) -> Result<
     Ok(())
 }
 
+pub fn revoke_window(state: &LocalMarkdownState, label: &str) {
+    if let Ok(mut map) = state.roots.lock() {
+        map.remove(label);
+    }
+}
+
 /// 文件路径进 URL 查询串：只保留 unreserved 字符，其余按 UTF-8 百分号编码
 fn encode_component(value: &str) -> String {
     let mut out = String::new();
@@ -111,8 +117,11 @@ pub fn open_files(app: &tauri::AppHandle, args: &[String], cwd: &Path, restore_m
         } else {
             let state = app.state::<LocalMarkdownState>();
             if let Ok(mut ready) = state.main_ready.lock() { *ready = false; }
-            let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("Kairos").inner_size(1280.0, 820.0).min_inner_size(380.0, 560.0).center().build();
+            if WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .title("Kairos").inner_size(1280.0, 820.0).min_inner_size(380.0, 560.0).center().build().is_err()
+            {
+                if let Ok(mut ready) = state.main_ready.lock() { *ready = true; }
+            }
         }
     }
 }
@@ -139,20 +148,25 @@ fn version_of(path: &Path) -> Result<String, String> {
     Ok(format!("{}-{}", stamp, metadata.len()))
 }
 
-fn list(directory: &Path) -> Result<Folder, String> {
+fn list(directory: &Path, allowed_roots: &[PathBuf]) -> Result<Folder, String> {
     let directory = fs::canonicalize(directory).map_err(|_| "文件已移动、删除或无法访问".to_string())?;
     let mut entries = Vec::new();
     for item in fs::read_dir(&directory).map_err(|_| "无法读取文件夹")? {
         let Ok(item) = item else { continue };
         let path = item.path();
         let Ok(canonical) = fs::canonicalize(&path) else { continue };
+        // 拒绝逃逸到授权根目录之外的符号链接/挂载点
+        if !covered(allowed_roots, &canonical) { continue; }
         let is_dir = canonical.is_dir();
         if !is_dir && (!canonical.is_file() || !is_document(&canonical)) { continue; }
         entries.push(Entry { name: item.file_name().to_string_lossy().into_owned(), path: canonical.to_string_lossy().into_owned(), directory: is_dir });
     }
     entries.sort_by(|a, b| b.directory.cmp(&a.directory).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
-    // 目录浏览不要求已授权：列目录只返回名字；读、写、图片仍按授权范围校验
-    let parent = directory.parent().map(|p| p.to_string_lossy().into_owned());
+    // 严格最小权限：仅当上级目录仍在已授权根之内时才允许返回上一级；越过根目录须走原生选择器切换
+    let parent = directory
+        .parent()
+        .filter(|p| covered(allowed_roots, p))
+        .map(|p| p.to_string_lossy().into_owned());
     Ok(Folder { directory: directory.to_string_lossy().into_owned(), parent, entries })
 }
 
@@ -177,10 +191,9 @@ pub async fn local_markdown_pick(app: tauri::AppHandle, window: tauri::Window, f
 pub async fn local_markdown_list(window: tauri::Window, directory: String) -> Result<Folder, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = window.state::<LocalMarkdownState>();
-        let folder = list(Path::new(&directory))?;
-        // 显式浏览过的目录纳入本窗口授权，其中的文档才能打开阅读
-        grant(&state, window.label(), PathBuf::from(&folder.directory))?;
-        Ok(folder)
+        let allowed = roots(&state, window.label())?;
+        let dir = scoped(&allowed, Path::new(&directory))?;
+        list(&dir, &allowed)
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -253,7 +266,23 @@ fn write_document(path: &Path, markdown: &str, expected_version: Option<&str>) -
     if let Some(expected) = expected_version {
         if version_of(path)? != expected { return Err("文件已被外部修改，请刷新后重试".into()); }
     }
-    fs::write(path, data).map_err(|_| "无法写入文件，可能被其他程序占用或设为只读")?;
+    // 原子写入：先写同目录临时文件再替换原文件，避免中途崩溃或杀毒软件占用截断原文档
+    let tmp = {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("doc");
+        path.with_file_name(format!(".{name}.kairos-tmp-{}-{stamp}", std::process::id()))
+    };
+    if fs::write(&tmp, &data).is_err() {
+        let _ = fs::remove_file(&tmp);
+        return Err("无法写入文件，可能被其他程序占用或设为只读".into());
+    }
+    if fs::rename(&tmp, path).is_err() {
+        let _ = fs::remove_file(&tmp);
+        return Err("无法写入文件，可能被其他程序占用或设为只读".into());
+    }
     let version = version_of(path)?;
     Ok(Document { path: path.to_string_lossy().into_owned(), markdown: markdown.to_owned(), version, base64: None })
 }
@@ -350,18 +379,21 @@ mod tests {
         assert!(scoped(&roots, &root.join("..")).is_err());
     }
     #[test]
-    fn list_reports_parent_for_upward_navigation() {
+    fn list_respects_granted_root_boundary() {
         let base = std::env::temp_dir().join(format!("kairos-md-list-{}-{}", std::process::id(), line!()));
         let child = base.join("child");
         fs::create_dir_all(&child).unwrap();
         fs::write(child.join("a.md"), "# a").unwrap();
         fs::write(child.join("b.exe"), "ignored").unwrap();
-        let folder = list(&child).unwrap();
-        // 上一级始终可用（直到文件系统根），不再被授权范围裁掉
-        assert_eq!(folder.parent.as_deref(), Some(fs::canonicalize(&base).unwrap().to_string_lossy().as_ref()));
+        let canonical_base = fs::canonicalize(&base).unwrap();
+        let allowed = [canonical_base.clone()];
+        let folder = list(&child, &allowed).unwrap();
+        // 授权根目录之内的子目录允许返回上一级
+        assert_eq!(folder.parent.as_deref(), Some(canonical_base.to_string_lossy().as_ref()));
         assert_eq!(folder.entries.len(), 1);
         assert_eq!(folder.entries[0].name, "a.md");
-        assert!(list(&base).unwrap().parent.is_some());
+        // 到达授权根目录边界时不再暴露上一级目录
+        assert!(list(&base, &allowed).unwrap().parent.is_none());
         fs::remove_dir_all(&base).ok();
     }
     #[test]

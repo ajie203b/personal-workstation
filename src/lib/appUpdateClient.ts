@@ -51,11 +51,10 @@ export function setAutoCheckEnabled(on: boolean): void {
   } catch { /* 隐私模式等写不进就算了 */ }
 }
 
-/** 启动时该不该静默检查：安卓每天最多一次；桌面每次启动都查（Tauri 只请求一个小 JSON） */
+/** 启动时该不该静默检查：安卓与桌面端均每天最多自动检查一次（手动检查随时可用） */
 export function shouldAutoCheckNow(platform: UpdatePlatform = getUpdatePlatform()): boolean {
   if (platform === 'web') return false
   const enabled = getAutoCheckEnabled()
-  if (platform === 'desktop') return enabled
   let last: string | null = null
   try { last = localStorage.getItem(LAST_DAY_KEY) } catch { /* ignore */ }
   return shouldAutoCheck({ enabled, lastCheckDay: last, today: todayStr() })
@@ -112,7 +111,11 @@ async function performCheck(): Promise<CheckResult> {
   const platform = getUpdatePlatform()
   const currentVersion = getCurrentAppVersion()
   try {
-    if (platform === 'desktop') return await checkDesktop(currentVersion)
+    if (platform === 'desktop') {
+      const r = await checkDesktop(currentVersion)
+      markCheckedToday()
+      return r
+    }
     if (platform === 'android') {
       const r = await checkAndroid(currentVersion)
       markCheckedToday()

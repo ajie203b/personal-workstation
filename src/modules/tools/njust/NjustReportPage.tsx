@@ -392,7 +392,7 @@ export function NjustReportPage() {
         setError(message)
         throw e
       }
-    })
+    }).catch(() => undefined)
   }
 
   const openPreview = async () => {

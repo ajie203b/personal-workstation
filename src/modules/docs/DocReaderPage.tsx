@@ -58,10 +58,10 @@ export function DocReaderPage() {
   const { docId } = useParams()
   const doc = useDoc(docId)
   if (doc?.kind === 'html') return <HtmlDocumentPage key={doc.hash} doc={doc} />
-  return <StandardDocReader doc={doc} docId={docId} />
+  return <StandardDocReader key={docId ?? 'missing'} doc={doc} docId={docId} />
 }
 
-function StandardDocReader({ doc, docId }: { doc?: Doc; docId?: string }) {
+function StandardDocReader({ doc, docId }: { doc?: Doc | null; docId?: string }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const toast = useUi((s) => s.toast)
@@ -245,7 +245,7 @@ function StandardDocReader({ doc, docId }: { doc?: Doc; docId?: string }) {
     create: createAnnotation, remove: removeAnnotation, recolor, comment,
     exportNotes, anchorFor, task,
   } = useDocAnnotations({
-    doc,
+    doc: doc ?? undefined,
     selection,
     clearSelection: () => setSelection(null),
     toast,
@@ -374,6 +374,14 @@ function StandardDocReader({ doc, docId }: { doc?: Doc; docId?: string }) {
     if (!doc || content?.kind !== 'md') { toast('文档还没载入完成'); return }
     void shareMarkdown(doc.title, content.md).then((msg) => { if (msg) toast(msg) }).catch(() => toast('分享失败，请重试'))
   }, [doc, content, toast])
+
+  if (doc === undefined && docId) {
+    return (
+      <div className="h-full flex flex-col bg-surface">
+        <div className="flex-1 overflow-y-auto">{READER_SKELETON}</div>
+      </div>
+    )
+  }
 
   if (!doc) {
     return (

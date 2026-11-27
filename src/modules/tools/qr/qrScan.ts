@@ -76,15 +76,33 @@ function getBarcodeDetector(): BarcodeDetectorCtor | null {
   return typeof ctor === 'function' ? ctor : null
 }
 
+let cachedDetectorCtor: BarcodeDetectorCtor | null = null
+let cachedDetector: BarcodeDetectorLike | null = null
+
+function getBarcodeDetectorInstance(): BarcodeDetectorLike | null {
+  const Ctor = getBarcodeDetector()
+  if (!Ctor) return null
+  if (cachedDetectorCtor !== Ctor || !cachedDetector) {
+    try {
+      cachedDetector = new Ctor({ formats: ['qr_code'] })
+      cachedDetectorCtor = Ctor
+    } catch {
+      cachedDetector = null
+      cachedDetectorCtor = null
+      return null
+    }
+  }
+  return cachedDetector
+}
+
 /**
  * 解码入口：优先 BarcodeDetector（Chrome/安卓 WebView 有硬件加速），
  * 不支持或出错时退回 jsQR，两条路都试不出才算没扫到。
  */
 export async function decodeImageData(source: PixelSource): Promise<string | null> {
-  const Ctor = getBarcodeDetector()
-  if (Ctor) {
+  const detector = getBarcodeDetectorInstance()
+  if (detector) {
     try {
-      const detector = new Ctor({ formats: ['qr_code'] })
       const codes = await detector.detect(source)
       const hit = codes.find((c) => c.rawValue)
       if (hit) return hit.rawValue

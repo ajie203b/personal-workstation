@@ -32,7 +32,8 @@ const DROP_WITH_CONTENT = new Set([
   'script', 'style', 'link', 'meta', 'base', 'title', 'head', 'iframe', 'frame', 'frameset',
   'object', 'embed', 'applet', 'param', 'form', 'input', 'button', 'select', 'option', 'textarea',
   'audio', 'video', 'source', 'track', 'canvas', 'noscript', 'template',
-  'svg', 'annotation-xml', 'annotation', 'maction',
+  'xmp', 'noembed', 'noframes', 'plaintext', 'listing',
+  'svg', 'foreignobject', 'annotation-xml', 'annotation', 'maction', 'mglyph', 'malignmark',
 ])
 
 /** 所有标签都允许的属性（不含任何事件属性，on* 单独拦） */
@@ -89,9 +90,12 @@ const SAFE_DATA_URL = /^data:image\/(png|jpe?g|gif|webp|avif|bmp);/i
  * URL 是否安全。先去掉控制字符（`java\tscript:` 这类绕过），再看协议。
  * @param allowDataImage 是否放行 data:image/（正文内嵌图片用得到；链接不允许）
  */
+const RESERVED_IDS = new Set(['root', 'main-scroll', 'focus-timer', 'quick-add-input', 'reader-settings', 'fab-add'])
+const UNSAFE_CLASS_RE = /(?:^|:)(?:fixed|sticky|absolute|inset|top|right|bottom|left|z-|w-screen|h-screen|min-h-screen|backdrop-|pointer-events-)/i
+
 export function isSafeUrl(raw: string, allowDataImage = true): boolean {
   const url = raw.replace(/[\u0000-\u0020\u007f-\u009f]/g, '').toLowerCase()
-  if (!url) return false
+  if (!url || url.startsWith('//')) return false
   if (url.startsWith('#') || url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) return true
   if (SAFE_DATA_URL.test(url)) return allowDataImage
   // 没有协议前缀 = 相对路径（a/b.html、chapter-1.xhtml）
@@ -108,8 +112,10 @@ export function sanitizeStyle(value: string): string {
     const val = decl.slice(i + 1).trim()
     if (!prop || !val) continue
     if (!ALLOWED_STYLE_PROPS.has(prop)) continue
-    const lower = val.toLowerCase()
-    if (/url\(|expression\(|javascript:|vbscript:|@import|behavior\s*:|-moz-binding/.test(lower)) continue
+    // 拦截 CSS 反斜杠转义（如 u\72 l(...)）与注释拆分绕过
+    if (val.includes('\\')) continue
+    const normalized = val.replace(/\/\*[\s\S]*?\*\//g, '').toLowerCase()
+    if (/url\s*\(|expression\s*\(|javascript:|vbscript:|@import|behavior\s*:|-moz-binding/.test(normalized)) continue
     kept.push(`${prop}: ${val}`)
   }
   return kept.join('; ')
@@ -129,13 +135,23 @@ function cleanAttrs(el: Element): void {
       el.removeAttribute(attr.name)
       continue
     }
+    if (name === 'class') {
+      const safe = attr.value.split(/\s+/).filter((token) => token && !UNSAFE_CLASS_RE.test(token))
+      if (safe.length) el.setAttribute('class', safe.join(' '))
+      else el.removeAttribute('class')
+      continue
+    }
+    if (name === 'id' && RESERVED_IDS.has(attr.value.trim().toLowerCase())) {
+      el.removeAttribute('id')
+      continue
+    }
     if (name === 'style') {
       const css = sanitizeStyle(attr.value)
       if (css) el.setAttribute('style', css)
       else el.removeAttribute('style')
       continue
     }
-    if (URL_ATTRS.has(name) && !isSafeUrl(attr.value)) {
+    if (URL_ATTRS.has(name) && !isSafeUrl(attr.value, name === 'src')) {
       el.removeAttribute(attr.name)
     }
   }
@@ -145,7 +161,13 @@ function cleanAttrs(el: Element): void {
 }
 
 function sanitizeSubtree(root: Element): void {
-  for (const child of Array.from(root.children)) {
+  for (const node of Array.from(root.childNodes)) {
+    if (node.nodeType === 8) {
+      node.parentNode?.removeChild(node)
+      continue
+    }
+    if (node.nodeType !== 1) continue
+    const child = node as Element
     const tag = child.tagName.toLowerCase()
     if (DROP_WITH_CONTENT.has(tag)) {
       child.remove()

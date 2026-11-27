@@ -5,12 +5,13 @@ import { Plus } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
 import { TopBar } from './TopBar'
-import { PAGE_TITLE } from './nav'
+import { getSettingsSection, PAGE_TITLE } from './nav'
 import { useThemeEffect } from '@/shared/theme'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
 import { FocusMiniBar } from '@/shared/FocusMiniBar'
 import { useUi } from '@/stores/ui'
 import { db, TIERS, type Tier } from '@/db/db'
+import { deriveToday, useDateTick } from '@/db/hooks'
 import { haptic } from '@/lib/haptics'
 import { cn } from '@/lib/cn'
 
@@ -35,9 +36,10 @@ export function AppShell() {
   const { pathname } = useLocation()
   const [params] = useSearchParams()
   const openAddSheet = useUi((s) => s.openAddSheet)
+  const today = useDateTick()
   const todayCount = useLiveQuery(
-    () => db.tasks.where('tier').equals('today').filter((task) => task.status !== 'done').count(),
-    [],
+    async () => deriveToday(await db.tasks.filter((task) => task.status !== 'done').toArray(), today).length,
+    [today],
     0,
   )
   const section = `/${pathname.split('/')[1] || ''}`
@@ -59,7 +61,7 @@ export function AppShell() {
   // 五大一级页统一顶栏视觉，不再单独在文档页断开
   const showTopBar = !immersive
   // 工具二级页与设置二级页自动收起底栏，让位给当前操作空间（原生 App 层级体验）
-  const isSecondaryMobile = /^\/tools\/.+/.test(pathname) || (pathname === '/settings' && Boolean(params.get('section')))
+  const isSecondaryMobile = /^\/tools\/.+/.test(pathname) || (pathname === '/settings' && Boolean(getSettingsSection(params.get('section'))))
   const showBottomNav = !immersive && !isSecondaryMobile
   // 设置页 / 工具页是配置与工具页，不摆「加任务」的悬浮按钮
   const showFab = !immersive && (section === '/today' || section === '/tasks')

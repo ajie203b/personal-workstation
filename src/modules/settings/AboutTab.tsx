@@ -3,7 +3,7 @@ import { LayoutGrid, Smartphone } from 'lucide-react'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { canInstall, onInstallAvailabilityChange, promptInstall } from '@/lib/pwa'
 import { checkForUpdate, getCurrentVersion, openDownload, type UpdateInfo } from '@/lib/updater'
-import { isNative } from '@/lib/native'
+import { isNative, isTauri } from '@/lib/native'
 import { supportsInAppUpdate } from '@/lib/appUpdateClient'
 import { AppUpdateCard } from '@/shared/AppUpdate'
 import { BrandMark } from '@/shared/BrandMark'
@@ -93,6 +93,13 @@ export function AboutTab() {
             </p>
           </section>
         </>
+      ) : isTauri() ? (
+        <section className="card p-4">
+          <h2 className="text-[14px] font-semibold mb-1.5">安装状态</h2>
+          <p className="text-[13px] text-on-surface-2 leading-relaxed">
+            已作为 Windows 桌面应用独立运行 · 数据保存在本机应用目录，支持原生 WebDAV 同步与应用内签名更新。
+          </p>
+        </section>
       ) : (
         <section className="card p-4">
           <h2 className="text-[14px] font-semibold mb-1.5">安装到设备</h2>

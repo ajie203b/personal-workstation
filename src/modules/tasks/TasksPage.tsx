@@ -4,7 +4,7 @@ import { CalendarDays, Columns3, Grid2x2, List } from 'lucide-react'
 import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
 import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
-import { toggleTaskWithUndo } from './taskActions'
+import { checkInWithUndo, toggleTaskWithUndo } from './taskActions'
 import { useTasksUi } from '@/stores/tasks'
 import { QuickAdd } from './QuickAdd'
 import { TaskList } from './TaskList'
@@ -73,7 +73,10 @@ export function TasksPage() {
   }
 
   const openTask = (id: string) => { setFocusId(id); openDetail(id) }
-  const completeTask = (t: typeof all[number]) => { void toggleTaskWithUndo(t) }
+  const completeTask = (t: typeof all[number]) => {
+    if (t.repeat || (t.repeatCount ?? 1) > 1) void checkInWithUndo(t)
+    else void toggleTaskWithUndo(t)
+  }
 
   const emptyMap: Record<Tier, { title: string; hint: string }> = {
     today: { title: '今日暂无待办', hint: '从「随时」挑几件过来，或直接添加。完成的任务会自动归档进日志。' },

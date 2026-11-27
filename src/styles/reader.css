@@ -1,0 +1,452 @@
+/* ============================================================
+   M2 文档工作站：阅读器、Markdown / 流式文档排版与四套阅读主题
+   ============================================================ */
+
+/* ---------------- 阅读器宽度滑块 ---------------- */
+.reader-range {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+.reader-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--primary) 0 var(--range-pct, 50%),
+    var(--surface-3) var(--range-pct, 50%) 100%
+  );
+}
+.reader-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: transform 120ms var(--ease-standard);
+}
+.reader-range:active::-webkit-slider-thumb { transform: scale(1.12); }
+.reader-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.reader-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--primary) 0 var(--range-pct, 50%),
+    var(--surface-3) var(--range-pct, 50%) 100%
+  );
+}
+.reader-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+/* 三栏阅读布局（v2.2）：左右栏可拖拽压缩 / 折叠。
+   宽度走 CSS 变量，拖动时只改 DOM 变量，正文不跟着重渲染。 */
+.reader-workspace {
+  --reader-left-w: 264px;
+  --reader-right-w: 328px;
+}
+.reader-panel {
+  transition: width var(--dur-2) var(--ease-standard), opacity var(--dur-1) var(--ease-standard);
+}
+.reader-panel[data-reader-panel='left'] {
+  max-width: min(420px, 30%);
+}
+.reader-panel[data-reader-panel='right'] {
+  max-width: min(480px, 34%);
+}
+.reader-workspace[data-resizing='true'] {
+  cursor: col-resize;
+  user-select: none;
+}
+.reader-workspace[data-resizing='true'] .reader-panel {
+  transition: none;
+}
+.reader-splitter {
+  position: relative;
+  flex: 0 0 1px;
+  width: 1px;
+  align-self: stretch;
+  background: var(--outline);
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 20;
+  outline: none;
+}
+/* 视觉线 1px，实际可抓取范围 ±5px */
+.reader-splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  right: -5px;
+}
+/* 悬停/拖动时才亮起的短握把，静止时保持一条安静的细线 */
+.reader-splitter::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 40px;
+  border-radius: 999px;
+  background: transparent;
+  transform: translate(-50%, -50%);
+  transition: background-color var(--dur-1) var(--ease-standard);
+}
+.reader-splitter:hover,
+.reader-splitter:focus-visible {
+  background: color-mix(in srgb, var(--primary) 45%, var(--outline));
+}
+.reader-splitter:hover::after,
+.reader-splitter:focus-visible::after,
+.reader-workspace[data-resizing='true'] .reader-splitter::after {
+  background: var(--primary);
+}
+.reader-splitter:focus-visible {
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+/* 批注操作行：静止时淡一点，悬停/键盘进入时亮起，减少侧栏噪声 */
+.ann-actions {
+  opacity: 0.72;
+  transition: opacity var(--dur-1) var(--ease-standard);
+}
+.group:hover .ann-actions,
+.group:focus-within .ann-actions {
+  opacity: 1;
+}
+
+/* 批注闪烁定位 */
+@keyframes ann-flash {
+  0%, 100% { opacity: var(--ann-opacity, 0.45); }
+  25%, 75% { opacity: 1; }
+}
+.ann-flash { animation: ann-flash 0.9s var(--ease-standard) 2; }
+
+/* 批注高亮颜色（叠加在正文上） */
+.hl-yellow { background: rgba(250, 204, 21, 0.42); }
+.hl-green { background: rgba(74, 222, 128, 0.38); }
+.hl-blue { background: rgba(96, 165, 250, 0.38); }
+.hl-red { background: rgba(248, 113, 113, 0.38); }
+
+/* 页内查找高亮 */
+.find-hit {
+  background: rgba(250, 204, 21, 0.48);
+  color: inherit;
+  border-radius: 2px;
+}
+.find-hit-active {
+  background: rgba(249, 115, 22, 0.58);
+  outline: 1.5px solid rgba(234, 88, 12, 0.9);
+  border-radius: 2px;
+}
+
+/* PDF 暗色反色：仅作用于画布，保留批注颜色语义 */
+.pdf-dark canvas {
+  filter: invert(0.92) hue-rotate(180deg) contrast(1.05);
+}
+.pdf-dark .textLayer { opacity: 0.9; }
+
+/* 文本层选区底色关掉：pdf.js 同一行会因字体切换产出互相覆盖的 span（整行一段，其中的拉丁词与标点又单独成段），
+   原生 ::selection 在重叠处叠两层就深浅斑驳，标点单独成段处还会断开。
+   选区改由 .sel-preview 承载：JS 拿到矩形按行并块后统一绘制，只有一层色。
+   !important 是必需的：react-pdf 的 Page/TextLayer.css 在本文件之后加载，
+   同特异度的 .textLayer ::selection { background: … } 会盖回来。
+   color 仍需透明，否则文本层文字与 canvas 文字重影。 */
+.textLayer ::selection {
+  color: transparent;
+  background: transparent !important;
+}
+.sel-preview {
+  background: color-mix(in srgb, AccentColor, transparent 75%);
+}
+
+/* 划词浮条：fixed 定位（视口坐标），不受滚动容器裁剪/遮挡 */
+.sel-popover {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  box-shadow: var(--shadow-pop);
+}
+
+/* 手机固定留出舒适对称边距；桌面以居中版心承载 --reader-width（50%–100%），
+   即使拉到 100% 也保留随阅读区自适应的呼吸留白，窄窗开双侧栏时保底 360px 不挤塌。 */
+.reader-prose {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-inline: auto;
+  padding-inline: clamp(18px, 5vw, 28px);
+}
+@media (min-width: 768px) {
+  .reader-prose {
+    width: min(100%, max(360px, var(--reader-width, 80%)));
+    padding-inline: clamp(24px, 3.5%, 48px);
+  }
+}
+
+/* MD 正文排版：行宽由阅读器控制，这里只管节奏与层级 */
+.md-body {
+  color: var(--md-ink);
+  line-height: var(--md-leading, 1.85);
+  letter-spacing: 0.012em;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+.md-body :is(div, section, article, aside, header, footer, figure, blockquote, p, pre) {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.md-body .katex {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+  color: var(--md-ink);
+  font-weight: 600;
+  line-height: 1.38;
+  margin: 1.7em 0 0.65em;
+  letter-spacing: -0.008em;
+  text-wrap: balance;
+  scroll-margin-top: 24px;
+}
+.md-body h1 { font-size: 1.72em; }
+.md-body h2 { font-size: 1.36em; }
+.md-body h3 { font-size: 1.16em; }
+.md-body h4 { font-size: 1.02em; }
+.md-body h5 { font-size: 0.94em; }
+.md-body h6 { font-size: 0.88em; color: var(--md-ink-2); }
+.md-body p { margin: 0.9em 0; }
+.md-body ul, .md-body ol { margin: 0.9em 0; padding-left: 1.5em; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body ul[data-type="taskList"] { list-style: none; padding-left: 0.25em; }
+.md-body ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.55em; padding-left: 0; }
+.md-body ul[data-type="taskList"] li > label { margin-top: 0.25em; flex-shrink: 0; display: inline-flex; cursor: pointer; }
+.app-checkbox, .md-body ul[data-type="taskList"] li > label input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--on-surface-2);
+  border-radius: 5px;
+  cursor: pointer;
+}
+:is(.app-checkbox, .md-body ul[data-type="taskList"] li > label input[type="checkbox"]):checked {
+  background: var(--primary-action);
+  border-color: var(--primary-action);
+}
+:is(.app-checkbox, .md-body ul[data-type="taskList"] li > label input[type="checkbox"]):checked::after {
+  content: '';
+  width: 6px;
+  height: 10px;
+  border: solid var(--on-primary-action);
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+.app-checkbox:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.md-body ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
+.md-body ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--md-ink-2); text-decoration: line-through; }
+.typora-focus-mode .ProseMirror > * { opacity: 0.34; transition: opacity 160ms ease; }
+.typora-focus-mode .ProseMirror > .typora-focus-active { opacity: 1; }
+.md-body li { margin: 0.32em 0; padding-left: 0.1em; }
+.md-body li::marker { color: var(--md-ink-2); }
+.md-body li > ul, .md-body li > ol { margin: 0.3em 0; }
+.md-body a { color: var(--primary); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.md-body strong, .md-body b, .flow-body strong, .flow-body b { font-weight: 700; }
+.md-body .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.25em 0; max-width: 100%; }
+.md-body blockquote {
+  margin: 1.2em 0;
+  padding: 0.55em 1.1em;
+  border-left: 2.5px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  background: var(--md-quote);
+  border-radius: 2px 10px 10px 2px;
+  color: var(--md-ink-2);
+}
+.md-body blockquote > :first-child { margin-top: 0; }
+.md-body blockquote > :last-child { margin-bottom: 0; }
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--md-code-bg);
+  border: 1px solid color-mix(in srgb, var(--md-rule) 70%, transparent);
+  padding: 0.14em 0.4em;
+  border-radius: 6px;
+}
+.md-body pre {
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-rule);
+  border-radius: 12px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 1.2em 0;
+  line-height: 1.65;
+}
+.md-body pre code { background: transparent; border: 0; padding: 0; font-size: 13px; }
+/* 图表固定浅底卡片，日间/夜间主题下都清晰；超宽时横向滚动而不撑破正文 */
+.md-body .mermaid-block { margin: 1.4em 0; padding: 16px; background: #FFFFFF; border: 1px solid var(--md-rule); border-radius: 12px; overflow-x: auto; text-align: center; }
+.md-body .mermaid-block svg { max-width: 100%; height: auto; margin: 0 auto; }
+.md-body .mermaid-fallback { white-space: pre-wrap; }
+.md-body table { border-collapse: collapse; margin: 1.2em 0; width: 100%; font-size: 0.92em; line-height: 1.55; }
+.md-body th, .md-body td { border: 1px solid color-mix(in srgb, var(--md-rule) 82%, transparent); padding: 8px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.md-body th { background: var(--md-quote); font-weight: 600; white-space: nowrap; }
+.md-body .md-table-scroll { max-width: 100%; overflow-x: auto; margin: 1.2em 0; }
+.md-body .md-table-scroll table { margin: 0; }
+.md-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--md-quote) 52%, transparent); }
+.tiptap.md-body th, .tiptap.md-body td { border: 1px solid color-mix(in srgb, var(--on-surface-2) 40%, var(--outline)); }
+.tiptap.md-body th { background: var(--surface-2); }
+.md-body img { display: block; max-width: 100%; max-height: 72vh; object-fit: contain; margin: 1.2em auto; border-radius: 10px; }
+.md-body hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--md-rule), transparent); margin: 2em 0; }
+.md-body mark,
+.flow-body mark { background: transparent; color: inherit; padding: 0.1em 0; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background-color var(--dur-1) var(--ease-standard); }
+.md-body mark[data-ann],
+.flow-body mark[data-ann] { cursor: pointer; }
+/* 批注颜色：优先级高于上面的 mark 透明底（否则原文里看不到颜色） */
+:is(.md-body, .flow-body) mark.hl-yellow { background: rgba(250, 204, 21, 0.42); }
+:is(.md-body, .flow-body) mark.hl-green { background: rgba(74, 222, 128, 0.38); }
+:is(.md-body, .flow-body) mark.hl-blue { background: rgba(96, 165, 250, 0.38); }
+:is(.md-body, .flow-body) mark.hl-red { background: rgba(248, 113, 113, 0.38); }
+
+/* MD 阅读主题（日间/夜间/羊皮纸/暮色，按文档记忆） */
+.theme-day {
+  --md-ink: var(--on-surface);
+  --md-ink-2: var(--on-surface-2);
+  --md-rule: var(--outline);
+  --md-quote: var(--surface-2);
+  --md-code-bg: var(--surface-3);
+  background: var(--surface);
+}
+.theme-night {
+  --md-ink: #D6D9E0;
+  --md-ink-2: #8A8F9C;
+  --md-rule: #33363F;
+  --md-quote: #22242B;
+  --md-code-bg: #22242B;
+  background: #191A1F;
+}
+.theme-sepia {
+  --md-ink: #43382A;
+  --md-ink-2: #8A7A62;
+  --md-rule: #E3D8C4;
+  --md-quote: #F3EBDC;
+  --md-code-bg: #F3EBDC;
+  background: #F8F1E7;
+}
+.theme-dusk {
+  --md-ink: #E2D9CE;
+  --md-ink-2: #9A8F80;
+  --md-rule: #453B31;
+  --md-quote: #2E2822;
+  --md-code-bg: #2E2822;
+  background: #26211C;
+}
+
+/* 批注标记在深色主题下的可读性 */
+.theme-night mark.hl-yellow, .theme-dusk mark.hl-yellow { background: rgba(250, 204, 21, 0.3); }
+.theme-night mark.hl-green, .theme-dusk mark.hl-green { background: rgba(74, 222, 128, 0.28); }
+.theme-night mark.hl-blue, .theme-dusk mark.hl-blue { background: rgba(96, 165, 250, 0.3); }
+.theme-night mark.hl-red, .theme-dusk mark.hl-red { background: rgba(248, 113, 113, 0.3); }
+
+/* 流式文档（EPUB/DOCX/PPTX/TXT）排版：复用 md 阅读主题变量 */
+.flow-seg-title {
+  color: var(--md-ink);
+  font-weight: 700;
+  font-size: 1.25em;
+  line-height: 1.35;
+  letter-spacing: -0.008em;
+  text-wrap: balance;
+  margin: 0 0 0.8em;
+}
+.flow-doc .ppt-slide-no {
+  color: var(--md-ink-2);
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin: 1.4em 0 0.4em;
+}
+/* 长文性能核心：视口外的章节与段落跳过排版/绘制（content-visibility），
+   字号、行距、双指缩放变化时浏览器只重排可见部分，而不是整本书。
+   占位尺寸用 auto <估值>：首次渲染前按估值占住滚动高度，渲染过一次就记住真实高度，
+   滚动条不会塌陷；不支持该属性的浏览器只是少了这项优化，显示不受影响。 */
+.flow-doc { content-visibility: auto; contain-intrinsic-size: auto 1600px; }
+.flow-body > * { content-visibility: auto; contain-intrinsic-size: auto 2em; }
+.flow-body > img, .flow-body > svg, .flow-body > video { contain-intrinsic-size: auto 40vh; }
+.flow-body > table, .flow-body > pre { contain-intrinsic-size: auto 8em; }
+.flow-body {
+  color: var(--md-ink);
+  font-size: var(--flow-font-size, 17px);
+  line-height: var(--flow-leading, 1.85);
+  letter-spacing: 0.012em;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+.flow-body :is(div, section, article, aside, header, footer, figure, blockquote, p, pre) {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.flow-body > :first-child { margin-top: 0; }
+.flow-body > :last-child { margin-bottom: 0; }
+.flow-body h1, .flow-body h2, .flow-body h3, .flow-body h4 { color: var(--md-ink); font-weight: 700; line-height: 1.38; margin: 1.5em 0 0.6em; letter-spacing: -0.008em; text-wrap: balance; }
+.flow-body h1 { font-size: 1.5em; }
+.flow-body h2 { font-size: 1.25em; }
+.flow-body h3 { font-size: 1.1em; }
+.flow-body p { margin: 0.9em 0; }
+.flow-body ul, .flow-body ol { margin: 0.9em 0; padding-left: 1.5em; }
+.flow-body ul { list-style: disc; }
+.flow-body ol { list-style: decimal; }
+.flow-body li { margin: 0.32em 0; }
+.flow-body li::marker { color: var(--md-ink-2); }
+.flow-body a[href] { color: var(--primary); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.flow-body blockquote { margin: 1.2em 0; padding: 0.55em 1.1em; border-left: 2.5px solid color-mix(in srgb, var(--primary) 72%, transparent); background: var(--md-quote); border-radius: 2px 10px 10px 2px; color: var(--md-ink-2); }
+.flow-body code { font-family: var(--font-mono); font-size: 0.875em; background: var(--md-code-bg); border: 1px solid color-mix(in srgb, var(--md-rule) 70%, transparent); padding: 0.14em 0.4em; border-radius: 6px; }
+.flow-body pre { background: var(--md-code-bg); border: 1px solid var(--md-rule); border-radius: 12px; padding: 14px 16px; overflow-x: auto; margin: 1.2em 0; line-height: 1.65; }
+.flow-body pre code { background: transparent; border: 0; padding: 0; }
+/* 图片不跟字号缩放：旧实现用 zoom + 反向 max-width 抵消，两者叠加后
+   在 Chromium 里正好反过来（放大字号图片变小、缩小字号图片变大）。
+   正文栏宽由 --reader-width 控制，图片只需铺满栏宽并保持比例。 */
+.flow-body img { display: block; max-width: 100%; max-height: 72vh; height: auto; object-fit: contain; margin: 1.2em auto; border-radius: 10px; cursor: zoom-in; }
+/* EPUB 图片按需加载前的占位：留出高度，滚到附近才解压真图 */
+.flow-body img[data-epub-src] {
+  width: 100%;
+  min-height: 120px;
+  background: var(--surface-3);
+  opacity: 0.6;
+  cursor: default;
+}
+.flow-body table { border-collapse: collapse; margin: 1.2em 0; width: 100%; font-size: 0.92em; line-height: 1.55; }
+.flow-body .flow-table-scroll { width: 100%; max-width: 100%; overflow-x: auto; margin: 1.2em 0; overscroll-behavior-inline: contain; }
+.flow-body .flow-table-scroll > table { margin: 0; min-width: max(100%, 34rem); }
+@media (max-width: 767px) {
+  .flow-body .flow-table-scroll > table { min-width: 0; }
+}
+.flow-body th, .flow-body td { border: 1px solid color-mix(in srgb, var(--md-rule) 82%, transparent); padding: 8px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.flow-body th { background: var(--md-quote); font-weight: 600; }
+.flow-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--md-quote) 52%, transparent); }
+.flow-body hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--md-rule), transparent); margin: 2em 0; }

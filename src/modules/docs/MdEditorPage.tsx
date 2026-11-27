@@ -70,6 +70,17 @@ function ToolBtn({ label, active, onClick, className, children }: {
   )
 }
 
+/** 检测 TipTap 富文本模式无法无损往返的 Markdown/内联 HTML 语法 */
+export function hasTipTapLossySyntax(md: string): boolean {
+  // 去掉围栏代码块，避免把代码示例里的 HTML/脚注误判为正文语法
+  const stripped = md.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, '')
+  if (/<(?:details|summary|sub|sup|u|kbd|iframe|div|span|table|style|font|figure|figcaption)\b/i.test(stripped)) return true
+  if (/<!--[\s\S]*?-->/.test(stripped)) return true
+  if (/\[\^[^\]]+\]/.test(stripped)) return true
+  if (/(?:^|\n)\[[^\]]+\]:\s+\S/.test(stripped)) return true
+  return false
+}
+
 /** MD 编辑器（M2.5 · TipTap）：新建 / 编辑 Markdown 文档，保存为本地文档 */
 export function MdEditorPage() {
   const { docId } = useParams()
@@ -88,6 +99,7 @@ export function MdEditorPage() {
   const [saveFailed, setSaveFailed] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [sourceMode, setSourceMode] = useState(false)
+  const [lossyNotice, setLossyNotice] = useState(false)
   const [sourceText, setSourceText] = useState('')
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
@@ -124,6 +136,16 @@ export function MdEditorPage() {
   const bodyScrollRef = useRef<HTMLDivElement>(null)
   const sourceTextareaRef = useRef<HTMLTextAreaElement>(null)
   const insertImagesRef = useRef<(files: File[]) => void>(() => {})
+  const countTimerRef = useRef<number | null>(null)
+
+  const clearCountTimer = useCallback(() => {
+    if (countTimerRef.current !== null) {
+      window.clearTimeout(countTimerRef.current)
+      countTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => () => clearCountTimer(), [clearCountTimer])
 
   useEffect(() => {
     const viewport = window.visualViewport
@@ -139,12 +161,16 @@ export function MdEditorPage() {
   useEffect(() => {
     let cancelled = false
     setDraftCandidate(null)
+    setSaveFailed(false)
+    setLossyNotice(false)
     if (!docId) {
       loadedDocIdRef.current = null
       setExisting(null)
       setTitle('无标题文档')
       setContentSeed('')
       setCountMarkdown('')
+      sourceModeRef.current = false
+      setSourceMode(false)
       dirtyRef.current = false
       setDirty(false)
       editSeqRef.current = 0
@@ -181,10 +207,16 @@ export function MdEditorPage() {
         getPosition(doc.hash),
       ])
       if (cancelled) return
+      const lossy = hasTipTapLossySyntax(md)
       loadedDocIdRef.current = doc.id
       setExisting(doc)
       if (pos?.settings?.widthPct) setEditorWidthPct(pos.settings.widthPct)
       setTitle(doc.title)
+      sourceModeRef.current = lossy
+      setSourceMode(lossy)
+      setLossyNotice(lossy)
+      sourceTextRef.current = md
+      setSourceText(md)
       setContentSeed(md)
       setCountMarkdown(md)
       dirtyRef.current = false
@@ -233,11 +265,17 @@ export function MdEditorPage() {
         editSeqRef.current += 1
         dirtyRef.current = true
         setDirty(true)
-        setCountMarkdown((editor.storage as { markdown?: { getMarkdown: () => string } }).markdown?.getMarkdown() ?? '')
+        // 防抖序列化字数与大纲 Markdown，避免大文档每次按键同步整篇序列化
+        clearCountTimer()
+        countTimerRef.current = window.setTimeout(() => {
+          countTimerRef.current = null
+          if (!editor.isDestroyed && !sourceModeRef.current) {
+            setCountMarkdown((editor.storage as { markdown?: { getMarkdown: () => string } }).markdown?.getMarkdown() ?? '')
+          }
+        }, 300)
       }
     },
     onSelectionUpdate: ({ editor }) => {
-      setDocTick((t) => t + 1)
       setSlashTrigger(detectSlashTrigger(editor))
     },
     editorProps: {
@@ -270,15 +308,25 @@ export function MdEditorPage() {
       italic: editor?.isActive('italic') ?? false,
       strike: editor?.isActive('strike') ?? false,
       highlight: editor?.isActive('hl') ?? false,
+      heading: editor?.isActive('heading') ? String(editor.getAttributes('heading').level) : 'paragraph',
+      bulletList: editor?.isActive('bulletList') ?? false,
+      orderedList: editor?.isActive('orderedList') ?? false,
+      taskList: editor?.isActive('taskList') ?? false,
+      blockquote: editor?.isActive('blockquote') ?? false,
+      codeBlock: editor?.isActive('codeBlock') ?? false,
+      inTable: editor ? isCursorInTable(editor.state) : false,
     }),
   })
 
-  // 内容就绪后一次性灌入（避免编辑器重建）
+  // 内容就绪后一次性灌入（避免编辑器重建；若已自动切源码模式，则跳过 TipTap 序列化避免无谓解析）
   useEffect(() => {
     if (ready && editor && contentSeed != null) {
-      seedingRef.current = true
-      editor.commands.setContent(contentSeed)
-      seedingRef.current = false
+      if (!sourceModeRef.current) {
+        seedingRef.current = true
+        editor.commands.setContent(contentSeed)
+        seedingRef.current = false
+      }
+      sourceTextRef.current = contentSeed
       setSourceText(contentSeed)
       dirtyRef.current = false
       setDirty(false)
@@ -293,7 +341,7 @@ export function MdEditorPage() {
   // Ctrl/Cmd+S 保存
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); void saveRef.current?.() }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void saveRef.current?.() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -345,6 +393,7 @@ export function MdEditorPage() {
 
   const toggleSourceMode = useCallback(() => {
     if (!editor) return
+    clearCountTimer()
     if (!sourceModeRef.current) {
       const md = (editor.storage as { markdown?: { getMarkdown: () => string } }).markdown?.getMarkdown() ?? ''
       setSourceText(md)
@@ -358,12 +407,14 @@ export function MdEditorPage() {
       setSourceMode(false)
       setDocTick((t) => t + 1)
     }
-  }, [editor])
+  }, [clearCountTimer, editor])
 
   const save = useCallback(
     async (opts?: { silent?: boolean; navigateOnCreate?: boolean }): Promise<boolean> => {
       if (!editor || savingRef.current) return false
+      clearCountTimer()
       const md = getLiveMarkdown()
+      setCountMarkdown(md)
       if (!existing && !md.trim()) {
         if (!opts?.silent) toast('内容为空')
         return false
@@ -410,7 +461,7 @@ export function MdEditorPage() {
         setSaving(false)
       }
     },
-    [editor, existing, title, toast, navigate, docId, draftKey, getLiveMarkdown],
+    [clearCountTimer, editor, existing, title, toast, navigate, docId, draftKey, getLiveMarkdown],
   )
   saveRef.current = save
 
@@ -428,7 +479,8 @@ export function MdEditorPage() {
   useEffect(() => {
     if (!ready || !dirty) return
     const draftTimer = window.setTimeout(flushDraft, 500)
-    const autoTimer = (existing || countMarkdown.trim()) && !leaveOpen
+    const hasBody = Boolean(existing || countMarkdown.trim() || (!sourceModeRef.current && editor && !editor.isEmpty))
+    const autoTimer = hasBody && !leaveOpen
       ? window.setTimeout(() => {
           void saveRef.current?.({ silent: true })
         }, 1800)
@@ -437,7 +489,7 @@ export function MdEditorPage() {
       window.clearTimeout(draftTimer)
       if (autoTimer != null) window.clearTimeout(autoTimer)
     }
-  }, [ready, dirty, title, countMarkdown, existing, leaveOpen, flushDraft])
+  }, [ready, dirty, title, docTick, countMarkdown, existing, leaveOpen, flushDraft, editor])
 
   const restoreDraft = useCallback(() => {
     if (!draftCandidate || !editor) return
@@ -567,6 +619,22 @@ export function MdEditorPage() {
         </Button>
       </header>
 
+      {/* 源码保真提示 */}
+      {ready && lossyNotice && sourceMode && (
+        <div
+          role="status"
+          className="shrink-0 flex flex-wrap items-center gap-2 px-3 md:px-6 py-2 bg-surface-2 border-b border-outline/70 text-[12px] text-on-surface-2"
+        >
+          <span className="flex-1 min-w-0">
+            检测到内联 HTML / 脚注 / 引用链接等语法，已自动以源码模式打开以保留原格式（未编辑不会覆盖原文件）。
+          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => { setLossyNotice(false); toggleSourceMode() }}>仍用富文本</Button>
+            <Button variant="ghost" size="sm" onClick={() => setLossyNotice(false)}>知道了</Button>
+          </div>
+        </div>
+      )}
+
       {/* 本地草稿恢复提示 */}
       {ready && draftCandidate && (
         <div
@@ -594,7 +662,7 @@ export function MdEditorPage() {
                 <ToolBtn label="重做" className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={14} /></ToolBtn>
                 <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
                 <SelectMenu ariaLabel="段落格式" title="段落格式"
-                  value={editor.isActive('heading') ? String(editor.getAttributes('heading').level) : 'paragraph'}
+                  value={marks?.heading ?? 'paragraph'}
                   options={[{ value: 'paragraph', label: '正文' }, ...[1, 2, 3, 4, 5, 6].map(level => ({ value: String(level), label: `${level} 级标题` }))]}
                   triggerClassName="h-11 md:h-7 shrink-0 border-transparent bg-transparent px-2 md:px-1.5 md:text-[12px] md:rounded-[7px]"
                   onChange={(value) => {
@@ -608,12 +676,12 @@ export function MdEditorPage() {
                 <ToolBtn label="删除线" active={marks?.strike} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={14} /></ToolBtn>
                 <ToolBtn label="高亮（黄色）" active={marks?.highlight} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleMark('hl', { color: 'yellow' }).run()}><Highlighter size={14} /></ToolBtn>
                 <span aria-hidden className="hidden md:block w-px h-3.5 bg-outline/60 mx-1 shrink-0" />
-                <ToolBtn label="无序列表" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={14} /></ToolBtn>
-                <ToolBtn label="有序列表" active={editor.isActive('orderedList')} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></ToolBtn>
-                <ToolBtn label="待办清单" active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={14} /></ToolBtn>
-                <ToolBtn label="引用" active={editor.isActive('blockquote')} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={14} /></ToolBtn>
-                <ToolBtn label="代码块" active={editor.isActive('codeBlock')} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={14} /></ToolBtn>
-                <ToolBtn label="插入表格 (3×3)" active={isCursorInTable(editor.state)} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().insertGfmTable({ rows: 3, cols: 3 }).run()}><Table2 size={14} /></ToolBtn>
+                <ToolBtn label="无序列表" active={marks?.bulletList} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={14} /></ToolBtn>
+                <ToolBtn label="有序列表" active={marks?.orderedList} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></ToolBtn>
+                <ToolBtn label="待办清单" active={marks?.taskList} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={14} /></ToolBtn>
+                <ToolBtn label="引用" active={marks?.blockquote} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={14} /></ToolBtn>
+                <ToolBtn label="代码块" active={marks?.codeBlock} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><Code size={14} /></ToolBtn>
+                <ToolBtn label="插入表格 (3×3)" active={marks?.inTable} className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().insertGfmTable({ rows: 3, cols: 3 }).run()}><Table2 size={14} /></ToolBtn>
                 <ToolBtn label="行内公式 ($...$)" className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().insertInlineMath('').run()}><span className="text-[12px] font-mono font-semibold">$</span></ToolBtn>
                 <ToolBtn label="公式块 ($$...$$)" className={cn(!moreTools && 'max-md:hidden')} onClick={() => editor.chain().focus().insertMathBlock('').run()}><Sigma size={14} /></ToolBtn>
                 <ToolBtn label="插入图片（也可直接粘贴或拖入）" className={cn(!moreTools && 'max-md:hidden')} onClick={() => imageInputRef.current?.click()}><ImagePlus size={14} /></ToolBtn>
@@ -701,7 +769,7 @@ export function MdEditorPage() {
             </div>
           </div>
 
-          {!sourceMode && isCursorInTable(editor.state) && (
+          {!sourceMode && marks?.inTable && (
             <div
               role="group"
               aria-label="表格操作"

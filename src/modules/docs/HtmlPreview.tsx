@@ -8,15 +8,26 @@ import { readDocumentText } from '@/lib/readDocumentText'
 import { useDocumentPrintTitle } from '@/lib/printDocument'
 
 const nativePreview = registerPlugin<{ open(options: { html: string; title: string }): Promise<void> }>('HtmlPreview')
-const policy = "default-src 'none'; script-src 'unsafe-inline' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; media-src data: blob:; font-src data:; form-action 'none'"
+const policy = "default-src 'none'; script-src 'unsafe-inline' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; navigate-to 'none'"
+
+function buildPreviewHtml(source: string, android: boolean): string {
+  // 去掉可触发 iframe 自导航逃逸沙箱的 meta refresh，并避免重复拼接 <!doctype html>
+  const stripped = source.replace(/<meta\b[^>]*http-equiv\s*=\s*(?:"refresh"|'refresh'|refresh)[^>]*>/gi, '')
+  const base = android ? '' : '<base href="about:srcdoc" target="_self">'
+  const headInject = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy}; base-uri ${android ? "'none'" : 'about:'}">${base}<meta name="viewport" content="width=device-width, initial-scale=1">`
+  if (/<head\b[^>]*>/i.test(stripped)) {
+    return stripped.replace(/<head\b[^>]*>/i, (m) => `${m}${headInject}`)
+  }
+  if (/^\s*<!doctype\b[^>]*>/i.test(stripped)) {
+    return stripped.replace(/^\s*<!doctype\b[^>]*>/i, (m) => `${m}${headInject}`)
+  }
+  return `<!doctype html>${headInject}${stripped}`
+}
 
 export function HtmlPreview({ source, title }: { source: string; title: string }) {
   const [error, setError] = useState('')
   const android = Capacitor.getPlatform() === 'android'
-  // A srcdoc frame inherits the app's base URL. Pin fragment links to the frame
-  // itself, before any base supplied by the document. Android sets its URL natively.
-  const base = android ? '' : '<base href="about:srcdoc" target="_self">'
-  const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy}; base-uri ${android ? "'none'" : 'about:'}">${base}<meta name="viewport" content="width=device-width, initial-scale=1">${source}`
+  const html = buildPreviewHtml(source, android)
   if (android) {
     return <div className="m-auto p-4 text-center">
       <button className="rounded-lg bg-primary-action text-on-primary-action px-4 py-2" onClick={() => {

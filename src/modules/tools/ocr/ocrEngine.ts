@@ -132,6 +132,8 @@ async function loadAssets(onProgress?: (ratio: number) => void): Promise<{ det: 
   return { det: buffers[0], rec: buffers[1], charset }
 }
 
+const OOM_ERR_RE = /out of memory|\boom\b|bad_alloc|allocation failed|cannot allocate|insufficient memory|RangeError/i
+
 async function prepareWithRecovery(
   runner: ReturnType<typeof getOnnxRunner>,
   key: string,
@@ -142,7 +144,14 @@ async function prepareWithRecovery(
     try {
       await runner.prepare(key, buf)
       return
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+      // 内存不足导致的建会话失败不要误删有效缓存模型
+      if (e instanceof RangeError || OOM_ERR_RE.test(msg)) {
+        if ('drop' in runner && typeof runner.drop === 'function') await runner.drop(key).catch(() => undefined)
+        else runner.dispose()
+        throw e
+      }
       // 建会话失败，往下清理坏缓存后重拉
     }
   }
@@ -152,7 +161,7 @@ async function prepareWithRecovery(
     runner.dispose()
   }
   await deleteModel(spec.id, spec.version).catch(() => undefined)
-  const fresh = await getModel({ ...spec })
+  const fresh = await getModel({ ...spec, bypassHttpCache: true })
   await runner.prepare(key, fresh)
 }
 

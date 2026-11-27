@@ -11,7 +11,7 @@ export interface UndoEntry {
 
 let current: UndoEntry | null = null
 
-export function registerUndo(label: string, run: () => void, ttlMs = 4000): void {
+export function registerUndo(label: string, run: () => void, ttlMs = 6000): void {
   current = { label, run, expires: Date.now() + ttlMs }
 }
 

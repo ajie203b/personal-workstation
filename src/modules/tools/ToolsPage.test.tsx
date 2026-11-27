@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -12,6 +12,7 @@ describe('ToolsPage 排行榜置顶硬性规则', () => {
 
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ generatedAt: '2026-04-01T00:00:00Z' }), { status: 200 })))
     // jsdom 无 ResizeObserver，给 Segmented 补最小桩实现
     if (typeof globalThis.ResizeObserver === 'undefined') {
       globalThis.ResizeObserver = class {
@@ -25,20 +26,22 @@ describe('ToolsPage 排行榜置顶硬性规则', () => {
     root = createRoot(host)
   })
 
-  afterEach(() => {
-    act(() => { root.unmount() })
+  afterEach(async () => {
+    await act(async () => { root.unmount() })
+    vi.unstubAllGlobals()
     host.remove()
   })
 
-  it('排行榜不属于 TOOL_CATALOG，且始终置顶于「小工具」目录之前', () => {
+  it('排行榜不属于 TOOL_CATALOG，且始终置顶于「小工具」目录之前', async () => {
     expect(TOOL_CATALOG.some((t) => t.title.includes('排行') || t.to.includes('intel'))).toBe(false)
 
-    act(() => {
+    await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/tools']}>
           <ToolsPage />
         </MemoryRouter>,
       )
+      await new Promise((r) => setTimeout(r, 0))
     })
 
     const leaderboard = host.querySelector<HTMLElement>('[data-pinned-leaderboard="true"]')
@@ -55,7 +58,7 @@ describe('ToolsPage 排行榜置顶硬性规则', () => {
     const utilityTab = Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((b) => b.textContent?.includes('效率'))
     expect(utilityTab).toBeDefined()
-    act(() => { utilityTab!.click() })
+    await act(async () => { utilityTab!.click() })
 
     const leaderboardAfter = host.querySelector<HTMLElement>('[data-pinned-leaderboard="true"]')
     const directoryAfter = host.querySelector<HTMLElement>('[data-tool-directory="true"]')

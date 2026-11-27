@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import { useUi, type Accent, type ThemeMode } from '@/stores/ui'
+import { setThemeModeWithTransition } from '@/shared/theme'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
 
@@ -15,7 +16,6 @@ const ACCENTS: { value: Accent; color: string; label: string }[] = [
 
 export function AppearanceTab() {
   const themeMode = useUi((s) => s.themeMode)
-  const setThemeMode = useUi((s) => s.setThemeMode)
   const accent = useUi((s) => s.accent)
   const setAccent = useUi((s) => s.setAccent)
   const motion = useUi((s) => s.motion)
@@ -35,7 +35,7 @@ export function AppearanceTab() {
           asRadio
           touchSized
           value={themeMode}
-          onChange={(v) => setThemeMode(v as ThemeMode)}
+          onChange={(v) => setThemeModeWithTransition(v as ThemeMode)}
           options={[
             { value: 'system', label: '跟随系统' },
             { value: 'light', label: '浅色' },
@@ -97,7 +97,7 @@ export function AppearanceTab() {
       <section className="card p-4 hidden md:flex items-center justify-between gap-4">
         <div>
           <h2 className="text-[14px] font-semibold">桌面侧栏默认收起</h2>
-          <p className="text-[13px] text-on-surface-2 mt-0.5">开启后桌面端只显示图标栏，把横向空间让给内容；随时可在侧栏左上角展开。</p>
+          <p className="text-[13px] text-on-surface-2 mt-0.5">开启后桌面端只显示图标栏，把横向空间让给内容；随时可在侧栏左下角展开。</p>
         </div>
         <JellySwitch checked={sidebarCollapsed} onChange={() => setSidebarCollapsed(!sidebarCollapsed)} label="侧栏默认收起" />
       </section>

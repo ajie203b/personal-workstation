@@ -494,9 +494,11 @@ export const MarkdownContent = memo(function MarkdownContent({ source, onLink, r
               ),
               // 链接统一接管：否则 #锚点/相对路径会改掉 hash 路由，直接跳回今日页
               a: ({ href, children, ...rest }) => {
-                // remarkHighlight 把 ==color|文字== 变成 hl:color 链接，这里画回高亮
+                // remarkHighlight 把 ==color|文字== 变成 hl:color 链接，这里画回高亮（严格白名单颜色防类名注入）
                 if (href?.startsWith('hl:')) {
-                  return <mark className={`hl-${href.slice(3)}`}>{children}</mark>
+                  const raw = href.slice(3).trim()
+                  const color = /^(yellow|green|blue|red)$/.test(raw) ? raw : 'yellow'
+                  return <mark className={`hl-${color}`}>{children}</mark>
                 }
                 return (
                   <a href={href} rel="noreferrer noopener" onClick={(e) => { if (onLink && href) { e.preventDefault(); onLink(href) } else handleDocLink(e, href) }} {...rest}>

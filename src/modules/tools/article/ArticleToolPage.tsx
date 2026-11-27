@@ -68,10 +68,10 @@ export function ArticleToolPage() {
   const [pasteText, setPasteText] = useState('')
   const [action, setAction] = useState('')
 
-  const autoFetched = useRef(false)
+  const lastAutoUrlRef = useRef('')
 
   /** 一条解析结果的落地：图片本地化 → 白名单清洗 → 预览 → 重复检测 */
-  const settle = async (parsed: ParsedArticle, referer: string) => {
+  const settle = async (parsed: ParsedArticle, referer: string, capAt: number) => {
     if (!parsed.contentHtml) {
       toast(parsed.hint ?? PASTE_FALLBACK_HINT)
       setShowPaste(true)
@@ -85,46 +85,59 @@ export function ArticleToolPage() {
     const cleanHtml = sanitizeHtml(loc.html)
     const cleanText = extractVisibleText(cleanHtml)
     const cleanCount = cleanText.replace(/\s+/g, '').length
-    setArticle({
+    const nextArticle: ParsedArticle = {
       ...parsed,
       contentHtml: cleanHtml,
       textContent: cleanText.trim(),
       charCount: cleanCount,
       imageCount: htmlImageCount(cleanHtml),
-    })
+    }
+    setArticle(nextArticle)
     setPreviewHtml(cleanHtml)
     setShowPaste(false)
     setImageFailures(loc.failed)
     if (loc.failed.length) toast(`${loc.failed.length} 张图片下载失败，已保留原链接并标注`)
     const dup = referer ? await db.docs.where('sourceUrl').equals(referer).filter(d => !d.deletedAt).first() : undefined
     setExisting(dup ?? null)
-    if (dup) toast(`已存在《${dup.title}》，是否更新？`, { label: '更新', run: () => void doSave(true) })
+    if (dup) {
+      toast(`已存在《${dup.title}》，是否更新？`, {
+        label: '更新',
+        run: () => void doSave(true, { article: nextArticle, existing: dup, sourceUrl: referer, capturedAt: capAt }),
+      })
+    }
   }
 
-  const doSave = async (update?: boolean) => {
-    if (!article || action) return
+  const doSave = async (
+    update?: boolean,
+    override?: { article: ParsedArticle; existing: Doc | null; sourceUrl: string; capturedAt: number },
+  ) => {
+    const targetArticle = override?.article ?? article
+    const targetExisting = override ? override.existing : existing
+    const targetSourceUrl = override?.sourceUrl ?? sourceUrl
+    const targetCapturedAt = override?.capturedAt ?? capturedAt
+    if (!targetArticle || action) return
     setAction('save')
     try {
-      const title = article.title.trim() || '无标题文章'
-      const byline = article.byline.trim()
+      const title = targetArticle.title.trim() || '无标题文章'
+      const byline = targetArticle.byline.trim()
       const md = buildArticleMarkdown({
         title,
         byline,
-        sourceUrl,
-        capturedAt,
-        contentHtml: article.contentHtml,
+        sourceUrl: targetSourceUrl,
+        capturedAt: targetCapturedAt,
+        contentHtml: targetArticle.contentHtml,
       })
-      if (update && existing) {
+      if (update && targetExisting) {
         // 更新 = 重新抓取后替换该文档本体与标题（saveMarkdownDoc 连 hash/批注一起迁）
-        const doc = await saveMarkdownDoc({ doc: existing, title, markdown: md })
-        await db.docs.update(doc.id, { sourceUrl })
-        setExisting({ ...doc, sourceUrl })
+        const doc = await saveMarkdownDoc({ doc: targetExisting, title, markdown: md })
+        await db.docs.update(doc.id, { sourceUrl: targetSourceUrl })
+        setExisting({ ...doc, sourceUrl: targetSourceUrl })
         toast(`已更新《${doc.title}》`, { label: '立即阅读', run: () => navigate(`/docs/${doc.id}`) })
       } else {
         const file = new File([md], `${safeName(title)}.md`, { type: 'text/markdown' })
         const { doc } = await importDoc(file)
-        await db.docs.update(doc.id, { sourceUrl })
-        setExisting({ ...doc, sourceUrl })
+        await db.docs.update(doc.id, { sourceUrl: targetSourceUrl })
+        setExisting({ ...doc, sourceUrl: targetSourceUrl })
         toast('已存入文档库', { label: '立即阅读', run: () => navigate(`/docs/${doc.id}`) })
       }
     } catch (e) {
@@ -186,8 +199,9 @@ export function ArticleToolPage() {
       setSourceUrl(finalUrl)
       setStatus('正在提取正文…')
       const parsed = extractArticle(res.body, finalUrl)
-      setCapturedAt(Date.now())
-      await settle(parsed, finalUrl)
+      const now = Date.now()
+      setCapturedAt(now)
+      await settle(parsed, finalUrl, now)
     } catch (e) {
       toast(e instanceof Error ? e.message : '抓取失败，检查链接或网络')
       setShowPaste(true)
@@ -199,6 +213,7 @@ export function ArticleToolPage() {
 
   /** 粘贴兜底：优先解析剪贴板里的 text/html（全选复制带格式），否则纯文本 */
   const applyPasted = (html: string | null, text: string) => {
+    if (busy) return
     let ref = ''
     try {
       ref = normalizeArticleUrl(url)
@@ -206,12 +221,13 @@ export function ArticleToolPage() {
       ref = url.trim()
     }
     const parsed = extractPastedContent(html, text, ref)
-    setCapturedAt(Date.now())
+    const now = Date.now()
+    setCapturedAt(now)
     setSourceUrl(ref)
     void (async () => {
       setBusy(true)
       try {
-        await settle(parsed, ref)
+        await settle(parsed, ref, now)
       } finally {
         setBusy(false)
         setStatus('')
@@ -220,6 +236,7 @@ export function ArticleToolPage() {
   }
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (busy) return
     const html = e.clipboardData.getData('text/html')
     const text = e.clipboardData.getData('text/plain')
     if (html.trim() || text.trim()) {
@@ -229,17 +246,15 @@ export function ArticleToolPage() {
     }
   }
 
-  // ?url= 预填并直接开抓（分享/深链进来少点一步）
+  // ?url= 预填并直接开抓（分享/深链进来少点一步，参数变化时自动响应）
+  const urlParam = searchParams.get('url') ?? ''
   useEffect(() => {
-    if (autoFetched.current) return
-    autoFetched.current = true
-    const u = searchParams.get('url')
-    if (u) {
-      setUrl(u)
-      void doFetch(u)
-    }
+    if (!urlParam || lastAutoUrlRef.current === urlParam) return
+    lastAutoUrlRef.current = urlParam
+    setUrl(urlParam)
+    void doFetch(urlParam)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [urlParam])
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">

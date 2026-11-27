@@ -14,7 +14,9 @@ import { TimePicker } from '@/shared/ui/TimePicker'
 import { DatePicker } from '@/shared/ui/DatePicker'
 import { CheckCircle } from '@/shared/ui/CheckCircle'
 import { Button } from '@/shared/ui/Button'
+import { HoldToConfirm } from '@/shared/ui/HoldToConfirm'
 import { Segmented } from '@/shared/ui/Segmented'
+import { deleteTaskWithUndo } from './taskActions'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { cn } from '@/lib/cn'
 import { repeatLabel } from '@/lib/repeat'
@@ -138,7 +140,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
       patch({ startAt: undefined })
       return
     }
-    patch({ startAt: new Date(`${date}T${time || '09:00'}`).getTime() })
+    patch({ startAt: new Date(`${date}T${time || '00:00'}`).getTime() })
   }
   // 手机上收起时这一行告诉用户「现在是什么时间状态」，不用展开也能读懂
   const timeSummary = `${task.startAt != null ? fmtStartAt(task.startAt) : '未设开始时间'} · ${task.due ? fmtDue(task.due, task.dueTime).text : '无截止时间'}`
@@ -307,7 +309,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                         />
                         <TimePicker
                           value={startTime}
-                          onChange={(t) => setStart(startDate || todayStr(), t ?? '')}
+                          onChange={(t) => setStart(startDate || (t ? todayStr() : ''), t ?? '')}
                           placeholder="不设时间"
                           allowClear
                         />
@@ -327,7 +329,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                         />
                         <TimePicker
                           value={task.dueTime}
-                          onChange={(v) => patch({ dueTime: v })}
+                          onChange={(v) => patch({ dueTime: v, ...(v && !task.due ? { due: todayStr() } : {}) })}
                           placeholder="不设时间"
                           allowClear
                         />
@@ -410,7 +412,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                   value={tagDraft}
                   onChange={(e) => setTagDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                       e.preventDefault()
                       addTag()
                     }
@@ -447,7 +449,14 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                   <label className={FIELD}>打卡时间点（可多个）</label>
                   <HabitTimesField
                     value={habitTimes}
-                    onChange={(list) => patch({ repeatTimes: list.length > 1 ? list : undefined, dueTime: list[0] })}
+                    onChange={(list) => {
+                      setHabitTimes(list)
+                      patch({
+                        repeatTimes: list.length > 1 ? list : undefined,
+                        dueTime: list[0],
+                        ...(list.length && !task.due ? { due: todayStr() } : {}),
+                      })
+                    }}
                   />
                 </div>
               )}
@@ -482,7 +491,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                   <input
                     value={subDraft}
                     onChange={(e) => setSubDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSub() } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addSub() } }}
                     placeholder="添加步骤，回车确认"
                     className={INPUT}
                   />
@@ -515,7 +524,7 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
             </div>
           </div>
 
-          {/* 固定操作栏：详情只负责编辑，确认后回到打开前的列表；完成走列表勾选，删除走左滑/日志 */}
+          {/* 固定操作栏：确认保存 + 进行中/置顶/专注 + 长按删除（桌面与未来任务均可用） */}
           <div className="shrink-0 border-t border-outline px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:pb-3">
             <div className="flex items-center gap-1.5">
               <Button variant="primary" className="flex-1 justify-center" onClick={() => void confirmEdit()}>
@@ -554,6 +563,19 @@ function TaskDetailContent({ detailId }: { detailId: string }) {
                   <Timer size={16} />
                 </Button>
               )}
+              <HoldToConfirm
+                label="删除"
+                dialogTitle="删除任务？"
+                dialogDescription={`确定删除「${task.title.slice(0, 28)}」吗？可在提示条中撤销。`}
+                holdMs={900}
+                size={16}
+                className="shrink-0 h-10 px-3 rounded-[10px]"
+                onConfirm={() => {
+                  pendingRef.current = null
+                  openDetail(null)
+                  void deleteTaskWithUndo(task)
+                }}
+              />
             </div>
           </div>
         </RadixDialog.Content>

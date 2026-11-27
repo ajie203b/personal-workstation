@@ -75,21 +75,37 @@ export async function importDoc(file: File): Promise<ImportResult> {
     updatedAt: Date.now(),
   }
   const blob = new Blob([buf], { type: markdownFile ? 'text/markdown' : file.type || 'application/octet-stream' })
+  let inserted: Doc = doc
+  let duplicated = false
   await db.transaction('rw', db.docs, db.blobs, async () => {
     // 事务内复检（防并发导入同文件产生双行）
     const recheck = await db.docs.where('hash').equals(hash).first()
-    if (recheck) return
+    if (recheck) {
+      inserted = recheck
+      duplicated = !recheck.deletedAt
+      return
+    }
     await db.blobs.put({ hash, blob })
     await db.docs.add(doc)
   })
+  if (duplicated) return { doc: inserted, duplicated: true }
   // 全文索引异步抽取，不阻塞导入返回
-  void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(doc, blob))
-  return { doc, duplicated: false }
+  void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(inserted, blob))
+  return { doc: inserted, duplicated: false }
 }
 
 export async function getDocBlob(hash: string): Promise<Blob | undefined> {
   const row = await db.blobs.get(hash)
-  return row?.blob
+  if (row?.blob) return row.blob
+  // 若本地缺失正文（例如 WebDAV 启用了 ≤20MB 或仅元数据同步策略），尝试按需拉取
+  try {
+    const { fetchRemoteBlobOnDemand } = await import('@/lib/sync')
+    const remote = await fetchRemoteBlobOnDemand(hash)
+    if (remote) return remote
+  } catch {
+    /* ignore */
+  }
+  return undefined
 }
 
 export async function touchDoc(id: string): Promise<void> {
@@ -147,39 +163,50 @@ export async function saveMarkdownDoc(input: {
     return doc
   }
 
-  const next: Doc = { ...old, hash, title, size: blob.size, updatedAt: now }
-
-  if (old.hash === hash) {
-    await db.docs.put(next)
-    return next
-  }
+  let saved: Doc = { ...old, hash, title, size: blob.size, updatedAt: now }
 
   await db.transaction(
     'rw',
-    [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText],
+    [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText, db.tombstones],
     async () => {
+      const latest = (await db.docs.get(old.id)) ?? old
+      const prevHash = latest.hash
+      saved = { ...latest, hash, title, size: blob.size, updatedAt: Math.max(now, (latest.updatedAt ?? latest.addedAt) + 1) }
+
+      if (prevHash === hash) {
+        await db.docs.put(saved)
+        return
+      }
+
       await db.blobs.put({ hash, blob })
-      await db.docs.put(next)
+      await db.docs.put(saved)
 
       // 旧 hash 只被这一篇文档引用时才迁移关联数据，避免把另一篇同内容文档的批注「搬走」
-      const sharedWithOthers = (await db.docs.where('hash').equals(old.hash).count()) > 0
+      const sharedWithOthers = (await db.docs.where('hash').equals(prevHash).count()) > 0
       if (!sharedWithOthers) {
-        const pos = await db.positions.get(old.hash)
+        const pos = await db.positions.get(prevHash)
         if (pos) {
-          await db.positions.put({ ...pos, hash, updatedAt: now })
-          await db.positions.delete(old.hash)
+          await db.positions.put({ ...pos, hash, updatedAt: saved.updatedAt! })
+          await db.positions.delete(prevHash)
+          await markDeleted(prevHash)
         }
-        const anns = await db.annotations.where('docHash').equals(old.hash).toArray()
-        for (const a of anns) await db.annotations.update(a.id, { docHash: hash })
-        const marks = await db.bookmarks.where('docHash').equals(old.hash).toArray()
-        for (const b of marks) await db.bookmarks.update(b.id, { docHash: hash })
-        await db.docText.delete(old.hash)
-        await db.blobs.delete(old.hash)
+        const anns = await db.annotations.where('docHash').equals(prevHash).toArray()
+        for (const a of anns) {
+          await db.annotations.update(a.id, { docHash: hash, updatedAt: Math.max(saved.updatedAt!, (a.updatedAt ?? a.createdAt) + 1) })
+        }
+        const marks = await db.bookmarks.where('docHash').equals(prevHash).toArray()
+        for (const b of marks) {
+          await db.bookmarks.update(b.id, { docHash: hash, updatedAt: Math.max(saved.updatedAt!, (b.updatedAt ?? b.createdAt) + 1) })
+        }
+        await db.docText.delete(prevHash)
+        await db.blobs.delete(prevHash)
       }
     },
   )
-  void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(next, blob))
-  return next
+  if (old.hash !== hash) {
+    void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(saved, blob))
+  }
+  return saved
 }
 
 export async function deleteDoc(doc: Doc): Promise<void> {
@@ -223,8 +250,8 @@ export async function purgeDoc(id: string): Promise<void> {
     await db.annotations.bulkDelete(anns.map((a) => a.id))
     const marks = await db.bookmarks.where('docHash').equals(doc.hash).toArray()
     await db.bookmarks.bulkDelete(marks.map((b) => b.id))
-    // 文档连同它的批注/书签一起立墓碑，否则另一台设备同步时会把它们推回来
-    await markDeleted(doc.id, ...anns.map((a) => a.id), ...marks.map((b) => b.id))
+    // 文档连同它的阅读位置/批注/书签一起立墓碑，否则另一台设备同步时会把它们推回来
+    await markDeleted(doc.id, doc.hash, ...anns.map((a) => a.id), ...marks.map((b) => b.id))
   })
 }
 

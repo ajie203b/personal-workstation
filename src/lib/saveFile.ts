@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { bytesToBase64 } from './http'
 
-interface FileExportPlugin {
+export interface FileExportPlugin {
   saveToDownloads(options: {
     dataBase64: string
     fileName: string
@@ -13,26 +13,23 @@ interface FileExportPlugin {
     mimeType: string
     headers?: Record<string, string>
   }): Promise<{ path: string; uri: string }>
+  shareFile(options: {
+    fileName: string
+    dataBase64: string
+    mimeType: string
+    title: string
+  }): Promise<void>
   openSavedLocation(): Promise<{ location: 'folder' | 'downloads' | 'unavailable' }>
 }
 
-const FileExport = registerPlugin<FileExportPlugin>('FileExport')
+export const FileExport = registerPlugin<FileExportPlugin>('FileExport')
 
 /** Blob → base64（裸内容，不带 data: 前缀）。分块转，全本 TXT 几 MB 也不会撑爆单次入参 */
 export async function blobToBase64(blob: Blob): Promise<string> {
   return bytesToBase64(new Uint8Array(await blob.arrayBuffer()))
 }
 
-async function resolveSavedDisplayPath(fallback: string): Promise<string> {
-  try {
-    const opened = await FileExport.openSavedLocation()
-    if (opened?.location === 'folder') return '文件管理器'
-    if (opened?.location === 'downloads') return '文件管理器的下载目录'
-  } catch { /* 文件已保存，打开失败时仍返回实际路径 */ }
-  return fallback
-}
-
-/** 安卓壳：由原生 OkHttp 流式下载直写「下载/个人工作站」，避免大文件过桥占内存 */
+/** 安卓壳：由原生 OkHttp 流式下载直写「下载/个人工作站」，避免大文件过桥占内存；不再自动强跳文件管理器 */
 export async function downloadUrlToDownloads(
   url: string,
   filename: string,
@@ -40,14 +37,14 @@ export async function downloadUrlToDownloads(
   mimeType = 'application/octet-stream',
 ): Promise<string> {
   const res = await FileExport.downloadToDownloads({ url, fileName: filename, mimeType, headers })
-  return resolveSavedDisplayPath(res.path || `下载/个人工作站/${filename}`)
+  return res.path || `下载/个人工作站/${filename}`
 }
 
 /**
  * 把 Blob 存到用户真能找到的地方，返回落盘位置（给 toast 明说）。
  *
  * - 安卓 App：WebView 对 blob: 的 <a download> 静默丢弃（原生也没接 DownloadListener），
- *   必须把字节交给原生写进「下载/个人工作站」，否则 toast 说已导出、文件却哪都没有
+ *   必须把字节交给原生写进「下载/个人工作站」，保存完成后保留在应用内，由 Toast「打开位置」按需跳出
  * - 浏览器 / PWA：走 <a download>，落点是浏览器的下载目录
  */
 export async function saveBlob(blob: Blob, filename: string): Promise<string> {
@@ -58,7 +55,7 @@ export async function saveBlob(blob: Blob, filename: string): Promise<string> {
       fileName: filename,
       mimeType: blob.type || 'application/octet-stream',
     })
-    return resolveSavedDisplayPath(res.path || `下载/个人工作站/${filename}`)
+    return res.path || `下载/个人工作站/${filename}`
   }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -68,7 +65,7 @@ export async function saveBlob(blob: Blob, filename: string): Promise<string> {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 2000)
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
   return '浏览器下载目录'
 }
 

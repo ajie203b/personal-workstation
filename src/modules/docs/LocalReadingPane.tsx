@@ -58,8 +58,9 @@ export function LocalReadingPane({ document, onLink, renderImage, jump, scrollRe
   const initialTarget = !restorePosition && reading.initialTarget && 'blockIdx' in reading.initialTarget ? reading.initialTarget : null
   const restore = useCallback(() => {}, [])
   const closeSettings = onCloseSettings
+  const onProgress = useCallback((_blockIdx: number, pct: number) => reading.setProgressPct(pct), [reading])
   return <>
-    <MdReader hash={linked?.hash ?? localHash} md={document.markdown} settings={reading.settings} annotations={annotations} jump={jump ?? reading.jump} onSelection={onSelection} onProgress={reading.setProgressPct} onRestored={restore} scrollRef={scrollRef} initialTarget={initialTarget} onLink={onLink} renderImage={renderImage} />
+    <MdReader hash={linked?.hash ?? localHash} md={document.markdown} settings={reading.settings} annotations={annotations} jump={jump ?? reading.jump} onSelection={onSelection} onProgress={onProgress} onRestored={restore} scrollRef={scrollRef} initialTarget={initialTarget} onLink={onLink} renderImage={renderImage} />
     {selection && <div className="sel-popover" style={{ left: Math.min(Math.max(selection.popover.left, 110), window.innerWidth - 110), top: Math.max(selection.popover.y, 8), transform: selection.popover.below ? 'translate(-50%, 10px)' : 'translate(-50%, -100%)' }}>
       {HL_COLORS.map(color => <button key={color} aria-label={`高亮-${color}`} title="高亮并保存到文档工作站" onMouseDown={e => e.preventDefault()} onClick={() => void actions.create(color).catch(() => toast('高亮保存失败，请重试'))} className={`w-7 h-7 rounded-full hl-${color} border border-outline/60 hover:scale-110 transition-transform`} />)}
       <span className="w-px h-5 bg-outline mx-1" />

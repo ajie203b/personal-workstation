@@ -2,14 +2,22 @@ import { CapacitorHttp, registerPlugin } from '@capacitor/core'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import type { Table } from 'dexie'
 import { db, type Annotation, type Bookmark, type Doc, type Task } from '@/db/db'
-import { exportSnapshotParts } from '@/db/tasks'
 import { packMathNote, unpackMathNote, type PackedMathNote } from '@/modules/tools/mathnotes/backupCodec'
 import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
 import { isNative, isTauri } from './native'
 import { base64ToBytes, bytesToBase64 } from './http'
 import { mergePayloads, type SyncPayload } from './syncMerge'
 import { planReconcile } from './syncReconcile'
-import { buildMathNotesFile, mergeMathNotes, noteTombstones, parseMathNotesFile, MATH_NOTES_SYNC_FILE, type MathNotesSyncFile } from './mathNotesSyncMerge'
+import {
+  buildMathNotesFile,
+  mergeMathNotes,
+  noteContentFingerprint,
+  noteTombstones,
+  parseMathNotesFile,
+  MATH_NOTES_SYNC_FILE,
+  type MathNotesBaseline,
+  type MathNotesSyncFile,
+} from './mathNotesSyncMerge'
 
 /**
  * 可选 WebDAV 同步（v2.0）：本地优先不变，只是把同一份数据放到自己的 WebDAV 上。
@@ -30,6 +38,13 @@ export interface WebdavConfig {
   username: string
   password: string
   auto: boolean
+  /**
+   * 文档本体同步上限（MB）：
+   * - undefined：默认全部同步（与既有安卓/电脑全量行为 100% 兼容）
+   * - 20：仅同步 ≤20 MB 附件，超大 PDF 阅读时按需拉取
+   * - 0：仅同步元数据与笔记，所有文档附件均按需拉取
+   */
+  maxBlobMb?: number
 }
 
 /** 坚果云预设目录：用户只需填账号和应用密码 */
@@ -38,6 +53,7 @@ export const JIANGUOYUN_URL = 'https://dav.jianguoyun.com/dav/Kairos/'
 const CFG_KEY = 'webdav'
 const LAST_KEY = 'lastSyncAt'
 const LAST_ERROR_KEY = 'lastSyncError'
+const AUTO_BACKOFF_KEY = 'lastSyncBackoff'
 /** 笔记同步失败的原因（主同步照常成功；成功一次就清掉） */
 const MATH_ERROR_KEY = 'lastMathNotesSyncError'
 const MATH_BASELINE_KEY = 'mathNotesSyncBaseline'
@@ -45,6 +61,13 @@ const MATH_BASELINE_KEY = 'mathNotesSyncBaseline'
 export const MATH_EPOCH_KEY = 'mathNotesSyncEpoch'
 const SYNC_FILE = 'sync.json'
 const AUTO_MIN_INTERVAL = 10 * 60 * 1000
+const BACKOFF_BASE_MS = 5 * 60 * 1000
+const BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
+
+interface SyncBackoff {
+  failures: number
+  nextAt: number
+}
 
 export async function getWebdavConfig(): Promise<WebdavConfig | null> {
   const row = await db.settings.get(CFG_KEY)
@@ -161,6 +184,7 @@ async function getText(cfg: WebdavConfig, url: string): Promise<DavResponse | nu
   const res = await dav(cfg, 'GET', url)
   if (res.status === 404) return null
   if (res.status === 401 || res.status === 403) throw new Error('WebDAV 认证失败：请检查用户名与应用密码')
+  if (res.status === 429 || res.status === 503) throw new Error(`同步服务限流（HTTP ${res.status}），自动同步已延后重试`)
   if (res.status >= 400) throw new Error(`WebDAV 读取失败（HTTP ${res.status}）`)
   return res
 }
@@ -169,6 +193,7 @@ async function putText(cfg: WebdavConfig, url: string, text: string, etag?: stri
   const condition: Record<string, string> | undefined = etag ? { 'If-Match': etag } : createOnly ? { 'If-None-Match': '*' } : undefined
   const res = await dav(cfg, 'PUT', url, text, condition)
   if (res.status === 412) throw new Error('CONFLICT')
+  if (res.status === 429 || res.status === 503) throw new Error(`同步服务限流（HTTP ${res.status}），自动同步已延后重试`)
   if (res.status >= 400) throw new Error(`WebDAV 写入失败（HTTP ${res.status}）`)
   return res
 }
@@ -183,6 +208,7 @@ async function ensureDirs(cfg: WebdavConfig, base: string): Promise<void> {
     // 201 新建、405 已存在；部分服务对已存在目录回 301/409
     if (res.status >= 400 && res.status !== 405 && res.status !== 409 && res.status !== 301) {
       if (res.status === 401 || res.status === 403) throw new Error('WebDAV 认证失败：请检查用户名与应用密码')
+      if (res.status === 429 || res.status === 503) throw new Error(`同步服务限流（HTTP ${res.status}），自动同步已延后重试`)
       throw new Error(`WebDAV 目录不可用（HTTP ${res.status}）：请确认地址指向一个可写的目录`)
     }
   }
@@ -340,6 +366,7 @@ export interface SyncReport {
   docs: number
   blobsUp: number
   blobsDown: number
+  blobsSkipped?: number
   at: number
   /** 同步期间又发生的本地改动条数：本地已保留，下一轮同步会推送 */
   pendingLocal: number
@@ -347,16 +374,69 @@ export interface SyncReport {
   mathNotes: { ok: true; pages: number } | { ok: false; error: string }
 }
 
-/** 读一份「当前本地状态」的同步载荷（文档本体不进来，全文索引是派生数据也不进来） */
+const DOC_KIND_MIME: Record<Doc['kind'], string> = {
+  pdf: 'application/pdf',
+  md: 'text/markdown',
+  epub: 'application/epub+zip',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain',
+  html: 'text/html',
+}
+
+const SYNC_EXCLUDED_SETTINGS = new Set([
+  'webdav',
+  'lastSyncAt',
+  'lastSyncError',
+  'lastSyncBackoff',
+  'lastAutoBackupAt',
+  'lastManualBackupAt',
+  'syncEpoch',
+  'mathNotesSyncEpoch',
+  'mathNotesSyncError',
+  'mathNotesSyncBaseline',
+])
+
+/** 轻量读取当前本地同步载荷：单事务只读元数据 + blobs 主键，避免每次同步把全库 PDF/EPUB 本体读进内存 */
 async function readLocalPayload(): Promise<SyncPayload> {
-  const parts = await exportSnapshotParts()
-  const local = JSON.parse(parts.json) as SyncPayload & { docText?: unknown }
-  local.tombstones = await db.tombstones.toArray()
-  local.epoch = (await db.settings.get('syncEpoch'))?.value as number | undefined
-  delete local.docText
-  // 笔记不进 sync.json（旧版客户端会抹掉它），走独立文件
-  delete local.mathNotes
-  return local
+  return db.transaction('r', [...SYNCED_TABLES, db.blobs], async () => {
+    const [tasks, rawSettings, docs, positions, annotations, bookmarks, focusSessions, folders, tombstones, blobKeys] = await Promise.all([
+      db.tasks.toArray(),
+      db.settings.toArray(),
+      db.docs.toArray(),
+      db.positions.toArray(),
+      db.annotations.toArray(),
+      db.bookmarks.toArray(),
+      db.focusSessions.toArray(),
+      db.folders.toArray(),
+      db.tombstones.toArray(),
+      db.blobs.toCollection().primaryKeys() as Promise<string[]>,
+    ])
+    const epoch = rawSettings.find((s) => s.key === 'syncEpoch')?.value
+    const settings = rawSettings.filter((s) => !SYNC_EXCLUDED_SETTINGS.has(s.key))
+    const kindByHash = new Map<string, Doc['kind']>()
+    for (const d of docs) kindByHash.set(d.hash, d.kind)
+    const blobMeta = blobKeys.map((hash) => ({
+      hash,
+      type: kindByHash.has(hash) ? DOC_KIND_MIME[kindByHash.get(hash)!] : 'application/octet-stream',
+    }))
+    return {
+      app: 'personal-workstation',
+      version: 4,
+      exportedAt: new Date().toISOString(),
+      tasks,
+      settings,
+      docs,
+      positions,
+      annotations,
+      bookmarks,
+      focusSessions,
+      folders,
+      tombstones,
+      blobMeta,
+      epoch: typeof epoch === 'number' ? epoch : undefined,
+    }
+  })
 }
 
 /**
@@ -395,7 +475,7 @@ async function syncMathNotesOnce(cfg: WebdavConfig, base: string, app: string): 
     tombstones: await db.tombstones.toArray(),
     epoch: await readMathEpoch(),
   }
-  const baseline = (await db.settings.get(MATH_BASELINE_KEY))?.value as Record<string, PackedMathNote> | undefined
+  const baseline = (await db.settings.get(MATH_BASELINE_KEY))?.value as MathNotesBaseline | undefined
   const merged = mergeMathNotes(local, remote, baseline)
 
   await db.transaction('rw', [db.mathNotes, db.tombstones, db.settings], async () => {
@@ -427,8 +507,8 @@ async function syncMathNotesOnce(cfg: WebdavConfig, base: string, app: string): 
   const tombstones = noteTombstones(allTomb, relevant)
   const file = buildMathNotesFile(app, after.map(packMathNote), tombstones, merged.epoch)
   await putText(cfg, url, JSON.stringify(file), got?.etag, !got)
-  // 只有远端写入成功才更新共同基线；使用实际上传的快照，避免吞掉上传期间的新编辑。
-  await db.settings.put({ key: MATH_BASELINE_KEY, value: Object.fromEntries(file.notes.map((n) => [n.id, n])) })
+  // 只有远端写入成功才更新共同基线；只存每页内容指纹而非整份笔迹副本，大幅节省 IndexedDB 体积
+  await db.settings.put({ key: MATH_BASELINE_KEY, value: Object.fromEntries(file.notes.map((n) => [n.id, noteContentFingerprint(n)])) })
   return after.length
 }
 
@@ -476,12 +556,20 @@ async function performSync(): Promise<SyncReport> {
   const blobSizes = new Map(merged.payload.docs.flatMap(({ hash, size }) =>
     Number.isFinite(size) && size > 0 ? [[hash, size] as const] : [],
   ))
+  const maxBlobBytes = typeof cfg.maxBlobMb === 'number' && cfg.maxBlobMb >= 0 ? cfg.maxBlobMb * 1024 * 1024 : Infinity
+  let blobsSkipped = 0
 
-  // 1) 补下载：远端有、本地没有的文档本体（限并发）
+  // 1) 补下载：远端有、本地没有的文档本体（限并发；超过策略阈值时按需拉取）
   let blobsDown = 0
-  const downTargets = merged.payload.blobMeta.filter((m, i, arr) =>
+  const allDownTargets = merged.payload.blobMeta.filter((m, i, arr) =>
     !localHashes.has(m.hash) && remoteHashes.has(m.hash) && arr.findIndex((x) => x.hash === m.hash) === i,
   )
+  const downTargets = allDownTargets.filter((m) => {
+    if (maxBlobBytes === 0) { blobsSkipped++; return false }
+    const sz = blobSizes.get(m.hash) ?? 0
+    if (sz > maxBlobBytes) { blobsSkipped++; return false }
+    return true
+  })
   await syncBlobs(downTargets, blobSizes, async (meta) => {
     const res = await getText(cfg, join(base, `blobs/${meta.hash}.b64`))
     if (!res?.text) return
@@ -496,14 +584,24 @@ async function performSync(): Promise<SyncReport> {
     })
   })
 
-  // 2) 补上传：本地有、远端还没有的文档本体（限并发）
+  // 2) 补上传：本地有、远端还没有的文档本体（限并发；超过策略阈值跳过上传）
   let blobsUp = 0
-  const upTargets = merged.payload.blobMeta.filter((m, i, arr) =>
+  const allUpTargets = merged.payload.blobMeta.filter((m, i, arr) =>
     localHashes.has(m.hash) && !remoteHashes.has(m.hash) && arr.findIndex((x) => x.hash === m.hash) === i,
   )
+  const upTargets = allUpTargets.filter((m) => {
+    if (maxBlobBytes === 0) { blobsSkipped++; return false }
+    const sz = blobSizes.get(m.hash) ?? 0
+    if (sz > maxBlobBytes) { blobsSkipped++; return false }
+    return true
+  })
   await syncBlobs(upTargets, blobSizes, async (meta) => {
     const row = await db.blobs.get(meta.hash)
     if (!row) return
+    if (row.blob.size > maxBlobBytes) {
+      blobsSkipped++
+      return
+    }
     await putText(cfg, join(base, `blobs/${meta.hash}.b64`), await blobToBase64(row.blob))
     blobsUp++
   })
@@ -528,14 +626,37 @@ async function performSync(): Promise<SyncReport> {
   const at = Date.now()
   await db.settings.put({ key: LAST_KEY, value: at })
   await db.settings.delete(LAST_ERROR_KEY)
+  await db.settings.delete(AUTO_BACKOFF_KEY)
   return {
     tasks: pushed.tasks.length,
     docs: pushed.docs.length,
     blobsUp,
     blobsDown,
+    blobsSkipped,
     at,
     pendingLocal: stat.pending,
     mathNotes,
+  }
+}
+
+/** 阅读器打开本地缺失附件的文档时（例如被 ≤20MB / 仅元数据策略跳过的大 PDF），从 WebDAV 按需下载并缓存 */
+export async function fetchRemoteBlobOnDemand(hash: string, fallbackMime = 'application/octet-stream'): Promise<Blob | null> {
+  try {
+    const cfg = await getWebdavConfig()
+    if (!cfg?.url || !cfg.username || !cfg.password) return null
+    const base = normalizeBase(cfg.url)
+    const res = await getText(cfg, join(base, `blobs/${hash}.b64`))
+    if (!res?.text) return null
+    const doc = await db.docs.where('hash').equals(hash).first()
+    const mime = doc ? DOC_KIND_MIME[doc.kind] : fallbackMime
+    const blob = base64ToBlob(res.text, mime)
+    await db.blobs.put({ hash, blob })
+    if (doc) {
+      void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(doc, blob))
+    }
+    return blob
+  } catch {
+    return null
   }
 }
 
@@ -555,11 +676,16 @@ async function runOnce(): Promise<SyncReport> {
   }
 }
 
-/** 失败留痕：设置页据此显示「上次同步失败的原因」 */
+/** 失败留痕 + 指数退避：防止坚果云 503/429 限流或断网时每次切前台都反复冲击接口 */
 async function recordError(e: unknown): Promise<void> {
   const message = e instanceof Error ? e.message : String(e)
+  const now = Date.now()
   try {
-    await db.settings.put({ key: LAST_ERROR_KEY, value: { at: Date.now(), message } })
+    await db.settings.put({ key: LAST_ERROR_KEY, value: { at: now, message } })
+    const prev = (await db.settings.get(AUTO_BACKOFF_KEY))?.value as SyncBackoff | undefined
+    const failures = (prev?.failures ?? 0) + 1
+    const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * (2 ** Math.min(failures - 1, 6)))
+    await db.settings.put({ key: AUTO_BACKOFF_KEY, value: { failures, nextAt: now + delay } satisfies SyncBackoff })
   } catch { /* 设置写不进去也不能影响错误上抛 */ }
 }
 
@@ -603,7 +729,7 @@ export async function testWebdav(cfg: WebdavConfig): Promise<{ ok: boolean; mess
   }
 }
 
-/** 启动钩子：开启自动同步且距上次超过 10 分钟时静默跑一次 */
+/** 启动钩子：开启自动同步且距上次超过 10 分钟、且不在失败退避窗口内时静默跑一次 */
 let autoSyncRunning = false
 export async function maybeAutoSync(): Promise<void> {
   if (autoSyncRunning) return
@@ -611,8 +737,11 @@ export async function maybeAutoSync(): Promise<void> {
   try {
     const cfg = await getWebdavConfig()
     if (!cfg?.auto || !cfg.url) return
+    const now = Date.now()
+    const backoff = (await db.settings.get(AUTO_BACKOFF_KEY))?.value as SyncBackoff | undefined
+    if (backoff && typeof backoff.nextAt === 'number' && now < backoff.nextAt) return
     const last = await getLastSyncAt()
-    if (last && Date.now() - last < AUTO_MIN_INTERVAL) return
+    if (last && now - last < AUTO_MIN_INTERVAL) return
     await syncNow()
   } catch { /* 失败详情由 syncNow 记录，可在设置里查看 */ }
   finally { autoSyncRunning = false }

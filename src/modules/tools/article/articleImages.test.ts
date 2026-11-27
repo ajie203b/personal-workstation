@@ -41,6 +41,8 @@ describe('sniffImageMime', () => {
     expect(sniffImageMime(new TextEncoder().encode('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBe('image/svg+xml')
     expect(sniffImageMime(new TextEncoder().encode('<svg viewBox="0 0 10 10"></svg>'))).toBe('image/svg+xml')
     expect(sniffImageMime(new Uint8Array(0))).toBe('')
+    expect(sniffImageMime(new TextEncoder().encode('<!doctype html><html><body>403 Forbidden</body></html>'))).toBe('')
+    expect(sniffImageMime(new TextEncoder().encode('{"error":"hotlink"}'))).toBe('')
     expect(sniffImageMime(b(0, 1, 2))).toBe('image/jpeg') // 认不出保底 JPEG
   })
 })

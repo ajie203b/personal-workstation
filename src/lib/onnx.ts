@@ -26,6 +26,7 @@ type Pending = {
 class OnnxRunner {
   private worker: Worker | null = null
   private pending = new Map<number, Pending>()
+  private pendingPrepares = new Set<(err: Error) => void>()
   private ready = new Map<string, Promise<void>>()
   private nextId = 1
 
@@ -61,10 +62,16 @@ class OnnxRunner {
     if (existing) return existing
     const worker = this.ensureWorker()
     const p = new Promise<void>((resolve, reject) => {
+      const abortPrepare = (err: Error) => {
+        cleanup()
+        reject(err)
+      }
       const cleanup = () => {
+        this.pendingPrepares.delete(abortPrepare)
         worker.removeEventListener('message', onMessage)
         worker.removeEventListener('error', onError)
       }
+      this.pendingPrepares.add(abortPrepare)
       const onMessage = (e: MessageEvent) => {
         const msg = e.data as { type?: string; key?: string; ok?: boolean; error?: string }
         if (msg.key !== key) return
@@ -105,9 +112,13 @@ class OnnxRunner {
     })
   }
   dispose(): void {
+    const err = new Error('推理会话已释放')
+    for (const p of this.pending.values()) p.reject(err)
+    this.pending.clear()
+    for (const abort of [...this.pendingPrepares]) abort(err)
+    this.pendingPrepares.clear()
     this.worker?.terminate()
     this.worker = null
-    this.pending.clear()
     this.ready.clear()
   }
 }
@@ -196,6 +207,9 @@ class InlineOnnxRunner {
   }
 
   dispose(): void {
+    for (const session of this.sessions.values()) {
+      void session.release().catch(() => undefined)
+    }
     this.sessions.clear()
     this.providers.clear()
     this.ready.clear()

@@ -74,5 +74,24 @@ describe('sanitizeHtml', () => {
     expect(isSafeUrl('javascript:alert(1)')).toBe(false)
     expect(isSafeUrl('java\tscript:alert(1)')).toBe(false)
     expect(isSafeUrl('data:text/html;base64,AAA')).toBe(false)
+    expect(isSafeUrl('//evil.test/x')).toBe(false)
+  })
+
+  it('拦掉 RAWTEXT 标签、注释、CSS 逃逸、UI 覆盖类与非 img 的 data:image', () => {
+    const out = sanitizeHtml(
+      '<!-- secret --><xmp><script>1</script></xmp>'
+      + '<div id="fab-add" class="fixed inset-0 z-50 prose">正文</div>'
+      + '<p style="color:\\75rl(https://evil.test)">样式</p>'
+      + '<a href="data:image/png;base64,AAA">链接</a>',
+    )
+    expect(out).not.toContain('secret')
+    expect(out).not.toContain('<xmp')
+    expect(out).not.toContain('fixed')
+    expect(out).not.toContain('inset-0')
+    expect(out).not.toContain('z-50')
+    expect(out).not.toContain('id="fab-add"')
+    expect(out).toContain('class="prose"')
+    expect(out).not.toContain('url(')
+    expect(out).not.toContain('data:image/png')
   })
 })

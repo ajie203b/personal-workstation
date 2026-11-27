@@ -1,10 +1,18 @@
 import { useEffect } from 'react'
 import { useUi, togglePalette } from '@/stores/ui'
+import { useTasksUi } from '@/stores/tasks'
 import { consumeUndo } from '@/lib/undo'
 
 function isTyping(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
+}
+
+function hasOpenModal(): boolean {
+  const ui = useUi.getState()
+  if (ui.paletteOpen || ui.addSheet.open || ui.shortcutsOpen) return true
+  if (useTasksUi.getState().detailId) return true
+  return Boolean(document.querySelector('[role="dialog"]'))
 }
 
 /**
@@ -25,6 +33,7 @@ export function GlobalHotkeys() {
         togglePalette()
         return
       }
+      if (hasOpenModal()) return
       // Ctrl/Cmd+Z 撤销（不拦截输入框内的文本撤销）
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         if (isTyping(e.target) || e.isComposing) return
@@ -40,11 +49,13 @@ export function GlobalHotkeys() {
       if (isTyping(e.target) || e.isComposing) return
       if (e.key === 'n' || e.key === '/') {
         e.preventDefault()
-        // 有输入框的页面（任务清单）优先聚焦它；否则直接开全局添加抽屉
+        // 有输入框的页面（任务清单）优先聚焦它；在今日页默认建入今日；其余开全局添加抽屉
         const input = document.getElementById('quick-add-input') as HTMLInputElement | null
         if (input && input.offsetParent !== null) {
           window.dispatchEvent(new CustomEvent('ws:focus-quickadd'))
           input.focus()
+        } else if (window.location.hash.startsWith('#/today')) {
+          useUi.getState().openAddSheet({ tier: 'today', todayContext: true })
         } else {
           useUi.getState().openAddSheet()
         }

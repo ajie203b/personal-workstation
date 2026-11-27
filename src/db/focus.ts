@@ -1,13 +1,14 @@
 import { db, type FocusSession } from './db'
 import { uid } from '@/lib/id'
-import { todayStr } from '@/lib/date'
+import { toDateStr } from '@/lib/date'
 
 /** 专注会话（v1.3）：番茄钟每次完成落库，可绑定任务 */
 
 const LEGACY_KEY = 'ws-focus-records'
 
-export async function addFocusSession(minutes: number, taskId?: string): Promise<void> {
-  const row: FocusSession = { id: uid(), day: todayStr(), ts: Date.now(), minutes, taskId: taskId || undefined }
+export async function addFocusSession(minutes: number, taskId?: string, endedAt = Date.now()): Promise<void> {
+  const ts = Number.isFinite(endedAt) && endedAt > 0 ? endedAt : Date.now()
+  const row: FocusSession = { id: uid(), day: toDateStr(new Date(ts)), ts, minutes, taskId: taskId || undefined }
   await db.focusSessions.add(row)
 }
 

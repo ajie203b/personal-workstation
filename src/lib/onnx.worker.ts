@@ -39,6 +39,11 @@ self.onmessage = async (e: MessageEvent) => {
   try {
     const ort = await getOrt()
     if (msg.type === 'init') {
+      const prev = sessions.get(msg.key)
+      if (prev) {
+        sessions.delete(msg.key)
+        await prev.release().catch(() => undefined)
+      }
       if ((navigator as Navigator & { gpu?: unknown }).gpu) {
         try {
           sessions.set(msg.key, await ort.InferenceSession.create(msg.modelBuffer, { executionProviders: ['webgpu'] }))

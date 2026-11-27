@@ -77,7 +77,8 @@ export function nextDueForRepeat(
 
   if (repeat === 'weekly' && sched.days?.length) {
     const days = [...new Set(sched.days)].sort((a, b) => a - b)
-    let d = addDaysLocal(parseLocalDate(due ?? today), 1)
+    const startBase = due && due > today ? due : today
+    let d = addDaysLocal(parseLocalDate(startBase), 1)
     for (let i = 0; i < 14; i++) {
       const s = toDateStr(d)
       if (s > today && days.includes(d.getDay())) return s

@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => {
       }),
       ...(lan ? [basicSsl()] : []),
       VitePWA({
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
         includeAssets: ['favicon.png', 'icons/apple-touch-icon.png', 'intelligence.json'],
         manifest: {
           name: 'Kairos',

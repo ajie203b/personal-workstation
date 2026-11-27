@@ -8,7 +8,7 @@ import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from 'tiptap-markdown'
 import { createHashRouter, createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { findMatchesInDoc, findTextMatches, replaceAllInEditor, replaceOneInEditor, EditorFindExtension } from './editor/editorFind'
+import { EDITOR_FIND_KEY, findMatchesInDoc, findTextMatches, replaceAllInEditor, replaceOneInEditor, EditorFindExtension } from './editor/editorFind'
 import { EditorFocusExtension } from './editor/editorFocus'
 import { InlineMath, MathBlock, MermaidCodeBlock } from './editor/mdMath'
 import { MD_TABLE_EXTENSIONS, isCursorInTable } from './editor/mdTable'
@@ -55,6 +55,37 @@ describe('Typora P1 extensions', () => {
     const out = getMd(editor)
     expect(out).toContain('| 列A')
     expect(out).toContain('| --- | --- | --- |')
+    editor.destroy()
+  })
+
+  it('preserves GFM table column alignment (:---, :---:, ---:) and avoids double-escaping pipes across round-trips', () => {
+    const source = '| 左对齐 | 居中 | 右对齐 |\n| :--- | :---: | ---: |\n| a\\|b | c | d |\n'
+    const editor = createHeadlessEditor(source)
+    const firstPass = getMd(editor)
+    expect(firstPass).toBe(source)
+
+    // 二次往返仍保持原样，不出现 \\| 双重转义
+    editor.commands.setContent(firstPass)
+    expect(getMd(editor)).toBe(source)
+    editor.destroy()
+  })
+
+  it('caches EditorFindExtension DecorationSet across selection-only transactions', () => {
+    const editor = createHeadlessEditor('alpha beta alpha gamma')
+    editor.commands.setEditorFind({ query: 'alpha', activeIndex: 0, caseSensitive: false })
+    const initialDecos = EDITOR_FIND_KEY.getState(editor.state)?.decos
+    expect(initialDecos?.find().length).toBe(2)
+
+    // 仅移动光标（docChanged === false 且无 meta）：直接复用缓存 DecorationSet 引用
+    editor.commands.setTextSelection(3)
+    const afterCursorMove = EDITOR_FIND_KEY.getState(editor.state)?.decos
+    expect(afterCursorMove).toBe(initialDecos)
+
+    // 修改正文后自动重建 DecorationSet
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' alpha')
+    const afterDocEdit = EDITOR_FIND_KEY.getState(editor.state)?.decos
+    expect(afterDocEdit).not.toBe(initialDecos)
+    expect(afterDocEdit?.find().length).toBe(3)
     editor.destroy()
   })
 

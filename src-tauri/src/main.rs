@@ -56,6 +56,11 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         // 应用内更新装完后重启（前端 relaunch）
         .plugin(tauri_plugin_process::init())
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                local_markdown::revoke_window(&window.state::<local_markdown::LocalMarkdownState>(), window.label());
+            }
+        })
         // 冷启动带文件时主窗口在 setup 之后才创建，会盖住文档窗口；等它加载完再把文档窗口置顶
         .on_page_load(|window, payload| {
             if window.label() == "archive-browser" {

@@ -66,7 +66,10 @@ export function IdPhotoSpecSection({ spec, allSpecs, customSpecs, bg, effectiveF
   const isCustomSpec = customSpecs.some((s) => s.id === spec.id)
 
   const openJson = () => {
-    setJsonText(serializeSpecs(customSpecs.length ? customSpecs : BUILTIN_SPECS))
+    const seed = customSpecs.length
+      ? customSpecs
+      : [{ ...BUILTIN_SPECS[0], id: 'mine-example', name: `${BUILTIN_SPECS[0].name}·自定义` }]
+    setJsonText(serializeSpecs(seed))
     setJsonOpen((v) => !v)
     setAddOpen(false)
   }

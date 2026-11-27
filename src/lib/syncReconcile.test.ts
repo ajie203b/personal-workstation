@@ -68,4 +68,16 @@ describe('planReconcile', () => {
     expect(plan.pending).toBe(0)
     expect(plan.del).toEqual([])
   })
+
+  it('同步往返期间在本地删除的记录不会被旧快照复活', () => {
+    const plan = planReconcile({
+      merged: [row('a', 100), row('b', 100)],
+      base: [row('a', 100), row('b', 100)],
+      current: [row('a', 100)],
+      key: (r) => r.id,
+      ts: (r) => r.updatedAt,
+    })
+    expect(plan.put).toEqual([row('a', 100)])
+    expect(plan.pending).toBe(1)
+  })
 })

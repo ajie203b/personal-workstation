@@ -160,6 +160,7 @@ export function useAsyncButton(opts?: { successHoldMs?: number; errorHoldMs?: nu
       setState('error')
       console.error(e)
       holdThenIdle(opts?.errorHoldMs ?? 700)
+      throw e
     }
   }, [holdThenIdle, opts?.successHoldMs, opts?.errorHoldMs])
 

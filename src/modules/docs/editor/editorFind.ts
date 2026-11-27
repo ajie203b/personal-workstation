@@ -22,7 +22,24 @@ declare module '@tiptap/core' {
   }
 }
 
-export const EDITOR_FIND_KEY = new PluginKey<EditorFindState>('editorFind')
+interface EditorFindPluginState extends EditorFindState {
+  decos: DecorationSet
+}
+
+export const EDITOR_FIND_KEY = new PluginKey<EditorFindPluginState>('editorFind')
+
+function buildFindDecorations(doc: PmNode, state: EditorFindState): DecorationSet {
+  if (!state.query) return DecorationSet.empty
+  const matches = findMatchesInDoc(doc, state.query, state.caseSensitive)
+  if (!matches.length) return DecorationSet.empty
+  const safeActive = Math.min(Math.max(0, state.activeIndex), matches.length - 1)
+  const decs = matches.map((m, i) =>
+    Decoration.inline(m.from, m.to, {
+      class: i === safeActive ? 'find-hit find-hit-active' : 'find-hit',
+    }),
+  )
+  return DecorationSet.create(doc, decs)
+}
 
 export function findMatchesInDoc(doc: PmNode, query: string, caseSensitive = false): EditorFindMatch[] {
   const q = query
@@ -106,33 +123,27 @@ export const EditorFindExtension = Extension.create({
 
   addProseMirrorPlugins() {
     return [
-      new Plugin<EditorFindState>({
+      new Plugin<EditorFindPluginState>({
         key: EDITOR_FIND_KEY,
         state: {
-          init: () => ({ query: '', activeIndex: 0, caseSensitive: false }),
-          apply(tr, prev) {
+          init: () => ({ query: '', activeIndex: 0, caseSensitive: false, decos: DecorationSet.empty }),
+          apply(tr, prev, _oldState, newState) {
             const meta = tr.getMeta(EDITOR_FIND_KEY) as Partial<EditorFindState> | undefined
-            if (!meta) return prev
+            if (!meta && !tr.docChanged) return prev
+            const nextState: EditorFindState = {
+              query: meta?.query ?? prev.query,
+              activeIndex: meta?.activeIndex ?? prev.activeIndex,
+              caseSensitive: meta?.caseSensitive ?? prev.caseSensitive,
+            }
             return {
-              query: meta.query ?? prev.query,
-              activeIndex: meta.activeIndex ?? prev.activeIndex,
-              caseSensitive: meta.caseSensitive ?? prev.caseSensitive,
+              ...nextState,
+              decos: buildFindDecorations(newState.doc, nextState),
             }
           },
         },
         props: {
           decorations(state) {
-            const pluginState = EDITOR_FIND_KEY.getState(state)
-            if (!pluginState?.query) return DecorationSet.empty
-            const matches = findMatchesInDoc(state.doc, pluginState.query, pluginState.caseSensitive)
-            if (!matches.length) return DecorationSet.empty
-            const safeActive = Math.min(Math.max(0, pluginState.activeIndex), matches.length - 1)
-            const decs = matches.map((m, i) =>
-              Decoration.inline(m.from, m.to, {
-                class: i === safeActive ? 'find-hit find-hit-active' : 'find-hit',
-              }),
-            )
-            return DecorationSet.create(state.doc, decs)
+            return EDITOR_FIND_KEY.getState(state)?.decos ?? DecorationSet.empty
           },
         },
       }),

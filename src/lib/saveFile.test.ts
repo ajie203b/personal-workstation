@@ -72,12 +72,12 @@ describe('saveBlob · 浏览器', () => {
 })
 
 describe('saveBlob · 安卓壳', () => {
-  it('交给原生写入并自动打开保存目录', async () => {
+  it('交给原生写入并返回实际路径，不自动强跳文件管理器', async () => {
     state.native = true
     state.path = '下载/个人工作站/书名.epub'
     const where = await saveBlob(new Blob(['epub'], { type: 'application/epub+zip' }), '书名.epub')
-    expect(where).toBe('文件管理器')
-    expect(state.opened).toBe(true)
+    expect(where).toBe('下载/个人工作站/书名.epub')
+    expect(state.opened).toBe(false)
     expect(state.saved).toEqual({
       dataBase64: await blobToBase64(new Blob(['epub'])),
       fileName: '书名.epub',
@@ -85,31 +85,18 @@ describe('saveBlob · 安卓壳', () => {
     })
   })
 
-  it('保存失败时不打开目录', async () => {
+  it('原生未返回路径时回退默认目录提示', async () => {
+    state.native = true
+    state.path = ''
+    await expect(saveBlob(new Blob(['x']), 'x.txt')).resolves.toBe('下载/个人工作站/x.txt')
+    expect(state.opened).toBe(false)
+  })
+
+  it('保存失败时透出错误', async () => {
     state.native = true
     state.saveFails = true
     await expect(saveBlob(new Blob(['x']), 'x.txt')).rejects.toThrow('保存失败')
     expect(state.opened).toBe(false)
-  })
-
-  it('打开失败时仍保留保存成功结果和实际路径', async () => {
-    state.native = true
-    state.path = '下载/个人工作站/x.txt'
-    state.openFails = true
-    await expect(saveBlob(new Blob(['x']), 'x.txt')).resolves.toBe(state.path)
-  })
-
-  it('系统无法打开目录时返回实际路径', async () => {
-    state.native = true
-    state.path = '下载/个人工作站/x.txt'
-    state.location = 'unavailable'
-    await expect(saveBlob(new Blob(['x']), 'x.txt')).resolves.toBe(state.path)
-  })
-
-  it('仅能打开下载根目录时提示实际打开的位置', async () => {
-    state.native = true
-    state.location = 'downloads'
-    await expect(saveBlob(new Blob(['x']), 'x.txt')).resolves.toBe('文件管理器的下载目录')
   })
 })
 

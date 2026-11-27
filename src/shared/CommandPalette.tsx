@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router'
 import {
-  CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun, Wrench, X,
+  BarChart3, CalendarCheck, FileText, ListTodo, Moon, Plus, Search, Settings2, Sun, WalletCards, Wrench, X,
 } from 'lucide-react'
 import { db, type Doc, type DocKind, type DocText, type Task } from '@/db/db'
 import { useUi, togglePalette } from '@/stores/ui'
@@ -102,9 +102,8 @@ export function CommandPalette() {
         seg: firstSeg,
         unit: doc.kind === 'pdf' ? '页' : doc.kind === 'pptx' ? '片' : doc.kind === 'epub' ? '章' : '段',
       })
-      if (out.length >= 6) break
     }
-    return out.sort((a, b) => b.count - a.count)
+    return out.sort((a, b) => b.count - a.count).slice(0, 6)
   }, [open, kw, indexRows, docs])
 
   const items = useMemo<PaletteItem[]>(() => {
@@ -125,6 +124,8 @@ export function CommandPalette() {
       { id: 'a-tasks', group: '动作', label: '任务清单', icon: <ListTodo size={15} />, run: () => go('/tasks') },
       { id: 'a-docs', group: '动作', label: '文档工作站', icon: <FileText size={15} />, run: () => go('/docs') },
       { id: 'a-tools', group: '动作', label: '工具箱', keywords: 'tools utilities 小工具', icon: <Wrench size={15} />, run: () => go('/tools') },
+      { id: 'a-stats', group: '动作', label: '统计', keywords: 'stats heatmap focus 热力图 专注 统计', icon: <BarChart3 size={15} />, run: () => go('/stats') },
+      { id: 'a-quota', group: '动作', label: '模型额度', keywords: 'ai quota api subscription 会员 余额 续费', icon: <WalletCards size={15} />, run: () => go('/stats?tab=quota') },
       { id: 'a-settings', group: '动作', label: '设置', icon: <Settings2 size={15} />, run: () => go('/settings') },
       {
         id: 'a-theme', group: '动作',
@@ -212,15 +213,17 @@ export function CommandPalette() {
   }, [query])
   const searching = query.trim().length > 0 && settled !== query
 
-  // 键盘：↑↓/Enter/Esc
+  // 键盘：↑↓/Enter/Esc（保护中文输入法回车，空结果不把游标置 -1）
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) {
       e.preventDefault()
-      setCursor((c) => Math.min(c + 1, filtered.length - 1))
+      setCursor((c) => (filtered.length ? Math.min(c + 1, filtered.length - 1) : 0))
     } else if (e.key === 'ArrowUp' || (e.key === 'p' && e.ctrlKey)) {
       e.preventDefault()
       setCursor((c) => Math.max(c - 1, 0))
     } else if (e.key === 'Enter') {
+      if (searching) return
       e.preventDefault()
       const item = filtered[cursor]
       if (item) {
@@ -228,6 +231,7 @@ export function CommandPalette() {
         item.run()
       }
     } else if (e.key === 'Escape') {
+      e.preventDefault()
       setOpen(false)
     }
   }
@@ -260,6 +264,7 @@ export function CommandPalette() {
         className="pop absolute left-1/2 top-[max(3.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:top-[13%] -translate-x-1/2 w-[min(600px,92vw)] overflow-hidden"
         style={{ animation: 'scale-in var(--dur-2) var(--ease-spring)' }}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
       >
         <div className="flex items-center gap-2.5 px-4 h-13 py-3 border-b border-outline">
           <Search size={17} className="text-on-surface-2 shrink-0" />
@@ -267,7 +272,6 @@ export function CommandPalette() {
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
             placeholder="搜索任务、文档、全文，或输入动作…"
             className="flex-1 min-w-0 bg-transparent outline-none text-[15px] placeholder:text-on-surface-2/70"
           />
@@ -284,6 +288,7 @@ export function CommandPalette() {
           <kbd className="kbd hidden sm:inline-block">Esc</kbd>
           <button
             type="button"
+            aria-label="关闭"
             onClick={() => setOpen(false)}
             className="sm:hidden text-[13px] font-medium text-on-surface-2 px-1 py-1 cursor-pointer shrink-0"
           >

@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MathEditorDialog } from './MathEditorDialog'
+import { computeLatex } from './compute'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let cleanup = () => {}
@@ -97,12 +98,16 @@ it('支持实时计算预览与本页变量快捷插入', async () => {
         block={block}
         busy={false}
         variables={{ a: 10, b: 3 }}
+        previewCompute={async (expr) => computeLatex(expr, { variables: { a: 10, b: 3 } })}
         onOpenChange={() => {}}
         onSubmit={() => {}}
         onReset={() => {}}
       />,
     ),
   )
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 180))
+  })
   const preview = document.querySelector('[aria-label="实时计算预览"]')
   expect(preview?.textContent).toContain('12')
 

@@ -57,14 +57,20 @@ export function drainTaskWidgetActions(): Promise<void> {
         await addTask({ id, title, tier: add.tier === 'anytime' ? 'anytime' : 'today', priority })
       }
 
+      // 记录本轮同步前每条任务的最后打卡时刻：既保证崩溃重放幂等，又不拦截同一批里的第 2~N 次打卡
+      const initialCheckAt = new Map<string, number>()
       for (const check of checks) {
         const id = typeof check?.id === 'string' ? check.id : ''
         const at = typeof check?.at === 'number' ? check.at : 0
         if (!id) continue
         const task = await db.tasks.get(id)
         if (!task || task.status === 'done') continue
-        if (task.repeat) {
-          if ((task.checkin?.at ?? 0) >= at) continue
+        if (!initialCheckAt.has(id)) {
+          initialCheckAt.set(id, task.checkin?.at ?? 0)
+        }
+        const isHabit = Boolean(task.repeat) || (task.repeatCount ?? 1) > 1
+        if (isHabit) {
+          if ((initialCheckAt.get(id) ?? 0) >= at) continue
           await checkInTask(task)
         } else {
           if ((task.doneAt ?? 0) >= at) continue

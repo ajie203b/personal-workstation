@@ -38,7 +38,7 @@ describe('openExternal', () => {
   it('网页端开新标签', () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     openExternal('https://example.com/a')
-    expect(open).toHaveBeenCalledWith('https://example.com/a', '_blank')
+    expect(open).toHaveBeenCalledWith('https://example.com/a', '_blank', 'noopener,noreferrer')
     open.mockRestore()
   })
 

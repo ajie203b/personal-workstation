@@ -119,7 +119,9 @@ export async function syncTaskNotification(task: Task): Promise<void> {
   } catch { /* 尚未注册时 cancel 部分机型报错，忽略 */ }
   if (task.status === 'done') return
   const now = Date.now()
-  const slots = reminderDatesFor(task)
+  const allDates = reminderDatesFor(task)
+  const totalSlots = Math.max(allDates.length, task.repeatCount ?? 1)
+  const slots = allDates
     .map((at, slot) => ({ at, slot }))
     .filter((s) => s.at.getTime() > now)
   if (!slots.length) return
@@ -128,7 +130,7 @@ export async function syncTaskNotification(task: Task): Promise<void> {
   const exact = await exactAlarmsAllowed()
   try {
     await ln.schedule({
-      notifications: slots.map((s) => taskNotification(task, s.at, s.slot, slots.length, exact)),
+      notifications: slots.map((s) => taskNotification(task, s.at, s.slot, totalSlots, exact)),
     })
   } catch {
     /* 权限/系统限制下静默失败，不能让一次提醒拖垮任务写入 */
@@ -162,13 +164,15 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
   const now = Date.now()
   for (const t of tasks) {
     if (t.status === 'done') continue
-    const slots = reminderDatesFor(t)
+    const allDates = reminderDatesFor(t)
+    const totalSlots = Math.max(allDates.length, t.repeatCount ?? 1)
+    const slots = allDates
       .map((at, slot) => ({ at, slot }))
       .filter((s) => s.at.getTime() > now)
     if (!slots.length) continue
     try {
       await ln.schedule({
-        notifications: slots.map((s) => taskNotification(t, s.at, s.slot, slots.length, exact)),
+        notifications: slots.map((s) => taskNotification(t, s.at, s.slot, totalSlots, exact)),
       })
     } catch { /* 单条失败不阻塞 */ }
   }
@@ -177,11 +181,18 @@ export async function syncAllTaskNotifications(tasks: Task[]): Promise<void> {
 async function cancelAllTaskNotifications(): Promise<void> {
   try {
     const ln = await getLocalNotifications()
+    const ids = new Set<number>()
+    try {
+      const pending = await ln.getPending()
+      for (const n of pending.notifications ?? []) {
+        if (n.id !== FOCUS_NOTIF_ID) ids.add(n.id)
+      }
+    } catch { /* 回退到按当前任务列表清理 */ }
     const tasks = await db.tasks.toArray()
-    const notifications = tasks.flatMap((t) =>
-      Array.from({ length: MAX_REMINDER_SLOTS }, (_, i) => ({ id: notifIdForSlot(t.id, i) })),
-    )
-    if (notifications.length) await ln.cancel({ notifications })
+    for (const t of tasks) {
+      for (let i = 0; i < MAX_REMINDER_SLOTS; i++) ids.add(notifIdForSlot(t.id, i))
+    }
+    if (ids.size) await ln.cancel({ notifications: [...ids].map((id) => ({ id })) })
   } catch { /* ignore */ }
 }
 
@@ -215,6 +226,7 @@ async function canNotify(): Promise<boolean> {
  */
 export async function scheduleFocusEnd(at: number, body: string): Promise<void> {
   if (!isNative() || at <= Date.now()) return
+  if (!(await getNotifyEnabled())) return
   if (!(await canNotify())) return
   try {
     const ln = await getLocalNotifications()

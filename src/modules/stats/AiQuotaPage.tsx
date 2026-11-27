@@ -11,10 +11,11 @@ import { Button } from '@/shared/ui/Button'
 import { Segmented } from '@/shared/ui/Segmented'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { todayStr } from '@/lib/date'
+import { uid } from '@/lib/id'
 import { PROVIDER_GROUPS } from './quotaBrands'
 import { PROVIDERS, QUOTA_KEY, quotaSummary, quotaDisplayMode, quotaExpiry, quotaProviderLabel, quotaBrand, orderQuotaEntries, applyQuotaOrder, type QuotaDisplayMode, type QuotaEntry, type QuotaRecord } from './aiQuota'
 
-const blank = (): QuotaEntry => ({ id: crypto.randomUUID(), provider: 'OpenAI', name: '', account: '', kind: '会员', expiresAt: '', resetAt: '', total: null, used: null, unit: 'Token', note: '', displayMode: 'none', balance: null })
+const blank = (): QuotaEntry => ({ id: uid(), provider: 'OpenAI', name: '', account: '', kind: '会员', expiresAt: '', resetAt: '', total: null, used: null, unit: 'Token', note: '', displayMode: 'none', balance: null })
 const field = 'w-full rounded-xl border border-outline bg-surface-2 px-3 py-2 text-sm text-on-surface outline-none focus:border-primary'
 const providers = [...PROVIDER_GROUPS.flatMap(group => group.providers.map(provider => ({ value: provider.name, label: provider.name, group: group.label }))), { value: '其他', label: '其他', group: '其他' }]
 

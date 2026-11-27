@@ -70,6 +70,10 @@ export function QrScanTab({
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const camTimerRef = useRef(0)
+  const camGenRef = useRef(0)
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
 
   useEffect(() => {
     if (!prefill) return
@@ -118,6 +122,7 @@ export function QrScanTab({
   })
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
+      if (!visibleRef.current) return
       const img = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'))
       if (!img) return
       e.preventDefault()
@@ -130,6 +135,7 @@ export function QrScanTab({
   /* ---------------- 实时扫码（可选，拿不到相机就退回图片输入） ---------------- */
 
   const stopCamera = useCallback(() => {
+    camGenRef.current += 1
     if (camTimerRef.current) {
       window.clearTimeout(camTimerRef.current)
       camTimerRef.current = 0
@@ -140,25 +146,35 @@ export function QrScanTab({
     setCamActive(false)
   }, [])
 
-  // 卸载时一定要停相机，否则安卓上摄像头灯常亮
+  // 切离扫码标签页或组件卸载时停相机，防止摄像头常亮耗电
+  useEffect(() => {
+    if (!visible) stopCamera()
+  }, [visible, stopCamera])
+
   useEffect(() => () => stopCamera(), [stopCamera])
 
-  const scheduleCamScan = () => {
-    camTimerRef.current = window.setTimeout(() => void camScanOnce(), 250)
+  const scheduleCamScan = (gen: number) => {
+    if (camGenRef.current !== gen) return
+    camTimerRef.current = window.setTimeout(() => void camScanOnce(gen), 250)
   }
 
-  const camScanOnce = async () => {
+  const camScanOnce = async (gen: number) => {
     const video = videoRef.current
-    if (!streamRef.current || !video) return
+    if (camGenRef.current !== gen || !streamRef.current || !video) return
     try {
       if (video.readyState >= 2 && video.videoWidth > 0) {
-        const canvas = document.createElement('canvas')
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        const ctx = canvas.getContext('2d')
+        const maxSide = 720
+        const ratio = Math.min(1, maxSide / Math.max(video.videoWidth, video.videoHeight))
+        const w = Math.max(1, Math.round(video.videoWidth * ratio))
+        const h = Math.max(1, Math.round(video.videoHeight * ratio))
+        const canvas = scanCanvasRef.current ?? (scanCanvasRef.current = document.createElement('canvas'))
+        if (canvas.width !== w) canvas.width = w
+        if (canvas.height !== h) canvas.height = h
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
         if (ctx) {
-          ctx.drawImage(video, 0, 0)
-          const hit = await decodeImageData(ctx.getImageData(0, 0, canvas.width, canvas.height))
+          ctx.drawImage(video, 0, 0, w, h)
+          const hit = await decodeImageData(ctx.getImageData(0, 0, w, h))
+          if (camGenRef.current !== gen) return
           if (hit) {
             onDecoded(hit)
             stopCamera()
@@ -169,7 +185,7 @@ export function QrScanTab({
     } catch {
       // 单帧解码失败不停机，继续扫下一帧
     }
-    scheduleCamScan()
+    scheduleCamScan(gen)
   }
 
   const startCamera = async () => {
@@ -179,20 +195,27 @@ export function QrScanTab({
       toast('当前环境不支持摄像头，请用拍照、相册选图或粘贴图片')
       return
     }
+    const gen = ++camGenRef.current
     try {
       const stream = await md.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
       const video = videoRef.current
-      if (!video) {
+      if (camGenRef.current !== gen || !video || !visibleRef.current) {
         stream.getTracks().forEach((t) => t.stop())
         return
       }
       streamRef.current = stream
       video.srcObject = stream
       await video.play()
+      if (camGenRef.current !== gen) {
+        stream.getTracks().forEach((t) => t.stop())
+        if (streamRef.current === stream) streamRef.current = null
+        return
+      }
       setCamActive(true)
       setScanError('')
-      scheduleCamScan()
+      scheduleCamScan(gen)
     } catch {
+      if (camGenRef.current !== gen) return
       // 安卓 WebView 无相机权限时 getUserMedia 直接失败：退回图片输入，不白屏不卡死
       toast('无法打开相机（未授权或被占用）。可改用拍照、相册选图或粘贴图片识别')
     }

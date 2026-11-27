@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, RotateCcw, Sparkles } from 'lucide-react'
 import { DOC_KIND_LABEL, type Annotation, type Doc } from '@/db/db'
 import { updateAnnotation } from '@/db/docs'
@@ -30,27 +30,31 @@ export function AnnotationReviewDialog({
   onJump?: (docId: string, anchor: string, hlId: string) => void
 }) {
   const [scopeAll, setScopeAll] = useState(false)
-  const [idx, setIdx] = useState(0)
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(() => new Set())
   const [revealed, setRevealed] = useState(false)
   const [doneCount, setDoneCount] = useState(0)
+  const [ratingBusy, setRatingBusy] = useState(false)
+  const ratingBusyRef = useRef(false)
 
   const docByHash = useMemo(() => new Map(docs.map((d) => [d.hash, d])), [docs])
 
   const queue = useMemo(() => {
-    const valid = annotations.filter((a) => docByHash.has(a.docHash) && (a.text.trim() || a.img))
+    const valid = annotations.filter((a) => docByHash.has(a.docHash) && (a.text.trim() || a.img) && !reviewedIds.has(a.id))
     const list = scopeAll ? valid : valid.filter((a) => isAnnotationDue(a))
     return [...list].sort((a, b) => (a.review?.due ?? '').localeCompare(b.review?.due ?? '') || a.createdAt - b.createdAt)
-  }, [annotations, docByHash, scopeAll])
+  }, [annotations, docByHash, scopeAll, reviewedIds])
 
   useEffect(() => {
     if (open) {
-      setIdx(0)
+      setReviewedIds(new Set())
       setRevealed(false)
       setDoneCount(0)
+      ratingBusyRef.current = false
+      setRatingBusy(false)
     }
   }, [open, scopeAll])
 
-  const cur = queue[idx]
+  const cur = queue[0]
   const curDoc = cur ? docByHash.get(cur.docHash) : undefined
   const position = curDoc?.kind === 'pdf' ? cur?.page : cur?.blockIdx
   const isScreenshot = !!cur?.img
@@ -60,13 +64,23 @@ export function AnnotationReviewDialog({
     : cur?.text
 
   const rate = async (rating: ReviewRating) => {
-    if (!cur) return
-    const nextReview = scheduleReview(cur.review, rating)
-    await updateAnnotation(cur.id, { review: nextReview })
-    setDoneCount((n) => n + 1)
-    setRevealed(false)
-    if (scopeAll) setIdx((i) => i + 1)
-    else setIdx((i) => Math.min(i, Math.max(0, queue.length - 2)))
+    if (!cur || ratingBusyRef.current) return
+    ratingBusyRef.current = true
+    setRatingBusy(true)
+    try {
+      const nextReview = scheduleReview(cur.review, rating)
+      await updateAnnotation(cur.id, { review: nextReview })
+      setReviewedIds((prev) => {
+        const next = new Set(prev)
+        next.add(cur.id)
+        return next
+      })
+      setDoneCount((n) => n + 1)
+      setRevealed(false)
+    } finally {
+      ratingBusyRef.current = false
+      setRatingBusy(false)
+    }
   }
 
   return (
@@ -79,8 +93,8 @@ export function AnnotationReviewDialog({
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between text-[12px] text-on-surface-2">
           <span className="tabular-nums">
-            {queue.length > 0 && idx < queue.length
-              ? `当前第 ${idx + 1} / ${queue.length} 条 · 本轮已复习 ${doneCount} 条`
+            {queue.length > 0
+              ? `剩余 ${queue.length} 条 · 本轮已复习 ${doneCount} 条`
               : `本轮已完成 ${doneCount} 条`}
           </span>
           <button
@@ -92,7 +106,7 @@ export function AnnotationReviewDialog({
           </button>
         </div>
 
-        {!cur || idx >= queue.length ? (
+        {!cur ? (
           <div className="py-8 text-center rounded-[12px] bg-surface-2 border border-outline/70 px-4">
             <Sparkles size={22} className="mx-auto text-primary mb-2" />
             <p className="text-[14px] font-medium">
@@ -156,13 +170,15 @@ export function AnnotationReviewDialog({
                   <button
                     key={r.rating}
                     type="button"
+                    disabled={ratingBusy}
                     onClick={() => void rate(r.rating)}
                     className={cn(
-                      'px-2.5 py-1.5 rounded-[8px] border text-[12px] font-medium transition-colors cursor-pointer',
+                      'px-2.5 py-1.5 rounded-[8px] border text-[12px] font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center leading-tight gap-0.5',
                       r.tone,
                     )}
                   >
-                    {r.label}
+                    <span>{r.label}</span>
+                    <span className="text-[10px] opacity-75 font-normal">{r.hint}</span>
                   </button>
                 ))}
               </div>

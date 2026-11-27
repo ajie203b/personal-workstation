@@ -25,14 +25,6 @@ export function useAllTasks(): Task[] {
   return useLiveQuery(() => db.tasks.orderBy('updatedAt').reverse().toArray(), [], EMPTY)
 }
 
-/**
- * 首帧是 undefined：用于区分「IndexedDB 还没读出来」和「真的空库」。
- * 通知重排必须等它首次有值，否则会拿着空数组把已有提醒全撤销。
- */
-export function useAllTasksLive(): Task[] | undefined {
-  return useLiveQuery(() => db.tasks.orderBy('updatedAt').reverse().toArray(), [])
-}
-
 export function deriveDone(all: Task[]): Task[] {
   return all
     .filter((t) => t.status === 'done')
@@ -54,6 +46,7 @@ export function deriveTodayDone(all: Task[], today?: string): Task[] {
 
 const EMPTY_DOCS: Doc[] = []
 const EMPTY_ANNS: Annotation[] = []
+const EMPTY_TASKS: Task[] = []
 
 export function useDocs(): Doc[] {
   return useDocsLive() ?? EMPTY_DOCS
@@ -74,11 +67,18 @@ export function useDocsLive(): Doc[] | undefined {
   )
 }
 
-export function useDoc(id: string | undefined): Doc | undefined {
+/**
+ * 首帧返回 undefined 表示 IndexedDB 仍在读取；查不到或已软删时返回 null，
+ * 避免阅读页首帧误闪「文档不存在或已删除」。
+ */
+export function useDoc(id: string | undefined): Doc | null | undefined {
   return useLiveQuery(
-    async () => { const doc = id ? await db.docs.get(id) : undefined; return doc?.deletedAt ? undefined : doc },
+    async () => {
+      if (!id) return null
+      const doc = await db.docs.get(id)
+      return !doc || doc.deletedAt ? null : doc
+    },
     [id],
-    undefined,
   )
 }
 
@@ -99,9 +99,9 @@ export function useDocBacklinks(docId: string | undefined): Task[] {
     () =>
       docId
         ? db.tasks.filter((t) => t.docRef?.docId === docId && t.status !== 'done').toArray()
-        : Promise.resolve([] as Task[]),
+        : Promise.resolve(EMPTY_TASKS),
     [docId],
-    [] as Task[],
+    EMPTY_TASKS,
   )
 }
 

@@ -445,6 +445,7 @@ export function ModelStatusBanner({
   percent,
   recognizing,
   onOpenSettings,
+  onDownloadModel,
   onRetryModel,
   onNewFormula,
 }: {
@@ -452,12 +453,13 @@ export function ModelStatusBanner({
   percent: number | null
   recognizing: number
   onOpenSettings: () => void
+  onDownloadModel?: () => void
   onRetryModel: () => void
   onNewFormula?: () => void
 }) {
-  const [dismissedPhase, setDismissedPhase] = useState<'loading' | 'error' | null>(null)
-  if (model.phase !== 'loading' && model.phase !== 'error' && recognizing <= 0) return null
-  if ((model.phase === 'loading' || model.phase === 'error') && dismissedPhase === model.phase) {
+  const [dismissedPhase, setDismissedPhase] = useState<'prompt' | 'loading' | 'error' | null>(null)
+  if (model.phase !== 'prompt' && model.phase !== 'loading' && model.phase !== 'error' && recognizing <= 0) return null
+  if ((model.phase === 'prompt' || model.phase === 'loading' || model.phase === 'error') && dismissedPhase === model.phase) {
     return recognizing > 0 ? (
       <div className="absolute left-1/2 -translate-x-1/2 bottom-3.5 w-max pointer-events-auto z-20">
         <div className="card flex items-center gap-2 px-3 py-1.5 shadow">
@@ -469,7 +471,43 @@ export function ModelStatusBanner({
   }
   return (
     <div className="absolute left-1/2 -translate-x-1/2 bottom-3.5 w-max max-w-[calc(100%-1.5rem)] pointer-events-auto z-20">
-      {model.phase === 'loading' ? (
+      {model.phase === 'prompt' ? (
+        <div className="card flex flex-col gap-2 px-4 py-3 shadow-lg max-w-sm">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[13px] font-medium">启用手写公式识别？</p>
+              <p className="text-[11.5px] text-on-surface-2 mt-0.5 leading-relaxed">
+                首次使用需下载离线识别模型（约 120MB，仅下载一次）；不下载也可直接使用键盘输入公式与函数绘图。
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="暂不下载识别模型"
+              title="暂不下载，继续手写或键盘输入"
+              onClick={() => setDismissedPhase('prompt')}
+              className="grid place-items-center size-7 -mr-1.5 -mt-1 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface cursor-pointer shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            {onNewFormula && (
+              <Button size="sm" variant="outline" className="h-9 px-3" onClick={onNewFormula}>键盘输入</Button>
+            )}
+            <Button
+              size="sm"
+              variant="primary"
+              className="h-9 px-3"
+              onClick={() => {
+                setDismissedPhase(null)
+                ;(onDownloadModel ?? onRetryModel)()
+              }}
+            >
+              下载模型（120MB）
+            </Button>
+          </div>
+        </div>
+      ) : model.phase === 'loading' ? (
         <div className="card flex items-start gap-2.5 px-3.5 py-2 shadow-lg min-w-[240px]">
           <Loader2 size={14} className="animate-spin text-primary shrink-0 mt-1" />
           <div className="flex-1 min-w-0">

@@ -32,6 +32,7 @@ export function SelectionPopover({
           key={c}
           aria-label={`高亮-${c}`}
           title={`高亮-${c}`}
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => onHighlight(c)}
           className={`w-7 h-7 rounded-full hl-${c} border border-outline/60 hover:scale-110 transition-transform cursor-pointer`}
         />
@@ -41,6 +42,7 @@ export function SelectionPopover({
         aria-label="复制选中文本"
         title="复制选中文本"
         className="grid place-items-center w-7 h-7 rounded-lg text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+        onMouseDown={(e) => e.preventDefault()}
         onClick={() => onCopy(selection.text)}
       >
         <Copy size={15} />
@@ -50,6 +52,7 @@ export function SelectionPopover({
           aria-label="高亮并评论"
           title="高亮并写评论"
           className="grid place-items-center w-7 h-7 rounded-lg text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={onComment}
         >
           <MessageSquareText size={15} />
@@ -59,6 +62,7 @@ export function SelectionPopover({
         aria-label="高亮并转为任务"
         title="高亮并转为任务"
         className="grid place-items-center w-7 h-7 rounded-lg text-primary hover:bg-primary-soft cursor-pointer"
+        onMouseDown={(e) => e.preventDefault()}
         onClick={() => onHighlight('yellow', true)}
       >
         <ListPlus size={15} />

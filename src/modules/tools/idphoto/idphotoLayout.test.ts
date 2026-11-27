@@ -64,6 +64,13 @@ describe('computeSheetLayout', () => {
     const b = layout.cells[1]
     expect(b.x).toBeGreaterThanOrEqual(a.x + a.width)
   })
+
+  it('350 DPI 社保卡排版到 300 DPI 相纸时按物理尺寸等比缩放', () => {
+    const layout = computeSheetLayout({ width: 358, height: 441, dpi: 350 }, SHEET_6IN, 8)
+    expect(layout.cells).toHaveLength(8)
+    expect(layout.cells[0].width).toBe(Math.round(358 * (300 / 350)))
+    expect(layout.cells[0].height).toBe(Math.round(441 * (300 / 350)))
+  })
 })
 
 describe('cutLines', () => {

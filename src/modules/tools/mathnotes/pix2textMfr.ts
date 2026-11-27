@@ -14,7 +14,7 @@
  * 才删缓存重下，相符说明文件没问题（内存不足、运行时不支持），保留缓存并把原因告诉用户。
  * 「重试 / 重新加载模型」只清未通过校验的文件（pruneModel），已校验的大文件不重下。
  */
-import { deleteModel, getModel, pruneModel, sha256Hex } from '@/lib/modelCache'
+import { deleteModel, getModel, hasVerifiedModel, pruneModel, sha256Hex } from '@/lib/modelCache'
 import type { TensorData } from '@/lib/onnx'
 import { toPixelValues, MFR_INPUT_SIZE, type GrayImage } from './preprocess'
 import { decodeIds, parseTokenizer, postProcessLatex, type MfrTokenizer } from './tokenizer'
@@ -32,6 +32,14 @@ export const MFR_FILES = [
 ] as const
 const FILES = MFR_FILES
 const byKey = (key: (typeof FILES)[number]['key']) => FILES.find((f) => f.key === key)!
+
+/** 检查 Pix2Text MFR 全部 3 个模型文件是否均已在本地通过校验并缓存 */
+export async function isMfrModelCached(): Promise<boolean> {
+  for (const f of MFR_FILES) {
+    if (!(await hasVerifiedModel(mfrCacheId(f.file), MFR_REVISION, f.sha256))) return false
+  }
+  return true
+}
 
 /** 缓存条目标识（modelCache 的 id）；版本另带 MFR_REVISION */
 export const mfrCacheId = (file: string) => `pix2text-mfr-1.5/${file}`
@@ -245,20 +253,42 @@ export class Pix2TextMfrRecognizer implements Recognizer {
   private async doLoad(onProgress?: (p: LoadProgress) => void): Promise<void> {
     const total = FILES.reduce((s, f) => s + f.mb, 0)
     let done = 0
-    const buffers: Record<string, ArrayBuffer> = {}
-    for (const f of FILES) {
-      buffers[f.key] = await this.fetchFile(f, done, total, onProgress)
-      done += f.mb
-      onProgress?.({ ratio: done / total, file: f.file })
-    }
+    // 先拉齐并缓存全部文件（保证某个会话建失败时，其它已下好的文件留在缓存里不重下），
+    // 同时避免把 87.5MB + 32MB 原始 ArrayBuffer 一起留在内存：decoder 落盘后若命中 Cache Storage 立即释放内存引用，
+    // 等 encoder 建完会话再从本机缓存读回 decoder（零网络请求），显著降低移动端峰值内存。
+    const tokFile = byKey('tokenizer')
+    const tokBuf = await this.fetchFile(tokFile, done, total, onProgress)
+    done += tokFile.mb
+    onProgress?.({ ratio: done / total, file: tokFile.file })
     let tokenizer: MfrTokenizer
     try {
-      tokenizer = parseTokenizer(new TextDecoder().decode(buffers.tokenizer))
+      tokenizer = parseTokenizer(new TextDecoder().decode(tokBuf))
     } catch (e) {
-      throw await this.diagnose(byKey('tokenizer'), buffers.tokenizer, e)
+      throw await this.diagnose(tokFile, tokBuf, e)
     }
-    await this.prepareOrDiagnose('mfr-encoder', byKey('encoder'), buffers.encoder)
-    await this.prepareOrDiagnose('mfr-decoder', byKey('decoder'), buffers.decoder)
+
+    const decFile = byKey('decoder')
+    let decBufFallback: ArrayBuffer | null = null
+    {
+      const decBuf = await this.fetchFile(decFile, done, total, onProgress)
+      done += decFile.mb
+      onProgress?.({ ratio: done / total, file: decFile.file })
+      const decCached = await hasVerifiedModel(mfrCacheId(decFile.file), MFR_REVISION)
+      if (!decCached) decBufFallback = decBuf
+    }
+
+    const encFile = byKey('encoder')
+    {
+      const encBuf = await this.fetchFile(encFile, done, total, onProgress)
+      done += encFile.mb
+      onProgress?.({ ratio: done / total, file: encFile.file })
+      await this.prepareOrDiagnose('mfr-encoder', encFile, encBuf)
+    }
+
+    {
+      const decBuf = decBufFallback ?? await this.fetchFile(decFile, total, total)
+      await this.prepareOrDiagnose('mfr-decoder', decFile, decBuf)
+    }
     this.tokenizer = tokenizer
   }
 

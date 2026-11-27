@@ -3,7 +3,7 @@ import { Inbox, Check, Plus, Trash2 } from 'lucide-react'
 import type { Task, Tier } from '@/db/db'
 import { useTasksUi } from '@/stores/tasks'
 import { useUi } from '@/stores/ui'
-import { deleteTaskWithUndo, toggleTaskWithUndo } from './taskActions'
+import { checkInWithUndo, deleteTaskWithUndo, toggleTaskWithUndo } from './taskActions'
 import { TaskItem } from './TaskItem'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Button } from '@/shared/ui/Button'
@@ -193,7 +193,7 @@ export function TaskList({ tasks, tier = 'today', emptyTitle, emptyHint, scope, 
     >
       {orderedTasks.map((t) => (
         <DragSortItem key={t.id} id={t.id} as="li" tabIndex={-1} label={`排序：${t.title}`}>
-          <SwipeRow onComplete={() => void toggleTaskWithUndo(t)} onDelete={(source, offsetX) => void removeTask(t, source, offsetX)} disabled={t.status === 'done' || isFutureTask(t)}>
+          <SwipeRow onComplete={() => void ((t.repeat || (t.repeatCount ?? 1) > 1) ? checkInWithUndo(t) : toggleTaskWithUndo(t))} onDelete={(source, offsetX) => void removeTask(t, source, offsetX)} disabled={t.status === 'done' || isFutureTask(t)}>
             <TaskItem task={t} tabIndex={tabStop === t.id ? 0 : -1} focused={focusId === t.id} flip />
           </SwipeRow>
         </DragSortItem>
@@ -278,8 +278,15 @@ function SwipeRow({ children, onComplete, onDelete, disabled }: {
       // 越过阈值就原地碎沙：卡片已被手势推开了 dx，交给动画时补回去
       const shifted = rawX > 0 ? Math.min(rawX * 0.9, 104) : Math.max(rawX * 0.9, -104)
       onDelete(contentRef.current, -shifted)
+      setDx(0)
       return
     }
+    setDx(0)
+  }
+  const onCancel = () => {
+    start.current.active = false
+    moved.current = false
+    setDragging(false)
     setDx(0)
   }
 
@@ -310,7 +317,7 @@ function SwipeRow({ children, onComplete, onDelete, disabled }: {
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
-        onPointerCancel={onUp}
+        onPointerCancel={onCancel}
         onClickCapture={(e) => {
           // 刚滑完就吞掉紧随其后的 click，避免误开详情
           if (moved.current) {

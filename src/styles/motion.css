@@ -1,0 +1,317 @@
+/* ============================================================
+   动效层（docs/动效方案.md）：只用 transform / opacity，
+   时长取 --dur-* 令牌；减弱动效统一收口并保留功能性计时条。
+   ============================================================ */
+
+@keyframes fade-out-down {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes nav-pop {
+  0% { transform: scale(0.96); }
+  55% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+@keyframes pop {
+  0% { transform: scale(1); }
+  55% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+@keyframes ai-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* 果冻开关：滑块位移走 transform（不再动 left，避免重排），挤压单独占一层 */
+@keyframes knob-squash {
+  0% { transform: scale(1, 1); }
+  32% { transform: scale(1.08, 0.95); }
+  64% { transform: scale(0.98, 1.02); }
+  100% { transform: scale(1, 1); }
+}
+.knob-slide { transition: transform var(--dur-3) var(--ease-spring); }
+.knob-squash { animation: knob-squash var(--dur-3) var(--ease-standard); }
+
+/* 任务完成反馈 */
+@keyframes done-halo {
+  0% { transform: scale(0.72); opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.done-halo {
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--ok);
+  animation: done-halo 320ms var(--ease-standard) forwards;
+}
+
+/* 长按确认走满后的轻震 */
+@keyframes nudge {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  45% { transform: translateX(3px); }
+  70% { transform: translateX(-2px); }
+}
+.nudge { animation: nudge 260ms var(--ease-standard); }
+
+/* 提交按钮三段变化：标签淡出 / 状态图标淡入，宽度不变（避免逐帧改 width） */
+@keyframes draw-check {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+.draw-check { stroke-dasharray: 24; animation: draw-check 320ms var(--ease-emph) forwards; }
+
+/* 删除塌缩：卡片先被挤一下再消失，兄弟随后 FLIP 补位 */
+@keyframes collapse-out {
+  0% { transform: scale(1); opacity: 1; }
+  35% { transform: scaleX(0.97) scaleY(0.99); opacity: 0.9; }
+  100% { transform: scaleX(0.9) scaleY(0.7); opacity: 0; }
+}
+.collapse-out { transform-origin: left center; animation: collapse-out var(--dur-2) var(--ease-standard) forwards; }
+
+/* 主题切换交叉淡入（View Transitions 可用时）：macOS 气质，不做 Android 式圆形扩散 */
+::view-transition-old(root) { animation: vt-fade-out 240ms var(--ease-standard) both; }
+::view-transition-new(root) { animation: vt-fade-in 240ms var(--ease-standard) both; }
+@keyframes vt-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }
+
+/* 撒花粒子层：全页一张 canvas，永远不接鼠标事件 */
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* 完成勾选描边动画 */
+.check-path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  transition: stroke-dashoffset var(--dur-1) var(--ease-standard);
+}
+.check-path.on { stroke-dashoffset: 0; }
+
+/* 页面入场：300ms / 12px 上移淡入（MD3 medium2） */
+.enter { animation: fade-up var(--dur-2) var(--ease-standard) backwards; }
+
+@keyframes menu-item-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+[role='menu'] > * { animation: menu-item-in 180ms var(--ease-standard) both; }
+[role='menu'] > *:nth-child(2) { animation-delay: 24ms; }
+[role='menu'] > *:nth-child(3) { animation-delay: 48ms; }
+[role='menu'] > *:nth-child(4) { animation-delay: 72ms; }
+[role='menu'] > *:nth-child(5) { animation-delay: 96ms; }
+[role='menu'] > *:nth-child(6) { animation-delay: 120ms; }
+
+.nav-badge-num {
+  display: block;
+  animation: badge-flip var(--dur-2) var(--ease-standard) both;
+}
+@keyframes badge-flip {
+  0% { opacity: 0; transform: translateY(70%); }
+  60% { opacity: 1; transform: translateY(-8%); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes badge-out {
+  to { opacity: 0; transform: scale(0.4); }
+}
+.nav-badge.nav-badge-out { animation: badge-out var(--dur-2) var(--ease-standard) forwards; }
+
+/* 同层内容最多错峰 105ms，避免等待整屏逐项播放。 */
+.cascade > * { animation: fade-up var(--dur-2) var(--ease-standard) backwards; }
+.cascade > *:nth-child(1) { animation-delay: 0ms; }
+.cascade > *:nth-child(2) { animation-delay: 15ms; }
+.cascade > *:nth-child(3) { animation-delay: 30ms; }
+.cascade > *:nth-child(4) { animation-delay: 45ms; }
+.cascade > *:nth-child(5) { animation-delay: 60ms; }
+.cascade > *:nth-child(6) { animation-delay: 75ms; }
+.cascade > *:nth-child(7) { animation-delay: 90ms; }
+.cascade > *:nth-child(n+8) { animation-delay: 105ms; }
+
+/* 空状态：图标先轻轻浮起，标题、说明、入口依次到位 */
+.empty-state > * { animation: fade-up 320ms var(--ease-standard) both; }
+.empty-state > *:nth-child(2) { animation-delay: 40ms; }
+.empty-state > *:nth-child(3) { animation-delay: 80ms; }
+.empty-state > *:nth-child(4) { animation-delay: 120ms; }
+.empty-icon { animation: empty-icon-in 420ms var(--ease-soft-spring) both; }
+@keyframes empty-icon-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.82); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 计时迷你条从底栏上方升起 */
+.mini-bar-in { animation: mini-bar-rise 320ms var(--ease-soft-spring) both; }
+@keyframes mini-bar-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 重访同一视图时不再重放入场（由 AppShell 挂 .enter-once） */
+.enter-once .enter,
+.enter-once .cascade > *,
+.enter-once .empty-state > * { animation: none; }
+
+/* P2 番茄钟呼吸光晕：运行中极缓呼吸，暂停即停（同屏只保留一个循环动画） */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50% { transform: scale(1.06); opacity: 0.9; }
+}
+.focus-breathe {
+  animation: breathe 4s var(--ease-standard) infinite;
+  transform-origin: center;
+}
+
+/* P1 看板拖拽落位回弹：落位用弹簧，不再是硬贴 */
+@keyframes drop-settle {
+  0% { transform: scale(1.03); }
+  55% { transform: scale(0.99); }
+  100% { transform: scale(1); }
+}
+.drop-settle { animation: drop-settle var(--dur-3) var(--ease-spring); }
+
+/* P1 列表滑动完成/删除：底色由 transform 驱动，滑出过程零重排 */
+.swipe-row { position: relative; overflow: hidden; touch-action: pan-y; }
+.swipe-row > .swipe-underlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+.swipe-row > .swipe-content {
+  position: relative;
+  z-index: 1;
+  background: var(--surface-2);
+  will-change: transform;
+}
+
+/* P2 里程碑撒花：仅「今日全部完成」这类真实成就触发，日常单任务不撒 */
+@keyframes confetti-fly {
+  0% { transform: translate(0, 0) rotate(0) scale(0.5); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(1); opacity: 0; }
+}
+.milestone-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  animation: confetti-fly var(--dur-4) var(--ease-standard) forwards;
+}
+
+/* ---------------- 骨架屏扫光（ui-motion 15） ---------------- */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-3);
+  border-radius: 8px;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--surface) 72%, transparent) 45%,
+    color-mix(in srgb, var(--surface) 72%, transparent) 55%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.2s var(--ease-standard) infinite;
+}
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+
+/* ---------------- 任务详情：桌面右侧抽屉 ---------------- */
+@keyframes drawer-in {
+  from { transform: translateX(28px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ---------------- 聚光灯引导（ui-motion 61） ---------------- */
+.spot-ring {
+  box-shadow: 0 0 0 3px var(--primary), 0 0 0 9999px color-mix(in srgb, #000 55%, transparent);
+  border-radius: 14px;
+  transition: all var(--dur-3) var(--ease-standard);
+}
+
+/* 引导目标的脉冲圈：把视线拉到高亮的控件上（减弱动效时直接不出现） */
+.spot-pulse {
+  border-radius: 14px;
+  border: 2px solid var(--primary);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .spot-pulse {
+    animation: spot-pulse 1.8s var(--ease-standard) infinite;
+  }
+}
+@keyframes spot-pulse {
+  0% { transform: scale(1); opacity: 0.55; }
+  70% { transform: scale(1.12); opacity: 0; }
+  100% { transform: scale(1.12); opacity: 0; }
+}
+
+@keyframes stats-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.stats-view-transition { animation: stats-view-in 220ms ease-out backwards; }
+
+/* 系统减弱动态效果：统一收口，排除 .toast-countdown 功能性倒计时条 */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: 0.01ms; --dur-2: 0.01ms; --dur-3: 0.01ms; --dur-4: 0.01ms; --stagger: 0ms; }
+  *:not(.toast-countdown), *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin { animation: none !important; }
+  .skeleton::after { animation: none; content: none; }
+  .stats-view-transition { animation: none; }
+  /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
+  .done-halo, .confetti-layer, .sand-layer, .sand-clone, ::view-transition-new(root) { display: none !important; animation: none !important; }
+  .focus-breathe, .drop-settle { animation: none !important; }
+  .milestone-dot { display: none !important; }
+}
+
+/* 应用内动效总开关（设置页可关，独立于系统 prefers-reduced-motion） */
+.no-motion { --dur-1: 0.01ms; --dur-2: 0.01ms; --dur-3: 0.01ms; --dur-4: 0.01ms; --stagger: 0ms; }
+.no-motion *:not(.toast-countdown), .no-motion *::before, .no-motion *::after {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+.no-motion .animate-spin { animation: none !important; }
+.no-motion .skeleton::after { animation: none; content: none; }
+.no-motion .focus-breathe, .no-motion .done-halo, .no-motion .milestone-dot,
+.no-motion .confetti-layer, .no-motion .sand-layer, .no-motion .sand-clone {
+  animation: none !important;
+  display: none !important;
+}

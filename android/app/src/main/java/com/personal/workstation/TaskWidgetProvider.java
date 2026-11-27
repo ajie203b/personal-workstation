@@ -100,7 +100,7 @@ public class TaskWidgetProvider extends AppWidgetProvider {
             JSONObject snapshot = TaskWidgetStore.take(context);
             String raw = snapshot.optString("payload", "");
             JSONArray saved = raw.isEmpty() ? new JSONArray() : new JSONObject(raw).optJSONArray("tasks");
-            JSONArray after = mergePending(snapshot, saved == null ? new JSONArray() : saved, null);
+            JSONArray after = mergePending(snapshot, saved == null ? new JSONArray() : saved, null, null);
             return after.length();
         } catch (JSONException ignored) {
             return -1;
@@ -178,9 +178,9 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         }
 
         try {
-            tasks = mergePending(snapshot, saved == null ? new JSONArray() : saved, completingSnapshot);
-            JSONArray pendingChecks = snapshot.optJSONArray("checks");
-            if (pendingChecks != null) doneCount += pendingChecks.length();
+            int[] completedDelta = new int[] {0};
+            tasks = mergePending(snapshot, saved == null ? new JSONArray() : saved, completingSnapshot, completedDelta);
+            doneCount += completedDelta[0];
         } catch (JSONException e) {
             hint = "打开应用以重新同步";
         }
@@ -337,7 +337,8 @@ public class TaskWidgetProvider extends AppWidgetProvider {
     private static JSONArray mergePending(
         JSONObject snapshot,
         JSONArray payloadTasks,
-        Set<String> completingIds
+        Set<String> completingIds,
+        int[] completedDelta
     ) throws JSONException {
         JSONArray pendingAdds = snapshot.optJSONArray("adds");
         JSONArray pendingChecks = snapshot.optJSONArray("checks");
@@ -392,8 +393,10 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                     if (flashing) task.put("checkedFlash", true);
                 } else if (flashing) {
                     task.put("completing", true);
+                    if (completedDelta != null) completedDelta[0]++;
                 } else {
                     merged.remove(index);
+                    if (completedDelta != null) completedDelta[0]++;
                 }
             }
         }

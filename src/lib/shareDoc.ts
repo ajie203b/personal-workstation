@@ -1,12 +1,7 @@
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
 import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from './native'
-import { blobToBase64, saveBlob } from './saveFile'
-
-interface SharePlugin {
-  shareFile(options: { fileName: string; dataBase64: string; mimeType: string; title: string }): Promise<void>
-}
-const FileExport = registerPlugin<SharePlugin>('FileExport')
+import { blobToBase64, FileExport, saveBlob } from './saveFile'
 
 function safeName(title: string): string {
   return (title.trim() || '文档').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)

@@ -683,7 +683,11 @@ pub async fn archive_download_save_local(app: AppHandle, window: Window, id: Str
 pub async fn archive_open_downloads_dir(app: AppHandle) -> Result<(), String> {
     let dir = local_downloads_dir(&app)?;
     #[cfg(target_os = "windows")]
-    let status = Command::new("explorer").arg(&dir).spawn();
+    let status = {
+        let raw = dir.to_string_lossy();
+        let target = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
+        Command::new("explorer").arg(target).spawn()
+    };
     #[cfg(target_os = "macos")]
     let status = Command::new("open").arg(&dir).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]

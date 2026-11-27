@@ -395,17 +395,16 @@ function parseHtmlBody(body: Element, warnings: string[]): { blocks: Block[]; ti
         first = false
       } else if (tag === 'p') {
         const text = elementText(node)
-        // Word 报告常见：第一个短段落是题目，后面才是各级标题。只吃第一段，不把
-        // 一级章节标题误当题目（Word 源稿不一定用 Title 样式）。
-        if (first && !sawHeading && text && text.length <= 100) {
+        const hLevel = /^[一二三四五六七八九十]+、/.test(text) || /^第[一二三四五六七八九十\d]+[章节部分]/.test(text) ? 1
+          : /^\d+\.\d+\.\d+\s/.test(text) ? 3
+            : /^\d+\.\d+\s/.test(text) ? 2 : 0
+        // Word 报告常见：第一个短段落是题目，后面才是各级标题。若第一段本身就是章节标题，不吞作题目。
+        if (first && !sawHeading && !hLevel && text && text.length <= 100) {
           title = text
           first = false
           continue
         }
         first = false
-        const hLevel = /^[一二三四五六七八九十]+、/.test(text) ? 1
-          : /^\d+\.\d+\.\d+\s/.test(text) ? 3
-            : /^\d+\.\d+\s/.test(text) ? 2 : 0
         if (hLevel && text.length <= 80) {
           blocks.push({ type: 'heading', level: hLevel as 1 | 2 | 3, text })
           sawHeading = true

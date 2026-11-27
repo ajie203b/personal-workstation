@@ -86,11 +86,24 @@ export async function extractPages(bytes: Uint8Array, pages: number[]): Promise<
   return out.save()
 }
 
-/** 按分段拆成多个 PDF：groups[i] = 第 i 份输出包含的页码（1 起） */
+/** 按分段拆成多个 PDF：groups[i] = 第 i 份输出包含的页码（1 起），只解析源 PDF 一次 */
 export async function splitByGroups(bytes: Uint8Array, groups: number[][]): Promise<Uint8Array[]> {
-  const out: Uint8Array[] = []
-  for (const g of groups) out.push(await extractPages(bytes, g))
-  return out
+  const src = await loadPdf(bytes)
+  const total = src.getPageCount()
+  const results: Uint8Array[] = []
+  for (const pages of groups) {
+    for (const p of pages) {
+      if (!Number.isInteger(p) || p < 1 || p > total) throw new Error(`页码 ${p} 超出范围：文档共 ${total} 页`)
+    }
+    const out = await PDFDocument.create()
+    const copied = await out.copyPages(src, pages.map((p) => p - 1))
+    for (const p of copied) {
+      out.addPage(p)
+      await tick()
+    }
+    results.push(await out.save())
+  }
+  return results
 }
 
 /** 删页 + 旋转一步到位（页码 1 起；rotate 为在原角度上追加的度数） */

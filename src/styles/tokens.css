@@ -1,0 +1,126 @@
+/* 主题颜色与动效令牌 */
+:root {
+  color-scheme: light;
+
+  --primary: #2563EB;
+  --on-primary: #FFFFFF;
+  --primary-soft: rgba(37, 99, 235, 0.10);
+  --primary-action: #2563EB;
+  --on-primary-action: #FFFFFF;
+  --primary-glow: rgba(37, 99, 235, 0.28);
+  --canvas: #F6F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #F3F5F8;
+  --surface-3: #E9EDF3;
+  --outline: rgba(15, 23, 42, 0.09);
+  --outline-strong: rgba(15, 23, 42, 0.28);
+  --ranking-paper: #FFFFFF;
+  --tool-badge-ok: #067452;
+  --on-surface: #111827;
+  --on-surface-2: #58657A;
+
+  /* 优先级四档：红 → 琥珀 → 钴蓝 → 柔灰 */
+  --p0: #E5484D;
+  --p1: #C27803;
+  --p2: #3B82F6;
+  --p3: #94A3B8;
+
+  /* 状态色 */
+  --ok: #10B981;
+  --danger: #DC2626;
+  --on-danger: #FFFFFF;
+
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-surface: rgba(255, 255, 255, 0.92);
+  --glass-rim: rgba(15, 23, 42, 0.08);
+  --glass-shadow: 0 8px 28px -12px rgba(15, 23, 42, 0.14), 0 2px 6px -2px rgba(15, 23, 42, 0.05);
+
+  /* 弹层阴影：柔和大范围空间悬浮阴影 */
+  --shadow-pop: 0 20px 60px -14px rgba(15, 23, 42, 0.18), 0 4px 16px -6px rgba(15, 23, 42, 0.08);
+
+  /* 动效时长（系统「减弱动态效果」时全部压平） */
+  --dur-1: 130ms;
+  --dur-2: 240ms;
+  --dur-3: 340ms;
+  --dur-4: 660ms;
+  --stagger: 32ms;
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --fs-2xs: 12px;
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-base: 15px;
+  --fs-lg: 17px;
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --ease-emph: cubic-bezier(.05, .7, .1, 1);
+  --ease-spring: cubic-bezier(.22, 1.08, .36, 1);
+  --ease-soft-spring: cubic-bezier(.22, 1.06, .36, 1);
+
+  --elev-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px -6px rgba(15, 23, 42, 0.05);
+  --elev-card-hover: 0 6px 20px -8px rgba(15, 23, 42, 0.10), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+  /* 玻璃模糊半径集中管理，便于低端设备与减弱透明度时收敛 */
+  --glass-blur: 20px;
+  --glass-sat: 1.6;
+}
+
+.dark {
+  color-scheme: dark;
+  --primary: #7CA7FF;
+  --on-primary: #09152B;
+  --primary-soft: rgba(124, 167, 255, 0.16);
+  --primary-action: #3B82F6;
+  --on-primary-action: #FFFFFF;
+  --primary-glow: rgba(59, 130, 246, 0.32);
+  --canvas: #12151C;
+  --surface: #1A1F2B;
+  --surface-2: #222836;
+  --surface-3: #2B3345;
+  --outline: rgba(226, 232, 240, 0.09);
+  --outline-strong: rgba(226, 232, 240, 0.32);
+  --tool-badge-ok: var(--ok);
+  --ranking-paper: #F8FAFC;
+  --on-surface: #F1F5FB;
+  --on-surface-2: #9AA8BF;
+
+  --p0: #F87171;
+  --p1: #FBBF24;
+  --p2: #60A5FA;
+  --p3: #94A3B8;
+
+  --ok: #34D399;
+  --danger: #F87171;
+  --on-danger: #2A0B0E;
+
+  --glass-bg: rgba(24, 29, 40, 0.82);
+  --glass-surface: rgba(26, 31, 43, 0.92);
+  --glass-rim: rgba(255, 255, 255, 0.09);
+  --glass-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.52), 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-pop: 0 20px 64px -12px rgba(0, 0, 0, 0.6), 0 6px 20px -6px rgba(0, 0, 0, 0.38);
+  --elev-card: 0 1px 3px rgba(0, 0, 0, 0.26), 0 6px 16px -8px rgba(0, 0, 0, 0.28);
+  --elev-card-hover: 0 10px 26px -10px rgba(0, 0, 0, 0.48), 0 3px 8px -3px rgba(0, 0, 0, 0.32);
+}
+
+/* 真实弹簧：支持 linear() 的浏览器用弹簧积分曲线替换固定 cubic-bezier。
+   旧浏览器自动忽略，回退到 :root 的 --ease-spring 近似值，行为一致。 */
+@supports (animation-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(0, .12 5%, .4 15%, .7 30%, .9 45%, 1 60%, 1.028 72%, 1.012 85%, 1);
+  }
+}
+
+/* 设置页强调色 */
+:root[data-accent='blue'] { --primary: #2563EB; --primary-action: #2563EB; --primary-soft: rgba(37, 99, 235, 0.10); --primary-glow: rgba(37, 99, 235, 0.28); }
+.dark[data-accent='blue'] { --primary: #7CA7FF; --primary-action: #3B82F6; --primary-soft: rgba(124, 167, 255, 0.16); --primary-glow: rgba(59, 130, 246, 0.38); }
+:root[data-accent='purple'] { --primary: #7C3AED; --primary-action: #7C3AED; --primary-soft: rgba(124, 58, 237, 0.10); --primary-glow: rgba(124, 58, 237, 0.28); }
+.dark[data-accent='purple'] { --primary: #C4A4FF; --primary-action: #8B5CF6; --primary-soft: rgba(196, 164, 255, 0.16); --primary-glow: rgba(139, 92, 246, 0.38); }
+:root[data-accent='pink'] { --primary: #DB2777; --primary-action: #DB2777; --primary-soft: rgba(219, 39, 119, 0.10); --primary-glow: rgba(219, 39, 119, 0.26); }
+.dark[data-accent='pink'] { --primary: #F472B6; --primary-action: #EC4899; --primary-soft: rgba(244, 114, 182, 0.16); --primary-glow: rgba(236, 72, 153, 0.36); }
+:root[data-accent='red'] { --primary: #E11D48; --primary-action: #E11D48; --primary-soft: rgba(225, 29, 72, 0.10); --primary-glow: rgba(225, 29, 72, 0.26); }
+.dark[data-accent='red'] { --primary: #FB7185; --primary-action: #F43F5E; --primary-soft: rgba(251, 113, 133, 0.16); --primary-glow: rgba(244, 63, 94, 0.36); }
+:root[data-accent='orange'] { --primary: #D97706; --primary-action: #D97706; --primary-soft: rgba(217, 119, 6, 0.11); --primary-glow: rgba(217, 119, 6, 0.26); }
+.dark[data-accent='orange'] { --primary: #FBBF24; --primary-action: #F59E0B; --primary-soft: rgba(251, 191, 36, 0.16); --primary-glow: rgba(245, 158, 11, 0.34); }
+:root[data-accent='green'] { --primary: #059669; --primary-action: #059669; --primary-soft: rgba(5, 150, 105, 0.10); --primary-glow: rgba(5, 150, 105, 0.26); }
+.dark[data-accent='green'] { --primary: #34D399; --primary-action: #10B981; --primary-soft: rgba(52, 211, 153, 0.16); --primary-glow: rgba(16, 185, 129, 0.34); }

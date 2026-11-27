@@ -77,6 +77,26 @@ export function noteTombstones(all: Tombstone[], relevantIds: Iterable<string>):
   return all.filter((t) => ids.has(t.id))
 }
 
+/** 忽略保存时间，对实际内容计算稳定 128-bit 指纹（供基线轻量化存储，较存整份笔迹减少 ~99% 占用）。 */
+export function noteContentFingerprint(note: PackedMathNote): string {
+  const { updatedAt: _ignored, ...content } = note
+  const str = JSON.stringify(content)
+  let h1 = 0x811c9dc5
+  let h2 = 0x01000193
+  let h3 = 0x9e3779b9
+  let h4 = 0x85ebca6b
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 0x01000193)
+    h2 = Math.imul(h2 ^ ((ch + i) & 0xffff), 0x85ebca6b)
+    h3 = Math.imul(h3 ^ (ch << 1), 0xc2b2ae35)
+    h4 = Math.imul(h4 ^ (ch ^ (i & 0xff)), 0x27d4eb2f)
+  }
+  return [h1, h2, h3, h4].map((n) => (n >>> 0).toString(16).padStart(8, '0')).join('')
+}
+
+export type MathNotesBaseline = Record<string, string | PackedMathNote>
+
 /** 忽略保存时间，仅比较实际内容，避免同内容重复生成冲突副本。 */
 function sameContent(a: PackedMathNote, b: PackedMathNote): boolean {
   const { updatedAt: _a, ...contentA } = a
@@ -84,7 +104,12 @@ function sameContent(a: PackedMathNote, b: PackedMathNote): boolean {
   return JSON.stringify(contentA) === JSON.stringify(contentB)
 }
 
-export function mergeMathNotes(local: MathNotesLocalState, remote: MathNotesSyncFile | null, baseline: Record<string, PackedMathNote> = {}): MathNotesMergeResult {
+function matchesBaseline(note: PackedMathNote, base: string | PackedMathNote): boolean {
+  if (typeof base === 'string') return noteContentFingerprint(note) === base
+  return sameContent(note, base)
+}
+
+export function mergeMathNotes(local: MathNotesLocalState, remote: MathNotesSyncFile | null, baseline: MathNotesBaseline = {}): MathNotesMergeResult {
   const localEpoch = local.epoch
   if (!remote) {
     return {
@@ -123,9 +148,9 @@ export function mergeMathNotes(local: MathNotesLocalState, remote: MathNotesSync
     const base = baseline[n.id]
     if (sameContent(cur, n)) {
       if (n.updatedAt > cur.updatedAt) map.set(n.id, n)
-    } else if (base && sameContent(n, base)) {
+    } else if (base && matchesBaseline(n, base)) {
       // 远端未改，本地更新。
-    } else if (base && sameContent(cur, base)) {
+    } else if (base && matchesBaseline(cur, base)) {
       map.set(n.id, n)
     } else {
       // 两边均有修改（或没有共同基线），不能依赖时钟丢弃任何一边。

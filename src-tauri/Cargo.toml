@@ -1,6 +1,6 @@
 [package]
 name = "kairos"
-version = "3.2.2"
+version = "4.1.8"
 description = "Kairos 桌面版"
 edition = "2021"
 

@@ -302,13 +302,19 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes
 }
 
+const formulaPngCache = new Map<string, BinaryImage>()
+
 /** 不支持的公式用 KaTeX 渲染成 PNG；行内公式收紧边距与字号，避免被行高裁切。 */
 export async function renderFormulaPng(latex: string, display: boolean): Promise<BinaryImage | null> {
   if (typeof document === 'undefined') return null
+  const cacheKey = `${display ? 'D' : 'I'}:${latex}`
+  const cached = formulaPngCache.get(cacheKey)
+  if (cached) return cached
+  let holder: HTMLDivElement | null = null
   try {
     const katex = (await import('katex')).default
     const { toPng } = await import('html-to-image')
-    const holder = document.createElement('div')
+    holder = document.createElement('div')
     // html-to-image 会克隆节点；节点在视口外时克隆内容会落到画布外，截出白图。
     // 放到原点、压到背景层下面，截图期间不可见，但克隆坐标有效。
     holder.style.cssText = display
@@ -320,9 +326,13 @@ export async function renderFormulaPng(latex: string, display: boolean): Promise
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     const rect = holder.getBoundingClientRect()
     const dataUrl = await toPng(holder, { pixelRatio: 3, backgroundColor: '#ffffff', cacheBust: true })
-    holder.remove()
-    return { data: dataUrlToBytes(dataUrl), type: 'png', width: Math.max(1, rect.width), height: Math.max(1, rect.height) }
+    const img: BinaryImage = { data: dataUrlToBytes(dataUrl), type: 'png', width: Math.max(1, rect.width), height: Math.max(1, rect.height) }
+    if (formulaPngCache.size >= 200) formulaPngCache.clear()
+    formulaPngCache.set(cacheKey, img)
+    return img
   } catch {
     return null
+  } finally {
+    holder?.remove()
   }
 }

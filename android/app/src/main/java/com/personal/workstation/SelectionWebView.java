@@ -39,17 +39,22 @@ public class SelectionWebView extends CapacitorWebView {
             return callback;
         }
         return new ActionMode.Callback() {
+            private boolean isEditableMenu(Menu menu) {
+                return menu.findItem(android.R.id.paste) != null || menu.findItem(android.R.id.cut) != null;
+            }
+
             @Override
             public boolean onCreateActionMode(ActionMode mode, Menu menu) {
                 boolean ok = callback.onCreateActionMode(mode, menu);
-                menu.clear();
+                // 输入框/批注评论/页内搜索等可编辑控件保留系统剪切粘贴菜单，仅清理只读正文的浮动菜单
+                if (!isEditableMenu(menu)) menu.clear();
                 return ok;
             }
 
             @Override
             public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
                 boolean changed = callback.onPrepareActionMode(mode, menu);
-                menu.clear();
+                if (!isEditableMenu(menu)) menu.clear();
                 return changed;
             }
 

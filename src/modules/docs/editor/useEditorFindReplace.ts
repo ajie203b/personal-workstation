@@ -118,18 +118,24 @@ export function useEditorFindReplace({
 
   const onReplaceCurrent = useCallback(() => {
     if (total === 0) return
+    const q = caseSensitive ? query : query.toLowerCase()
+    const r = caseSensitive ? replaceText : replaceText.toLowerCase()
+    // 替换文本包含搜索词时原地重扫仍会命中当前项，主动推进索引避免死循环
+    const selfMatch = Boolean(q) && r.includes(q)
     if (sourceMode) {
       const m = textMatches[safeActive]
       if (!m) return
       const next = sourceText.slice(0, m.start) + replaceText + sourceText.slice(m.end)
       onSourceChange(next)
+      if (selfMatch) setActive((i) => i + 1)
       return
     }
     if (!editor) return
     const m = docMatches[safeActive]
     if (!m) return
     replaceOneInEditor(editor, m, replaceText)
-  }, [total, sourceMode, textMatches, safeActive, sourceText, replaceText, onSourceChange, editor, docMatches])
+    if (selfMatch) setActive((i) => i + 1)
+  }, [total, caseSensitive, query, sourceMode, textMatches, safeActive, sourceText, replaceText, onSourceChange, editor, docMatches])
 
   const onReplaceAll = useCallback(() => {
     if (total === 0) return

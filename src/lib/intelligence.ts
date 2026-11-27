@@ -76,7 +76,7 @@ export function normalizeIntel(raw: unknown): IntelData | null {
     const score =
       num(m.score) ??
       num(ev.artificialanalysisintelligenceindex) ??
-      num(ev['artificialanalysisintelligenceindex']) ??
+      num(ev.artificial_analysis_intelligence_index) ??
       num(m.intelligence_index) ??
       num(m.intelligenceIndex)
     const base = typeof m.name === 'string' ? m.name : typeof m.slug === 'string' ? m.slug : typeof m.model === 'string' ? m.model : ''
@@ -93,6 +93,35 @@ export function normalizeIntel(raw: unknown): IntelData | null {
     source: typeof body.source === 'string' ? body.source : 'artificialanalysis.ai',
     indexVersion: typeof body.indexVersion === 'string' ? body.indexVersion : undefined,
     models: models.slice(0, MAX_MODELS),
+  }
+}
+
+/** 按模型名推断所属厂商（供排行榜交互列表筛选使用） */
+export function detectIntelVendor(name: string): string {
+  const s = name.trim()
+  if (/^claude(?:\b|[\d.-])/i.test(s)) return 'Anthropic'
+  if (/^(?:gpt|o[1-9](?:\b|-)|chatgpt)/i.test(s)) return 'OpenAI'
+  if (/^(?:gemini|gemma)(?:\b|[\d.-])/i.test(s)) return 'Google'
+  if (/^deepseek(?:\b|[\d.-])/i.test(s)) return 'DeepSeek'
+  if (/^(?:qwen|qwq)(?:\b|[\d.-])/i.test(s)) return 'Qwen'
+  if (/^grok(?:\b|[\d.-])/i.test(s)) return 'xAI'
+  if (/^llama(?:\b|[\d.-])/i.test(s)) return 'Meta'
+  if (/^(?:glm|chatglm)(?:\b|[\d.-])/i.test(s)) return 'Zhipu'
+  if (/^(?:kimi|moonshot)(?:\b|[\d.-])/i.test(s)) return 'Moonshot'
+  if (/^(?:minimax|abab)(?:\b|[\d.-])/i.test(s)) return 'MiniMax'
+  if (/^(?:mistral|mixtral|codestral|pixtral|magistral)(?:\b|[\d.-])/i.test(s)) return 'Mistral'
+  if (/^(?:nova|amazon)(?:\b|[\d.-])/i.test(s)) return 'Amazon'
+  return '其他'
+}
+
+/** 读取随应用打包的静态 intelligence.json 快照（离线兜底） */
+export async function loadBuiltinIntel(signal?: AbortSignal): Promise<IntelData | null> {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}intelligence.json`, { cache: 'no-cache', signal })
+    if (!res.ok) return null
+    return normalizeIntel(await res.json())
+  } catch {
+    return null
   }
 }
 

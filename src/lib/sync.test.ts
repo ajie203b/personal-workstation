@@ -17,7 +17,7 @@ vi.mock('@capacitor/local-notifications', () => ({
 }))
 
 const { db } = await import('@/db/db')
-const { getLastSyncAt, getLastSyncError, setWebdavConfig, syncNow } = await import('./sync')
+const { getLastSyncAt, getLastSyncError, maybeAutoSync, setWebdavConfig, syncNow } = await import('./sync')
 
 const BASE = 'https://dav.test/ws'
 const SYNC_URL = `${BASE}/sync.json`
@@ -483,4 +483,76 @@ it('插入的图像随手写笔记同步并恢复', async () => {
   await db.settings.delete('mathNotesSyncEpoch')
   await syncNow()
   expect((await db.mathNotes.get('graph-note'))?.graphs).toEqual(graphs)
+})
+
+describe('WebDAV 同步 2.0：附件策略、429/503 指数退避与紧凑手写基线', () => {
+  it('maxBlobMb=0 仅同步文档元数据，打开文档时通过 getDocBlob 按需从云端拉取并缓存', async () => {
+    const { getDocBlob } = await import('@/db/docs')
+    const dav = fakeDav()
+    vi.stubGlobal('fetch', dav.fetchImpl)
+
+    // 设备 A 完整上传文档 + 二进制附件
+    const payloadBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x0a, 0x42])
+    await db.docs.put({ id: 'doc-1', hash: 'hash-1', title: '手册.pdf', kind: 'pdf', size: payloadBytes.byteLength, addedAt: 1000 })
+    await db.blobs.put({ hash: 'hash-1', blob: new Blob([payloadBytes], { type: 'application/pdf' }) })
+    const rA = await syncNow()
+    expect(rA.blobsUp).toBe(1)
+
+    // 设备 B 仅同步元数据（maxBlobMb: 0）
+    await db.delete()
+    await db.open()
+    await setWebdavConfig({ url: BASE, username: 'u', password: 'p', auto: false, maxBlobMb: 0 })
+    const rB = await syncNow()
+    expect(rB.blobsDown).toBe(0)
+    expect(rB.blobsSkipped).toBe(1)
+    expect((await db.docs.get('doc-1'))?.title).toBe('手册.pdf')
+    expect(await db.blobs.get('hash-1')).toBeUndefined()
+
+    // 打开文档时按需拉取并回填本地缓存
+    const fetched = await getDocBlob('hash-1')
+    expect(fetched).toBeDefined()
+    expect(new Uint8Array(await fetched!.arrayBuffer())).toEqual(payloadBytes)
+    expect(await db.blobs.get('hash-1')).toBeDefined()
+  })
+
+  it('遇到 HTTP 503 限流时写入指数退避并暂停自动同步，手动恢复成功后清除退避', async () => {
+    await setWebdavConfig({ url: BASE, username: 'u', password: 'p', auto: true })
+    let calls = 0
+    vi.stubGlobal('fetch', async () => {
+      calls += 1
+      return new Response('rate limited', { status: 503 })
+    })
+
+    await expect(syncNow()).rejects.toThrow('HTTP 503')
+    const backoff = (await db.settings.get('lastSyncBackoff'))?.value as { failures: number; nextAt: number } | undefined
+    expect(backoff?.failures).toBe(1)
+    expect(backoff!.nextAt).toBeGreaterThan(Date.now())
+
+    const callsBeforeAuto = calls
+    await maybeAutoSync()
+    expect(calls).toBe(callsBeforeAuto)
+
+    // 恢复网络后手动同步成功，退避状态应被清空
+    const dav = fakeDav()
+    vi.stubGlobal('fetch', dav.fetchImpl)
+    await syncNow()
+    expect(await db.settings.get('lastSyncBackoff')).toBeUndefined()
+  })
+
+  it('手写计算同步基线以 32 字符 128-bit 指纹存储，不再整页冗余存笔迹', async () => {
+    const dav = fakeDav()
+    vi.stubGlobal('fetch', dav.fetchImpl)
+    await db.mathNotes.put({
+      id: 'fp-note',
+      title: '微积分',
+      createdAt: 1000,
+      updatedAt: 2000,
+      strokes: [{ id: 's1', width: 3, points: [{ x: 1, y: 2, p: 0.5, t: 10 }] }],
+      results: [],
+    })
+    await syncNow()
+    const baseline = (await db.settings.get('mathNotesSyncBaseline'))?.value as Record<string, unknown> | undefined
+    expect(typeof baseline?.['fp-note']).toBe('string')
+    expect((baseline?.['fp-note'] as string).length).toBe(32)
+  })
 })

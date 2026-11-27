@@ -115,7 +115,12 @@ export async function rasterizePdf(
       opts.signal?.throwIfAborted()
       const pageNo = pageNumbers[i]
       const page = await doc.getPage(pageNo)
-      const blob = await renderPageRaster(page, { dpi: opts.dpi, format: opts.format, quality: opts.quality, signal: opts.signal })
+      let blob: Blob
+      try {
+        blob = await renderPageRaster(page, { dpi: opts.dpi, format: opts.format, quality: opts.quality, signal: opts.signal })
+      } finally {
+        page.cleanup()
+      }
       out.push({ name: `${opts.baseName}-p${pageNo}.${ext}`, blob })
       opts.onProgress?.(i + 1, total)
       await new Promise((r) => setTimeout(r, 0))

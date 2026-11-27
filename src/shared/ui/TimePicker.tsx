@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Clock3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { todayStr } from '@/lib/date'
@@ -25,9 +26,23 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
   const [open, setOpen] = useState(false)
   const [hour, setHour] = useState('09')
   const [minute, setMinute] = useState('00')
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 767px)').matches
+      : false,
+  )
   const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia('(max-width: 767px)')
+    const sync = () => setIsMobile(mq.matches)
+    sync()
+    mq.addEventListener?.('change', sync)
+    return () => mq.removeEventListener?.('change', sync)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -42,7 +57,8 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
     let moved = false
     let tracking = false
     const onDown = (e: PointerEvent) => {
-      if (rootRef.current?.contains(e.target as Node)) return
+      const target = e.target as Node
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return
       startX = e.clientX
       startY = e.clientY
       moved = false
@@ -101,6 +117,12 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
   const commit = (next?: string) => {
     onChange(next)
     setOpen(false)
+    triggerRef.current?.focus({ preventScroll: true })
+  }
+
+  const commitNow = () => {
+    const now = new Date()
+    commit(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
   }
 
   // 旧数据可能带 07 分这种非 5 的倍数，补进分钟网格，别让当前值找不到落点
@@ -110,8 +132,110 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
     return list.sort()
   }, [minute])
 
-  const now = new Date()
-  const nowValue = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  const panelNode = (
+    <>
+      <div
+        aria-hidden
+        className="fixed inset-0 z-[70] bg-black/25 pointer-events-none md:hidden"
+      />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-label="选择时间"
+        // 手机端通过 Portal 浮到视口底部（逃离弹窗 transform 裁切），桌面端就地展开
+        className={cn(
+          'time-panel rounded-[10px] border border-outline bg-surface-2 p-2.5 overflow-y-auto overscroll-contain',
+          'fixed left-1/2 -translate-x-1/2 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-[80] w-[min(380px,92vw)] max-h-[72dvh]',
+          'md:static md:z-auto md:w-auto md:max-h-[min(62vh,440px)] md:translate-x-0 md:bottom-auto',
+        )}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[12px] font-semibold text-on-surface-2">选择时间</span>
+          <span className="text-[13px] font-semibold text-primary tabular-nums">{hour}:{minute}</span>
+        </div>
+
+        <div className="flex flex-wrap gap-1 mb-2.5">
+          {PRESETS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => commit(p)}
+              className={cn(
+                'h-7 px-2.5 rounded-full text-[11.5px] tabular-nums transition-colors cursor-pointer',
+                value === p ? 'bg-primary text-on-primary' : 'bg-surface-3/70 text-on-surface-2 hover:text-on-surface',
+              )}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-[11px] text-on-surface-2 mb-1">小时</p>
+        <div className="grid grid-cols-6 gap-1">
+          {HOURS.map((h) => (
+            <button
+              key={h}
+              type="button"
+              aria-pressed={hour === h}
+              onClick={() => setHour(h)}
+              className={cn(
+                'h-7 rounded-[7px] text-[11.5px] tabular-nums transition-colors cursor-pointer',
+                hour === h ? 'bg-primary text-on-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+              )}
+            >
+              {h}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-[11px] text-on-surface-2 mb-1 mt-2">分钟</p>
+        <div className="grid grid-cols-6 gap-1">
+          {minutes.map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={minute === m}
+              onClick={() => setMinute(m)}
+              className={cn(
+                'h-7 rounded-[7px] text-[11.5px] tabular-nums transition-colors cursor-pointer',
+                minute === m ? 'bg-primary text-on-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+
+        {/* 操作条钉在面板底部：面板可滚动时（手机上尤其需要），
+            「清除 / 现在 / 完成」始终留在视线里，不用滑到最底才找得到 */}
+        <div className="sticky bottom-0 -mx-2.5 -mb-2.5 mt-2.5 flex items-center gap-1.5 px-2.5 py-2 border-t border-outline/60 bg-surface-2 rounded-b-[10px]">
+          {allowClear && (
+            <button
+              type="button"
+              onClick={() => commit(undefined)}
+              className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer whitespace-nowrap"
+            >
+              清除
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={commitNow}
+            className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer whitespace-nowrap"
+          >
+            现在
+          </button>
+          <button
+            type="button"
+            onClick={() => commit(`${hour}:${minute}`)}
+            className="ml-auto h-8 px-3 rounded-[8px] bg-primary text-on-primary text-[12px] font-medium inline-flex items-center gap-1 cursor-pointer active:scale-[0.97] transition-transform whitespace-nowrap"
+          >
+            <Check size={13} /> 完成
+          </button>
+        </div>
+      </div>
+    </>
+  )
 
   return (
     <div ref={rootRef} className={cn('flex flex-col gap-1.5', className)}>
@@ -130,113 +254,7 @@ export function TimePicker({ value, onChange, placeholder = '选择时间', clas
         <ChevronDown size={14} className={cn('text-on-surface-2 shrink-0 transition-transform duration-150', open && 'rotate-180')} />
       </button>
 
-      {open && (
-        <>
-          {/* 手机端轻遮罩：只压暗背景提示「这是浮层」，不拦截触摸。
-              真正关闭靠「面板外轻点」（上面 pointer 逻辑：位移小于 8px 才算点击，
-              滑动页面不会误退出）——滑到面板外面就把时间选择器关掉，是最烦人的那种行为 */}
-          <div
-            aria-hidden
-            className="fixed inset-0 z-40 bg-black/25 pointer-events-none md:hidden"
-          />
-          <div
-            ref={panelRef}
-            role="dialog"
-            aria-label="选择时间"
-            // 手机端浮到底部（宽度够放 6 列分钟），桌面端仍然就地展开，不遮挡内容
-            className={cn(
-              'time-panel rounded-[10px] border border-outline bg-surface-2 p-2.5 overflow-y-auto overscroll-contain',
-              'fixed left-1/2 -translate-x-1/2 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 w-[min(380px,92vw)] max-h-[72dvh]',
-              'md:static md:z-auto md:w-auto md:max-h-[min(62vh,440px)] md:translate-x-0 md:bottom-auto',
-            )}
-          >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] font-semibold text-on-surface-2">选择时间</span>
-            <span className="text-[13px] font-semibold text-primary tabular-nums">{hour}:{minute}</span>
-          </div>
-
-          <div className="flex flex-wrap gap-1 mb-2.5">
-            {PRESETS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => commit(p)}
-                className={cn(
-                  'h-7 px-2.5 rounded-full text-[11.5px] tabular-nums transition-colors cursor-pointer',
-                  value === p ? 'bg-primary text-on-primary' : 'bg-surface-3/70 text-on-surface-2 hover:text-on-surface',
-                )}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-[11px] text-on-surface-2 mb-1">小时</p>
-          <div className="grid grid-cols-6 gap-1">
-            {HOURS.map((h) => (
-              <button
-                key={h}
-                type="button"
-                aria-pressed={hour === h}
-                onClick={() => setHour(h)}
-                className={cn(
-                  'h-7 rounded-[7px] text-[11.5px] tabular-nums transition-colors cursor-pointer',
-                  hour === h ? 'bg-primary text-on-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
-                )}
-              >
-                {h}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-[11px] text-on-surface-2 mb-1 mt-2">分钟</p>
-          <div className="grid grid-cols-6 gap-1">
-            {minutes.map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={minute === m}
-                onClick={() => setMinute(m)}
-                className={cn(
-                  'h-7 rounded-[7px] text-[11.5px] tabular-nums transition-colors cursor-pointer',
-                  minute === m ? 'bg-primary text-on-primary font-medium' : 'text-on-surface-2 hover:bg-surface-3 hover:text-on-surface',
-                )}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-
-          {/* 操作条钉在面板底部：面板可滚动时（手机上尤其需要），
-              「清除 / 现在 / 完成」始终留在视线里，不用滑到最底才找得到 */}
-          <div className="sticky bottom-0 -mx-2.5 -mb-2.5 mt-2.5 flex items-center gap-1.5 px-2.5 py-2 border-t border-outline/60 bg-surface-2 rounded-b-[10px]">
-            {allowClear && (
-              <button
-                type="button"
-                onClick={() => commit(undefined)}
-                className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer whitespace-nowrap"
-              >
-                清除
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => commit(nowValue)}
-              className="h-8 px-2.5 rounded-[8px] text-[12px] text-on-surface-2 hover:bg-surface-3 cursor-pointer whitespace-nowrap"
-            >
-              现在
-            </button>
-            <button
-              type="button"
-              onClick={() => commit(`${hour}:${minute}`)}
-              className="ml-auto h-8 px-3 rounded-[8px] bg-primary text-on-primary text-[12px] font-medium inline-flex items-center gap-1 cursor-pointer active:scale-[0.97] transition-transform whitespace-nowrap"
-            >
-              <Check size={13} /> 完成
-            </button>
-          </div>
-          </div>
-        </>
-      )}
+      {open && (isMobile && typeof document !== 'undefined' ? createPortal(panelNode, document.body) : panelNode)}
     </div>
   )
 }
