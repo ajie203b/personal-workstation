@@ -1,1 +1,0 @@
-import{j as s,e as r}from"./index-BoPf4mq4.js";function t({icon:i,size:e="md",className:n}){const o=e==="lg"?40:36;return s.jsx("span",{"aria-hidden":!0,className:r("tool-icon-tile grid shrink-0 place-items-center overflow-hidden",e==="lg"?"size-10 rounded-[10px]":"size-9 rounded-[9px]",n),children:s.jsx(i,{size:o,className:"size-full"})})}export{t as T};
