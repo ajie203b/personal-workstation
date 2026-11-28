@@ -8,15 +8,18 @@ import { readDocumentText } from '@/lib/readDocumentText'
 import { useDocumentPrintTitle } from '@/lib/printDocument'
 
 const nativePreview = registerPlugin<{ open(options: { html: string; title: string }): Promise<void> }>('HtmlPreview')
-const policy = "default-src 'none'; script-src 'unsafe-inline' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; navigate-to 'none'"
+const policy = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' data: blob:; style-src 'unsafe-inline' data: blob:; img-src data: blob:; media-src data: blob:; font-src data: blob:; connect-src 'none'; form-action 'none'"
 
-function buildPreviewHtml(source: string, android: boolean): string {
+export function buildPreviewHtml(source: string, android: boolean): string {
   // 去掉可触发 iframe 自导航逃逸沙箱的 meta refresh，并避免重复拼接 <!doctype html>
   const stripped = source.replace(/<meta\b[^>]*http-equiv\s*=\s*(?:"refresh"|'refresh'|refresh)[^>]*>/gi, '')
   const base = android ? '' : '<base href="about:srcdoc" target="_self">'
   const headInject = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy}; base-uri ${android ? "'none'" : 'about:'}">${base}<meta name="viewport" content="width=device-width, initial-scale=1">`
-  if (/<head\b[^>]*>/i.test(stripped)) {
-    return stripped.replace(/<head\b[^>]*>/i, (m) => `${m}${headInject}`)
+  const headMatch = /<head\b[^>]*>/i.exec(stripped)
+  const bodyIdx = stripped.search(/<(?:body|script)\b/i)
+  if (headMatch && (bodyIdx === -1 || headMatch.index < bodyIdx)) {
+    const end = headMatch.index + headMatch[0].length
+    return `${stripped.slice(0, end)}${headInject}${stripped.slice(end)}`
   }
   if (/^\s*<!doctype\b[^>]*>/i.test(stripped)) {
     return stripped.replace(/^\s*<!doctype\b[^>]*>/i, (m) => `${m}${headInject}`)

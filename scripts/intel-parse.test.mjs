@@ -42,17 +42,18 @@ test('名字里的 Default Fallback 被去掉，推理档位拼在后面', () =>
   assert.equal(already[0].name, 'M (high)')
 })
 
-test('同名模型加厂家区分，最多保留 30 条', () => {
+test('同名模型加厂家区分，保留 creator 且最多保留 200 条', () => {
   const dup = collect([
     { name: 'Same', score: 9, model_creator: { name: 'A厂' } },
     { name: 'Same', score: 8, model_creator: { name: 'B厂' } },
     { name: 'Other', score: 7 },
   ])
   assert.deepEqual(dup.map((m) => m.name), ['Same · A厂', 'Same · B厂', 'Other'])
+  assert.equal(dup[0].creator, 'A厂')
 
-  const many = Array.from({ length: 50 }, (_, i) => ({ name: `M${i}`, score: 100 - i }))
-  assert.equal(collect(many).length, 30)
-  assert.equal(collect(many)[0].score, 100)
+  const many = Array.from({ length: 240 }, (_, i) => ({ name: `M${i}`, score: 300 - i }))
+  assert.equal(collect(many).length, 200)
+  assert.equal(collect(many)[0].score, 300)
 })
 
 test('无效条目被跳过（没有分数 / 没有名字 / 非对象）', () => {

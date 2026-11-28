@@ -22,7 +22,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost https://asset.localhost asset:; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' data:; img-src 'self' data: blob: asset: https://asset.localhost http: https:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob: about:; frame-src 'self' blob: about:; object-src 'none'; base-uri 'self'; connect-src 'self' ipc: http://ipc.localhost https://asset.localhost asset: blob: data: https: http://127.0.0.1:* http://localhost:*"
+      "csp": "default-src 'self' ipc: http://ipc.localhost https://asset.localhost asset:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data:; style-src 'self' 'unsafe-inline' data: blob:; img-src 'self' data: blob: asset: https://asset.localhost http: https:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob: about: data:; frame-src 'self' blob: about: data:; object-src 'none'; base-uri 'self' about:; connect-src 'self' ipc: http://ipc.localhost https://asset.localhost asset: blob: data: https: http://127.0.0.1:* http://localhost:*",
+      "dangerousDisableAssetCspModification": ["script-src", "style-src"]
     }
   },
   "bundle": {

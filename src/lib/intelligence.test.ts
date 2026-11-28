@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectIntelVendor, normalizeIntel } from './intelligence'
+import { detectIntelVendor, filterHighestThinkingModels, normalizeIntel, parseModelThinkingVariant } from './intelligence'
 import { INTEL_CHART_META_URLS, INTEL_CHART_URLS, INTEL_JSON_URLS } from './intelSources'
 
 describe('normalizeIntel', () => {
@@ -62,24 +62,70 @@ describe('normalizeIntel', () => {
     expect(normalizeIntel(null)).toBeNull()
   })
 
-  it('最多保留 30 个', () => {
-    const models = Array.from({ length: 50 }, (_, i) => ({ name: `M${i}`, score: 100 - i }))
-    expect(normalizeIntel({ models })?.models).toHaveLength(30)
+  it('最多保留 200 个并透传 creator', () => {
+    const models = Array.from({ length: 240 }, (_, i) => ({
+      name: `M${i}`,
+      score: 300 - i,
+      creator: i === 0 ? 'DeepSeek' : undefined,
+    }))
+    const normalized = normalizeIntel({ models })
+    expect(normalized?.models).toHaveLength(200)
+    expect(normalized?.models[0].creator).toBe('DeepSeek')
+  })
+})
+
+describe('filterHighestThinkingModels & parseModelThinkingVariant', () => {
+  it('每个基础模型仅保留最高思考档位并保留非思考档位版本括号', () => {
+    expect(parseModelThinkingVariant('DeepSeek R1 (0528)')).toEqual({
+      baseName: 'DeepSeek R1 (0528)',
+      effortRank: 5,
+    })
+    expect(parseModelThinkingVariant('Claude Fable 5.2 (Max)')).toEqual({
+      baseName: 'Claude Fable 5.2',
+      effortRank: 70,
+    })
+
+    const filtered = filterHighestThinkingModels([
+      { name: 'Claude Fable 5.2 (Max)', score: 64.8 },
+      { name: 'Claude Fable 5.2 (Xhigh)', score: 62.2 },
+      { name: 'Claude Fable 5.2 (High)', score: 61.9 },
+      { name: 'Gemini 4 Neon (Xhigh)', score: 61.5 },
+      { name: 'Gemini 4 Neon (Medium)', score: 54.9 },
+      { name: 'Kimi K3.1 Pro', score: 47.0 },
+      { name: 'DeepSeek R1 (0528)', score: 41.2 },
+      { name: 'DeepSeek V3.2 (Non-reasoning)', score: 38.0 },
+      { name: 'DeepSeek V3.2 (Reasoning)', score: 44.5 },
+    ])
+    expect(filtered.map((m) => m.name)).toEqual([
+      'Claude Fable 5.2 (Max)',
+      'Gemini 4 Neon (Xhigh)',
+      'Kimi K3.1 Pro',
+      'DeepSeek V3.2 (Reasoning)',
+      'DeepSeek R1 (0528)',
+    ])
   })
 })
 
 describe('detectIntelVendor', () => {
-  it('按模型名准确归类厂商', () => {
+  it('按模型名与 creator 准确归类国际与国产主流厂商', () => {
     expect(detectIntelVendor('Claude 4.5 Opus')).toBe('Anthropic')
     expect(detectIntelVendor('GPT-5 (high)')).toBe('OpenAI')
     expect(detectIntelVendor('o3-mini')).toBe('OpenAI')
     expect(detectIntelVendor('Gemini 2.5 Pro')).toBe('Google')
     expect(detectIntelVendor('DeepSeek V3.2')).toBe('DeepSeek')
-    expect(detectIntelVendor('Qwen3 235B')).toBe('Qwen')
-    expect(detectIntelVendor('Grok 4')).toBe('xAI')
+    expect(detectIntelVendor('Qwen4 Max')).toBe('Qwen')
+    expect(detectIntelVendor('Grok 4.7')).toBe('xAI')
     expect(detectIntelVendor('Llama 4 Maverick')).toBe('Meta')
-    expect(detectIntelVendor('GLM-4.5')).toBe('Zhipu')
-    expect(detectIntelVendor('Kimi K2')).toBe('Moonshot')
+    expect(detectIntelVendor('Muse Wonder Full (Max)')).toBe('Meta')
+    expect(detectIntelVendor('GLM-5.3 (Max)')).toBe('Zhipu')
+    expect(detectIntelVendor('Kimi K3.1 Pro')).toBe('Moonshot')
+    expect(detectIntelVendor('Tencent Hy4')).toBe('Tencent')
+    expect(detectIntelVendor('MiMo-V2.6-Pro')).toBe('Xiaomi')
+    expect(detectIntelVendor('Ling 3.1 Flash 1019')).toBe('InclusionAI')
+    expect(detectIntelVendor('LongCat 2.5')).toBe('Meituan')
+    expect(detectIntelVendor('Doubao Seed 1.6')).toBe('ByteDance')
+    expect(detectIntelVendor('Nemotron 3.5 Super VL')).toBe('NVIDIA')
+    expect(detectIntelVendor('Mystery Model', 'Z.ai')).toBe('Zhipu')
     expect(detectIntelVendor('Custom Local Model')).toBe('其他')
   })
 })

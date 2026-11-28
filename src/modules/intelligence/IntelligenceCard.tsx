@@ -7,6 +7,7 @@ import { isNative, isTauri } from '@/lib/native'
 import { INTEL_CHART_META_URLS, INTEL_CHART_URLS } from '@/lib/intelSources'
 import {
   detectIntelVendor,
+  filterHighestThinkingModels,
   loadBuiltinIntel,
   loadCachedIntel,
   refreshIntelDetailed,
@@ -18,6 +19,7 @@ import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
 
 type ViewMode = 'chart' | 'list'
+type ThinkingMode = 'all' | 'highest'
 
 function formatUpdatedAt(iso?: string): string {
   if (!iso) return ''
@@ -55,6 +57,7 @@ export function IntelligenceCard() {
   const [scrollEdge, setScrollEdge] = useState({ left: false, right: false })
   const [intelData, setIntelData] = useState<IntelData | null>(null)
   const [intelLoading, setIntelLoading] = useState(false)
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [vendorFilter, setVendorFilter] = useState('全部')
   const dragRef = useRef<{ x: number; left: number } | null>(null)
@@ -136,21 +139,32 @@ export function IntelligenceCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode])
 
+  const baseModels = useMemo(() => {
+    if (!intelData) return []
+    return thinkingMode === 'highest' ? filterHighestThinkingModels(intelData.models) : intelData.models
+  }, [intelData, thinkingMode])
+
   const vendors = useMemo(() => {
-    if (!intelData) return ['全部']
+    if (!baseModels.length) return ['全部']
     const seen = new Set<string>()
-    for (const m of intelData.models) seen.add(detectIntelVendor(m.name))
+    for (const m of baseModels) seen.add(detectIntelVendor(m.name, m.creator))
     return ['全部', ...Array.from(seen)]
-  }, [intelData])
+  }, [baseModels])
+
+  useEffect(() => {
+    if (vendorFilter !== '全部' && !vendors.includes(vendorFilter)) {
+      setVendorFilter('全部')
+    }
+  }, [vendors, vendorFilter])
 
   const filteredModels = useMemo(() => {
-    if (!intelData) return []
+    if (!baseModels.length) return []
     const needle = searchQuery.trim().toLowerCase()
-    return intelData.models
+    return baseModels
       .map((model, index) => ({
         ...model,
         rank: index + 1,
-        vendor: detectIntelVendor(model.name),
+        vendor: detectIntelVendor(model.name, model.creator),
       }))
       .filter((item) => {
         if (vendorFilter !== '全部' && item.vendor !== vendorFilter) return false
@@ -159,9 +173,9 @@ export function IntelligenceCard() {
         }
         return true
       })
-  }, [intelData, searchQuery, vendorFilter])
+  }, [baseModels, searchQuery, vendorFilter])
 
-  const topScore = intelData?.models[0]?.score || 100
+  const topScore = baseModels[0]?.score || 100
   const [chartProgress, setChartProgress] = useState<number | null>(null)
 
   const refresh = async () => {
@@ -329,9 +343,9 @@ export function IntelligenceCard() {
 
       <div className="ranking-plot">
         {viewMode === 'list' ? (
-          <div className="flex flex-col gap-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <div className="relative sm:w-56 shrink-0">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[160px] sm:max-w-[240px]">
                 <Search size={13.5} aria-hidden className="absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-2 pointer-events-none" />
                 <input
                   type="search"
@@ -352,24 +366,65 @@ export function IntelligenceCard() {
                   </button>
                 )}
               </div>
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5" role="group" aria-label="按厂商筛选模型">
-                {vendors.map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    aria-pressed={vendorFilter === v}
-                    onClick={() => setVendorFilter(v)}
-                    className={cn(
-                      'shrink-0 h-7 px-2.5 rounded-full text-[11.5px] transition-colors cursor-pointer border',
-                      vendorFilter === v
-                        ? 'border-primary/60 bg-primary-soft text-primary font-medium'
-                        : 'border-outline/60 bg-surface-2/60 text-on-surface-2 hover:text-on-surface',
-                    )}
-                  >
-                    {v}
-                  </button>
-                ))}
+              <div
+                role="group"
+                aria-label="思考模式筛选"
+                className="inline-flex items-center rounded-[9px] bg-surface-2 p-0.5 border border-outline/60 shrink-0"
+              >
+                <button
+                  type="button"
+                  aria-pressed={thinkingMode === 'all'}
+                  onClick={() => setThinkingMode('all')}
+                  title="显示全部思考档位"
+                  className={cn(
+                    'h-7 px-2.5 rounded-[7px] text-[11.5px] font-medium transition-colors cursor-pointer',
+                    thinkingMode === 'all'
+                      ? 'bg-surface text-on-surface shadow-xs'
+                      : 'text-on-surface-2 hover:text-on-surface',
+                  )}
+                >
+                  全部思考
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={thinkingMode === 'highest'}
+                  onClick={() => setThinkingMode('highest')}
+                  title="每个模型仅保留最高思考模式，与官方图表对应"
+                  className={cn(
+                    'h-7 px-2.5 rounded-[7px] text-[11.5px] font-medium transition-colors cursor-pointer',
+                    thinkingMode === 'highest'
+                      ? 'bg-surface text-primary shadow-xs'
+                      : 'text-on-surface-2 hover:text-on-surface',
+                  )}
+                >
+                  最高思考
+                </button>
               </div>
+              {baseModels.length > 0 && (
+                <span className="text-[11px] text-on-surface-2 tabular-nums sm:ml-auto">
+                  {filteredModels.length === baseModels.length
+                    ? `共 ${baseModels.length} 项`
+                    : `${filteredModels.length} / ${baseModels.length} 项`}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5" role="group" aria-label="按厂商筛选模型">
+              {vendors.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={vendorFilter === v}
+                  onClick={() => setVendorFilter(v)}
+                  className={cn(
+                    'shrink-0 h-7 px-2.5 rounded-full text-[11.5px] transition-colors cursor-pointer border',
+                    vendorFilter === v
+                      ? 'border-primary/60 bg-primary-soft text-primary font-medium'
+                      : 'border-outline/60 bg-surface-2/60 text-on-surface-2 hover:text-on-surface',
+                  )}
+                >
+                  {v}
+                </button>
+              ))}
             </div>
 
             {intelLoading && !intelData ? (

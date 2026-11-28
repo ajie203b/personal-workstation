@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { BellPlus, CalendarDays, Minus, Plus, Pencil, Trash2, WalletCards } from 'lucide-react'
+import { BellPlus, CalendarDays, Check, Minus, Plus, Pencil, Trash2, WalletCards } from 'lucide-react'
 import { db } from '@/db/db'
-import { addTask } from '@/db/tasks'
 import { useUi } from '@/stores/ui'
 import { DatePicker } from '@/shared/ui/DatePicker'
 import { Dialog } from '@/shared/ui/Sheet'
@@ -13,7 +12,8 @@ import { Segmented } from '@/shared/ui/Segmented'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { todayStr } from '@/lib/date'
 import { uid } from '@/lib/id'
-import { findExpiringQuotas } from '@/modules/today/dailyDigest'
+import { quotaRenewTaskTitle } from '@/modules/today/dailyDigest'
+import { createSingleQuotaRenewTask } from './quotaReminder'
 import { PROVIDER_GROUPS } from './quotaBrands'
 import { PROVIDERS, QUOTA_KEY, quotaSummary, quotaDisplayMode, quotaExpiry, quotaProviderLabel, quotaBrand, orderQuotaEntries, applyQuotaOrder, type QuotaDisplayMode, type QuotaEntry, type QuotaRecord } from './aiQuota'
 
@@ -115,34 +115,20 @@ export function AiQuotaPage() {
     }
   }
 
+  const activeRenewTitles = useLiveQuery(
+    async () => new Set((await db.tasks.filter((t) => t.status !== 'done').toArray()).map((t) => t.title)),
+    [],
+    new Set<string>(),
+  )
+
   async function createRenewTask(entry: QuotaEntry) {
-    const title = `续费检查：${entry.name}`
-    const today = todayStr()
     try {
-      await addTask({
-        title,
-        tier: 'today',
-        priority: 1,
-        due: entry.expiresAt && entry.expiresAt >= today ? entry.expiresAt : today,
-        tags: ['额度续费'],
-      })
-      toast(`已加入今日任务：${title}`)
+      const { created, title } = await createSingleQuotaRenewTask(entry, todayStr())
+      toast(created ? `已加入今日任务：${title}` : '已有同名的续费提醒任务')
     } catch {
       toast('创建续费任务失败')
     }
   }
-
-  const quotaOverview = useMemo(() => {
-    const soon = findExpiringQuotas(entries, todayStr(), 7)
-    const balancesByUnit = new Map<string, number>()
-    for (const e of entries) {
-      if (quotaDisplayMode(e) === 'balance' && typeof e.balance === 'number' && Number.isFinite(e.balance)) {
-        const unit = (e.balanceUnit || '元').trim() || '元'
-        balancesByUnit.set(unit, (balancesByUnit.get(unit) ?? 0) + e.balance)
-      }
-    }
-    return { total: entries.length, soonCount: soon.length, balances: [...balancesByUnit.entries()] }
-  }, [entries])
 
   return <div className="mx-auto w-full max-w-7xl px-3.5 md:px-8 pt-3 md:pt-4 pb-24 flex flex-col gap-3 md:gap-4">
     <header className="flex items-center md:items-start gap-3">
@@ -154,19 +140,6 @@ export function AiQuotaPage() {
         <Plus size={15} />添加
       </Button>
     </header>
-    {entries.length > 0 && (
-      <div className="card px-3.5 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px]">
-        <span className="text-on-surface-2">共 <b className="text-on-surface tabular-nums">{quotaOverview.total}</b> 项订阅/额度</span>
-        {quotaOverview.soonCount > 0 && (
-          <span className="text-danger font-medium tabular-nums">7 天内到期 / 已过期：{quotaOverview.soonCount} 项</span>
-        )}
-        {quotaOverview.balances.length > 0 && (
-          <span className="text-on-surface-2 tabular-nums">
-            余额合计：{quotaOverview.balances.map(([unit, val]) => `${val.toLocaleString('zh-CN')} ${unit}`).join(' · ')}
-          </span>
-        )}
-      </div>
-    )}
     <p className="hidden md:block text-xs text-on-surface-2">数据由你手动填写和更新，保存在本机并随应用备份；无需填写 API 密钥。长按卡片可调整顺序。</p>
     {draft && <form onSubmit={save} className="card p-4 flex flex-col gap-4" aria-label={editing ? '编辑额度记录' : '添加额度记录'}>
       <div className="flex items-center justify-between"><h2 className="font-semibold">{editing ? '编辑记录' : '添加记录'}</h2><button type="button" onClick={() => setDraft(null)} className="text-sm text-on-surface-2">取消</button></div>
@@ -205,7 +178,7 @@ export function AiQuotaPage() {
         const entry = orderedEntries.find(item => item.id === id)
         return entry ? <div data-quota-overlay aria-hidden="true" className="h-full overflow-hidden rounded-[20px] shadow-xl ring-1 ring-primary/15"><QuotaCard entry={entry} onEdit={() => {}} onDelete={() => {}} overlay /></div> : null
       }}>
-      <div className="grid auto-rows-fr grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full min-w-0"><QuotaCard entry={entry} onAdjust={(delta) => void adjustNumeric(entry, delta)} onRenewTask={() => void createRenewTask(entry)} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} onReadNote={() => setNoteEntry(entry)} /></DragSortItem>)}</div>
+      <div className="grid auto-rows-fr grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full min-w-0"><QuotaCard entry={entry} hasRenewTask={activeRenewTitles.has(quotaRenewTaskTitle(entry.name))} onAdjust={(delta) => void adjustNumeric(entry, delta)} onRenewTask={() => void createRenewTask(entry)} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} onReadNote={() => setNoteEntry(entry)} /></DragSortItem>)}</div>
     </DragSort>
     <p className="md:hidden text-[11px] text-on-surface-2/80 text-center pt-1">数据保存在本机并随备份同步 · 长按卡片可排序</p>
     {noteEntry && <Dialog open onOpenChange={() => setNoteEntry(null)} title="备注">
@@ -223,8 +196,9 @@ export function AiQuotaPage() {
 }
 
 
-function QuotaCard({ entry, onEdit, onDelete, onReadNote, onAdjust, onRenewTask, overlay = false }: {
+function QuotaCard({ entry, hasRenewTask = false, onEdit, onDelete, onReadNote, onAdjust, onRenewTask, overlay = false }: {
   entry: QuotaEntry
+  hasRenewTask?: boolean
   onEdit: () => void
   onDelete: () => void
   onReadNote?: () => void
@@ -275,10 +249,13 @@ function QuotaCard({ entry, onEdit, onDelete, onReadNote, onAdjust, onRenewTask,
         {!overlay && onRenewTask && (expiry?.tone === 'soon' || expiry?.tone === 'expired') && (
           <button
             type="button"
+            disabled={hasRenewTask}
             onClick={onRenewTask}
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-full bg-danger/10 text-danger text-[11px] font-medium hover:bg-danger/18 transition-colors cursor-pointer"
+            className={hasRenewTask
+              ? 'inline-flex items-center gap-1 h-6 px-2 rounded-full bg-surface-3 text-on-surface-2 text-[11px] font-medium cursor-default'
+              : 'inline-flex items-center gap-1 h-6 px-2 rounded-full bg-danger/10 text-danger text-[11px] font-medium hover:bg-danger/18 transition-colors cursor-pointer'}
           >
-            <BellPlus size={11.5} /> 转续费任务
+            {hasRenewTask ? <><Check size={11.5} /> 已设提醒</> : <><BellPlus size={11.5} /> 转续费任务</>}
           </button>
         )}
         {mode !== 'none' && entry.resetAt && <span className="text-xs text-on-surface-2 tabular-nums">重置 {entry.resetAt}</span>}

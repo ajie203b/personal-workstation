@@ -2,6 +2,49 @@ import type { Annotation, Doc, FocusSession, Task } from '@/db/db'
 import { annotationAnchor } from '@/lib/docLocator'
 import { quotaExpiry, type QuotaEntry, type QuotaRecord } from '@/modules/stats/aiQuota'
 
+export const DISMISSED_QUOTA_ALERTS_KEY = 'kairos:dismissed-quota-alerts-v1'
+export const QUOTA_RENEW_TAG = '额度续费'
+
+/** 每条额度记录按「id + 到期日」生成提醒键：叉掉后永久不再提醒，续期改到新日期才会再次按需提醒 */
+export function quotaAlertKey(entry: Pick<QuotaEntry, 'id' | 'expiresAt'>): string {
+  return `${entry.id}::${entry.expiresAt ?? ''}`
+}
+
+export function quotaRenewTaskTitle(name: string): string {
+  return `续费检查：${name.trim()}`
+}
+
+export function loadDismissedQuotaAlerts(
+  storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage !== 'undefined' ? localStorage : undefined,
+): Set<string> {
+  try {
+    const raw = storage?.getItem(DISMISSED_QUOTA_ALERTS_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((v): v is string => typeof v === 'string'))
+      : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+export function dismissQuotaAlerts(
+  keys: readonly string[],
+  storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = typeof localStorage !== 'undefined' ? localStorage : undefined,
+): Set<string> {
+  const next = loadDismissedQuotaAlerts(storage)
+  for (const key of keys) {
+    if (key) next.add(key)
+  }
+  try {
+    storage?.setItem(DISMISSED_QUOTA_ALERTS_KEY, JSON.stringify([...next]))
+  } catch {
+    /* ignore storage quota errors */
+  }
+  return next
+}
+
 /**
  * 筛选即将到期（默认 3 天内含今天与已过期）的模型额度记录，供今日页提醒与统计页汇总复用。
  */

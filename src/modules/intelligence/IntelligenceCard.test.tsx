@@ -20,8 +20,9 @@ describe('IntelligenceCard 图表/列表双视图交互', () => {
         generatedAt: '2026-04-02T08:00:00Z',
         source: 'artificialanalysis.ai',
         models: [
-          { name: 'GPT-5 (high)', score: 72.1 },
-          { name: 'Gemini 2.5 Pro', score: 70.5 },
+          { name: 'GPT-5 (Max)', score: 72.1 },
+          { name: 'GPT-5 (High)', score: 71.0 },
+          { name: 'Gemini 2.5 Pro (Xhigh)', score: 70.5 },
           { name: 'Claude 4.5 Sonnet', score: 68.4 },
           { name: 'DeepSeek R1', score: 66.0 },
         ],
@@ -65,17 +66,27 @@ describe('IntelligenceCard 图表/列表双视图交互', () => {
     expect(chartBtn.getAttribute('aria-pressed')).toBe('true')
     expect(host.querySelector('img[alt*="官方原图"]')).not.toBeNull()
 
-    // 切换到「列表」视图
+    // 切换到「列表」视图（默认展示全部思考模式，共 5 条）
     await act(async () => {
       listBtn.click()
       await new Promise((r) => setTimeout(r, 0))
     })
     expect(listBtn.getAttribute('aria-pressed')).toBe('true')
     const items = host.querySelectorAll('ol[aria-label="AI 模型智能排行榜列表"] li')
-    expect(items).toHaveLength(4)
-    expect(items[0].textContent).toContain('GPT-5 (high)')
+    expect(items).toHaveLength(5)
+    expect(items[0].textContent).toContain('GPT-5 (Max)')
 
-    // 点击厂商筛选「Anthropic」，保留原始排名 #3
+    // 切换到「最高思考」模式：GPT-5 仅保留 (Max)，共 4 条，Claude 4.5 Sonnet 排第 3
+    const highestBtn = Array.from(host.querySelectorAll<HTMLButtonElement>('[aria-label="思考模式筛选"] button')).find(
+      (b) => b.textContent === '最高思考',
+    )!
+    await act(async () => { highestBtn.click() })
+    expect(highestBtn.getAttribute('aria-pressed')).toBe('true')
+    const highestItems = host.querySelectorAll('ol[aria-label="AI 模型智能排行榜列表"] li')
+    expect(highestItems).toHaveLength(4)
+    expect(Array.from(highestItems).some((li) => li.textContent?.includes('GPT-5 (High)'))).toBe(false)
+
+    // 点击厂商筛选「Anthropic」，保留最高思考模式下的原始排名 #3
     const anthropicChip = Array.from(host.querySelectorAll<HTMLButtonElement>('[aria-label="按厂商筛选模型"] button')).find(
       (b) => b.textContent === 'Anthropic',
     )!

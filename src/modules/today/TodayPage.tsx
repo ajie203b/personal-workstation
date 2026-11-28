@@ -1,21 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { AlertTriangle, Check, ChevronRight, Clock3, Copy, FileText, History, Keyboard, Plus, TrendingUp, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Clock3, Copy, FileText, History, Keyboard, Plus, TrendingUp, X } from 'lucide-react'
 import { db, DOC_KIND_LABEL } from '@/db/db'
 import { importDoc } from '@/db/docs'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
-import { addTask, rolloverTasks, sortTasks } from '@/db/tasks'
+import { rolloverTasks, sortTasks } from '@/db/tasks'
 import { addDaysStr, isThisWeek, fmtWeekdayLong, todayStr, toDateStr } from '@/lib/date'
 import { TaskList } from '@/modules/tasks/TaskList'
 import { QUOTA_KEY, type QuotaRecord } from '@/modules/stats/aiQuota'
+import { createSingleQuotaRenewTask, unlockLegacyQuotaRenewTasks } from '@/modules/stats/quotaReminder'
 import { useUi } from '@/stores/ui'
 import { docPath } from '@/shared/DeepLink'
 import { Button } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { GettingStarted } from './GettingStarted'
-import { buildDailyDigestMarkdown, findExpiringQuotas } from './dailyDigest'
+import {
+  buildDailyDigestMarkdown,
+  dismissQuotaAlerts,
+  findExpiringQuotas,
+  loadDismissedQuotaAlerts,
+  quotaAlertKey,
+  quotaRenewTaskTitle,
+} from './dailyDigest'
 import { prefersReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 
@@ -30,13 +38,29 @@ export function TodayPage() {
   const focusRef = useRef<HTMLDivElement>(null)
   const [rolling, setRolling] = useState(false)
   const [digestOpen, setDigestOpen] = useState(false)
-  const [quotaAlertDismissed, setQuotaAlertDismissed] = useState(false)
+  const [dismissedQuotaAlerts, setDismissedQuotaAlerts] = useState<Set<string>>(() => loadDismissedQuotaAlerts())
+  const [creatingQuotaTask, setCreatingQuotaTask] = useState(false)
   const quotaRecords = useLiveQuery(
     async () => ((await db.settings.get(QUOTA_KEY))?.value as QuotaRecord[] | undefined) ?? [],
     [],
     [] as QuotaRecord[],
   )
-  const expiringQuotas = useMemo(() => findExpiringQuotas(quotaRecords, today, 3), [quotaRecords, today])
+  const activeTaskTitles = useMemo(
+    () => new Set(all.filter((t) => t.status !== 'done').map((t) => t.title)),
+    [all],
+  )
+  const expiringQuotas = useMemo(
+    () =>
+      findExpiringQuotas(quotaRecords, today, 3).filter(
+        (q) => !dismissedQuotaAlerts.has(quotaAlertKey(q.entry)) && !activeTaskTitles.has(quotaRenewTaskTitle(q.entry.name)),
+      ),
+    [quotaRecords, today, dismissedQuotaAlerts, activeTaskTitles],
+  )
+
+  // 自动解锁旧版创建的「续费检查」任务，使之可立即点击完成
+  useEffect(() => {
+    void unlockLegacyQuotaRenewTasks(all, today).catch(() => undefined)
+  }, [all, today])
 
   const digestData = useLiveQuery(
     async () => {
@@ -93,15 +117,6 @@ export function TodayPage() {
     return new Date()
   }, [today])
 
-  const greeting = useMemo(() => {
-    const h = date.getHours()
-    if (h < 6) return '夜深了'
-    if (h < 11) return '早上好'
-    if (h < 14) return '中午好'
-    if (h < 18) return '下午好'
-    return '晚上好'
-  }, [date])
-
   const todayTotal = todayTasks.length + todayDone.length
   const todayPct = todayTotal > 0 ? Math.round((todayDone.length / todayTotal) * 100) : 0
 
@@ -142,24 +157,22 @@ export function TodayPage() {
     })
   }, [digestOpen, digestData, today, todayDone, todayTasks])
 
-  const createQuotaReminder = async (name: string, expiresAt: string) => {
-    const title = `续费检查：${name}`
-    if (all.some((t) => t.status !== 'done' && t.title === title)) {
-      toast('已有同名的续费提醒任务')
-      return
-    }
+  const createQuotaReminder = async (entry: { id: string; name: string; expiresAt: string }) => {
+    if (creatingQuotaTask) return
+    setCreatingQuotaTask(true)
     try {
-      await addTask({
-        title,
-        tier: 'today',
-        priority: 1,
-        due: expiresAt >= today ? expiresAt : today,
-        tags: ['额度续费'],
-      })
-      toast(`已加入今日任务：${title}`)
+      const { created, title } = await createSingleQuotaRenewTask(entry, today)
+      setDismissedQuotaAlerts(dismissQuotaAlerts([quotaAlertKey(entry)]))
+      toast(created ? `已加入今日任务：${title}` : '已有同名的续费提醒任务')
     } catch {
       toast('创建提醒任务失败')
+    } finally {
+      setCreatingQuotaTask(false)
     }
+  }
+
+  const dismissExpiringAlerts = () => {
+    setDismissedQuotaAlerts(dismissQuotaAlerts(expiringQuotas.map((q) => quotaAlertKey(q.entry))))
   }
 
   const saveDigestToDocs = async () => {
@@ -191,26 +204,6 @@ export function TodayPage() {
       <header>
         <div className="flex items-center md:items-end justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-0.5 md:mb-1">
-              <span className="text-[12px] md:text-[12.5px] font-medium text-on-surface-2">{greeting}</span>
-              {/* 手机端由右侧进度环显示完成度。 */}
-              {todayTotal > 0 && (
-                <span className={cn(
-                  'hidden md:inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums',
-                  todayTasks.length === 0
-                    ? 'bg-ok/12 text-ok'
-                    : 'bg-primary-soft text-primary',
-                )}>
-                  {todayTasks.length === 0 ? (
-                    <>
-                      <Check size={11} aria-hidden /> 今日待办已清空
-                    </>
-                  ) : (
-                    <>今日完成 {todayDone.length}/{todayTotal} · {todayPct}%</>
-                  )}
-                </span>
-              )}
-            </div>
             <h1 className="text-[24px] md:text-[34px] font-bold leading-tight tracking-[-0.03em]">
               {fmtWeekdayLong(date)}
             </h1>
@@ -234,7 +227,7 @@ export function TodayPage() {
         </div>
       </header>
 
-      {expiringQuotas.length > 0 && !quotaAlertDismissed && (
+      {expiringQuotas.length > 0 && (
         <div className="card px-3.5 py-2.5 border-p1/45 bg-p1/8 flex flex-wrap items-center gap-2.5 text-[12.5px]">
           <AlertTriangle size={15} className="text-p1 shrink-0" />
           <span className="flex-1 min-w-[180px] text-on-surface">
@@ -245,7 +238,8 @@ export function TodayPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void createQuotaReminder(expiringQuotas[0].entry.name, expiringQuotas[0].entry.expiresAt)}
+              disabled={creatingQuotaTask}
+              onClick={() => void createQuotaReminder(expiringQuotas[0].entry)}
             >
               转提醒任务
             </Button>
@@ -254,8 +248,9 @@ export function TodayPage() {
             </Button>
             <button
               type="button"
-              aria-label="忽略本次提醒"
-              onClick={() => setQuotaAlertDismissed(true)}
+              aria-label="关闭且不再提醒"
+              title="关闭且不再提醒"
+              onClick={dismissExpiringAlerts}
               className="grid place-items-center size-7 rounded-lg text-on-surface-2 hover:bg-surface-3 cursor-pointer"
             >
               <X size={13.5} />

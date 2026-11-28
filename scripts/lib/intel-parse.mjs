@@ -5,7 +5,7 @@
 //    公开页面里是驼峰（intelligenceIndex）——只认一种就会解析出 0 条，脚本还以为自己跑成功了；
 // 2. 官方把"按默认配置评测"写成「(Max, Default Fallback)」，直接当名字会挤爆卡片。
 
-const MAX = 30
+const MAX = 200
 
 export const num = (v) => {
   const n = typeof v === 'string' ? Number(v) : v
@@ -38,8 +38,12 @@ export function collect(list) {
     if (typeof base !== 'string' || !base || score == null) continue
     const effort = cleanEffort(item.reasoning_effort ?? item.reasoningEffort)
     const creator = typeof item.modelCreatorName === 'string'
-      ? item.modelCreatorName
-      : typeof item.model_creator?.name === 'string' ? item.model_creator.name : ''
+      ? item.modelCreatorName.trim()
+      : typeof item.model_creator?.name === 'string'
+        ? item.model_creator.name.trim()
+        : typeof item.creator === 'string'
+          ? item.creator.trim()
+          : ''
     // 官方页把「按默认配置评测」的模型写成「Claude Opus 5.5 (Max, Default Fallback)」，
     // 榜单一行放不下，去掉这半句只留档位
     const label = base.replace(/,\s*Default Fallback/gi, '').replace(/\s{2,}/g, ' ').trim()
@@ -52,7 +56,9 @@ export function collect(list) {
   const dedup = new Map()
   for (const { name, score, creator } of models) {
     const label = seen.get(name) > 1 && creator ? `${name} · ${creator}` : name
-    if (!dedup.has(label)) dedup.set(label, { name: label, score })
+    if (!dedup.has(label)) {
+      dedup.set(label, creator ? { name: label, score, creator } : { name: label, score })
+    }
   }
   return [...dedup.values()].sort((a, b) => b.score - a.score).slice(0, MAX)
 }

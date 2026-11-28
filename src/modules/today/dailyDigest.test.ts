@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Annotation, Doc, FocusSession, Task } from '@/db/db'
 import type { QuotaRecord } from '@/modules/stats/aiQuota'
 import { filterTasks, TASK_TEMPLATES } from '@/modules/tasks/taskTemplates'
-import { buildDailyDigestMarkdown, findExpiringQuotas } from './dailyDigest'
+import { buildDailyDigestMarkdown, dismissQuotaAlerts, findExpiringQuotas, loadDismissedQuotaAlerts, quotaAlertKey } from './dailyDigest'
 
 describe('dailyDigest & quota expiry alerts', () => {
   it('汇总今日完成任务、番茄时长、阅读批注与待推进事项为 Markdown 日报', () => {
@@ -53,6 +53,21 @@ describe('dailyDigest & quota expiry alerts', () => {
     expect(hits.map((h) => h.entry.id)).toEqual(['q-exp', 'q-soon'])
     expect(hits[0].tone).toBe('expired')
     expect(hits[1].tone).toBe('soon')
+  })
+
+  it('叉掉额度提醒后持久化保存，不再重复提示同一到期周期', () => {
+    const store = new Map<string, string>()
+    const mockStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v) },
+    }
+    const key = quotaAlertKey({ id: 'q1', expiresAt: '2026-11-30' })
+    expect(loadDismissedQuotaAlerts(mockStorage).has(key)).toBe(false)
+
+    dismissQuotaAlerts([key], mockStorage)
+    expect(loadDismissedQuotaAlerts(mockStorage).has(key)).toBe(true)
+    // 续费改为新到期日后视为新一轮周期
+    expect(loadDismissedQuotaAlerts(mockStorage).has(quotaAlertKey({ id: 'q1', expiresAt: '2027-01-30' }))).toBe(false)
   })
 })
 
