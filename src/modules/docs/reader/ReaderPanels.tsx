@@ -437,10 +437,11 @@ export function filterAndSortReaderAnnotations(
 }
 
 export function RightContent({
-  annotations, backlinks, rightTab, onJump, onToTask, onDelete, onRecolor, onComment, onOcr, ocrBusyId, docId, anchorFor, focusAnnId,
+  annotations, backlinks, docBacklinks = [], rightTab, onJump, onToTask, onDelete, onRecolor, onComment, onOcr, ocrBusyId, docId, anchorFor, focusAnnId,
 }: {
   annotations: Annotation[]
   backlinks: Task[]
+  docBacklinks?: Doc[]
   rightTab: 'anns' | 'backlinks'
   onJump: (anchor: string, hl?: string) => void
   onToTask: (ann: Annotation) => void
@@ -483,39 +484,73 @@ export function RightContent({
   }
 
   if (rightTab === 'backlinks') {
+    const empty = backlinks.length === 0 && docBacklinks.length === 0
     return (
       <div className="flex-1 overflow-y-auto px-2.5 pb-4 min-h-0">
-        {backlinks.length === 0 ? (
+        {empty ? (
           <PanelEmpty
             icon={ArrowUpRight}
             title="暂无引用"
-            hint={docId ? '在批注上点「转任务」，或从任务详情挂载本文档，反链会显示在这里。' : '还没有任务引用本文档。'}
+            hint={docId ? '在其他文档中写 [[本文档标题]]，或从批注点「转任务」，双向引用都会显示在这里。' : '还没有任务或文档引用本文档。'}
           />
         ) : (
-          <>
-            <p className="text-[11px] text-on-surface-2 px-1.5 pt-2.5 pb-2 tabular-nums">{backlinks.length} 个任务引用了本文档</p>
-            <div className="flex flex-col gap-2">
-              {backlinks.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => {
-                    navigate(`/tasks?tier=${t.tier}&focus=${t.id}`)
-                  }}
-                  className="group w-full text-left rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 hover:border-primary/30 hover:-translate-y-px transition-[border-color,transform] cursor-pointer"
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-primary/70 shrink-0" />
-                    <p className="flex-1 text-[12.5px] font-medium leading-snug line-clamp-2">{t.title}</p>
-                    <ArrowUpRight size={13} className="shrink-0 mt-0.5 text-on-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                  <p className="text-[10.5px] text-on-surface-2 mt-1 pl-3.5">
-                    {t.tier === 'today' ? '今日' : t.tier === 'upcoming' ? '近期' : t.tier === 'anytime' ? '随时' : '将来'} · {t.status === 'doing' ? '进行中' : '待办'}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </>
+          <div className="flex flex-col gap-3 pt-2.5">
+            {docBacklinks.length > 0 && (
+              <div>
+                <p className="text-[11px] text-on-surface-2 px-1.5 pb-2 tabular-nums">
+                  {docBacklinks.length} 篇文档通过双链引用了本文档
+                </p>
+                <div className="flex flex-col gap-2">
+                  {docBacklinks.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => navigate(`/docs/${d.id}`)}
+                      className="group w-full text-left rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 hover:border-primary/35 hover:-translate-y-px transition-[border-color,transform] cursor-pointer"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-ok/80 shrink-0" />
+                        <p className="flex-1 text-[12.5px] font-medium leading-snug line-clamp-2">{d.title}</p>
+                        <ArrowUpRight size={13} className="shrink-0 mt-0.5 text-on-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      <p className="text-[10.5px] text-on-surface-2 mt-1 pl-3.5">
+                        文档双链 · {d.kind.toUpperCase()}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {backlinks.length > 0 && (
+              <div>
+                <p className="text-[11px] text-on-surface-2 px-1.5 pb-2 tabular-nums">
+                  {backlinks.length} 个任务引用了本文档
+                </p>
+                <div className="flex flex-col gap-2">
+                  {backlinks.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        navigate(`/tasks?tier=${t.tier}&focus=${t.id}`)
+                      }}
+                      className="group w-full text-left rounded-[12px] border border-outline bg-surface-2 px-3 py-2.5 hover:border-primary/30 hover:-translate-y-px transition-[border-color,transform] cursor-pointer"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-primary/70 shrink-0" />
+                        <p className="flex-1 text-[12.5px] font-medium leading-snug line-clamp-2">{t.title}</p>
+                        <ArrowUpRight size={13} className="shrink-0 mt-0.5 text-on-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      <p className="text-[10.5px] text-on-surface-2 mt-1 pl-3.5">
+                        {t.tier === 'today' ? '今日' : t.tier === 'upcoming' ? '近期' : t.tier === 'anytime' ? '随时' : '将来'} · {t.status === 'doing' ? '进行中' : '待办'}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     )

@@ -3,6 +3,7 @@ import { Download, RotateCw } from 'lucide-react'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { useAppUpdate } from '@/stores/appUpdate'
 import { useUi } from '@/stores/ui'
 import { openExternal } from '@/lib/links'
@@ -205,13 +206,18 @@ function ProgressBar({ progress }: { progress: InstallProgress | null }) {
       : pct === null
         ? `已下载 ${formatBytes(progress.downloaded)}`
         : `已下载 ${pct}%（${formatBytes(progress.downloaded)} / ${formatBytes(progress.total)}）`
+  const clamped = pct === null ? 0 : Math.max(0.03, Math.min(1, pct / 100))
   return (
-    <div className="mt-3" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
-      <div className="h-2 rounded-full bg-surface-3 overflow-hidden">
-        <div
-          className={pct === null ? 'h-full w-1/3 bg-primary rounded-full animate-pulse' : 'h-full bg-primary rounded-full transition-[width] duration-200'}
-          style={pct === null ? undefined : { width: `${pct}%` }}
-        />
+    <div className="mt-3" role="progressbar" aria-label="软件更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
+      <div className="h-[2.5px] rounded-full bg-primary/15 overflow-hidden">
+        {pct === null ? (
+          <div className="top-progress-indeterminate h-full w-2/5 rounded-full bg-primary" />
+        ) : (
+          <div
+            className="h-full w-full origin-left bg-primary transition-transform duration-200 ease-out"
+            style={{ transform: `scaleX(${clamped})` }}
+          />
+        )}
       </div>
       <p className="mt-1.5 text-[11.5px] text-on-surface-2 tabular-nums">{label}</p>
     </div>
@@ -251,7 +257,8 @@ export function AppUpdateCard() {
   }
 
   return (
-    <section className="card p-4">
+    <section className="card relative overflow-hidden p-4">
+      <TopProgressLine active={state === 'loading'} label="正在检查软件更新" />
       <h2 className="text-[14px] font-semibold mb-1.5">软件更新</h2>
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-[13px] text-on-surface-2">

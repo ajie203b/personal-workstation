@@ -260,6 +260,30 @@ async function responseByteLength(res: Response): Promise<number> {
   return (await res.clone().arrayBuffer()).byteLength
 }
 
+/** 按指定模型文件列表统计本地已缓存数量与字节数（供统一本地 AI 模型中心展示） */
+export async function inspectCachedModelEntries(
+  specs: readonly { id: string; version: string }[],
+): Promise<{ cachedCount: number; totalCount: number; bytes: number }> {
+  if (typeof caches === 'undefined' || !(await caches.has(CACHE_NAME))) {
+    return { cachedCount: 0, totalCount: specs.length, bytes: 0 }
+  }
+  const c = await openCache()
+  if (!c) return { cachedCount: 0, totalCount: specs.length, bytes: 0 }
+  let cachedCount = 0
+  let bytes = 0
+  for (const s of specs) {
+    try {
+      const hit = await c.match(keyUrl(s.id, s.version))
+      if (!hit) continue
+      cachedCount += 1
+      bytes += await responseByteLength(hit)
+    } catch {
+      /* ignore */
+    }
+  }
+  return { cachedCount, totalCount: specs.length, bytes }
+}
+
 /** 当前模型缓存占用（字节） */
 export async function modelCacheBytes(): Promise<number> {
   if (typeof caches === 'undefined' || !(await caches.has(CACHE_NAME))) return 0

@@ -17,11 +17,12 @@ import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { useUi } from '@/stores/ui'
 import { fetchTextSmart } from '@/lib/netFetch'
 import { sanitizeHtml } from '@/lib/sanitizeHtml'
 import { openExternal } from '@/lib/links'
-import { openSavedAction, saveBlob } from '@/lib/saveFile'
+import { isSaveCancelled, openSavedAction, saveBlob } from '@/lib/saveFile'
 import { importDoc, saveMarkdownDoc } from '@/db/docs'
 import { db, type Doc } from '@/db/db'
 import {
@@ -59,6 +60,7 @@ export function ArticleToolPage() {
   const [sourceUrl, setSourceUrl] = useState('') // 跟随重定向后的最终地址
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+  const [progress, setProgress] = useState<number | null>(null)
   const [article, setArticle] = useState<ParsedArticle | null>(null)
   const [capturedAt, setCapturedAt] = useState(0)
   const [previewHtml, setPreviewHtml] = useState('')
@@ -78,10 +80,15 @@ export function ArticleToolPage() {
       return
     }
     setStatus('正在本地化图片…')
+    setProgress(null)
     const loc = await localizeImages(parsed.contentHtml, {
       referer,
-      onProgress: (done, total) => setStatus(`正在本地化图片 ${done}/${total}`),
+      onProgress: (done, total) => {
+        setStatus(`正在本地化图片 ${done}/${total}`)
+        setProgress(total > 0 ? done / total : null)
+      },
     })
+    setProgress(null)
     const cleanHtml = sanitizeHtml(loc.html)
     const cleanText = extractVisibleText(cleanHtml)
     const cleanCount = cleanText.replace(/\s+/g, '').length
@@ -163,7 +170,7 @@ export function ArticleToolPage() {
       const where = await saveBlob(blob, `${safeName(title)}.epub`)
       toast(`EPUB 已导出 → ${where}`, openSavedAction())
     } catch (e) {
-      toast(e instanceof Error ? e.message : '导出失败')
+      if (!isSaveCancelled(e)) toast(e instanceof Error ? e.message : '导出失败')
     } finally {
       setAction('')
     }
@@ -185,6 +192,7 @@ export function ArticleToolPage() {
     if (!rawUrl && target !== url) setUrl(target)
 
     setBusy(true)
+    setProgress(null)
     setArticle(null)
     setPreviewHtml('')
     setImageFailures([])
@@ -208,6 +216,7 @@ export function ArticleToolPage() {
     } finally {
       setBusy(false)
       setStatus('')
+      setProgress(null)
     }
   }
 
@@ -226,11 +235,13 @@ export function ArticleToolPage() {
     setSourceUrl(ref)
     void (async () => {
       setBusy(true)
+      setProgress(null)
       try {
         await settle(parsed, ref, now)
       } finally {
         setBusy(false)
         setStatus('')
+        setProgress(null)
       }
     })()
   }
@@ -270,7 +281,8 @@ export function ArticleToolPage() {
         </div>
       </header>
 
-      <section className="card p-4 flex flex-col gap-3">
+      <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+        <TopProgressLine active={busy} progress={progress} label={status || '抓取网页文章'} />
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
@@ -325,7 +337,8 @@ export function ArticleToolPage() {
 
       {article ? (
         <>
-          <section className="card p-4 flex flex-col gap-3">
+          <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+            <TopProgressLine active={Boolean(action)} label={action === 'export' ? '正在导出 EPUB' : '正在保存文档'} />
             <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 rounded-[10px] border border-outline/70 bg-surface-2/60 px-2.5 py-1.5 focus-within:border-primary/60">
                 <Pencil size={13} className="text-on-surface-2 shrink-0" aria-hidden />

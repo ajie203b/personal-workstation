@@ -10,11 +10,14 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Flashlight,
+  FlashlightOff,
   ListTodo,
   Loader2,
   Mail,
   MessageSquare,
   Phone,
+  RefreshCw,
   ScanLine,
   Wifi,
 } from 'lucide-react'
@@ -65,6 +68,9 @@ export function QrScanTab({
   const [scanError, setScanError] = useState('')
   const [decoding, setDecoding] = useState(false)
   const [camActive, setCamActive] = useState(false)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
+  const [torchSupported, setTorchSupported] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
 
   const scanInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -144,6 +150,8 @@ export function QrScanTab({
     streamRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
     setCamActive(false)
+    setTorchSupported(false)
+    setTorchOn(false)
   }, [])
 
   // 切离扫码标签页或组件卸载时停相机，防止摄像头常亮耗电
@@ -188,8 +196,10 @@ export function QrScanTab({
     scheduleCamScan(gen)
   }
 
-  const startCamera = async () => {
-    if (camActive) return
+  const startCamera = async (overrideFacing?: 'environment' | 'user') => {
+    const targetFacing = overrideFacing ?? facingMode
+    if (camActive && !overrideFacing) return
+    if (overrideFacing) stopCamera()
     const md = navigator.mediaDevices
     if (!md?.getUserMedia) {
       toast('当前环境不支持摄像头，请用拍照、相册选图或粘贴图片')
@@ -197,7 +207,7 @@ export function QrScanTab({
     }
     const gen = ++camGenRef.current
     try {
-      const stream = await md.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+      const stream = await md.getUserMedia({ video: { facingMode: { ideal: targetFacing } } })
       const video = videoRef.current
       if (camGenRef.current !== gen || !video || !visibleRef.current) {
         stream.getTracks().forEach((t) => t.stop())
@@ -211,14 +221,36 @@ export function QrScanTab({
         if (streamRef.current === stream) streamRef.current = null
         return
       }
+      setFacingMode(targetFacing)
       setCamActive(true)
       setScanError('')
+      const track = stream.getVideoTracks()[0]
+      const caps = track?.getCapabilities?.() as { torch?: boolean } | undefined
+      setTorchSupported(Boolean(caps?.torch))
+      setTorchOn(false)
       scheduleCamScan(gen)
     } catch {
       if (camGenRef.current !== gen) return
       // 安卓 WebView 无相机权限时 getUserMedia 直接失败：退回图片输入，不白屏不卡死
       toast('无法打开相机（未授权或被占用）。可改用拍照、相册选图或粘贴图片识别')
     }
+  }
+
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()[0]
+    if (!track) return
+    const next = !torchOn
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] })
+      setTorchOn(next)
+    } catch {
+      toast('当前镜头不支持手电筒控制')
+    }
+  }
+
+  const switchCamera = () => {
+    const next: 'environment' | 'user' = facingMode === 'environment' ? 'user' : 'environment'
+    void startCamera(next)
   }
 
   /* ---------------- 结果处置 ---------------- */
@@ -292,6 +324,16 @@ export function QrScanTab({
         >
           {camActive ? <CameraOff size={15} /> : <Camera size={15} />} {camActive ? '停止相机' : '实时扫码'}
         </Button>
+        {camActive && (
+          <Button onClick={switchCamera} variant="outline" className="h-9 px-3">
+            <RefreshCw size={14} /> {facingMode === 'environment' ? '切前置' : '切后置'}
+          </Button>
+        )}
+        {camActive && torchSupported && (
+          <Button onClick={() => void toggleTorch()} variant={torchOn ? 'primary' : 'outline'} className="h-9 px-3">
+            {torchOn ? <FlashlightOff size={14} /> : <Flashlight size={14} />} {torchOn ? '关手电' : '手电筒'}
+          </Button>
+        )}
         <p className="hidden md:block text-[11.5px] text-on-surface-2 leading-relaxed">
           也可以直接 Ctrl+V 粘贴图片
         </p>

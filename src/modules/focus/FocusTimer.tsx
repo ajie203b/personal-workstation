@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Coffee, RotateCcw, Target, Timer, Volume2, VolumeX } from 'lucide-react'
+import { CloudRain, Coffee, RotateCcw, Target, Timer, Volume2, VolumeX } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { db } from '@/db/db'
 import type { Task } from '@/db/db'
 import { cancelFocusEnd, scheduleFocusEnd } from '@/lib/notify'
 import { useAllTasks, useDateTick } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
+import {
+  ambientNoise,
+  loadAmbientNoisePrefs,
+  saveAmbientNoisePrefs,
+  type AmbientNoiseMode,
+} from '@/lib/ambientNoise'
 import { haptic } from '@/lib/haptics'
 import { isNative } from '@/lib/native'
 import { Segmented } from '@/shared/ui/Segmented'
@@ -166,6 +172,32 @@ function CountdownDisplay({
 export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
   const [store, setStore] = useState<TimerStore>(loadStore)
   const [soundOn, setSoundOn] = useState<boolean>(isFocusSoundEnabled)
+  const [noisePrefs, setNoisePrefs] = useState(loadAmbientNoisePrefs)
+  const [noisePlaying, setNoisePlaying] = useState(false)
+
+  useEffect(() => {
+    if (noisePlaying && noisePrefs.mode !== 'off') {
+      ambientNoise.start(noisePrefs.mode, noisePrefs.volume)
+    } else {
+      ambientNoise.stop()
+    }
+  }, [noisePlaying, noisePrefs.mode, noisePrefs.volume])
+
+  useEffect(() => () => ambientNoise.stop(), [])
+
+  const pickNoiseMode = (mode: AmbientNoiseMode) => {
+    const next = { ...noisePrefs, mode }
+    setNoisePrefs(next)
+    saveAmbientNoisePrefs(next)
+    setNoisePlaying(mode !== 'off')
+  }
+
+  const changeNoiseVolume = (volume: number) => {
+    const next = { ...noisePrefs, volume }
+    setNoisePrefs(next)
+    saveAmbientNoisePrefs(next)
+    if (noisePlaying && next.mode !== 'off') ambientNoise.setVolume(volume)
+  }
   // 必须用本地日期 + 跨午夜自动刷新
   const today = useDateTick()
   const todayStats = useLiveQuery(
@@ -382,6 +414,55 @@ export function FocusTimer({ initialTaskId }: { initialTaskId?: string }) {
           本次完成将计入「{boundTask.title.slice(0, 18)}」
         </p>
       )}
+
+      {/* 离线专注白噪音（纯 Web Audio 合成，零音频体积） */}
+      <div className="w-full flex flex-col gap-1.5 pt-0.5">
+        <div className="flex items-center justify-between gap-2 text-[11.5px] text-on-surface-2">
+          <span className="inline-flex items-center gap-1 shrink-0">
+            <CloudRain size={13} /> 环境音
+          </span>
+          <div className="inline-flex items-center gap-1">
+            {([
+              ['off', '关'],
+              ['pink', '细雨'],
+              ['brown', '暖噪'],
+            ] as const).map(([mode, label]) => {
+              const active = noisePlaying ? noisePrefs.mode === mode : mode === 'off'
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => pickNoiseMode(mode)}
+                  aria-pressed={active}
+                  className={cn(
+                    'h-6 px-2 rounded-full text-[11px] font-medium transition-colors cursor-pointer',
+                    active
+                      ? 'bg-primary-soft text-primary'
+                      : 'bg-surface-2 text-on-surface-2 hover:text-on-surface',
+                  )}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        {noisePlaying && noisePrefs.mode !== 'off' && (
+          <label className="flex items-center gap-2 text-[10.5px] text-on-surface-2 px-0.5">
+            <span className="shrink-0">音量</span>
+            <input
+              type="range"
+              min={0.03}
+              max={0.5}
+              step={0.01}
+              value={noisePrefs.volume}
+              onChange={(e) => changeNoiseVolume(Number(e.target.value))}
+              aria-label="白噪音音量"
+              className="flex-1 accent-[var(--primary)] cursor-pointer"
+            />
+          </label>
+        )}
+      </div>
 
       {/* 今日专注统计 */}
       <div className="flex items-center gap-2 text-[12px] text-on-surface-2 w-full justify-center">

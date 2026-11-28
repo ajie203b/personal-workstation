@@ -6,6 +6,7 @@ import { packMathNote, unpackMathNote, type PackedMathNote } from '@/modules/too
 import { mergeQuotaRecords, QUOTA_KEY } from '@/modules/stats/aiQuota'
 import { isNative, isTauri } from './native'
 import { base64ToBytes, bytesToBase64 } from './http'
+import { decryptSyncText, maybeEncryptSyncText } from './syncCrypto'
 import { mergePayloads, type SyncPayload } from './syncMerge'
 import { planReconcile } from './syncReconcile'
 import {
@@ -45,6 +46,12 @@ export interface WebdavConfig {
    * - 0：仅同步元数据与笔记，所有文档附件均按需拉取
    */
   maxBlobMb?: number
+  /**
+   * 可选端到端加密口令（Phase 4）：
+   * 留空则保持明文兼容；填写后用 PBKDF2 + AES-256-GCM 加密 sync.json / mathnotes-sync.json / blobs/*，
+   * 口令仅存本机，不随备份或同步上传。
+   */
+  e2eePassphrase?: string
 }
 
 /** 坚果云预设目录：用户只需填账号和应用密码 */
@@ -361,6 +368,12 @@ async function reindexMissingDocs(): Promise<void> {
   } catch { /* 索引失败不影响阅读 */ }
 }
 
+export interface SyncProgress {
+  phase: 'connecting' | 'downloading' | 'uploading' | 'finalizing'
+  done?: number
+  total?: number
+}
+
 export interface SyncReport {
   tasks: number
   docs: number
@@ -467,7 +480,8 @@ async function readMathEpoch(): Promise<number | undefined> {
 async function syncMathNotesOnce(cfg: WebdavConfig, base: string, app: string): Promise<number> {
   const url = join(base, MATH_NOTES_SYNC_FILE)
   const got = await getText(cfg, url)
-  const remote: MathNotesSyncFile | null = got?.text ? parseMathNotesFile(got.text) : null
+  const remoteText = got?.text ? await decryptSyncText(got.text, cfg.e2eePassphrase) : null
+  const remote: MathNotesSyncFile | null = remoteText ? parseMathNotesFile(remoteText) : null
 
   const baseRows = await db.mathNotes.toArray()
   const local = {
@@ -506,7 +520,8 @@ async function syncMathNotesOnce(cfg: WebdavConfig, base: string, app: string): 
   const relevant = [...merged.tombstones.map((t) => t.id), ...(remote?.notes ?? []).map((n) => n.id), ...baseRows.map((n) => n.id)]
   const tombstones = noteTombstones(allTomb, relevant)
   const file = buildMathNotesFile(app, after.map(packMathNote), tombstones, merged.epoch)
-  await putText(cfg, url, JSON.stringify(file), got?.etag, !got)
+  const encodedMath = await maybeEncryptSyncText(JSON.stringify(file), cfg.e2eePassphrase)
+  await putText(cfg, url, encodedMath, got?.etag, !got)
   // 只有远端写入成功才更新共同基线；只存每页内容指纹而非整份笔迹副本，大幅节省 IndexedDB 体积
   await db.settings.put({ key: MATH_BASELINE_KEY, value: Object.fromEntries(file.notes.map((n) => [n.id, noteContentFingerprint(n)])) })
   return after.length
@@ -521,10 +536,11 @@ async function syncMathNotes(cfg: WebdavConfig, base: string, app: string): Prom
   }
 }
 
-async function performSync(): Promise<SyncReport> {
+async function performSync(onProgress?: (p: SyncProgress) => void): Promise<SyncReport> {
   const cfg = await getWebdavConfig()
   if (!cfg?.url) throw new Error('还没有填写 WebDAV 地址')
   const base = normalizeBase(cfg.url)
+  onProgress?.({ phase: 'connecting' })
   await ensureDirs(cfg, base)
 
   const syncUrl = join(base, SYNC_FILE)
@@ -533,8 +549,9 @@ async function performSync(): Promise<SyncReport> {
   const got = await getText(cfg, syncUrl)
   let remote: SyncPayload | null = null
   if (got?.text) {
+    const plain = await decryptSyncText(got.text, cfg.e2eePassphrase)
     try {
-      remote = JSON.parse(got.text) as SyncPayload
+      remote = JSON.parse(plain) as SyncPayload
     } catch {
       throw new Error('远端 sync.json 不是合法 JSON（可能被别的程序占用）')
     }
@@ -570,13 +587,18 @@ async function performSync(): Promise<SyncReport> {
     if (sz > maxBlobBytes) { blobsSkipped++; return false }
     return true
   })
+  if (downTargets.length > 0) {
+    onProgress?.({ phase: 'downloading', done: 0, total: downTargets.length })
+  }
   await syncBlobs(downTargets, blobSizes, async (meta) => {
     const res = await getText(cfg, join(base, `blobs/${meta.hash}.b64`))
     if (!res?.text) return
-    const blob = base64ToBlob(res.text, meta.type)
+    const plainB64 = await decryptSyncText(res.text, cfg.e2eePassphrase)
+    const blob = base64ToBlob(plainB64, meta.type)
     await db.blobs.put({ hash: meta.hash, blob })
     localHashes.add(meta.hash)
     blobsDown++
+    onProgress?.({ phase: 'downloading', done: blobsDown, total: downTargets.length })
     // 全文索引按需重建（不阻塞同步）
     void import('@/lib/docTextIndex').then(async ({ indexDoc }) => {
       const docs = await db.docText.get(meta.hash) ? [] : await db.docs.where('hash').equals(meta.hash).toArray()
@@ -595,6 +617,9 @@ async function performSync(): Promise<SyncReport> {
     if (sz > maxBlobBytes) { blobsSkipped++; return false }
     return true
   })
+  if (upTargets.length > 0) {
+    onProgress?.({ phase: 'uploading', done: 0, total: upTargets.length })
+  }
   await syncBlobs(upTargets, blobSizes, async (meta) => {
     const row = await db.blobs.get(meta.hash)
     if (!row) return
@@ -602,15 +627,20 @@ async function performSync(): Promise<SyncReport> {
       blobsSkipped++
       return
     }
-    await putText(cfg, join(base, `blobs/${meta.hash}.b64`), await blobToBase64(row.blob))
+    const rawB64 = await blobToBase64(row.blob)
+    const body = await maybeEncryptSyncText(rawB64, cfg.e2eePassphrase)
+    await putText(cfg, join(base, `blobs/${meta.hash}.b64`), body)
     blobsUp++
+    onProgress?.({ phase: 'uploading', done: blobsUp, total: upTargets.length })
   })
 
   // 3) 推合并结果（带上 ETag 防覆盖别人的并发写入）。
   //    内容以落库后的本地状态为准：同步期间的新改动不需要等下一轮才上去。
+  onProgress?.({ phase: 'finalizing' })
   const pushed = await readLocalPayload()
   pushed.blobMeta = merged.payload.blobMeta
-  await putText(cfg, syncUrl, JSON.stringify(pushed), got?.etag, !got)
+  const encodedSync = await maybeEncryptSyncText(JSON.stringify(pushed), cfg.e2eePassphrase)
+  await putText(cfg, syncUrl, encodedSync, got?.etag, !got)
 
   // 4) 笔记独立文件：失败只记原因，不让主同步失败
   let mathNotes: SyncReport['mathNotes']
@@ -649,7 +679,8 @@ export async function fetchRemoteBlobOnDemand(hash: string, fallbackMime = 'appl
     if (!res?.text) return null
     const doc = await db.docs.where('hash').equals(hash).first()
     const mime = doc ? DOC_KIND_MIME[doc.kind] : fallbackMime
-    const blob = base64ToBlob(res.text, mime)
+    const plainB64 = await decryptSyncText(res.text, cfg.e2eePassphrase)
+    const blob = base64ToBlob(plainB64, mime)
     await db.blobs.put({ hash, blob })
     if (doc) {
       void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(doc, blob))
@@ -667,11 +698,11 @@ export async function fetchRemoteBlobOnDemand(hash: string, fallbackMime = 'appl
  */
 let syncChain: Promise<unknown> = Promise.resolve()
 
-async function runOnce(): Promise<SyncReport> {
+async function runOnce(onProgress?: (p: SyncProgress) => void): Promise<SyncReport> {
   try {
-    return await performSync()
+    return await performSync(onProgress)
   } catch (e) {
-    if (e instanceof Error && e.message === 'CONFLICT') return await performSync()
+    if (e instanceof Error && e.message === 'CONFLICT') return await performSync(onProgress)
     throw e
   }
 }
@@ -690,10 +721,10 @@ async function recordError(e: unknown): Promise<void> {
 }
 
 /** 立即同步；并发冲突（412）时重跑一次，多次调用按顺序串行 */
-export function syncNow(): Promise<SyncReport> {
+export function syncNow(onProgress?: (p: SyncProgress) => void): Promise<SyncReport> {
   const run = syncChain.then(async () => {
     try {
-      return await runOnce()
+      return await runOnce(onProgress)
     } catch (e) {
       await recordError(e)
       throw e

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   AlertTriangle,
@@ -44,8 +44,9 @@ import {
   type FqwebNodeTestResult,
 } from '@/lib/fanqieFqweb'
 import { buildFanqieEpub, buildFanqieTxt, importFanqieToDocs, sanitizeFilename, saveBlob } from '@/lib/fanqieExport'
-import { openSavedAction } from '@/lib/saveFile'
+import { isSaveCancelled, openSavedAction } from '@/lib/saveFile'
 import { openExternal } from '@/lib/links'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { cn } from '@/lib/cn'
 import { BookCard, LibraryRow, ProgressCard, SearchResultCard } from './fanqie/FanqieCards'
 import { bookErrorMessage, clamp, libraryToInfo, searchErrorMessage } from './fanqie/fanqieHelpers'
@@ -203,6 +204,7 @@ function ChapterDirectorySection({
 
 export function FanqiePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const toast = useUi((s) => s.toast)
   const job = useFanqie((s) => s.job)
   const start = useFanqie((s) => s.start)
@@ -228,8 +230,9 @@ export function FanqiePage() {
   const [savedCustomNode, setSavedCustomNode] = useState(() => getCustomFqwebBase())
   const [testingNode, setTestingNode] = useState(false)
   const [nodeTestResult, setNodeTestResult] = useState<FqwebNodeTestResult | null>(null)
+  const lastAutoQueryRef = useRef('')
 
-  const saveLocationText = isNative() ? '「下载/个人工作站」' : '浏览器默认下载目录'
+  const saveLocationText = isNative() ? '「下载/个人工作站」' : '所选保存位置或下载目录'
 
   const libraryRows = useLiveQuery(() => listFanqieBooks(), [])
   const library = useMemo(() => libraryRows ?? [], [libraryRows])
@@ -321,8 +324,8 @@ export function FanqiePage() {
     }
   }
 
-  const doSearch = async () => {
-    const q = query.trim()
+  const doSearch = async (overrideQuery?: string) => {
+    const q = (overrideQuery ?? query).trim()
     if (!q || busy) return
     setError('')
     setResults(null)
@@ -351,6 +354,16 @@ export function FanqiePage() {
       setSearching(false)
     }
   }
+
+  // ?q= 或 ?url= 自动预填并直达查书（分享收件箱 / 深链入口）
+  const incomingParam = (searchParams.get('q') ?? searchParams.get('url') ?? '').trim()
+  useEffect(() => {
+    if (!incomingParam || lastAutoQueryRef.current === incomingParam) return
+    lastAutoQueryRef.current = incomingParam
+    setQuery(incomingParam)
+    void doSearch(incomingParam)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingParam])
 
   const backToResults = () => {
     setBook(null)
@@ -421,7 +434,7 @@ export function FanqiePage() {
       const where = await saveBlob(blob, `${sanitizeFilename(b.title)}.${format}`)
       toast(`已导出 ${format.toUpperCase()}（${rows.length} 章）→ ${where}`, openSavedAction())
     } catch (e) {
-      toast(e instanceof Error ? e.message : '导出失败')
+      if (!isSaveCancelled(e)) toast(e instanceof Error ? e.message : '导出失败')
     } finally {
       setBusyAction('')
     }
@@ -575,12 +588,13 @@ export function FanqiePage() {
       )}
 
       <form
-        className="card p-4"
+        className="card relative overflow-hidden p-4"
         onSubmit={(e) => {
           e.preventDefault()
           void doSearch()
         }}
       >
+        <TopProgressLine active={searching || loadingBook} label="查找番茄书籍" />
         <label htmlFor="fq-search" className="text-[13px] font-medium">
           搜书名 / 作者
         </label>
@@ -818,7 +832,8 @@ export function FanqiePage() {
         </>
       )}
 
-      <section id="fq-library" className="card p-4">
+      <section id="fq-library" className="card relative overflow-hidden p-4">
+        <TopProgressLine active={Boolean(busyAction)} label="处理或导出书籍" />
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-[13.5px] font-semibold">本地书架</h2>
           <span className="text-[11.5px] text-on-surface-2 tabular-nums">{library.length} 本</span>

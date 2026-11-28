@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, FileType2, FolderInput, MoreHorizontal, Quote, Star, Tag, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router'
+import { BookOpen, FileType2, FolderInput, MoreHorizontal, Quote, Star, Tag, Trash2, Wrench } from 'lucide-react'
 import { DOC_KIND_LABEL, type Doc } from '@/db/db'
 import { FileTypeIcon } from '@/shared/FileTypeIcon'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem as DropdownItem, MenuSeparator } from '@/shared/ui/Menu'
@@ -18,6 +19,9 @@ export interface DocCardProps {
   doc: Doc
   pct: number
   hit?: { count: number; snippet: string; seg?: number }
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
   onToggleStar?: () => void
   onEditMeta?: () => void
   onOpenCitation: () => void
@@ -28,11 +32,33 @@ export interface DocCardProps {
 }
 
 export function DocCard({
-  doc: d, pct, hit, onToggleStar, onEditMeta, onOpenCitation, onMove, onOpen, onRead, onTrash,
+  doc: d, pct, hit, selectable, selected, onToggleSelect, onToggleStar, onEditMeta, onOpenCitation, onMove, onOpen, onRead, onTrash,
 }: DocCardProps) {
+  const navigate = useNavigate()
   return (
-    <article id={`doc-${d.id}`} className="card card-hover group relative flex h-full items-center overflow-hidden">
-      <button type="button" onClick={onOpen} aria-label={`${d.kind === 'md' && !hit ? '继续写作' : '阅读'} ${d.title}`} className="flex flex-1 min-w-0 items-center gap-3.5 px-3.5 py-3 pr-1 self-stretch text-left cursor-pointer">
+    <article
+      id={`doc-${d.id}`}
+      className={cn(
+        'card card-hover group relative flex h-full items-center overflow-hidden',
+        selectable && selected && 'ring-2 ring-primary/70 border-primary/50 bg-primary-soft/20',
+      )}
+    >
+      <button
+        type="button"
+        onClick={selectable ? onToggleSelect : onOpen}
+        aria-label={selectable ? `${selected ? '取消选中' : '选中'} ${d.title}` : `${d.kind === 'md' && !hit ? '继续写作' : '阅读'} ${d.title}`}
+        className="flex flex-1 min-w-0 items-center gap-3.5 px-3.5 py-3 pr-1 self-stretch text-left cursor-pointer"
+      >
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={Boolean(selected)}
+            readOnly
+            tabIndex={-1}
+            aria-hidden
+            className="app-checkbox shrink-0 pointer-events-none"
+          />
+        )}
         <span className="grid place-items-center w-10 h-11 shrink-0 transition-transform duration-200 group-hover:scale-105" aria-hidden>
           <FileTypeIcon kind={d.kind} size={30} />
         </span>
@@ -82,6 +108,16 @@ export function DocCard({
             {onEditMeta && <DropdownItem onSelect={onEditMeta}><Tag size={16} aria-hidden />文献信息与标签</DropdownItem>}
             {onToggleStar && <DropdownItem onSelect={onToggleStar}><Star size={16} aria-hidden />{d.starred ? '取消星标' : '设为星标'}</DropdownItem>}
             <DropdownItem onSelect={onOpenCitation}><Quote size={16} aria-hidden />引用…</DropdownItem>
+            {d.kind === 'pdf' && (
+              <DropdownItem onSelect={() => navigate(`/tools/pdf?docId=${d.id}&tool=compress`)}>
+                <Wrench size={16} aria-hidden />用 PDF 工具箱处理
+              </DropdownItem>
+            )}
+            {(d.kind === 'md' || d.kind === 'txt' || d.kind === 'docx') && (
+              <DropdownItem onSelect={() => navigate(`/tools/njust-report?docId=${d.id}`)}>
+                <Wrench size={16} aria-hidden />用 NJUST 报告排版
+              </DropdownItem>
+            )}
             <DropdownItem onSelect={onMove}><FolderInput size={16} aria-hidden />移动到文件夹</DropdownItem>
             <MenuSeparator />
             <DropdownItem danger onSelect={onTrash}><Trash2 size={16} aria-hidden />移入回收站</DropdownItem>

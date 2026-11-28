@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { FolderOpen, FolderPlus, Import, LayoutGrid, MoreHorizontal, PenLine, Plus, Search, Settings2, SlidersHorizontal, Sparkles, Table2, Trash2, X } from 'lucide-react'
+import { CheckSquare, FolderInput, FolderOpen, FolderPlus, Highlighter, Import, LayoutGrid, MoreHorizontal, PenLine, Plus, Quote, Search, Settings2, SlidersHorizontal, Sparkles, Table2, Tag, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { isTauri } from '@/lib/native'
 import { IconDocs } from '@/shared/icons'
 import { DOC_KIND_LABEL, type Annotation, type Doc, type DocKind, type DocReadStatus, type Folder } from '@/db/db'
 import { deleteDoc, getDocBlob, importDoc, restoreDoc, updateDocMeta } from '@/db/docs'
+import { annotationAnchor } from '@/lib/docLocator'
 import { readDocumentText } from '@/lib/readDocumentText'
 import { shareMarkdown } from '@/lib/shareDoc'
 import { createFolder, deleteFolder, setDocFolder } from '@/db/folders'
@@ -28,7 +29,8 @@ import { DocsTable } from './DocsTable'
 import { DocsDialogs, type FolderDialogState } from './DocsDialogs'
 import { AnnotationReviewDialog } from './AnnotationReviewDialog'
 import { CitationDialog } from './CitationDialog'
-import { Sheet } from '@/shared/ui/Sheet'
+import { formatCitation } from './citation'
+import { Dialog, Sheet } from '@/shared/ui/Sheet'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { DropdownMenu, DropdownMenuTrigger, MenuContent, MenuItem } from '@/shared/ui/Menu'
 import { isAnnotationDue } from './reviewSm2'
@@ -99,6 +101,11 @@ export function DocsPage() {
   const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
   const [metaDoc, setMetaDoc] = useState<Doc | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false)
+  const [batchTagOpen, setBatchTagOpen] = useState(false)
+  const [batchTagInput, setBatchTagInput] = useState('')
   const toast = useUi((s) => s.toast)
   const [keyword, setKeyword] = useState('')
   // 搜索防抖：全文命中要扫所有 docText，逐字符触发会把主线程按住（文档库卡死的直接来源）
@@ -193,6 +200,118 @@ export function DocsPage() {
     }),
     [docs, activeFolder, folders, kindFilter, statusFilter, tagFilter, annCountByHash, progressMap, sortBy, query, textHits],
   )
+
+  /** 批注与评论检索命中（支持在文档库直接搜批注内容并回跳原位） */
+  const annotationHits = useMemo(() => {
+    const kw = query.trim().toLowerCase()
+    if (kw.length < 2) return [] as { doc: Doc; ann: Annotation }[]
+    const docByHash = new Map(docs.map((d) => [d.hash, d]))
+    const out: { doc: Doc; ann: Annotation }[] = []
+    for (const ann of allAnnotations) {
+      const doc = docByHash.get(ann.docHash)
+      if (!doc) continue
+      const hay = `${ann.text}\n${ann.comment ?? ''}`.toLowerCase()
+      if (hay.includes(kw)) out.push({ doc, ann })
+      if (out.length >= 20) break
+    }
+    return out
+  }, [allAnnotations, docs, query])
+
+  const selectedDocs = useMemo(
+    () => visibleDocs.filter((d) => selectedIds.has(d.id)),
+    [visibleDocs, selectedIds],
+  )
+
+  const toggleSelectMode = () => {
+    setSelectMode((prev) => {
+      if (prev) setSelectedIds(new Set())
+      return !prev
+    })
+  }
+
+  const toggleSelectId = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      if (visibleDocs.length > 0 && visibleDocs.every((d) => prev.has(d.id))) return new Set()
+      return new Set(visibleDocs.map((d) => d.id))
+    })
+  }
+
+  const runBatchMove = async (targetFolderId: string | undefined, label: string) => {
+    if (!selectedDocs.length) return
+    try {
+      await Promise.all(selectedDocs.map((d) => setDocFolder(d.id, targetFolderId)))
+      toast(`已将 ${selectedDocs.length} 篇文档移至「${label}」`)
+      setBatchMoveOpen(false)
+      setSelectedIds(new Set())
+      setSelectMode(false)
+    } catch {
+      toast('批量移动失败，请重试')
+    }
+  }
+
+  const runBatchAddTag = async () => {
+    const raw = batchTagInput.trim().replace(/^#+/, '')
+    if (!raw || !selectedDocs.length) return
+    const nextTags = raw.split(/[,，\s]+/).map((t) => t.trim().replace(/^#+/, '')).filter(Boolean)
+    if (!nextTags.length) return
+    try {
+      await Promise.all(
+        selectedDocs.map((d) => {
+          const merged = Array.from(new Set([...(d.tags ?? []), ...nextTags]))
+          return updateDocMeta(d.id, { tags: merged })
+        }),
+      )
+      toast(`已为 ${selectedDocs.length} 篇文档添加标签`)
+      setBatchTagInput('')
+      setBatchTagOpen(false)
+      setSelectedIds(new Set())
+      setSelectMode(false)
+    } catch {
+      toast('批量加标签失败，请重试')
+    }
+  }
+
+  const runBatchCopyCitations = async (style: 'gbt7714' | 'bibtex') => {
+    if (!selectedDocs.length) return
+    try {
+      const text = selectedDocs
+        .map((d, idx) => (style === 'gbt7714' ? `[${idx + 1}] ${formatCitation(d, style)}` : formatCitation(d, style)))
+        .join(style === 'bibtex' ? '\n\n' : '\n')
+      await navigator.clipboard.writeText(text)
+      toast(`已复制 ${selectedDocs.length} 篇文档的 ${style === 'gbt7714' ? 'GB/T 7714' : 'BibTeX'} 引文`)
+    } catch {
+      toast('复制失败，请重试')
+    }
+  }
+
+  const runBatchTrash = async () => {
+    if (!selectedDocs.length) return
+    const targets = [...selectedDocs]
+    try {
+      await Promise.all(targets.map((d) => deleteDoc(d)))
+      setSelectedIds(new Set())
+      setSelectMode(false)
+      toast(`已将 ${targets.length} 篇文档移入回收站`, {
+        label: '撤销',
+        run: () => {
+          void Promise.all(targets.map((d) => restoreDoc(d.id)))
+            .then(() => toast(`已恢复 ${targets.length} 篇文档`))
+            .catch(() => toast('恢复失败，请重试'))
+        },
+      })
+    } catch {
+      toast('批量移入回收站失败，请重试')
+    }
+  }
 
   const openCreateFolder = (parentId?: string) => {
     setFolderName('')
@@ -324,6 +443,21 @@ export function DocsPage() {
         </button>
       )}
       <div className={compact ? 'hidden' : 'ml-auto flex items-center gap-2'}>
+        {!compact && visibleDocs.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            className={cn(
+              'h-9 px-2.5 rounded-[9px] border text-[12.5px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors',
+              selectMode
+                ? 'border-primary/50 bg-primary-soft text-primary'
+                : 'border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface',
+            )}
+          >
+            <CheckSquare size={14} />
+            {selectMode ? '退出批量' : '批量管理'}
+          </button>
+        )}
         {!compact && desktop && <div className="inline-flex rounded-[9px] border border-outline bg-surface-2 p-0.5" role="group" aria-label="视图切换">
           <button
             type="button"
@@ -382,7 +516,7 @@ export function DocsPage() {
             <input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索标题、作者、标签或全文…"
+              placeholder="搜索标题、作者、标签、批注或全文…"
               aria-label="搜索文档"
               className={cn(
                 'h-9 w-64 focus:w-72 pl-9 rounded-[12px] bg-surface border border-outline shadow-[var(--elev-card)] text-[13px] outline-none transition-[width,border-color] focus:border-primary/60',
@@ -424,7 +558,7 @@ export function DocsPage() {
           <input
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="搜索标题、作者或全文…"
+            placeholder="搜索标题、批注或全文…"
             aria-label="搜索文档"
             className={cn(
               'w-full h-10 pl-9 rounded-[13px] bg-surface/95 border border-outline shadow-[var(--elev-card)] text-[14px] outline-none focus:border-primary/60',
@@ -456,6 +590,11 @@ export function DocsPage() {
             </button>
           </DropdownMenuTrigger>
           <MenuContent>
+            {!inTrash && visibleDocs.length > 0 && (
+              <MenuItem active={selectMode} onSelect={toggleSelectMode}>
+                <CheckSquare size={16} />{selectMode ? '退出批量管理' : '批量管理文档'}
+              </MenuItem>
+            )}
             <MenuItem onSelect={() => openCreateFolder()}><FolderPlus size={16} />新建文件夹</MenuItem>
             {isUserFolder && <MenuItem onSelect={requestFolderDelete}><Trash2 size={16} />删除文件夹</MenuItem>}
             {isTauri() && <MenuItem onSelect={() => navigate('/local-markdown')}><FolderOpen size={16} />本地文档</MenuItem>}
@@ -497,6 +636,66 @@ export function DocsPage() {
 
           {inTrash ? <><Button size="sm" className="self-start" onClick={() => setFolderParam(null)}>返回全部</Button><DocTrash /></> : <>
           {desktop && docs.length > 0 && filters(false)}
+
+          {selectMode && (
+            <div className="card px-3.5 py-2.5 flex flex-wrap items-center gap-2 border-primary/35 bg-primary-soft/20">
+              <span className="text-[12.5px] font-medium tabular-nums">
+                已选 {selectedDocs.length} / {visibleDocs.length} 篇
+              </span>
+              <button
+                type="button"
+                onClick={toggleSelectAllVisible}
+                className="h-7 px-2 rounded-lg text-[12px] text-primary hover:bg-primary-soft cursor-pointer"
+              >
+                {visibleDocs.length > 0 && visibleDocs.every((d) => selectedIds.has(d.id)) ? '取消全选' : '全选当前'}
+              </button>
+              <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+                <Button size="sm" variant="outline" disabled={!selectedDocs.length} onClick={() => setBatchMoveOpen(true)}>
+                  <FolderInput size={13} /> 移动
+                </Button>
+                <Button size="sm" variant="outline" disabled={!selectedDocs.length} onClick={() => setBatchTagOpen(true)}>
+                  <Tag size={13} /> 加标签
+                </Button>
+                <Button size="sm" variant="outline" disabled={!selectedDocs.length} onClick={() => void runBatchCopyCitations('gbt7714')}>
+                  <Quote size={13} /> 复制国标引文
+                </Button>
+                <Button size="sm" variant="outline" disabled={!selectedDocs.length} onClick={() => void runBatchCopyCitations('bibtex')}>
+                  BibTeX
+                </Button>
+                <Button size="sm" variant="destructive" disabled={!selectedDocs.length} onClick={() => void runBatchTrash()}>
+                  <Trash2 size={13} /> 回收站
+                </Button>
+                <Button size="sm" variant="ghost" onClick={toggleSelectMode}>完成</Button>
+              </div>
+            </div>
+          )}
+
+          {annotationHits.length > 0 && (
+            <div className="card p-3.5 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-on-surface">
+                  <Highlighter size={14} className="text-primary" /> 命中的批注与评论（{annotationHits.length}）
+                </span>
+                <span className="text-[11px] text-on-surface-2">点击直达原文高亮处</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {annotationHits.slice(0, 6).map(({ doc, ann }) => (
+                  <button
+                    key={ann.id}
+                    type="button"
+                    onClick={() => navigate(docPath({ docId: doc.id, anchor: annotationAnchor(doc, ann) }, ann.id))}
+                    className="text-left rounded-[11px] border border-outline/80 bg-surface-2/80 hover:border-primary/45 px-3 py-2 transition-colors cursor-pointer"
+                  >
+                    <p className="text-[11.5px] font-medium text-primary truncate">{doc.title}</p>
+                    <p className="text-[12.5px] text-on-surface line-clamp-2 mt-0.5 leading-snug">{ann.text}</p>
+                    {ann.comment && (
+                      <p className="text-[11.5px] text-on-surface-2 line-clamp-1 mt-0.5">评论：{ann.comment}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {pending.length > 0 && (
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
@@ -557,6 +756,10 @@ export function DocsPage() {
               folders={folders}
               progressMap={progressMap}
               annCountByHash={annCountByHash}
+              selectable={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelectId}
+              onToggleSelectAll={toggleSelectAllVisible}
               onOpen={(d, hit) =>
                 morphOpen(
                   () => document.getElementById(`doc-${d.id}`),
@@ -587,6 +790,9 @@ export function DocsPage() {
                     doc={d}
                     pct={Math.round((progressMap[d.hash]?.progressPct ?? 0) * 100)}
                     hit={hit}
+                    selectable={selectMode}
+                    selected={selectedIds.has(d.id)}
+                    onToggleSelect={() => toggleSelectId(d.id)}
                     onOpen={() =>
                       morphOpen(
                         () => document.getElementById(`doc-${d.id}`),
@@ -608,6 +814,50 @@ export function DocsPage() {
           </>}
         </div>
       </div>
+
+      <Dialog open={batchMoveOpen} onOpenChange={setBatchMoveOpen} title={`移动 ${selectedDocs.length} 篇文档到文件夹`}>
+        <div className="flex flex-col gap-1.5 max-h-[50dvh] overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => void runBatchMove(undefined, '未分类')}
+            className="text-left px-3 py-2.5 rounded-[10px] bg-surface-2 hover:bg-surface-3 text-[13px] cursor-pointer"
+          >
+            未分类
+          </button>
+          {folders.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => void runBatchMove(f.id, f.name)}
+              className="text-left px-3 py-2.5 rounded-[10px] bg-surface-2 hover:bg-surface-3 text-[13px] cursor-pointer"
+            >
+              {f.name}
+            </button>
+          ))}
+        </div>
+      </Dialog>
+
+      <Dialog open={batchTagOpen} onOpenChange={setBatchTagOpen} title={`为 ${selectedDocs.length} 篇文档添加标签`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void runBatchAddTag()
+          }}
+          className="flex flex-col gap-3"
+        >
+          <input
+            value={batchTagInput}
+            onChange={(e) => setBatchTagInput(e.target.value)}
+            placeholder="输入标签名（多个可用空格或逗号分隔）"
+            className="w-full h-10 px-3 rounded-[10px] bg-surface-2 border border-outline text-[13.5px] outline-none focus:border-primary/60"
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setBatchTagOpen(false)}>取消</Button>
+            <Button type="submit" variant="primary" disabled={!batchTagInput.trim()}>添加标签</Button>
+          </div>
+        </form>
+      </Dialog>
 
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen} title="筛选文档" compact>
         {filters(true)}

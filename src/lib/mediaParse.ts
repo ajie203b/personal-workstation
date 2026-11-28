@@ -142,10 +142,11 @@ async function httpGetBlob(
   url: string,
   headers: Record<string, string>,
   signal?: AbortSignal,
+  onProgress?: (loaded: number, total: number) => void,
 ): Promise<Blob> {
   throwIfAborted(signal)
   const { bytes } = await raceAbort(
-    httpBytes(url, { headers, timeoutMs: 120_000, proxyFallback: true }),
+    httpBytes(url, { headers, timeoutMs: 120_000, proxyFallback: true, onProgress }),
     signal,
   )
   return new Blob([bytes])
@@ -696,7 +697,11 @@ function assetHeaders(url: string): Record<string, string> {
 }
 
 /** 下载单个素材，返回落盘位置 */
-export async function downloadAsset(asset: ParsedAsset, signal?: AbortSignal): Promise<string> {
+export async function downloadAsset(
+  asset: ParsedAsset,
+  signal?: AbortSignal,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<string> {
   throwIfAborted(signal)
   const headers = assetHeaders(asset.url)
   if (isNative()) {
@@ -708,10 +713,10 @@ export async function downloadAsset(asset: ParsedAsset, signal?: AbortSignal): P
             ? 'audio/mpeg'
             : 'audio/mp4'
           : `image/${guessExt(asset.url).replace('jpg', 'jpeg')}`
-    return downloadUrlToDownloads(asset.url, asset.filename, headers, mimeType)
+    return downloadUrlToDownloads(asset.url, asset.filename, headers, mimeType, onProgress)
   }
   try {
-    const blob = await httpGetBlob(asset.url, headers, signal)
+    const blob = await httpGetBlob(asset.url, headers, signal, onProgress)
     return saveBlob(blob, asset.filename)
   } catch (e) {
     if (isAbortError(e)) throw e

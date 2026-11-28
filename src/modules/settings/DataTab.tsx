@@ -7,14 +7,16 @@ import { exportBackupZip, importBackupFile, inspectBackupFile, type BackupPrevie
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { clearLegacySnapshots, countLegacySnapshots } from '@/lib/legacySnapshots'
 import { fmtDateTime, todayStr } from '@/lib/date'
-import { openSavedAction, saveBlob } from '@/lib/saveFile'
-import { isNative } from '@/lib/native'
+import { isSaveCancelled, openSavedAction, saveBlob } from '@/lib/saveFile'
+import { isNative, isTauri } from '@/lib/native'
 import { syncAllTaskNotifications } from '@/lib/notify'
-import { clearModelCache, modelCacheBytes } from '@/lib/modelCache'
 import { cn } from '@/lib/cn'
 import { NotifyCard } from './NotifyCard'
+import { ModelCenterCard } from './ModelCenterCard'
+import { StorageDiagnosticsCard } from './StorageDiagnosticsCard'
 
 const LAST_BACKUP_KEY = 'lastManualBackupAt'
 const BACKUP_REMIND_MS = 7 * 24 * 60 * 60 * 1000
@@ -26,17 +28,9 @@ const SCOPE_OPTIONS: { id: BackupScope; label: string }[] = [
   { id: 'settings', label: '外观、模型额度与工具记录' },
 ]
 
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return '0 B'
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${bytes} B`
-}
-
 export function DataTab({ onGoSync }: { onGoSync: () => void }) {
   const [usage, setUsage] = useState<string>('')
   const [lastBackup, setLastBackup] = useState<number | null>(null)
-  const [modelBytes, setModelBytes] = useState<number | null>(null)
   const [confirmSnapshots, setConfirmSnapshots] = useState(false)
   const [snapshotCount, setSnapshotCount] = useState(0)
   const [pendingRestore, setPendingRestore] = useState<{ file: File; preview: BackupPreview } | null>(null)
@@ -56,7 +50,6 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
     void db.settings.get(LAST_BACKUP_KEY).then((row) => {
       if (typeof row?.value === 'number') setLastBackup(row.value)
     })
-    void modelCacheBytes().then((bytes) => setModelBytes(bytes))
     void countLegacySnapshots().then(setSnapshotCount).catch(() => undefined)
   }, [])
 
@@ -75,11 +68,12 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
       await runExportZip(async () => {
         const blob = await exportBackupZip()
         const where = await saveBlob(blob, `Kairos备份-${todayStr()}.kairos.zip`)
+        if (!where) return
         markBackedUp()
         toast(`压缩备份已导出 → ${where}`, openSavedAction())
       })
-    } catch {
-      toast('导出压缩备份失败，请重试')
+    } catch (err) {
+      if (!isSaveCancelled(err)) toast('导出压缩备份失败，请重试')
     }
   }
 
@@ -90,11 +84,12 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
         const blob = new Blob([json], { type: 'application/json' })
         // 本地日期，别用 toISOString（UTC 会让凌晨导出的文件名变成昨天）
         const where = await saveBlob(blob, `Kairos备份-${todayStr()}.json`)
+        if (!where) return
         markBackedUp()
         toast(`JSON 备份已导出 → ${where}`, openSavedAction())
       })
-    } catch {
-      toast('导出失败，请重试')
+    } catch (err) {
+      if (!isSaveCancelled(err)) toast('导出失败，请重试')
     }
   }
 
@@ -136,29 +131,20 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
     setRestoreScopes((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
-  const { state: clearCacheState, run: runClearCache } = useAsyncButton({ successHoldMs: 900 })
   const { state: snapshotState, run: runClearSnapshots } = useAsyncButton()
 
-  const doClearModelCache = async () => {
-    try {
-      await runClearCache(async () => {
-        await clearModelCache()
-        setModelBytes(0)
-        toast('已清理离线 AI 模型缓存，下次使用时会自动重新下载')
-      })
-    } catch {
-      toast('清理模型缓存失败')
-    }
-  }
-
-  const saveHintWhere = isNative() ? '「下载/个人工作站」' : '系统下载目录'
+  const saveHintWhere = isNative() ? '「下载/个人工作站」' : isTauri() ? '你选择的保存位置' : '系统下载目录'
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
       {/* 提醒通知（仅安卓 App 生效） */}
       {isNative() && <NotifyCard />}
 
-      <section className="card p-4">
+      <section className="card relative overflow-hidden p-4">
+        <TopProgressLine
+          active={exportZipState === 'loading' || exportJsonState === 'loading' || importState === 'loading'}
+          label="正在导出或恢复备份"
+        />
         <h2 className="text-[14px] font-semibold mb-1">备份与恢复</h2>
         <p className="text-[13px] text-on-surface-2 mb-3.5 leading-relaxed">
           所有数据保存在本机。推荐导出 <code>.kairos.zip</code> 压缩包（原始二进制文档体积更小、更快），也兼容导入旧版 JSON 备份。
@@ -315,30 +301,9 @@ export function DataTab({ onGoSync }: { onGoSync: () => void }) {
         </Dialog>
       </section>
 
-      <section className="card p-4">
-        <h2 className="text-[14px] font-semibold mb-1">离线 AI 模型缓存</h2>
-        <p className="text-[13px] text-on-surface-2 mb-3 leading-relaxed">
-          文字识别、手写公式识别等本地模型文件在首次使用时按需下载并缓存在本机，清理后不影响任务与文档数据。
-        </p>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <span className="text-[12.5px] text-on-surface-2 tabular-nums">
-            {modelBytes == null
-              ? '正在计算缓存大小…'
-              : modelBytes > 0
-                ? `已缓存模型约 ${formatBytes(modelBytes)}`
-                : '当前没有离线模型缓存'}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            state={clearCacheState}
-            disabled={!modelBytes}
-            onClick={() => void doClearModelCache()}
-          >
-            <Trash2 size={14} /> 清理模型缓存
-          </Button>
-        </div>
-      </section>
+      <ModelCenterCard onChanged={refreshUsage} />
+
+      <StorageDiagnosticsCard onChanged={refreshUsage} />
 
       <section className="card p-4">
         <h2 className="text-[14px] font-semibold mb-1">数据安全</h2>

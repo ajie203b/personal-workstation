@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { CheckCircle2, Flame, Highlighter, Timer } from 'lucide-react'
+import { CheckCircle2, Flame, Highlighter, Timer, X } from 'lucide-react'
 import { db } from '@/db/db'
+import { useDateTick } from '@/db/hooks'
 import { migrateLegacyFocusRecords } from '@/db/focus'
 import { cn } from '@/lib/cn'
 import { fmtListDate, toDateStr } from '@/lib/date'
@@ -88,6 +89,8 @@ export function StatsPage() {
 
 function TaskStatistics({ range }: { range: 'week' | 'month' }) {
   const [metric, setMetric] = useState<Metric>('tasks')
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const todayKey = useDateTick()
 
   useEffect(() => { void migrateLegacyFocusRecords() }, [])
 
@@ -115,6 +118,7 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
 
   // 热力图：最近 13 周（含本周），宽度固定在一屏内，始终落在最近的数据上
   const weeks = useMemo(() => {
+    void todayKey
     const end = mondayOf(new Date())
     const cols: { key: string; count: number; date: Date }[][] = []
     for (let w = 12; w >= 0; w--) {
@@ -130,10 +134,9 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
       cols.push(col)
     }
     return cols
-  }, [dayCounts, metric])
+  }, [dayCounts, metric, todayKey])
 
   const maxCount = useMemo(() => Math.max(1, ...weeks.flat().map((c) => c.count)), [weeks])
-  const todayKey = toDateStr(new Date())
   // 按行铺进 CSS Grid：每行「周几 + 13 个格子」，格子用 aspect-square 自适应屏宽
   const heatRows = useMemo(() => Array.from({ length: 7 }, (_, d) => weeks.map((col) => col[d])), [weeks])
   const heatMonths = useMemo(() => {
@@ -147,8 +150,9 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
     return months
   }, [weeks])
 
-  // 本周 vs 上周 / 本月 vs 上月（周一起算）
-  const compare = useMemo(() => {
+  // 本周 vs 上周 / 本月 vs 上月：同期公平对比（已过 N 天 vs 上期前 N 天，避免周一/月初误判断崖下跌）
+  const { compare, compareCaption } = useMemo(() => {
+    void todayKey
     const now = new Date()
     const sumDays = (from: Date, days: number, m: Metric) => {
       let total = 0
@@ -163,21 +167,43 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
       const lStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       const lDays = new Date(now.getFullYear(), now.getMonth(), 0).getDate()
       const elapsed = now.getDate()
-      return (['tasks', 'focus', 'notes'] as Metric[]).map((m) => ({
-        metric: m,
-        current: sumDays(mStart, elapsed, m),
-        previous: sumDays(lStart, lDays, m),
-      }))
+      const prevSpan = Math.min(elapsed, lDays)
+      return {
+        compareCaption: `同期对比 · 本月前 ${elapsed} 天 vs 上月前 ${prevSpan} 天`,
+        compare: (['tasks', 'focus', 'notes'] as Metric[]).map((m) => ({
+          metric: m,
+          current: sumDays(mStart, elapsed, m),
+          previous: sumDays(lStart, prevSpan, m),
+        })),
+      }
     }
     const thisMon = mondayOf(now)
     const lastMon = new Date(thisMon); lastMon.setDate(lastMon.getDate() - 7)
     const dow = ((now.getDay() + 6) % 7) + 1
-    return (['tasks', 'focus', 'notes'] as Metric[]).map((m) => ({
-      metric: m,
-      current: sumDays(thisMon, dow, m),
-      previous: sumDays(lastMon, 7, m),
-    }))
-  }, [dayCounts, range])
+    return {
+      compareCaption: `同期对比 · 本周前 ${dow} 天 vs 上周前 ${dow} 天`,
+      compare: (['tasks', 'focus', 'notes'] as Metric[]).map((m) => ({
+        metric: m,
+        current: sumDays(thisMon, dow, m),
+        previous: sumDays(lastMon, dow, m),
+      })),
+    }
+  }, [dayCounts, range, todayKey])
+
+  // 点击热力图日期后的当日明细钻取
+  const dayDetail = useMemo(() => {
+    if (!selectedDay) return null
+    const dayDone = doneTasks.filter((t) => toDateStr(new Date(t.doneAt!)) === selectedDay)
+    const dayFocus = (sessions ?? []).filter((s) => s.day === selectedDay)
+    const dayNotes = (annotations ?? []).filter((a) => toDateStr(new Date(a.createdAt)) === selectedDay)
+    return {
+      day: selectedDay,
+      tasks: dayDone,
+      focusMinutes: dayFocus.reduce((s, r) => s + r.minutes, 0),
+      focusCount: dayFocus.length,
+      notesCount: dayNotes.length,
+    }
+  }, [selectedDay, doneTasks, sessions, annotations])
 
   // 标签分布（完成任务口径）
   const tagRank = useMemo(() => {
@@ -259,13 +285,22 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
                 </span>
                 {row.map((cell) => {
                   const isToday = cell.key === todayKey
+                  const isSelected = selectedDay === cell.key
                   const isFuture = cell.date.getTime() > Date.now()
+                  const unitText = metric === 'focus' ? '分钟专注' : METRIC_LABEL[metric]
                   return (
-                    <span
+                    <button
                       key={cell.key}
-                      title={`${isToday ? '今天 · ' : ''}${fmtListDate(cell.key)} · ${cell.count} ${METRIC_LABEL[metric]}`}
-                      aria-label={`${isToday ? '今天，' : ''}${fmtListDate(cell.key)}，${cell.count} ${METRIC_LABEL[metric]}`}
-                      className="aspect-square min-w-0 rounded-[3px] transition-[background,box-shadow] duration-200"
+                      type="button"
+                      disabled={isFuture}
+                      onClick={() => setSelectedDay((prev) => (prev === cell.key ? null : cell.key))}
+                      title={`${isToday ? '今天 · ' : ''}${fmtListDate(cell.key)} · ${cell.count} ${unitText}`}
+                      aria-label={`${isToday ? '今天，' : ''}${fmtListDate(cell.key)}，${cell.count} ${unitText}`}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        'aspect-square min-w-0 rounded-[3px] transition-[background,box-shadow,transform] duration-200',
+                        !isFuture && 'cursor-pointer hover:scale-110',
+                      )}
                       style={{
                         background: isToday && cell.count === 0
                           ? 'var(--primary-soft)'
@@ -273,9 +308,13 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
                             ? 'var(--surface-3)'
                             : `color-mix(in srgb, var(--primary) ${Math.round(20 + (cell.count / maxCount) * 80)}%, transparent)`,
                         opacity: isFuture ? 0.35 : 1,
-                        boxShadow: isToday ? '0 0 0 2px var(--surface), 0 0 0 3.5px var(--primary)' : undefined,
-                        position: isToday ? 'relative' : undefined,
-                        zIndex: isToday ? 1 : undefined,
+                        boxShadow: isSelected
+                          ? '0 0 0 2px var(--surface), 0 0 0 3.5px var(--ok)'
+                          : isToday
+                            ? '0 0 0 2px var(--surface), 0 0 0 3.5px var(--primary)'
+                            : undefined,
+                        position: isToday || isSelected ? 'relative' : undefined,
+                        zIndex: isSelected ? 2 : isToday ? 1 : undefined,
                       }}
                     />
                   )
@@ -291,7 +330,7 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
               className="inline-block w-2.5 h-2.5 rounded-[2px]"
               style={{ background: 'var(--primary-soft)', boxShadow: '0 0 0 1px var(--surface), 0 0 0 2px var(--primary)' }}
             />
-            今天
+            今天（点任意格子看当日明细）
           </span>
           <span className="inline-flex items-center gap-1 ml-auto">
             少
@@ -306,13 +345,48 @@ function TaskStatistics({ range }: { range: 'week' | 'month' }) {
             多
           </span>
         </div>
+        {dayDetail && (
+          <div className="mt-3 rounded-[13px] border border-outline/80 bg-surface-2/85 p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+                <span className="font-semibold text-on-surface">{fmtListDate(dayDetail.day)} 明细</span>
+                <span className="text-on-surface-2 tabular-nums">
+                  完成 {dayDetail.tasks.length} 项 · 专注 {dayDetail.focusMinutes} 分钟 · 批注 {dayDetail.notesCount} 条
+                </span>
+              </div>
+              <button
+                type="button"
+                aria-label="收起当日明细"
+                onClick={() => setSelectedDay(null)}
+                className="grid place-items-center size-6 rounded-md text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            {dayDetail.tasks.length > 0 ? (
+              <ul className="flex flex-col gap-1 text-[12px] text-on-surface-2">
+                {dayDetail.tasks.slice(0, 8).map((t) => (
+                  <li key={t.id} className="flex items-center gap-1.5 truncate">
+                    <CheckCircle2 size={12} className="text-ok shrink-0" />
+                    <span className="truncate text-on-surface">{t.title}</span>
+                  </li>
+                ))}
+                {dayDetail.tasks.length > 8 && (
+                  <li className="text-[11px] text-on-surface-2/80">另有 {dayDetail.tasks.length - 8} 项已完成任务…</li>
+                )}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-on-surface-2/80">当天没有已完成的任务记录。</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 对比卡：周 / 月由顶部开关决定。切范围时柱子就地变形（改高度做过渡），不重挂重画 */}
       <div className="card p-4">
-        <div className="flex items-center mb-3">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           <h2 className="text-[14px] font-semibold">{range === 'week' ? '本周 vs 上周' : '本月 vs 上月'}</h2>
-          <p className="ml-auto text-[11px] text-on-surface-2">{range === 'week' ? '本周数据截至今天' : '本月数据截至今天'}</p>
+          <p className="ml-auto text-[11px] text-on-surface-2">{compareCaption}</p>
         </div>
         <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
           {compare.map(({ metric: m, current, previous }, i) => {

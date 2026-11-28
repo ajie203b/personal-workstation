@@ -3,6 +3,7 @@ import { db, type Task } from '@/db/db'
 import { deriveToday, deriveTodayDone } from '@/db/hooks'
 import { addTask, checkinProgress, checkInTask, sortTasks, toggleDone } from '@/db/tasks'
 import { todayStr } from '@/lib/date'
+import { parseQuickAdd } from '@/lib/nlp'
 
 export interface TaskWidgetAdd {
   id: string
@@ -47,14 +48,37 @@ export function drainTaskWidgetActions(): Promise<void> {
 
       for (const add of adds) {
         const id = typeof add?.id === 'string' ? add.id : ''
-        const title = typeof add?.title === 'string' ? add.title.trim() : ''
-        if (!id || !title) continue
+        const rawTitle = typeof add?.title === 'string' ? add.title.trim() : ''
+        if (!id || !rawTitle) continue
         // 固定 id 去重：上次处理完但没来得及 ack 时不会重复添加
         if (await db.tasks.get(id)) continue
-        const priority = add.priority === 0 || add.priority === 1 || add.priority === 2 || add.priority === 3
+        const parsed = parseQuickAdd(rawTitle)
+        const explicitPrio = add.priority === 0 || add.priority === 1 || add.priority === 3
           ? add.priority
           : undefined
-        await addTask({ id, title, tier: add.tier === 'anytime' ? 'anytime' : 'today', priority })
+        const priority = explicitPrio ?? parsed.priority ?? (add.priority === 2 ? 2 : undefined)
+        const today = todayStr()
+        const tier = add.tier === 'anytime'
+          ? 'anytime'
+          : parsed.due && parsed.due > today
+            ? 'upcoming'
+            : 'today'
+        await addTask({
+          id,
+          title: parsed.title || rawTitle,
+          tier,
+          priority,
+          due: parsed.due,
+          dueTime: parsed.dueTime,
+          startAt: parsed.startAt,
+          tags: parsed.tags,
+          repeat: parsed.repeat,
+          repeatDays: parsed.repeatDays,
+          repeatMonthDay: parsed.repeatMonthDay,
+          repeatCount: parsed.repeatCount,
+          repeatTimes: parsed.repeatTimes,
+          estimateMinutes: parsed.estimateMinutes,
+        })
       }
 
       // 记录本轮同步前每条任务的最后打卡时刻：既保证崩溃重放幂等，又不拦截同一批里的第 2~N 次打卡
@@ -134,5 +158,5 @@ function taskWidgetPayload(all: Task[]): string {
     }
   })
   const date = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })
-  return JSON.stringify({ date, total: pending.length, done, tasks })
+  return JSON.stringify({ day: today, date, total: pending.length, done, tasks })
 }

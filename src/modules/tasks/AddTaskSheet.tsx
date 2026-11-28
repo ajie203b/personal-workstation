@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ChevronDown, Clock3, Flag, Hash, Repeat, Target, Timer } from 'lucide-react'
+import { CalendarDays, ChevronDown, Clock3, Flag, Hash, ListChecks, Repeat, Sparkles, Target, Timer, X } from 'lucide-react'
 import { inferTier, parseQuickAdd, parseSummary } from '@/lib/nlp'
 import { repeatLabel } from '@/lib/repeat'
 import { addTask } from '@/db/tasks'
 import { fmtDue, fmtTime, toDateStr } from '@/lib/date'
-import { PRIORITY_VAR, type RepeatKind, type Tier } from '@/db/db'
+import { uid } from '@/lib/id'
+import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type RepeatKind, type Tier } from '@/db/db'
 import { Dialog } from '@/shared/ui/Sheet'
 import { Segmented } from '@/shared/ui/Segmented'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { DateTimeField } from '@/shared/ui/TimePicker'
 import { HabitTimesField } from './HabitTimesField'
+import { TASK_TEMPLATES, type TaskTemplate } from './taskTemplates'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -23,13 +25,17 @@ interface Props {
 type Mode = 'single' | 'repeat'
 
 /**
- * 添加任务抽屉（方案迭代 v0.6）：
- * 点击加号 → 输入内容 → 自动检测单次/重复走不同流程；分辨不出时手动选择单次/重复与频率。
+ * 添加任务抽屉（方案迭代 v0.6 + Phase 4）：
+ * 支持 NLP 自然语言解析、移动端优先级/清单可视化快选，以及内置子任务模板一键填充。
  */
 export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', todayContext = false }: Props) {
   const [value, setValue] = useState('')
   const [modeOverride, setModeOverride] = useState<Mode | null>(null)
   const [freqOverride, setFreqOverride] = useState<RepeatKind>('daily')
+  const [priorityOverride, setPriorityOverride] = useState<Priority | null>(null)
+  const [tierOverride, setTierOverride] = useState<Tier | null>(null)
+  const [extraTags, setExtraTags] = useState<string[]>([])
+  const [templateSubtasks, setTemplateSubtasks] = useState<string[]>([])
   // null = 尚未手动操作，跟随解析；'' = 用户明确清空，不再回填。
   const [startInput, setStartInput] = useState<string | null>(null)
   const [dueInput, setDueInput] = useState<string | null>(null)
@@ -43,6 +49,10 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       setValue('')
       setModeOverride(null)
       setFreqOverride('daily')
+      setPriorityOverride(null)
+      setTierOverride(null)
+      setExtraTags([])
+      setTemplateSubtasks([])
       setStartInput(null)
       setDueInput(null)
       setHabitTimes(null)
@@ -67,6 +77,16 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   const effectiveTimes = habitTimes ?? detectedTimes
   const scheduleKey = [parsed.startAt, parsed.due, parsed.dueTime, parsed.repeat, parsed.repeatDays?.join(','), parsed.repeatTimes?.join(',')].filter(v => v != null).join('|')
   const timeOpen = timeExpansion?.key === scheduleKey ? timeExpansion.open : Boolean(scheduleKey || effectiveStart || effectiveDue)
+  const effectivePriority: Priority | undefined = priorityOverride ?? parsed.priority
+  const mergedTags = useMemo(() => Array.from(new Set([...parsed.tags, ...extraTags])), [parsed.tags, extraTags])
+
+  const applyTemplate = (tpl: TaskTemplate) => {
+    setValue(tpl.title)
+    setPriorityOverride(tpl.priority)
+    if (tpl.tier) setTierOverride(tpl.tier)
+    setExtraTags(tpl.tags)
+    setTemplateSubtasks(tpl.subtasks)
+  }
 
   const { state: saveState, run: runSave } = useAsyncButton({ successHoldMs: 520 })
 
@@ -76,8 +96,8 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
     // 手动选的时间优先于文本解析
     // 截止留空 = 无穷远（需求）：以前今日页会补一个「今天」，结果一新建就背着逾期压力
     const due = effectiveDue ? effectiveDue.slice(0, 10) : undefined
-    let tier = inferTier({ ...p, due }, defaultTier)
-    if (todayContext && !due && !p.repeat && defaultTier === 'today') tier = 'today'
+    let tier = tierOverride ?? inferTier({ ...p, repeat: effectiveRepeat, due }, defaultTier)
+    if (!tierOverride && todayContext && !due && !effectiveRepeat && defaultTier === 'today') tier = 'today'
     // 打卡时间点：手动加的优先，其次用标题里解析到的（可能多个）
     const times = mode === 'repeat' ? effectiveTimes : []
     const dueTime = dueInput !== null
@@ -89,23 +109,27 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
       ? Math.min(99, Math.round(countRaw as number))
       : undefined
     const startAt = effectiveStart ? new Date(effectiveStart.length === 10 ? `${effectiveStart}T00:00` : effectiveStart).getTime() : undefined
+    const subtasks = templateSubtasks.length
+      ? templateSubtasks.map((title) => ({ id: uid(), title, done: false }))
+      : undefined
     let saved = false
     try {
       await runSave(async () => {
         await addTask({
           title: p.title,
           tier,
-          priority: p.priority,
+          priority: effectivePriority,
           due,
           dueTime,
           startAt,
-          tags: p.tags,
+          tags: mergedTags,
           repeat: effectiveRepeat,
           repeatDays: keepsDetectedDays ? parsed.repeatDays : undefined,
           repeatMonthDay: keepsDetectedDays ? parsed.repeatMonthDay : undefined,
           repeatCount,
           repeatTimes: times.length > 1 ? times : undefined,
           estimateMinutes: p.estimateMinutes,
+          subtasks,
         })
         saved = true
       })
@@ -120,6 +144,23 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="添加任务" widthClass="w-[min(620px,92vw)]" mobileSheet initialFocus={inputRef}>
       <div className="flex flex-col gap-3">
+        {/* 预设模板快捷芯片 */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mb-1">
+          <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-2 shrink-0">
+            <Sparkles size={11} /> 模板
+          </span>
+          {TASK_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => applyTemplate(tpl)}
+              className="shrink-0 h-7 px-2.5 rounded-full border border-outline bg-surface-2 text-[11.5px] text-on-surface-2 hover:text-primary hover:border-primary/40 hover:bg-primary-soft/50 transition-colors cursor-pointer"
+            >
+              {tpl.name}
+            </button>
+          ))}
+        </div>
+
         {/* 输入区 */}
         <div className="card px-3.5 py-3 focus-within:border-primary/50 transition-colors">
           <textarea
@@ -137,6 +178,70 @@ export function AddTaskSheet({ open, onOpenChange, defaultTier = 'anytime', toda
             className="w-full bg-transparent outline-none resize-none text-[15px] leading-relaxed placeholder:text-on-surface-2/70"
           />
         </div>
+
+        {/* 优先级与清单可视化快选（移动端无需背 NLP 语法） */}
+        <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
+          <div className="inline-flex items-center gap-1" role="group" aria-label="快捷优先级">
+            {([0, 1, 2, 3] as const).map((p) => {
+              const active = effectivePriority === p
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPriorityOverride((prev) => (prev === p ? null : p))}
+                  aria-pressed={active}
+                  className={cn(
+                    'h-7 px-2 rounded-[8px] border text-[11.5px] font-medium transition-colors cursor-pointer',
+                    active ? 'border-transparent text-white' : 'border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface',
+                  )}
+                  style={active ? { background: PRIORITY_VAR[p] } : undefined}
+                >
+                  P{p}
+                </button>
+              )
+            })}
+          </div>
+          <span className="w-px h-4 bg-outline/80" aria-hidden />
+          <div className="inline-flex items-center gap-1 flex-wrap" role="group" aria-label="快捷清单">
+            {TIERS.map((t) => {
+              const active = tierOverride === t
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTierOverride((prev) => (prev === t ? null : t))}
+                  aria-pressed={active}
+                  className={cn(
+                    'h-7 px-2 rounded-[8px] border text-[11.5px] font-medium transition-colors cursor-pointer',
+                    active ? 'border-primary/50 bg-primary-soft text-primary' : 'border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface',
+                  )}
+                >
+                  {TIER_LABEL[t]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {templateSubtasks.length > 0 && (
+          <div className="rounded-[12px] border border-outline bg-surface-2/70 px-3 py-2 flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11.5px] text-on-surface-2">
+              <span className="inline-flex items-center gap-1 font-medium text-on-surface">
+                <ListChecks size={13} className="text-primary" /> 附带 {templateSubtasks.length} 条子任务
+              </span>
+              <button
+                type="button"
+                onClick={() => setTemplateSubtasks([])}
+                className="inline-flex items-center gap-0.5 text-on-surface-2 hover:text-danger cursor-pointer"
+              >
+                <X size={12} /> 移除
+              </button>
+            </div>
+            <ul className="text-[12px] text-on-surface-2 space-y-0.5 pl-4 list-disc">
+              {templateSubtasks.map((s, idx) => <li key={idx}>{s}</li>)}
+            </ul>
+          </div>
+        )}
 
         {/* 识别预览：日期/时间/次数/时长/重复/优先级/标签，猜出来的会带（猜） */}
         {chips.length > 0 && (

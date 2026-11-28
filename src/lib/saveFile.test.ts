@@ -27,7 +27,15 @@ vi.mock('@capacitor/core', () => ({
   }),
 }))
 
-import { blobToBase64, openSavedAction, saveBlob } from './saveFile'
+const tauriState = vi.hoisted(() => ({
+  invoke: vi.fn(),
+}))
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: tauriState.invoke,
+}))
+
+import { blobToBase64, isSaveCancelled, openSavedAction, saveBlob } from './saveFile'
 
 beforeEach(() => {
   state.native = false
@@ -37,6 +45,8 @@ beforeEach(() => {
   state.openFails = false
   state.saveFails = false
   state.saved = null
+  tauriState.invoke.mockReset()
+  delete (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__
   URL.createObjectURL = vi.fn(() => 'blob:test')
   URL.revokeObjectURL = vi.fn()
 })
@@ -111,5 +121,33 @@ describe('openSavedAction', () => {
     expect(action?.label).toBe('打开位置')
     action?.run()
     expect(state.opened).toBe(true)
+  })
+
+  it('Tauri 桌面端弹出原生另存为、处理取消并支持资源管理器定位', async () => {
+    ;(window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__ = {}
+    tauriState.invoke.mockResolvedValueOnce('D:\\Docs\\报告.docx')
+
+    const where = await saveBlob(new Blob(['docx']), '报告.docx')
+    expect(where).toBe('D:\\Docs\\报告.docx')
+    expect(tauriState.invoke).toHaveBeenCalledWith('save_binary_file', {
+      defaultName: '报告.docx',
+      dataBase64: await blobToBase64(new Blob(['docx'])),
+    })
+
+    const action = openSavedAction()
+    expect(action?.label).toBe('打开位置')
+    action?.run()
+    await vi.waitFor(() => {
+      expect(tauriState.invoke).toHaveBeenCalledWith('reveal_saved_file', { path: 'D:\\Docs\\报告.docx' })
+    })
+
+    tauriState.invoke.mockResolvedValueOnce(null)
+    let caught: unknown
+    try {
+      await saveBlob(new Blob(['x']), '取消.txt')
+    } catch (e) {
+      caught = e
+    }
+    expect(isSaveCancelled(caught)).toBe(true)
   })
 })

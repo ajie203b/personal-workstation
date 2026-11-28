@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import * as RadixMenu from '@radix-ui/react-dropdown-menu'
-import { ArrowRight, ChevronDown, Download, FolderOpen, Loader2, Upload } from 'lucide-react'
+import { ArrowRight, ChevronDown, Download, FolderOpen, Library, Loader2, Upload } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
+import { LibraryDocPickerDialog } from '@/shared/ui/LibraryDocPickerDialog'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
 import { HANDOFF_TARGETS, usePdfHandoffContext, type PdfToolTab } from './handoff'
@@ -42,9 +44,24 @@ export function matchesFileAccept(file: Pick<File, 'type' | 'name'>, accept: str
 }
 
 /** 面板统一卡片容器 */
-export function Panel({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
+export function Panel({
+  title,
+  desc,
+  busy,
+  progress,
+  progressLabel,
+  children,
+}: {
+  title: string
+  desc?: string
+  busy?: boolean
+  progress?: number | null
+  progressLabel?: string
+  children: ReactNode
+}) {
   return (
-    <section className="card p-4 flex flex-col gap-3">
+    <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+      <TopProgressLine active={Boolean(busy)} progress={progress} label={progressLabel ?? `${title}进度`} />
       <div>
         <h2 className="text-[15px] font-semibold leading-6">{title}</h2>
         {desc && <p className="text-[11.5px] text-on-surface-2 leading-relaxed mt-0.5">{desc}</p>}
@@ -84,6 +101,8 @@ export function FilePicker({
   const id = useId()
   const pdfImport = usePdfImport(onPick, unlockPdf)
   const [dragging, setDragging] = useState(false)
+  const [libOpen, setLibOpen] = useState(false)
+  const isPdfPicker = accept.includes('pdf')
 
   const handleFiles = (rawList: File[], fromDrop = false) => {
     if (!rawList.length || pdfImport.busy) return
@@ -100,7 +119,7 @@ export function FilePicker({
     }
     const big = list.find((f) => isBigFile(f.size))
     if (big) toast(`「${big.name}」超过 100MB，处理可能较慢、占内存`)
-    if (accept.includes('pdf')) void pdfImport.importFiles(list)
+    if (isPdfPicker) void pdfImport.importFiles(list)
     else onPick(list)
   }
 
@@ -150,9 +169,31 @@ export function FilePicker({
       </span>
       {hint && <span className="pointer-events-none text-[11px] text-on-surface-2">{hint}</span>}
     </label>
+    {isPdfPicker && (
+      <div className="flex items-center justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pdfImport.busy}
+          onClick={() => setLibOpen(true)}
+        >
+          <Library size={14} /> 从文档库选取 PDF
+        </Button>
+      </div>
+    )}
     {pdfImport.busy && <Button size="sm" onClick={pdfImport.cancel}>取消读取</Button>}
     {pdfImport.error && <p role="alert" className="text-[12px] text-danger break-words">{pdfImport.error}</p>}
     {pdfImport.dialog}
+    {isPdfPicker && (
+      <LibraryDocPickerDialog
+        open={libOpen}
+        onOpenChange={setLibOpen}
+        kinds={['pdf']}
+        multiple={Boolean(multiple)}
+        title="从文档库选取 PDF"
+        onSelect={(items) => handleFiles(items.map((item) => item.file))}
+      />
+    )}
     </>
   )
 }

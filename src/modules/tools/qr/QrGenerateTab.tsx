@@ -4,7 +4,9 @@ import {
   CheckCircle2,
   Contact,
   Copy,
+  Download,
   FileText,
+  Layers,
   Link as LinkIcon,
   Loader2,
   Mail,
@@ -20,6 +22,7 @@ import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented, type SegmentOption } from '@/shared/ui/Segmented'
 import { HexColorInput } from '@/shared/ui/HexColorInput'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
@@ -117,6 +120,9 @@ export function QrGenerateTab({
   const [emBody, setEmBody] = useState('')
   const [smsPhone, setSmsPhone] = useState('')
   const [smsMessage, setSmsMessage] = useState('')
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [batchText, setBatchText] = useState('')
+  const [batchBusy, setBatchBusy] = useState('')
 
   useEffect(() => {
     if (!prefill) return
@@ -695,7 +701,16 @@ export function QrGenerateTab({
           )}
         </section>
 
-        <section ref={exportSectionRef} className="card p-4 flex flex-col gap-2.5">
+        <section ref={exportSectionRef} className="card relative overflow-hidden p-4 flex flex-col gap-2.5">
+          <TopProgressLine
+            active={exporting || Boolean(batchBusy)}
+            progress={(() => {
+              if (!batchBusy) return null
+              const [done, total] = batchBusy.split('/').map((s) => Number(s.trim()))
+              return Number.isFinite(done) && Number.isFinite(total) && total > 0 ? done / total : null
+            })()}
+            label={batchBusy ? `批量生成二维码 ${batchBusy}` : '导出二维码'}
+          />
           <h2 className="text-[13.5px] font-semibold">导出</h2>
 
           {isUnsafe && (
@@ -765,7 +780,64 @@ export function QrGenerateTab({
             >
               <Copy size={14} /> {pendingExportKey === 'copy' ? '确认复制？' : '复制图片'}
             </Button>
+            <Button
+              onClick={() => setBatchOpen((v) => !v)}
+              variant={batchOpen ? 'primary' : 'outline'}
+              size="sm"
+            >
+              <Layers size={14} /> 批量生成 ZIP
+            </Button>
           </div>
+          {batchOpen && (
+            <div className="mt-1 rounded-[11px] border border-outline bg-surface-2/80 p-3 flex flex-col gap-2">
+              <p className="text-[11.5px] text-on-surface-2">
+                每行输入一条文本或网址（沿用当前样式，最多 100 条），一键打包 PNG 压缩包：
+              </p>
+              <textarea
+                value={batchText}
+                onChange={(e) => setBatchText(e.target.value)}
+                rows={4}
+                placeholder={'https://example.com/1\nhttps://example.com/2\n会议签到码 A01'}
+                className={AREA_CLS}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={Boolean(batchBusy) || !batchText.trim()}
+                onClick={() => {
+                  const items = batchText
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .slice(0, 100)
+                  if (!items.length) return
+                  setBatchBusy(`0 / ${items.length}`)
+                  void (async () => {
+                    try {
+                      const JSZip = (await import('jszip')).default
+                      const zip = new JSZip()
+                      for (let i = 0; i < items.length; i++) {
+                        setBatchBusy(`${i + 1} / ${items.length}`)
+                        const blob = await renderQrBlob(items[i], style, 512, 'png')
+                        const safe = items[i].replace(/https?:\/\//i, '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 28) || 'qr'
+                        zip.file(`${String(i + 1).padStart(2, '0')}-${safe}.png`, await blob.arrayBuffer())
+                      }
+                      const out = await zip.generateAsync({ type: 'blob' })
+                      const where = await saveBlob(out, `qrcodes-${items.length}.zip`)
+                      toast(`已批量生成 ${items.length} 张二维码 → ${where}`, openSavedAction())
+                    } catch (e) {
+                      toast(e instanceof Error ? e.message : '批量生成失败')
+                    } finally {
+                      setBatchBusy('')
+                    }
+                  })()
+                }}
+              >
+                {batchBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                {batchBusy ? `生成中 ${batchBusy}…` : '生成并下载 ZIP'}
+              </Button>
+            </div>
+          )}
           <p className="text-[11px] text-on-surface-2 leading-relaxed">
             复制图片走系统剪贴板；环境不支持时自动改成保存文件。
           </p>

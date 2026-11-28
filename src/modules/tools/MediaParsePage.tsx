@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import {
   Archive,
   Clapperboard,
@@ -20,8 +20,10 @@ import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
+import { formatBytes } from '@/lib/format'
 import { isNative } from '@/lib/native'
 import {
   buildCoverAsset,
@@ -35,7 +37,7 @@ import {
   type ParsedMedia,
   type ParseShareOptions,
 } from '@/lib/mediaParse'
-import { openSavedAction } from '@/lib/saveFile'
+import { isSaveCancelled, openSavedAction } from '@/lib/saveFile'
 
 const PLATFORM_LABEL: Record<string, string> = { douyin: '抖音', bilibili: 'B站' }
 const HISTORY_KEY = 'kairos:media-history-v1'
@@ -106,21 +108,41 @@ function assetIcon(kind: ParsedAsset['kind']) {
  */
 export function MediaParsePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const toast = useUi((s) => s.toast)
   const [text, setText] = useState('')
   const [lastInput, setLastInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [parseError, setParseError] = useState('')
   const [downloading, setDownloading] = useState('')
-  const [zipProgress, setZipProgress] = useState('')
+  const [dlProgress, setDlProgress] = useState<{
+    label: string
+    loaded: number
+    total: number
+    index?: number
+    count?: number
+  } | null>(null)
+  const [zipState, setZipState] = useState<{ done: number; total: number } | null>(null)
+  const zipProgress = zipState ? `${zipState.done}/${zipState.total}` : ''
   const [media, setMedia] = useState<ParsedMedia | null>(null)
   const [previewImg, setPreviewImg] = useState<string | null>(null)
   const [history, setHistory] = useState<MediaHistoryEntry[]>(() => loadHistory())
   const abortRef = useRef<AbortController | null>(null)
+  const lastAutoQueryRef = useRef('')
 
-  const saveLocationText = isNative() ? '「下载/个人工作站」' : '浏览器默认下载目录'
+  const saveLocationText = isNative() ? '「下载/个人工作站」' : '所选保存位置或下载目录'
 
   useEffect(() => () => { abortRef.current?.abort() }, [])
+
+  // ?q= 或 ?url= 预填并自动解析（从分享收件箱或深链直达）
+  const incomingParam = (searchParams.get('q') ?? searchParams.get('url') ?? '').trim()
+  useEffect(() => {
+    if (!incomingParam || lastAutoQueryRef.current === incomingParam) return
+    lastAutoQueryRef.current = incomingParam
+    setText(incomingParam)
+    void runParse(incomingParam)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingParam])
 
   useEffect(() => {
     if (!previewImg) return
@@ -210,43 +232,54 @@ export function MediaParsePage() {
   }
 
   const doDownload = async (asset: ParsedAsset) => {
-    if (downloading || zipProgress) return
+    if (downloading || zipState) return
     setDownloading(asset.filename)
+    setDlProgress({ label: asset.label, loaded: 0, total: 0 })
     try {
-      const where = await downloadAsset(asset)
+      const where = await downloadAsset(asset, undefined, (loaded, total) => {
+        setDlProgress({ label: asset.label, loaded, total })
+      })
       toast(`已保存 ${asset.label} → ${where}`, openSavedAction())
     } catch (e) {
-      toast(`下载${asset.label}失败：${formatMediaError(e, '网络错误')}`)
+      if (!isSaveCancelled(e)) toast(`下载${asset.label}失败：${formatMediaError(e, '网络错误')}`)
     } finally {
       setDownloading('')
+      setDlProgress(null)
     }
   }
 
   const doDownloadAll = async () => {
-    if (!media || downloading || zipProgress) return
-    for (const asset of media.assets) {
+    if (!media || downloading || zipState) return
+    const totalCount = media.assets.length
+    for (let i = 0; i < totalCount; i++) {
+      const asset = media.assets[i]
       setDownloading(asset.filename)
+      setDlProgress({ label: asset.label, loaded: 0, total: 0, index: i + 1, count: totalCount })
       try {
-        const where = await downloadAsset(asset)
+        const where = await downloadAsset(asset, undefined, (loaded, total) => {
+          setDlProgress({ label: asset.label, loaded, total, index: i + 1, count: totalCount })
+        })
         toast(`已保存 ${asset.label} → ${where}`, openSavedAction())
       } catch (e) {
+        if (isSaveCancelled(e)) break
         toast(`下载${asset.label}失败：${formatMediaError(e, '网络错误')}`)
       }
     }
     setDownloading('')
+    setDlProgress(null)
   }
 
   const doDownloadZip = async () => {
-    if (!media || downloading || zipProgress) return
+    if (!media || downloading || zipState) return
     const total = media.assets.filter((a) => a.kind === 'image').length
-    setZipProgress(`0/${total}`)
+    setZipState({ done: 0, total })
     try {
-      const where = await downloadImagesAsZip(media, (done, sum) => setZipProgress(`${done}/${sum}`))
+      const where = await downloadImagesAsZip(media, (done, sum) => setZipState({ done, total: sum }))
       toast(`已保存图集 ZIP → ${where}`, openSavedAction())
     } catch (e) {
-      toast(`打包图集失败：${formatMediaError(e, '网络错误')}`)
+      if (!isSaveCancelled(e)) toast(`打包图集失败：${formatMediaError(e, '网络错误')}`)
     } finally {
-      setZipProgress('')
+      setZipState(null)
     }
   }
 
@@ -256,6 +289,35 @@ export function MediaParsePage() {
     () => (media ? (coverAsset ? [...media.assets, coverAsset] : media.assets) : []),
     [media, coverAsset],
   )
+
+  const downloadRatio: number | null = zipState
+    ? (zipState.total > 0 ? zipState.done / zipState.total : null)
+    : dlProgress
+      ? dlProgress.count && dlProgress.count > 1
+        ? dlProgress.total > 0
+          ? ((dlProgress.index! - 1) + Math.min(1, dlProgress.loaded / dlProgress.total)) / dlProgress.count
+          : (dlProgress.index ?? 1) > 1
+            ? (dlProgress.index! - 1) / dlProgress.count
+            : null
+        : dlProgress.total > 0
+          ? dlProgress.loaded / dlProgress.total
+          : null
+      : null
+
+  const downloadCaption = zipState
+    ? `正在打包图集 ${zipState.done}/${zipState.total}…`
+    : dlProgress
+      ? (() => {
+          const prefix = dlProgress.count && dlProgress.count > 1
+            ? `正在下载（${dlProgress.index}/${dlProgress.count}）${dlProgress.label}`
+            : `正在下载 ${dlProgress.label}`
+          if (dlProgress.total > 0) {
+            const pct = Math.min(100, Math.round((dlProgress.loaded / dlProgress.total) * 100))
+            return `${prefix} · ${pct}%（${formatBytes(dlProgress.loaded)} / ${formatBytes(dlProgress.total)}）`
+          }
+          return dlProgress.loaded > 0 ? `${prefix} · 已下载 ${formatBytes(dlProgress.loaded)}` : `${prefix}…`
+        })()
+      : ''
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 md:px-8 pt-4 pb-24 md:pb-14 flex flex-col gap-4 enter">
@@ -271,7 +333,8 @@ export function MediaParsePage() {
         </div>
       </header>
 
-      <section className="card p-4 flex flex-col gap-3">
+      <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+        <TopProgressLine active={busy} label="正在解析媒体链接" />
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -315,7 +378,17 @@ export function MediaParsePage() {
       </section>
 
       {media ? (
-        <section className="card p-4 flex flex-col gap-3">
+        <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+          <TopProgressLine
+            active={Boolean(dlProgress || zipState)}
+            progress={downloadRatio}
+            label={downloadCaption || '媒体下载进度'}
+          />
+          {downloadCaption && (
+            <p role="status" className="text-[11.5px] text-primary tabular-nums leading-relaxed">
+              {downloadCaption}
+            </p>
+          )}
           <div className="flex items-start gap-3">
             <CoverThumb src={media.cover} className="w-16 h-16 rounded-[10px]" />
             <div className="min-w-0 flex-1">

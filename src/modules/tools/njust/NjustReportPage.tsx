@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { AlertTriangle, CheckCircle2, Download, Eye, FileText, Image as ImageIcon, Loader2, Upload, X } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router'
+import { AlertTriangle, CheckCircle2, Download, Eye, FileText, FolderOpen, Image as ImageIcon, Library, Loader2, Upload, X } from 'lucide-react'
 import { BackButton } from '@/shared/ui/BackButton'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { IconToolReport } from '@/shared/icons'
 import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { Dialog } from '@/shared/ui/Sheet'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
+import { LibraryDocPickerDialog, docToFile } from '@/shared/ui/LibraryDocPickerDialog'
 import { useUi } from '@/stores/ui'
+import { db } from '@/db/db'
+import { importDoc } from '@/db/docs'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
 import { cn } from '@/lib/cn'
 import { parseMarkdownSource, parseSourceFile } from './parseSource'
@@ -90,12 +94,25 @@ const DEFAULT_META: ReportMeta = {
   score: '',
 }
 
+const PROFILE_KEY = 'njust-student-profile'
+const REPORT_META_KEY = 'njust-report-meta'
+
+type StudentProfile = Pick<ReportMeta, 'name' | 'studentId' | 'college' | 'major' | 'teacher'>
+
 function loadMeta(): ReportMeta {
+  let base: ReportMeta = { ...DEFAULT_META }
   try {
-    const raw = localStorage.getItem('njust-report-meta')
-    if (raw) return { ...DEFAULT_META, ...JSON.parse(raw) }
-  } catch { /* 本机存储不可用时用默认值 */ }
-  return { ...DEFAULT_META }
+    const rawReport = localStorage.getItem(REPORT_META_KEY)
+    if (rawReport) base = { ...base, ...JSON.parse(rawReport) }
+  } catch { /* 忽略 */ }
+  try {
+    const rawProfile = localStorage.getItem(PROFILE_KEY)
+    if (rawProfile) {
+      const profile = JSON.parse(rawProfile) as Partial<StudentProfile>
+      base = { ...base, ...profile }
+    }
+  } catch { /* 忽略 */ }
+  return base
 }
 
 function readDataUrl(file: File): Promise<string> {
@@ -276,6 +293,7 @@ function DocxPreviewModal({
 
 export function NjustReportPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const toast = useUi((s) => s.toast)
   const { state, run } = useAsyncButton({ successHoldMs: 900 })
   const [meta, setMeta] = useState<ReportMeta>(loadMeta)
@@ -288,6 +306,9 @@ export function NjustReportPage() {
   })
   const [source, setSource] = useState<ParsedSource | null>(null)
   const [fileName, setFileName] = useState('')
+  const [sourceFolderId, setSourceFolderId] = useState<string | undefined>(undefined)
+  const [libPickerOpen, setLibPickerOpen] = useState(false)
+  const [savingToLib, setSavingToLib] = useState(false)
   const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState('')
   const [parsing, setParsing] = useState(false)
@@ -298,30 +319,54 @@ export function NjustReportPage() {
   const [suppNames, setSuppNames] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLInputElement>(null)
+  const loadedDocIdRef = useRef('')
 
   useEffect(() => {
-    try { localStorage.setItem('njust-report-meta', JSON.stringify(meta)) } catch { /* 忽略 */ }
+    try {
+      const profile: StudentProfile = {
+        name: meta.name,
+        studentId: meta.studentId,
+        college: meta.college,
+        major: meta.major,
+        teacher: meta.teacher,
+      }
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+      localStorage.setItem(REPORT_META_KEY, JSON.stringify(meta))
+    } catch { /* 忽略 */ }
   }, [meta])
+
+  const resetPerReportMeta = () => {
+    setMeta((m) => ({
+      ...m,
+      course: '',
+      reportType: '大作业',
+      title: source?.title ?? '',
+      date: todayText(),
+      score: '',
+    }))
+    toast('已重置单篇报告信息，固定学籍档案已保留')
+  }
 
   const outline = useMemo(
     () => (source?.blocks ?? []).filter((b): b is Extract<Block, { type: 'heading' }> => b.type === 'heading'),
     [source],
   )
 
-  const applySource = (parsed: ParsedSource, name: string) => {
+  const applySource = (parsed: ParsedSource, name: string, folderId?: string) => {
     setSource(parsed)
     setFileName(name)
+    setSourceFolderId(folderId)
     setWarnings(baseWarnings(parsed))
     setError('')
     setMeta((m) => ({ ...m, title: parsed.title ?? '' }))
   }
 
-  const loadFile = async (file: File) => {
+  const loadFile = async (file: File, folderId?: string) => {
     setParsing(true)
     setError('')
     try {
       const parsed = await parseSourceFile(file)
-      applySource(parsed, file.name)
+      applySource(parsed, file.name, folderId)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setSource(null)
@@ -330,6 +375,27 @@ export function NjustReportPage() {
       setParsing(false)
     }
   }
+
+  // ?docId=<id>：从文档库或阅读器直达 NJUST 报告排版
+  const docIdParam = searchParams.get('docId') ?? ''
+  useEffect(() => {
+    if (!docIdParam || loadedDocIdRef.current === docIdParam) return
+    loadedDocIdRef.current = docIdParam
+    let alive = true
+    void (async () => {
+      const doc = await db.docs.get(docIdParam)
+      if (!alive || !doc || doc.deletedAt) return
+      if (doc.kind !== 'md' && doc.kind !== 'txt' && doc.kind !== 'docx') return
+      const file = await docToFile(doc)
+      if (!alive || !file) {
+        if (alive) toast('未找到该文档本体，请先同步或重新导入')
+        return
+      }
+      await loadFile(file, doc.folderId)
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docIdParam])
 
   const loadSample = () => {
     const parsed = parseMarkdownSource(SAMPLE)
@@ -378,6 +444,33 @@ export function NjustReportPage() {
     const name = safeName(meta.title || source.title || fileName.replace(/\.[^.]+$/, '') || 'NJUST报告')
     const where = await saveBlob(blob, `${name}_排版.docx`)
     toast(where ? `已生成：${where}` : '已生成 Word 文档', openSavedAction())
+  }
+
+  const saveToLibrary = async () => {
+    if (!source || savingToLib || parsing || previewing) return
+    setSavingToLib(true)
+    setError('')
+    try {
+      const blob = await buildDocxArtifact()
+      const name = safeName(meta.title || source.title || fileName.replace(/\.[^.]+$/, '') || 'NJUST报告')
+      const docxFile = new File([blob], `${name}_排版.docx`, {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+      const { doc, duplicated } = await importDoc(docxFile)
+      if (sourceFolderId && !doc.folderId) {
+        await db.docs.update(doc.id, { folderId: sourceFolderId, updatedAt: Date.now() })
+      }
+      toast(duplicated ? `文档库中已存在《${doc.title}》` : `已存入文档库《${doc.title}》`, {
+        label: '立即阅读',
+        run: () => navigate(`/docs/${doc.id}`),
+      })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
+      toast(message)
+    } finally {
+      setSavingToLib(false)
+    }
   }
 
   const generate = () => {
@@ -430,9 +523,18 @@ export function NjustReportPage() {
           <section className="card p-4">
             <div className="flex items-center justify-between gap-2 mb-3">
               <h2 className="text-[14px] font-semibold">1. 选择原稿</h2>
-              <button type="button" onClick={loadSample} className="text-[12px] text-primary hover:underline cursor-pointer">
-                载入示例
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setLibPickerOpen(true)}
+                  className="inline-flex items-center gap-1 text-[12px] text-primary hover:underline cursor-pointer"
+                >
+                  <Library size={13} /> 从文档库选取
+                </button>
+                <button type="button" onClick={loadSample} className="text-[12px] text-on-surface-2 hover:text-primary hover:underline cursor-pointer">
+                  载入示例
+                </button>
+              </div>
             </div>
             <input
               ref={fileRef}
@@ -483,7 +585,16 @@ export function NjustReportPage() {
           </section>
 
           <section className="card p-4">
-            <h2 className="text-[14px] font-semibold mb-3">2. 封面与题目</h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-[14px] font-semibold">2. 封面与题目</h2>
+              <button
+                type="button"
+                onClick={resetPerReportMeta}
+                className="text-[12px] text-primary hover:underline cursor-pointer"
+              >
+                清空单篇信息（保留学籍）
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2.5">
               <Field label="课程名称">
                 <input className={INPUT} value={meta.course} onChange={(e) => setMeta({ ...meta, course: e.target.value })} placeholder="例如：国防特色通识教育-自动控制篇" />
@@ -640,12 +751,16 @@ export function NjustReportPage() {
             </details>
           </section>
 
-          <section className="card p-4 flex flex-col gap-2">
+          <section className="card relative overflow-hidden p-4 flex flex-col gap-2">
+            <TopProgressLine
+              active={state === 'loading' || previewing || savingToLib}
+              label="正在生成 Word 文档"
+            />
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 className="h-11 px-4 justify-center text-[13.5px] shrink-0"
-                disabled={!source || parsing || previewing || state === 'loading'}
+                disabled={!source || parsing || previewing || savingToLib || state === 'loading'}
                 onClick={() => void openPreview()}
               >
                 {previewing ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}
@@ -655,18 +770,38 @@ export function NjustReportPage() {
                 variant="primary"
                 className="flex-1 h-11 justify-center text-[14px]"
                 state={state}
-                disabled={!source || parsing || previewing}
+                disabled={!source || parsing || previewing || savingToLib}
                 onClick={generate}
               >
                 生成 Word 文档
               </Button>
             </div>
+            <Button
+              variant="outline"
+              className="w-full h-9 justify-center text-[13px]"
+              disabled={!source || parsing || previewing || savingToLib || state === 'loading'}
+              onClick={() => void saveToLibrary()}
+            >
+              {savingToLib ? <Loader2 size={14} className="animate-spin" /> : <FolderOpen size={14} />}
+              {savingToLib ? '正在存入文档库…' : '同时存入文档库 (.docx)'}
+            </Button>
             <p className="text-[10.5px] text-on-surface-2 text-center mt-0.5">
               生成件会去掉模板里的作业要求页、红色说明字和水印
             </p>
           </section>
         </div>
       </div>
+
+      <LibraryDocPickerDialog
+        open={libPickerOpen}
+        onOpenChange={setLibPickerOpen}
+        kinds={['md', 'txt', 'docx']}
+        title="从文档库选取报告原稿"
+        onSelect={(items) => {
+          const picked = items[0]
+          if (picked) void loadFile(picked.file, picked.doc.folderId)
+        }}
+      />
 
       {previewBlob && (
         <DocxPreviewModal

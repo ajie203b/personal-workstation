@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle, BookOpen, Pause, Play, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import type { FanqieJob } from '@/stores/fanqie'
 import type { FanqieBook } from '@/db/db'
 import { formatDate, formatWordCount, type FanqieBookInfo } from '@/lib/fanqie'
@@ -176,8 +177,16 @@ export function ProgressCard({
 }) {
   const pct = job.total ? Math.min(100, Math.round((processed / job.total) * 100)) : job.phase === 'done' ? 100 : 0
   const running = job.phase === 'running'
+  const lineRatio = job.total ? Math.min(1, processed / job.total) : job.phase === 'done' ? 1 : null
+  const lineTone = job.phase === 'error' ? 'danger' : job.phase === 'done' ? 'ok' : 'primary'
   return (
-    <section className="card p-4">
+    <section className="card relative overflow-hidden p-4">
+      <TopProgressLine
+        active
+        progress={lineRatio}
+        tone={lineTone}
+        label={`《${job.title}》下载进度`}
+      />
       <div className="flex items-center gap-2 flex-wrap">
         <RefreshCw size={15} className={cn('text-primary shrink-0', running && 'animate-spin')} />
         <p className="text-[13px] font-medium min-w-0 flex-1 truncate">
@@ -185,12 +194,6 @@ export function ProgressCard({
           《{job.title}》
         </p>
         <span className="text-[11.5px] text-on-surface-2 tabular-nums">{pct}%</span>
-      </div>
-      <div className="h-1.5 rounded-full bg-surface-3 mt-2.5 overflow-hidden">
-        <div
-          className={cn('h-full rounded-full transition-[width] duration-300', job.phase === 'error' ? 'bg-danger' : 'bg-primary')}
-          style={{ width: `${pct}%` }}
-        />
       </div>
       <div className="flex items-center gap-3 mt-2 text-[11.5px] text-on-surface-2 flex-wrap">
         <span className="tabular-nums">完成 {job.done}</span>

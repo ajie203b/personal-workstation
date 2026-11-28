@@ -212,6 +212,7 @@ export function ReaderMobileSheets({
   mdHeadings,
   annotations,
   backlinks,
+  docBacklinks = [],
   leftTab,
   onLeftTabChange,
   rightTab,
@@ -237,6 +238,7 @@ export function ReaderMobileSheets({
   mdHeadings: { level: number; text: string; blockIdx: number }[]
   annotations: Annotation[]
   backlinks: Task[]
+  docBacklinks?: Doc[]
   leftTab: 'toc' | 'marks'
   onLeftTabChange: (tab: 'toc' | 'marks') => void
   rightTab: 'anns' | 'backlinks'
@@ -287,13 +289,14 @@ export function ReaderMobileSheets({
           onChange={onRightTabChange}
           tabs={[
             { value: 'anns', label: '批注', count: annotations.length },
-            { value: 'backlinks', label: '反链', count: backlinks.length },
+            { value: 'backlinks', label: '反链', count: backlinks.length + docBacklinks.length },
           ]}
           className="border-b-0 px-0"
         />
         <RightContent
           annotations={annotations}
           backlinks={backlinks}
+          docBacklinks={docBacklinks}
           rightTab={rightTab}
           onJump={(a, hl) => {
             onJump(a, hl)

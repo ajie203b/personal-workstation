@@ -67,6 +67,8 @@ interface UiState {
   sidebarCollapsed: boolean
   /** 触觉/振动反馈（勾选、拖拽、长按确认等）。默认开，设置页可关。 */
   haptics: boolean
+  /** 极简工作台：允许在侧栏/底栏按需隐藏的非核心导航路径（如 /stats、/tools） */
+  hiddenNavPaths: string[]
   readerPanels: ReaderPanels
   shortcutsOpen: boolean
   paletteOpen: boolean
@@ -79,6 +81,8 @@ interface UiState {
   setMotion: (v: boolean) => void
   setSidebarCollapsed: (v: boolean) => void
   setHaptics: (v: boolean) => void
+  toggleHiddenNavPath: (path: string) => void
+  resetHiddenNavPaths: () => void
   setReaderPanels: (patch: Partial<ReaderPanels>) => void
   setShortcutsOpen: (v: boolean) => void
   setPaletteOpen: (v: boolean) => void
@@ -97,6 +101,7 @@ export const useUi = create<UiState>()(
       motion: true,
       sidebarCollapsed: false,
       haptics: true,
+      hiddenNavPaths: [],
       readerPanels: DEFAULT_READER_PANELS,
       shortcutsOpen: false,
       paletteOpen: false,
@@ -108,6 +113,12 @@ export const useUi = create<UiState>()(
       setMotion: (motion) => set({ motion }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setHaptics: (haptics) => set({ haptics }),
+      toggleHiddenNavPath: (path) => set((s) => ({
+        hiddenNavPaths: s.hiddenNavPaths.includes(path)
+          ? s.hiddenNavPaths.filter((p) => p !== path)
+          : [...s.hiddenNavPaths, path],
+      })),
+      resetHiddenNavPaths: () => set({ hiddenNavPaths: [] }),
       setReaderPanels: (patch) => set((s) => ({ readerPanels: normalizeReaderPanels({ ...s.readerPanels, ...patch }) })),
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
@@ -144,7 +155,7 @@ export const useUi = create<UiState>()(
     {
       name: 'ws-ui',
       storage: createJSONStorage(() => safeStorage),
-      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, readerPanels: s.readerPanels }),
+      partialize: (s) => ({ theme: s.theme, themeMode: s.themeMode, accent: s.accent, motion: s.motion, sidebarCollapsed: s.sidebarCollapsed, haptics: s.haptics, hiddenNavPaths: s.hiddenNavPaths, readerPanels: s.readerPanels }),
       // 旧版本 theme 曾允许 'system'，现在收敛进 themeMode 并保留合法值
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UiState> & { theme?: string }
@@ -158,6 +169,7 @@ export const useUi = create<UiState>()(
           theme: mode === 'system' ? current.theme : mode,
           accent: p.accent ?? 'blue',
           motion: p.motion !== false,
+          hiddenNavPaths: Array.isArray(p.hiddenNavPaths) ? p.hiddenNavPaths.filter((x): x is string => typeof x === 'string') : [],
           haptics: p.haptics !== false,
           readerPanels: normalizeReaderPanels(p.readerPanels),
         }

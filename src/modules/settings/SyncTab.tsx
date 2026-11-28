@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, Eye, EyeOff, PlugZap } from 'lucide-react'
+import { ChevronRight, Eye, EyeOff, Lock, PlugZap } from 'lucide-react'
 import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { fmtDateTime } from '@/lib/date'
 import { isNative, isTauri } from '@/lib/native'
 import { cn } from '@/lib/cn'
 import {
   JIANGUOYUN_URL, getLastSyncAt, getLastSyncError, getWebdavConfig, setWebdavConfig, syncNow, testWebdav,
-  type SyncFailure, type WebdavConfig,
+  type SyncFailure, type SyncProgress, type WebdavConfig,
 } from '@/lib/sync'
 
 type BlobPolicy = 'all' | '20mb' | 'meta'
@@ -49,11 +50,13 @@ function WebdavCard() {
   const [cfg, setCfg] = useState<WebdavConfig>({ url: JIANGUOYUN_URL, username: '', password: '', auto: true })
   const [customUrlDraft, setCustomUrlDraft] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [showE2ee, setShowE2ee] = useState(false)
   const [last, setLast] = useState<number | null>(null)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [lastError, setLastError] = useState<SyncFailure | null>(null)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
 
   useEffect(() => {
     void Promise.all([getWebdavConfig(), getLastSyncAt(), getLastSyncError()]).then(([c, l, err]) => {
@@ -107,6 +110,7 @@ function WebdavCard() {
       return
     }
     setBusy(true)
+    setSyncProgress({ phase: 'connecting' })
     setNote(null)
     const nextCfg: WebdavConfig = {
       ...cfg,
@@ -115,7 +119,7 @@ function WebdavCard() {
     }
     await persist(nextCfg)
     try {
-      const r = await syncNow()
+      const r = await syncNow(setSyncProgress)
       setLast(r.at)
       setLastError(null)
       setNote({
@@ -134,13 +138,35 @@ function WebdavCard() {
       toast(text)
     } finally {
       setBusy(false)
+      setSyncProgress(null)
     }
   }
+
+  const syncRatio: number | null =
+    busy && syncProgress && (syncProgress.phase === 'downloading' || syncProgress.phase === 'uploading') && syncProgress.total
+      ? (syncProgress.done ?? 0) / syncProgress.total
+      : null
+  const syncStatusText = busy
+    ? syncProgress?.phase === 'downloading' && syncProgress.total
+      ? `正在下载文档附件 ${syncProgress.done ?? 0}/${syncProgress.total}…`
+      : syncProgress?.phase === 'uploading' && syncProgress.total
+        ? `正在上传文档附件 ${syncProgress.done ?? 0}/${syncProgress.total}…`
+        : syncProgress?.phase === 'finalizing'
+          ? '正在写入同步清单与笔记…'
+          : '正在连接 WebDAV 并对比数据…'
+    : testing
+      ? '正在测试 WebDAV 连接…'
+      : ''
 
   const inputCls = 'w-full h-10 px-3 rounded-[10px] bg-surface border border-outline text-[13px] outline-none focus:border-primary/60'
 
   return (
-    <section className="card p-4 flex flex-col gap-3">
+    <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+      <TopProgressLine
+        active={busy || testing}
+        progress={busy ? syncRatio : null}
+        label={syncStatusText || 'WebDAV 同步进度'}
+      />
       <div>
         <h2 className="text-[14px] font-semibold mb-0.5">坚果云同步</h2>
         <p className="text-[12.5px] text-on-surface-2 leading-relaxed">
@@ -210,6 +236,41 @@ function WebdavCard() {
         </p>
       </div>
 
+      <div className="flex flex-col gap-1.5">
+        <label className="block">
+          <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-on-surface-2 mb-1">
+            <Lock size={12.5} /> 端到端加密口令（E2EE，可选）
+            {cfg.e2eePassphrase?.trim() && (
+              <span className="rounded-full bg-ok/15 text-ok px-1.5 py-0.5 text-[10.5px] font-semibold leading-none">
+                已启用
+              </span>
+            )}
+          </span>
+          <div className="relative">
+            <input
+              value={cfg.e2eePassphrase ?? ''}
+              onChange={(e) => setCfg({ ...cfg, e2eePassphrase: e.target.value })}
+              onBlur={() => patch({ e2eePassphrase: cfg.e2eePassphrase?.trim() || undefined })}
+              type={showE2ee ? 'text' : 'password'}
+              placeholder="留空则明文兼容旧端；填写后以 AES-256-GCM 加密上传"
+              autoComplete="new-password"
+              className={cn(inputCls, 'pr-9')}
+            />
+            <button
+              type="button"
+              aria-label={showE2ee ? '隐藏加密口令' : '显示加密口令'}
+              onClick={() => setShowE2ee((v) => !v)}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center w-7 h-7 rounded-[7px] text-on-surface-2 hover:text-on-surface hover:bg-surface-3 cursor-pointer"
+            >
+              {showE2ee ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </label>
+        <p className="text-[11.5px] text-on-surface-2 leading-relaxed">
+          开启后，任务、笔记与文档附件在离开本机前完成 AES-256-GCM 加密，云端无法查看明文；所有同步设备须填写相同口令，口令遗忘无法找回。
+        </p>
+      </div>
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <label className="flex items-center gap-2 text-[12.5px] text-on-surface-2">
           <JellySwitch checked={cfg.auto} onChange={() => patch({ auto: !cfg.auto })} label="自动同步" />
@@ -225,6 +286,11 @@ function WebdavCard() {
         </div>
       </div>
 
+      {syncStatusText && (
+        <p role="status" className="text-[12px] text-primary tabular-nums leading-relaxed">
+          {syncStatusText}
+        </p>
+      )}
       {note && (
         <p className={cn('text-[12px] leading-relaxed', note.ok ? 'text-primary' : 'text-danger')}>{note.text}</p>
       )}

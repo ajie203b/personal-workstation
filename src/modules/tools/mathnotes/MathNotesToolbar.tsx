@@ -7,6 +7,7 @@ import {
   Download,
   Eraser,
   FilePlus2,
+  FileText,
   FileX2,
   Hand,
   Keyboard,
@@ -86,6 +87,7 @@ export function MathNotesToolbar({
   onNewFormula,
   onCopyAll,
   onExportPng,
+  onExportMarkdown,
   onOpenPlot,
   onOpenSettings,
   onOpenDelete,
@@ -120,6 +122,7 @@ export function MathNotesToolbar({
   onNewFormula: () => void
   onCopyAll: () => void
   onExportPng: () => void
+  onExportMarkdown: () => void
   onOpenPlot: () => void
   onOpenSettings: () => void
   onOpenDelete: () => void
@@ -147,6 +150,9 @@ export function MathNotesToolbar({
         </MenuItem>
         <MenuItem onSelect={onExportPng}>
           <Download size={15} /> 导出图片 (PNG)
+        </MenuItem>
+        <MenuItem onSelect={onExportMarkdown}>
+          <FileText size={15} /> 存为文档库笔记 (.md)
         </MenuItem>
         <MenuSeparator />
         <MenuItem onSelect={onAddPage}>

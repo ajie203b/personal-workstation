@@ -1,6 +1,6 @@
 import {
   ArrowLeft, BookDown, BookmarkPlus, Crop, FileDown, GraduationCap, List, MessageSquareText,
-  MoreHorizontal, PanelLeft, PanelRight, PenLine, Quote, Search, Settings2, Share2,
+  MoreHorizontal, PanelLeft, PanelRight, PenLine, Quote, Search, Settings2, Share2, Wrench,
 } from 'lucide-react'
 import type { Doc, DocSettings } from '@/db/db'
 import { DOC_KIND_LABEL } from '@/db/db'
@@ -37,8 +37,10 @@ export function ReaderToolbar({
   onShare,
   onExportNotes,
   onExportMdFile,
+  onExportAnnotatedPdf,
   onOpenCitation,
   onOpenReview,
+  onOpenInTool,
   reviewDueCount = 0,
 }: {
   doc: Doc
@@ -68,8 +70,10 @@ export function ReaderToolbar({
   onShare: () => void
   onExportNotes: () => void
   onExportMdFile?: () => void
+  onExportAnnotatedPdf?: () => void
   onOpenCitation?: () => void
   onOpenReview?: () => void
+  onOpenInTool?: { label: string; run: () => void }
   reviewDueCount?: number
 }) {
   return (
@@ -146,6 +150,11 @@ export function ReaderToolbar({
                   <FileDown size={15} /> 导出批注 .md 文件
                 </MenuItem>
               )}
+              {doc.kind === 'pdf' && onExportAnnotatedPdf && (
+                <MenuItem onSelect={onExportAnnotatedPdf}>
+                  <FileDown size={15} /> 导出带批注 PDF
+                </MenuItem>
+              )}
               {onOpenReview && (
                 <MenuItem onSelect={onOpenReview}>
                   <GraduationCap size={15} /> 复习批注{reviewDueCount > 0 ? ` (${reviewDueCount})` : ''}
@@ -153,10 +162,11 @@ export function ReaderToolbar({
               )}
             </>
           )}
-          {onOpenCitation && (
+          {(onOpenCitation || onOpenInTool) && (
             <>
               <MenuSeparator />
-              <MenuItem onSelect={onOpenCitation}><Quote size={15} /> 引用…</MenuItem>
+              {onOpenCitation && <MenuItem onSelect={onOpenCitation}><Quote size={15} /> 引用…</MenuItem>}
+              {onOpenInTool && <MenuItem onSelect={onOpenInTool.run}><Wrench size={15} /> {onOpenInTool.label}</MenuItem>}
             </>
           )}
         </MenuContent>
@@ -195,13 +205,13 @@ export function ReaderToolbar({
           )}
         </button>
       )}
-      {(hasAnnotations || onOpenCitation) && (
+      {(hasAnnotations || onOpenCitation || onOpenInTool) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label="导出与引用"
-              title="导出与引用"
+              aria-label="导出与工具"
+              title="导出、引用与工具处理"
               className="hidden sm:grid place-items-center shrink-0 size-11 rounded-[10px] md:rounded-[12px] text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"
             >
               <BookDown size={18} />
@@ -210,7 +220,16 @@ export function ReaderToolbar({
           <MenuContent>
             {hasAnnotations && <MenuItem onSelect={onExportNotes}><BookDown size={15} /> 导出批注到文档库</MenuItem>}
             {hasAnnotations && onExportMdFile && <MenuItem onSelect={onExportMdFile}><FileDown size={15} /> 导出批注 .md 文件</MenuItem>}
+            {doc.kind === 'pdf' && hasAnnotations && onExportAnnotatedPdf && (
+              <MenuItem onSelect={onExportAnnotatedPdf}><FileDown size={15} /> 导出带批注 PDF</MenuItem>
+            )}
             {onOpenCitation && <MenuItem onSelect={onOpenCitation}><Quote size={15} /> 引用…</MenuItem>}
+            {onOpenInTool && (
+              <>
+                {(hasAnnotations || onOpenCitation) && <MenuSeparator />}
+                <MenuItem onSelect={onOpenInTool.run}><Wrench size={15} /> {onOpenInTool.label}</MenuItem>
+              </>
+            )}
           </MenuContent>
         </DropdownMenu>
       )}

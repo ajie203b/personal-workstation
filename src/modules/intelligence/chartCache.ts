@@ -23,13 +23,48 @@ export function saveChart(chart: RankingChart) {
   })
 }
 
-export async function downloadChartImage(url: string, signal: AbortSignal): Promise<Blob | null> {
+export async function downloadChartImage(
+  url: string,
+  signal: AbortSignal,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<Blob | null> {
   try {
     const response = await fetch(url, { cache: 'no-store', signal })
     if (!response.ok) return null
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    let bytes: Uint8Array
+    if (onProgress && response.body && typeof response.body.getReader === 'function') {
+      const contentLen = Number(response.headers.get('content-length'))
+      const total = Number.isFinite(contentLen) && contentLen > 0 ? contentLen : 0
+      onProgress(0, total)
+      const reader = response.body.getReader()
+      const chunks: Uint8Array[] = []
+      let loaded = 0
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (value && value.byteLength > 0) {
+            chunks.push(value)
+            loaded += value.byteLength
+            onProgress(loaded, total)
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+      onProgress(loaded, total || loaded)
+      bytes = new Uint8Array(loaded)
+      let offset = 0
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset)
+        offset += chunk.byteLength
+      }
+    } else {
+      bytes = new Uint8Array(await response.arrayBuffer())
+      onProgress?.(bytes.byteLength, bytes.byteLength)
+    }
     if (!pngSignature.every((byte, index) => bytes[index] === byte)) return null
-    const image = new Blob([bytes], { type: 'image/png' })
+    const image = new Blob([bytes.buffer as ArrayBuffer], { type: 'image/png' })
     const objectUrl = URL.createObjectURL(image)
     try {
       const preview = new Image()

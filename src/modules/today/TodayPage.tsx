@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { Check, ChevronRight, Clock3, History, Keyboard, Plus, TrendingUp, X } from 'lucide-react'
-import { DOC_KIND_LABEL } from '@/db/db'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { AlertTriangle, Check, ChevronRight, Clock3, Copy, FileText, History, Keyboard, Plus, TrendingUp, X } from 'lucide-react'
+import { db, DOC_KIND_LABEL } from '@/db/db'
+import { importDoc } from '@/db/docs'
 import { useAllTasks, useRecentDocs, useDateTick, deriveToday, deriveTodayDone } from '@/db/hooks'
-import { rolloverTasks, sortTasks } from '@/db/tasks'
-import { addDaysStr, isThisWeek, fmtWeekdayLong, todayStr } from '@/lib/date'
+import { addTask, rolloverTasks, sortTasks } from '@/db/tasks'
+import { addDaysStr, isThisWeek, fmtWeekdayLong, todayStr, toDateStr } from '@/lib/date'
 import { TaskList } from '@/modules/tasks/TaskList'
+import { QUOTA_KEY, type QuotaRecord } from '@/modules/stats/aiQuota'
 import { useUi } from '@/stores/ui'
 import { docPath } from '@/shared/DeepLink'
+import { Button } from '@/shared/ui/Button'
+import { Dialog } from '@/shared/ui/Sheet'
 import { FocusTimer } from '@/modules/focus/FocusTimer'
 import { GettingStarted } from './GettingStarted'
+import { buildDailyDigestMarkdown, findExpiringQuotas } from './dailyDigest'
 import { prefersReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 
@@ -23,6 +29,29 @@ export function TodayPage() {
   const toast = useUi((s) => s.toast)
   const focusRef = useRef<HTMLDivElement>(null)
   const [rolling, setRolling] = useState(false)
+  const [digestOpen, setDigestOpen] = useState(false)
+  const [quotaAlertDismissed, setQuotaAlertDismissed] = useState(false)
+  const quotaRecords = useLiveQuery(
+    async () => ((await db.settings.get(QUOTA_KEY))?.value as QuotaRecord[] | undefined) ?? [],
+    [],
+    [] as QuotaRecord[],
+  )
+  const expiringQuotas = useMemo(() => findExpiringQuotas(quotaRecords, today, 3), [quotaRecords, today])
+
+  const digestData = useLiveQuery(
+    async () => {
+      if (!digestOpen) return null
+      const [sessions, annotations, docs] = await Promise.all([
+        db.focusSessions.where('day').equals(today).toArray(),
+        db.annotations.toArray(),
+        db.docs.toArray(),
+      ])
+      const todayAnnotations = annotations.filter((a) => toDateStr(new Date(a.createdAt)) === today)
+      return { sessions, todayAnnotations, docs }
+    },
+    [digestOpen, today],
+    null,
+  )
   // 任务「开始专注」深链：/today?focus-task=<id> → 番茄钟自动绑定
   const focusTaskParam = params.get('focus-task') ?? undefined
   useEffect(() => {
@@ -101,6 +130,53 @@ export function TodayPage() {
     }
   }
 
+  const digestMarkdown = useMemo(() => {
+    if (!digestOpen || !digestData) return ''
+    return buildDailyDigestMarkdown({
+      day: today,
+      doneTasks: todayDone,
+      pendingTasks: todayTasks,
+      focusSessions: digestData.sessions,
+      annotations: digestData.todayAnnotations,
+      docs: digestData.docs,
+    })
+  }, [digestOpen, digestData, today, todayDone, todayTasks])
+
+  const createQuotaReminder = async (name: string, expiresAt: string) => {
+    const title = `续费检查：${name}`
+    if (all.some((t) => t.status !== 'done' && t.title === title)) {
+      toast('已有同名的续费提醒任务')
+      return
+    }
+    try {
+      await addTask({
+        title,
+        tier: 'today',
+        priority: 1,
+        due: expiresAt >= today ? expiresAt : today,
+        tags: ['额度续费'],
+      })
+      toast(`已加入今日任务：${title}`)
+    } catch {
+      toast('创建提醒任务失败')
+    }
+  }
+
+  const saveDigestToDocs = async () => {
+    if (!digestMarkdown) return
+    try {
+      const file = new File([digestMarkdown], `今日日报-${today}.md`, { type: 'text/markdown' })
+      const { doc } = await importDoc(file)
+      setDigestOpen(false)
+      toast('今日日报已存入文档库', {
+        label: '立即阅读',
+        run: () => navigate(docPath({ docId: doc.id })),
+      })
+    } catch {
+      toast('存入文档库失败，请重试')
+    }
+  }
+
   // 使用浏览器的滚动曲线，用户划动时可以直接接管。
   const jumpToFocus = () => {
     focusRef.current?.scrollIntoView({
@@ -141,17 +217,52 @@ export function TodayPage() {
           </div>
           {/* 点击进度环可跳到番茄钟。 */}
           <ProgressRing done={todayDone.length} total={todayTotal} onClick={jumpToFocus} className="md:hidden shrink-0" />
-          <button
-            type="button"
-            aria-label="添加任务"
-            title="添加任务（单次 / 打卡）"
-            onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
-            className="press btn-primary-glow hidden md:grid place-items-center size-11 rounded-full bg-primary-action text-on-primary-action shrink-0 cursor-pointer transition-transform duration-150 hover:scale-105"
-          >
-            <Plus size={22} strokeWidth={2.2} />
-          </button>
+          <div className="hidden md:flex items-center gap-2 shrink-0">
+            <Button size="sm" variant="outline" onClick={() => setDigestOpen(true)}>
+              <FileText size={14} /> 今日日报
+            </Button>
+            <button
+              type="button"
+              aria-label="添加任务"
+              title="添加任务（单次 / 打卡）"
+              onClick={() => openAddSheet({ tier: 'today', todayContext: true })}
+              className="press btn-primary-glow grid place-items-center size-11 rounded-full bg-primary-action text-on-primary-action shrink-0 cursor-pointer transition-transform duration-150 hover:scale-105"
+            >
+              <Plus size={22} strokeWidth={2.2} />
+            </button>
+          </div>
         </div>
       </header>
+
+      {expiringQuotas.length > 0 && !quotaAlertDismissed && (
+        <div className="card px-3.5 py-2.5 border-p1/45 bg-p1/8 flex flex-wrap items-center gap-2.5 text-[12.5px]">
+          <AlertTriangle size={15} className="text-p1 shrink-0" />
+          <span className="flex-1 min-w-[180px] text-on-surface">
+            模型额度提醒：<b>{expiringQuotas[0].entry.name}</b>（{expiringQuotas[0].label}）
+            {expiringQuotas.length > 1 ? ` 等 ${expiringQuotas.length} 项即将到期` : ''}
+          </span>
+          <div className="flex items-center gap-1.5 ml-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void createQuotaReminder(expiringQuotas[0].entry.name, expiringQuotas[0].entry.expiresAt)}
+            >
+              转提醒任务
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => navigate('/stats?tab=quota')}>
+              查看额度
+            </Button>
+            <button
+              type="button"
+              aria-label="忽略本次提醒"
+              onClick={() => setQuotaAlertDismissed(true)}
+              className="grid place-items-center size-7 rounded-lg text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+            >
+              <X size={13.5} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-4 items-start">
         {/* 今日任务 */}
@@ -161,12 +272,19 @@ export function TodayPage() {
             {todayDone.length > 0 && (
               <span className="text-[12px] text-ok font-medium tabular-nums">已完成 {todayDone.length}</span>
             )}
+            <button
+              type="button"
+              onClick={() => setDigestOpen(true)}
+              className="md:hidden ml-auto h-8 rounded-lg px-2 text-[12px] font-medium text-primary hover:bg-primary-soft transition-colors cursor-pointer"
+            >
+              今日日报
+            </button>
             {todayTasks.length > 0 && (
               <button
                 type="button"
                 disabled={rolling}
                 onClick={() => void roll()}
-                className="ml-auto h-8 rounded-lg px-2.5 text-[12px] font-medium text-on-surface-2 hover:bg-surface-3/80 hover:text-on-surface transition-colors disabled:opacity-50 cursor-pointer"
+                className="md:ml-auto h-8 rounded-lg px-2.5 text-[12px] font-medium text-on-surface-2 hover:bg-surface-3/80 hover:text-on-surface transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {rolling ? '挪动中…' : '挪到明天'}
               </button>
@@ -256,6 +374,37 @@ export function TodayPage() {
           <KeyboardHint className="hidden md:block order-4 md:order-none" />
         </aside>
       </div>
+
+      <Dialog
+        open={digestOpen}
+        onOpenChange={setDigestOpen}
+        title={`今日日报 · ${today}`}
+        description="汇总今日完成任务、专注时长、阅读批注与待续事项"
+        widthClass="w-[min(640px,92vw)]"
+      >
+        <div className="flex flex-col gap-3">
+          <pre className="rounded-[12px] border border-outline bg-surface-2 p-3.5 text-[12.5px] leading-relaxed whitespace-pre-wrap break-words font-mono max-h-[52dvh] overflow-y-auto select-all">
+            {digestMarkdown || '正在汇总今日数据…'}
+          </pre>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDigestOpen(false)}>关闭</Button>
+            <Button
+              variant="outline"
+              disabled={!digestMarkdown}
+              onClick={() => {
+                void navigator.clipboard.writeText(digestMarkdown)
+                  .then(() => toast('已复制今日日报 Markdown'))
+                  .catch(() => toast('复制失败，请重试'))
+              }}
+            >
+              <Copy size={14} /> 复制 Markdown
+            </Button>
+            <Button variant="primary" disabled={!digestMarkdown} onClick={() => void saveDigestToDocs()}>
+              <FileText size={14} /> 存入文档库
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
     </div>
   )

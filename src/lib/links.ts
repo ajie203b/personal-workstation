@@ -77,8 +77,8 @@ const SAFE_DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp|avif|bmp);/i
 export function transformDocUrl(url: string): string {
   const cleaned = url.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim()
   if (!cleaned || cleaned.startsWith('//')) return ''
-  // hl: 是自写文档的高亮标记，交给 MdReader 自己渲染
-  if (/^(https?:|mailto:|tel:|hl:)/i.test(cleaned)) return cleaned
+  // hl: 是自写文档的高亮标记，wiki: 是文档库双链，交给 MdReader 自己渲染
+  if (/^(https?:|mailto:|tel:|hl:|wiki:)/i.test(cleaned)) return cleaned
   if (SAFE_DATA_IMAGE.test(cleaned)) return cleaned
   if (!/^[a-z][a-z0-9+.-]*:/i.test(cleaned)) return cleaned
   return ''

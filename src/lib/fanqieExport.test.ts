@@ -1,6 +1,12 @@
+import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FanqieBook, FanqieChapterRow } from '@/db/db'
-import { buildFanqieEpub, buildFanqieTxt, escapeXml, sanitizeFilename } from './fanqieExport'
+import { db, type FanqieBook, type FanqieChapterRow } from '@/db/db'
+import { buildFanqieEpub, buildFanqieTxt, escapeXml, importFanqieToDocs, sanitizeFilename } from './fanqieExport'
+
+vi.mock('@/lib/docTextIndex', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/docTextIndex')>()),
+  indexDoc: vi.fn().mockResolvedValue(undefined),
+}))
 
 const book: FanqieBook = {
   id: '9999999999999999999',
@@ -159,5 +165,87 @@ describe('buildFanqieEpub', () => {
     expect(opf).toContain('properties="cover-image"')
     const coverHtml = await zip.file('OEBPS/cover.xhtml')?.async('string')
     expect(coverHtml).toContain('src="cover.jpg"')
+  })
+})
+
+describe('importFanqieToDocs', () => {
+  it('同书追加章节原位更新 EPUB，保留文档 ID 并迁移阅读进度、批注与书签', async () => {
+    await db.delete()
+    await db.open()
+
+    const firstId = await importFanqieToDocs(book, rows)
+    const firstDoc = await db.docs.get(firstId)
+    expect(firstDoc?.sourceUrl).toBe(`fanqie:${book.id}`)
+    const oldHash = firstDoc!.hash
+
+    await db.positions.put({
+      hash: oldHash,
+      progress: { kind: 'flow', segIdx: 1, ratio: 0.5 },
+      progressPct: 0.5,
+      updatedAt: 100,
+    })
+    await db.annotations.put({
+      id: 'ann-fq-1',
+      docHash: oldHash,
+      text: '关键伏笔',
+      color: 'yellow',
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    await db.bookmarks.put({
+      id: 'bm-fq-1',
+      docHash: oldHash,
+      label: '第一章重点',
+      anchor: 'b1',
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    await db.docText.put({
+      hash: oldHash,
+      kind: 'epub',
+      text: 'old index',
+      indexedAt: 100,
+    })
+
+    const nextRows: FanqieChapterRow[] = [
+      ...rows,
+      {
+        id: '9999999999999999999:3',
+        bookId: book.id,
+        itemId: '3',
+        index: 3,
+        title: '第3章 新篇',
+        volume: '第一卷',
+        content: '第三章全新内容',
+        savedAt: 2,
+      },
+    ]
+    const secondId = await importFanqieToDocs({ ...book, chapterCount: 3, downloadedCount: 3 }, nextRows)
+    expect(secondId).toBe(firstId)
+    expect(await db.docs.count()).toBe(1)
+
+    const updatedDoc = await db.docs.get(firstId)
+    expect(updatedDoc).toBeDefined()
+    const newHash = updatedDoc!.hash
+    expect(newHash).not.toBe(oldHash)
+
+    // 阅读进度、批注、书签全部迁移至新 hash，旧 hash 写墓碑且旧孤儿资源释放
+    expect((await db.positions.get(newHash))?.progressPct).toBe(0.5)
+    expect(await db.positions.get(oldHash)).toBeUndefined()
+    expect(await db.tombstones.get(oldHash)).toBeDefined()
+
+    const migratedAnns = await db.annotations.where('docHash').equals(newHash).toArray()
+    expect(migratedAnns).toHaveLength(1)
+    expect(migratedAnns[0].text).toBe('关键伏笔')
+    expect((migratedAnns[0].updatedAt ?? 0)).toBeGreaterThan(100)
+
+    const migratedBms = await db.bookmarks.where('docHash').equals(newHash).toArray()
+    expect(migratedBms).toHaveLength(1)
+    expect(migratedBms[0].label).toBe('第一章重点')
+    expect((migratedBms[0].updatedAt ?? 0)).toBeGreaterThan(100)
+
+    expect(await db.blobs.get(oldHash)).toBeUndefined()
+    expect(await db.docText.get(oldHash)).toBeUndefined()
+    expect(await db.blobs.get(newHash)).toBeDefined()
   })
 })

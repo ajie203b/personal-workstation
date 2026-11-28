@@ -283,6 +283,16 @@
 @keyframes stats-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .stats-view-transition { animation: stats-view-in 220ms ease-out backwards; }
 
+/* 顶部极简细进度线：未知总大小时的平滑流动动画 */
+@keyframes top-progress-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+.top-progress-indeterminate {
+  animation: top-progress-slide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
 /* 系统减弱动态效果：统一收口，排除 .toast-countdown 功能性倒计时条 */
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-1: 0.01ms; --dur-2: 0.01ms; --dur-3: 0.01ms; --dur-4: 0.01ms; --stagger: 0ms; }
@@ -295,6 +305,7 @@
   .animate-spin { animation: none !important; }
   .skeleton::after { animation: none; content: none; }
   .stats-view-transition { animation: none; }
+  .top-progress-indeterminate { animation: none !important; width: 100% !important; transform: none !important; opacity: 0.65; }
   /* 粒子与扩散类特效直接不出现，而不是"加速播完" */
   .done-halo, .confetti-layer, .sand-layer, .sand-clone, ::view-transition-new(root) { display: none !important; animation: none !important; }
   .focus-breathe, .drop-settle { animation: none !important; }
@@ -310,6 +321,7 @@
 }
 .no-motion .animate-spin { animation: none !important; }
 .no-motion .skeleton::after { animation: none; content: none; }
+.no-motion .top-progress-indeterminate { animation: none !important; width: 100% !important; transform: none !important; opacity: 0.65; }
 .no-motion .focus-breathe, .no-motion .done-halo, .no-motion .milestone-dot,
 .no-motion .confetti-layer, .no-motion .sand-layer, .no-motion .sand-clone {
   animation: none !important;

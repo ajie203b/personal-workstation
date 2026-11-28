@@ -18,8 +18,12 @@ import { synthFormulaStrokes } from './synthInk'
 import { useCanvasPointer } from './useCanvasPointer'
 import { useMathRecognition } from './useMathRecognition'
 import type { AngleMode, BlockResult, MathNotePage, NoteGraph, Stroke } from './types'
-import { openSavedAction, saveBlob } from '@/lib/saveFile'
+import { isSaveCancelled, openSavedAction, saveBlob } from '@/lib/saveFile'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
+import { importDoc } from '@/db/docs'
+import { fmtDateTime } from '@/lib/date'
 import { uid } from '@/lib/id'
+import { buildMathNoteMarkdown } from './exportMarkdown'
 
 export { OverlayAnswer }
 
@@ -898,8 +902,36 @@ export function MathNotesPage() {
       return
     }
     const safeTitle = (pageRef.current?.title || '手写计算').replace(/[\\/:*?"<>|]/g, '_')
-    const saved = await saveBlob(blob, `${safeTitle}.png`)
-    toast(`已导出到${saved}`, openSavedAction())
+    try {
+      const saved = await saveBlob(blob, `${safeTitle}.png`)
+      toast(`已导出到${saved}`, openSavedAction())
+    } catch (err) {
+      if (!isSaveCancelled(err)) toast('导出图片失败')
+    }
+  }
+
+  /** 将本页已识别算式、变量与函数图像导出为 Markdown 笔记并存入文档库 */
+  const exportPageMarkdown = async () => {
+    const title = pageRef.current?.title || '手写计算'
+    const results = Array.from(resultsRef.current.values())
+    const md = buildMathNoteMarkdown({
+      title,
+      results,
+      variables: pageVariables,
+      graphs: graphsRef.current,
+      exportedAt: fmtDateTime(new Date()),
+    })
+    const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_').trim() || '手写计算'
+    try {
+      const file = new File([md], `${safeTitle}.md`, { type: 'text/markdown' })
+      const { doc, duplicated } = await importDoc(file)
+      toast(duplicated ? `文档库已存在相同笔记《${doc.title}》` : `已存入文档库《${doc.title}》`, {
+        label: '立即阅读',
+        run: () => navigate(`/docs/${doc.id}`),
+      })
+    } catch {
+      toast('导出 Markdown 失败，请重试')
+    }
   }
 
   /* ---------- 视图 ---------- */
@@ -962,6 +994,7 @@ export function MathNotesPage() {
         onNewFormula={openNewManualFormula}
         onCopyAll={() => void copyAllFormulas()}
         onExportPng={() => void exportPagePng()}
+        onExportMarkdown={() => void exportPageMarkdown()}
         onOpenPlot={() => {
           setPlotSource(undefined)
           setPlotGraphId(undefined)
@@ -982,6 +1015,11 @@ export function MathNotesPage() {
           backgroundSize: `${GRID * zoom}px ${GRID * zoom}px`,
         }}
       >
+        <TopProgressLine
+          active={model.phase === 'loading'}
+          progress={model.phase === 'loading' && model.ratio >= 0 ? model.ratio : null}
+          label="下载手写识别模型"
+        />
         <canvas
           ref={canvasRef}
           className={`absolute inset-0 touch-none ${tool === 'eraser' ? 'cursor-cell' : tool === 'hand' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}

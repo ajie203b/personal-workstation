@@ -1,4 +1,5 @@
-import { BookOpen, FolderInput, MoreHorizontal, PenLine, Quote, Share2, Star, Tag, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router'
+import { BookOpen, FolderInput, MoreHorizontal, PenLine, Quote, Share2, Star, Tag, Trash2, Wrench } from 'lucide-react'
 import { DOC_KIND_LABEL, type Doc, type Folder } from '@/db/db'
 import { fmtListDate } from '@/lib/date'
 import { cn } from '@/lib/cn'
@@ -17,6 +18,10 @@ export function DocsTable({
   folders,
   progressMap,
   annCountByHash,
+  selectable,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
   onOpen,
   onRead,
   onEdit,
@@ -31,6 +36,10 @@ export function DocsTable({
   folders: readonly Folder[]
   progressMap: Record<string, { progressPct?: number }>
   annCountByHash: Record<string, number>
+  selectable?: boolean
+  selectedIds?: ReadonlySet<string>
+  onToggleSelect?: (id: string) => void
+  onToggleSelectAll?: () => void
   onOpen: (doc: Doc, hit?: { count: number; snippet: string; seg?: number }) => void
   onRead: (doc: Doc) => void
   onEdit: (doc: Doc) => void
@@ -41,11 +50,24 @@ export function DocsTable({
   onOpenCitation: (doc: Doc) => void
   onTrash: (doc: Doc) => void
 }) {
+  const navigate = useNavigate()
+  const allSelected = Boolean(selectable && rows.length > 0 && rows.every(({ doc }) => selectedIds?.has(doc.id)))
   return (
     <div className="card overflow-x-auto">
       <table className="w-full text-left border-collapse text-[13px]">
         <thead>
           <tr className="border-b border-outline/80 text-[11.5px] text-on-surface-2 bg-surface-2/60">
+            {selectable && (
+              <th className="w-9 py-2.5 pl-3 pr-1 font-medium">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={() => onToggleSelectAll?.()}
+                  aria-label="全选当前文档"
+                  className="app-checkbox"
+                />
+              </th>
+            )}
             <th className="w-9 py-2.5 pl-3 pr-1 font-medium" aria-label="星标" />
             <th className="py-2.5 px-2 font-medium min-w-[220px]">标题 / 文献来源</th>
             <th className="py-2.5 px-2 font-medium hidden sm:table-cell whitespace-nowrap">格式</th>
@@ -64,8 +86,20 @@ export function DocsTable({
             const anns = annCountByHash[d.hash] ?? 0
             const folderPath = folderPathName(d.folderId, folders)
             const metaLine = [d.meta?.author, d.meta?.year, d.meta?.venue].filter(Boolean).join(' · ')
+            const isSelected = Boolean(selectable && selectedIds?.has(d.id))
             return (
-              <tr key={d.id} id={`doc-${d.id}`} className="group hover:bg-surface-2/70 transition-colors">
+              <tr key={d.id} id={`doc-${d.id}`} className={cn('group hover:bg-surface-2/70 transition-colors', isSelected && 'bg-primary-soft/25')}>
+                {selectable && (
+                  <td className="py-2.5 pl-3 pr-1 align-top">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleSelect?.(d.id)}
+                      aria-label={`选中 ${d.title}`}
+                      className="app-checkbox mt-1"
+                    />
+                  </td>
+                )}
                 <td className="py-2.5 pl-3 pr-1 align-top">
                   <button
                     type="button"
@@ -135,6 +169,16 @@ export function DocsTable({
                       <DropdownItem onSelect={() => onEditMeta(d)}><Tag size={15} />文献信息与标签</DropdownItem>
                       <DropdownItem onSelect={() => onToggleStar(d)}><Star size={15} />{d.starred ? '取消星标' : '设为星标'}</DropdownItem>
                       <DropdownItem onSelect={() => onOpenCitation(d)}><Quote size={15} />引用…</DropdownItem>
+                      {d.kind === 'pdf' && (
+                        <DropdownItem onSelect={() => navigate(`/tools/pdf?docId=${d.id}&tool=compress`)}>
+                          <Wrench size={15} />用 PDF 工具箱处理
+                        </DropdownItem>
+                      )}
+                      {(d.kind === 'md' || d.kind === 'txt' || d.kind === 'docx') && (
+                        <DropdownItem onSelect={() => navigate(`/tools/njust-report?docId=${d.id}`)}>
+                          <Wrench size={15} />用 NJUST 报告排版
+                        </DropdownItem>
+                      )}
                       {d.kind === 'md' && <DropdownItem onSelect={() => onShare(d)}><Share2 size={15} />分享 / 导出</DropdownItem>}
                       <DropdownItem onSelect={() => onMove(d)}><FolderInput size={15} />移动到文件夹</DropdownItem>
                       <MenuSeparator />

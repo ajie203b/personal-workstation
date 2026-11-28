@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, isValidElement, type ReactNode } from 'react'
+import { Check, Copy, X, ZoomIn, ZoomOut } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
@@ -14,6 +15,7 @@ import type { Annotation, AnnotationTextAnchor, DocSettings } from '@/db/db'
 import { handleDocLink, transformDocUrl } from '@/lib/links'
 import { usePinch } from '@/lib/usePinch'
 import { remarkHighlight } from './mdHighlight'
+import { remarkWikiLinks } from './wikiLinks'
 import { MermaidBlock } from './MermaidBlock'
 import { markdownTableRanges, normalizeMarkdown } from './markdownContent'
 import { MarkdownWordCount } from './MarkdownWordCount'
@@ -31,6 +33,7 @@ export interface MdSelectionInfo {
 
 interface Props {
   onLink?: (href: string) => void
+  onWikiLink?: (target: string) => void
   renderImage?: (src: string | undefined, alt: string | undefined) => ReactNode
   hash: string
   md: string
@@ -108,7 +111,7 @@ export function splitMdBlocks(md: string): { source: string; complex: boolean }[
 
 /** MD 阅读器：块锚点渲染 + 沉浸排版 + 划词高亮 */
 export function MdReader({
-  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange, onLink, renderImage, findQuery = '', findActive = 0, onFindState, onSelectAnnotation,
+  hash, md, settings, annotations, jump, onSelection, onProgress, onRestored, scrollRef, initialTarget, onFontSizeChange, onLink, onWikiLink, renderImage, findQuery = '', findActive = 0, onFindState, onSelectAnnotation,
 }: Props) {
   const source = useMemo(() => normalizeMarkdown(md), [md])
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -461,7 +464,7 @@ export function MdReader({
             onSelectAnnotation(null)
           }}
         >
-          <MarkdownContent source={source} onLink={onLink} renderImage={renderImage} />
+          <MarkdownContent source={source} onLink={onLink} onWikiLink={onWikiLink} renderImage={renderImage} />
         </div>
       </div>
     </div>
@@ -470,47 +473,168 @@ export function MdReader({
   )
 }
 
-/** Keep parsing and DOM stable while typography, selection and toolbar state change. */
-export const MarkdownContent = memo(function MarkdownContent({ source, onLink, renderImage }: Pick<Props, 'onLink' | 'renderImage'> & { source: string }) {
-  return <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkHighlight, remarkMath]}
-            rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeReaderStyles, [rehypeKatex, { trust: false, strict: false, maxSize: 20, maxExpand: 1000 }]]}
-            urlTransform={transformDocUrl}
-            components={{
-              // ```mermaid 代码块画成图表；其余代码块保持原样
-              pre: ({ children }) => {
-                const child = Array.isArray(children) ? children.find(isValidElement) : children
-                if (isValidElement(child)) {
-                  const props = child.props as { className?: string; children?: ReactNode }
-                  if (typeof props.className === 'string' && /(?:^|\s)language-mermaid(?:\s|$)/.test(props.className)) {
-                    const text = Array.isArray(props.children) ? props.children.join('') : String(props.children ?? '')
-                    return <MermaidBlock chart={text.replace(/\n+$/, '')} />
-                  }
-                }
-                return <pre>{children}</pre>
-              },
-              table: ({ node: _node, children, ...rest }) => (
-                <div className="md-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...rest}>{children}</table></div>
-              ),
-              // 链接统一接管：否则 #锚点/相对路径会改掉 hash 路由，直接跳回今日页
-              a: ({ href, children, ...rest }) => {
-                // remarkHighlight 把 ==color|文字== 变成 hl:color 链接，这里画回高亮（严格白名单颜色防类名注入）
-                if (href?.startsWith('hl:')) {
-                  const raw = href.slice(3).trim()
-                  const color = /^(yellow|green|blue|red)$/.test(raw) ? raw : 'yellow'
-                  return <mark className={`hl-${color}`}>{children}</mark>
-                }
-                return (
-                  <a href={href} rel="noreferrer noopener" onClick={(e) => { if (onLink && href) { e.preventDefault(); onLink(href) } else handleDocLink(e, href) }} {...rest}>
-                    {children}
-                  </a>
-                )
-              },
-              img: ({ src, alt, ...rest }) => renderImage ? renderImage(src, alt) : (
-                <img src={src} alt={alt ?? ''} loading="lazy" className="rounded-[10px] border border-outline/50" {...rest} />
-              ),
-            }}
+function CodeBlockPre({ children }: { children?: ReactNode }) {
+  const [copied, setCopied] = useState(false)
+  const child = Array.isArray(children) ? children.find(isValidElement) : children
+  if (isValidElement(child)) {
+    const props = child.props as { className?: string; children?: ReactNode }
+    const cls = typeof props.className === 'string' ? props.className : ''
+    const text = (Array.isArray(props.children) ? props.children.join('') : String(props.children ?? '')).replace(/\n+$/, '')
+    if (/(?:^|\s)language-mermaid(?:\s|$)/.test(cls)) {
+      return <MermaidBlock chart={text} />
+    }
+    const langMatch = cls.match(/language-([a-zA-Z0-9_+#-]+)/)
+    const lang = langMatch?.[1] ?? ''
+    const copyCode = () => {
+      void navigator.clipboard.writeText(text).then(() => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      }).catch(() => undefined)
+    }
+    return (
+      <div className="relative group my-3">
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity print:hidden">
+          {lang && (
+            <span className="px-1.5 py-0.5 rounded bg-surface/85 border border-outline/70 text-[10px] font-mono text-on-surface-2 uppercase">
+              {lang}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label="复制代码"
+            onClick={copyCode}
+            className="inline-flex items-center gap-1 h-6 px-2 rounded bg-surface/90 border border-outline/80 text-[11px] font-medium text-on-surface-2 hover:text-on-surface hover:bg-surface-2 cursor-pointer"
           >
-            {normalizeMarkdown(source)}
-          </ReactMarkdown>
+            {copied ? <Check size={12} className="text-ok" /> : <Copy size={12} />}
+            {copied ? '已复制' : '复制'}
+          </button>
+        </div>
+        <pre>{children}</pre>
+      </div>
+    )
+  }
+  return <pre>{children}</pre>
+}
+
+/** Keep parsing and DOM stable while typography, selection and toolbar state change. */
+export const MarkdownContent = memo(function MarkdownContent({ source, onLink, onWikiLink, renderImage }: Pick<Props, 'onLink' | 'onWikiLink' | 'renderImage'> & { source: string }) {
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string; scale: number } | null>(null)
+
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox])
+
+  return (
+    <>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkHighlight, remarkWikiLinks, remarkMath]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeReaderStyles, [rehypeKatex, { trust: false, strict: false, maxSize: 20, maxExpand: 1000 }]]}
+        urlTransform={transformDocUrl}
+        components={{
+          pre: ({ children }) => <CodeBlockPre>{children}</CodeBlockPre>,
+          table: ({ node: _node, children, ...rest }) => (
+            <div className="md-table-scroll" tabIndex={0} role="region" aria-label="表格，可横向滚动"><table {...rest}>{children}</table></div>
+          ),
+          // 链接统一接管：否则 #锚点/相对路径会改掉 hash 路由，直接跳回今日页
+          a: ({ href, children, ...rest }) => {
+            // remarkHighlight 把 ==color|文字== 变成 hl:color 链接，这里画回高亮（严格白名单颜色防类名注入）
+            if (href?.startsWith('hl:')) {
+              const raw = href.slice(3).trim()
+              const color = /^(yellow|green|blue|red)$/.test(raw) ? raw : 'yellow'
+              return <mark className={`hl-${color}`}>{children}</mark>
+            }
+            if (href?.startsWith('wiki:')) {
+              let target = href.slice(5)
+              try { target = decodeURIComponent(target) } catch { /* keep raw */ }
+              return (
+                <a
+                  href={`#wiki-${encodeURIComponent(target)}`}
+                  data-wiki-target={target}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onWikiLink?.(target)
+                  }}
+                  className="inline-flex items-baseline gap-0.5 px-1 -mx-0.5 rounded-[5px] text-primary bg-primary-soft/55 hover:bg-primary-soft border-b border-dashed border-primary/50 no-underline transition-colors cursor-pointer"
+                  {...rest}
+                >
+                  {children}
+                </a>
+              )
+            }
+            return (
+              <a href={href} rel="noreferrer noopener" onClick={(e) => { if (onLink && href) { e.preventDefault(); onLink(href) } else handleDocLink(e, href) }} {...rest}>
+                {children}
+              </a>
+            )
+          },
+          img: ({ src, alt, ...rest }) => renderImage ? renderImage(src, alt) : (
+            <img
+              src={src}
+              alt={alt ?? ''}
+              loading="lazy"
+              onClick={() => { if (src) setLightbox({ src, alt: alt ?? '', scale: 1 }) }}
+              className="rounded-[10px] border border-outline/50 cursor-zoom-in"
+              {...rest}
+            />
+          ),
+        }}
+      >
+        {normalizeMarkdown(source)}
+      </ReactMarkdown>
+
+      {lightbox && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="图片预览"
+          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden"
+        >
+          <div className="flex items-center gap-2 mb-3" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              aria-label="缩小图片"
+              onClick={() => setLightbox((prev) => prev ? { ...prev, scale: Math.max(0.5, Number((prev.scale - 0.25).toFixed(2))) } : null)}
+              className="grid place-items-center size-9 rounded-full bg-white/15 text-white hover:bg-white/25 cursor-pointer"
+            >
+              <ZoomOut size={16} />
+            </button>
+            <span className="text-[12px] text-white/90 tabular-nums min-w-[44px] text-center">
+              {Math.round(lightbox.scale * 100)}%
+            </span>
+            <button
+              type="button"
+              aria-label="放大图片"
+              onClick={() => setLightbox((prev) => prev ? { ...prev, scale: Math.min(3, Number((prev.scale + 0.25).toFixed(2))) } : null)}
+              className="grid place-items-center size-9 rounded-full bg-white/15 text-white hover:bg-white/25 cursor-pointer"
+            >
+              <ZoomIn size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="关闭图片预览"
+              onClick={() => setLightbox(null)}
+              className="grid place-items-center size-9 rounded-full bg-white/15 text-white hover:bg-white/25 cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="max-w-[92vw] max-h-[82vh] overflow-auto rounded-[12px]" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={lightbox.src}
+              alt={lightbox.alt}
+              style={{ transform: `scale(${lightbox.scale})`, transformOrigin: 'center center' }}
+              className="max-w-full max-h-[80vh] object-contain transition-transform duration-150"
+            />
+          </div>
+          {lightbox.alt && <p className="mt-2 text-[12px] text-white/80 max-w-xl truncate">{lightbox.alt}</p>}
+        </div>
+      )}
+    </>
+  )
 })

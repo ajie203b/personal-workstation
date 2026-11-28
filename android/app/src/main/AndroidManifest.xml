@@ -31,6 +31,14 @@
                 <data android:scheme="com.personal.workstation" android:host="quickadd" />
                 <data android:scheme="com.personal.workstation" android:host="today" />
                 <data android:scheme="com.personal.workstation" android:host="task" />
+                <data android:scheme="com.personal.workstation" android:host="share" />
+            </intent-filter>
+
+            <!-- 系统分享收件箱（Phase 3）：接收微信 / 浏览器 / 抖音 / B 站分享的文本与链接 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
 
             <!-- 长按图标的快捷方式清单 -->
@@ -51,11 +59,28 @@
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <!-- 小米 Widget 展现刷新（部分负一屏实现仍会发） -->
                 <action android:name="miui.appwidget.action.APPWIDGET_UPDATE" />
+                <!-- 跨午夜 / 时区变化 / 重启后刷新小组件，避免次日停留在昨日快照 -->
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/task_widget_info" />
         </receiver>
+
+        <!-- 下拉控制中心快捷设置磁贴（Phase 3）：任意界面 2 秒速记任务 -->
+        <service
+            android:name=".QuickAddTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_quick_add"
+            android:label="@string/quick_add_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <receiver android:name=".WidgetCompleteReceiver" android:exported="false" />
 

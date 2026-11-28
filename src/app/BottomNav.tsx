@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { NavLink, useLocation } from 'react-router'
 import { NAV_ITEMS } from './nav'
+import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { haptic } from '@/lib/haptics'
 import { durMs, prefersReducedMotion } from '@/lib/motion'
@@ -8,8 +9,10 @@ import { durMs, prefersReducedMotion } from '@/lib/motion'
 /** 手机底栏的选中背景和标签共用等宽列，切换时只移动背景。 */
 export function BottomNav({ todayCount }: { todayCount: number }) {
   const { pathname } = useLocation()
+  const hiddenNavPaths = useUi((s) => s.hiddenNavPaths)
+  const items = NAV_ITEMS.filter((item) => !hiddenNavPaths.includes(item.path))
   const section = `/${pathname.split('/')[1] || ''}`
-  const activeIndex = NAV_ITEMS.findIndex((item) => item.path === section)
+  const activeIndex = items.findIndex((item) => item.path === section)
   return (
     <div className="mobile-dock-wrap pointer-events-none absolute inset-x-0 bottom-0 z-20 md:hidden">
       {/* 渐隐层覆盖底栏后的滚动内容。 */}
@@ -17,7 +20,7 @@ export function BottomNav({ todayCount }: { todayCount: number }) {
       <nav
         aria-label="主导航"
         className="mobile-tab-bar glass pointer-events-auto relative grid"
-        style={{ '--tab-count': NAV_ITEMS.length } as CSSProperties}
+        style={{ '--tab-count': items.length } as CSSProperties}
       >
         <span
           aria-hidden
@@ -27,7 +30,7 @@ export function BottomNav({ todayCount }: { todayCount: number }) {
             opacity: activeIndex < 0 ? 0 : undefined,
           }}
         />
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           return (
             <NavLink
               key={item.path}

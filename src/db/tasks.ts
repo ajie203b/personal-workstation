@@ -1,4 +1,4 @@
-import { db, type Annotation, type AiMessage, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type QrHistoryRow, type ReadingPosition, type Folder, type SettingKV, type SignatureRow, type Task, type Tier, type Tombstone } from './db'
+import { db, type Annotation, type AiMessage, type AiSession, type AiUsageRow, type Bookmark, type Doc, type DocText, type FocusSession, type Priority, type QrHistoryRow, type ReadingPosition, type Folder, type SettingKV, type SignatureRow, type SubTask, type Task, type Tier, type Tombstone } from './db'
 import type { Table } from 'dexie'
 import { uid } from '@/lib/id'
 import { addDaysStr, parseDateStr, todayStr, toDateStr } from '@/lib/date'
@@ -31,6 +31,7 @@ export interface NewTaskInput {
   folderId?: string
   docRef?: Task['docRef']
   aiRef?: string
+  subtasks?: SubTask[]
   sortOrder?: number
 }
 
@@ -62,6 +63,7 @@ export async function addTask(input: NewTaskInput): Promise<Task> {
     folderId: input.folderId,
     docRef: input.docRef,
     aiRef: input.aiRef,
+    subtasks: input.subtasks?.length ? input.subtasks : undefined,
     sortOrder: input.sortOrder,
     createdAt: now,
     updatedAt: now,

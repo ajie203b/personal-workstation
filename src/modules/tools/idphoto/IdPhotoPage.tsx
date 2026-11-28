@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router'
 import {
   AlertTriangle,
+  CheckCircle2,
   Download,
   FileImage,
   Loader2,
@@ -18,6 +19,7 @@ import { BackButton } from '@/shared/ui/BackButton'
 import { Button } from '@/shared/ui/Button'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Segmented } from '@/shared/ui/Segmented'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { openSavedAction, saveBlob } from '@/lib/saveFile'
@@ -427,7 +429,8 @@ export function IdPhotoPage() {
 
       {/* 2. 人脸取景 */}
       {image && crop && (
-        <section className="card p-4 flex flex-col gap-3">
+        <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+          <TopProgressLine active={faceState === 'running'} label="正在加载并定位人脸" />
           <div className="flex items-center gap-2">
             <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-surface-2 text-on-surface-2 shrink-0">
               <ScanFace size={15} />
@@ -535,7 +538,12 @@ export function IdPhotoPage() {
 
       {/* 3. 抠图 */}
       {image && (
-        <section className="card p-4 flex flex-col gap-3">
+        <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+          <TopProgressLine
+            active={busy === '抠图中'}
+            progress={progress > 0 ? progress / 100 : null}
+            label="人像抠图与模型下载进度"
+          />
           <div className="flex items-center gap-2">
             <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-surface-2 text-on-surface-2 shrink-0">
               <Scissors size={15} />
@@ -543,7 +551,11 @@ export function IdPhotoPage() {
             <div className="min-w-0 flex-1">
               <p className="text-[13.5px] font-medium">③ 抠图</p>
               <p className="text-[11px] text-on-surface-2 leading-relaxed">
-                人像抠图（MODNet），发丝级边缘；首次会下载模型（约 25MB，缓存后不再下）
+                {busy === '抠图中'
+                  ? progress > 0
+                    ? `正在下载模型 / 抠图处理 · ${progress}%`
+                    : '正在准备抠图模型…'
+                  : '人像抠图（MODNet），发丝级边缘；首次会下载模型（约 25MB，缓存后不再下）'}
               </p>
             </div>
             <Button onClick={() => void doMatting()} disabled={actionLocked} className="h-9 px-4 shrink-0">
@@ -551,11 +563,6 @@ export function IdPhotoPage() {
               {matte ? '重新抠图' : '自动抠图'}
             </Button>
           </div>
-          {busy === '抠图中' && (
-            <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-              <div className="h-full bg-primary transition-[width] duration-200" style={{ width: `${progress}%` }} />
-            </div>
-          )}
           {mattingError && (
             <div className="flex items-center justify-between gap-3 rounded-[10px] border border-danger/35 bg-danger/5 px-3 py-2.5">
               <p className="text-[12px] text-danger leading-relaxed min-w-0 flex-1">{mattingError}</p>
@@ -615,7 +622,11 @@ export function IdPhotoPage() {
 
       {/* 5. 预览与导出 */}
       {image && crop && (
-        <section className="card p-4 flex flex-col gap-3">
+        <section className="card relative overflow-hidden p-4 flex flex-col gap-3">
+          <TopProgressLine
+            active={busy === '生成中' || busy === '导出 PDF' || busy === '导出排版'}
+            label={busy || '正在生成导出'}
+          />
           <div className="flex items-center gap-2 flex-wrap">
             <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-surface-2 text-on-surface-2 shrink-0">
               <Printer size={15} />
@@ -632,6 +643,35 @@ export function IdPhotoPage() {
               {effectiveFormat === 'png' ? '生成透明 PNG' : '生成证件照'}
             </Button>
           </div>
+
+          {result && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]" role="status" aria-label="报名规格合规体检">
+              <span className={cn(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-medium',
+                !result.shrunkSize
+                  ? 'border-ok/35 bg-ok/10 text-ok'
+                  : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+              )}>
+                {!result.shrunkSize ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                尺寸 {result.width}×{result.height}px
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-ok/35 bg-ok/10 text-ok font-medium">
+                <CheckCircle2 size={12} />
+                {effectiveFormat === 'png' ? 'PNG 无损透明' : `${spec.dpi} DPI`}
+              </span>
+              {effectiveFormat === 'jpeg' && (
+                <span className={cn(
+                  'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-medium',
+                  !result.belowMinKb && result.kb <= spec.maxKb
+                    ? 'border-ok/35 bg-ok/10 text-ok'
+                    : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+                )}>
+                  {!result.belowMinKb && result.kb <= spec.maxKb ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                  体积 {result.kb}KB（要求 {spec.minKb}~{spec.maxKb}KB）
+                </span>
+              )}
+            </div>
+          )}
 
           {result && (result.belowMinKb || result.shrunkSize) && (
             <div

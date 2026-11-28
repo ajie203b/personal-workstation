@@ -297,8 +297,15 @@ export function LocalMarkdownPage() {
     }
     const timer = window.setInterval(() => void check(), 3000)
     const focus = () => { void check(); void browse(viewDir.current || parentPath(file)) }
+    const onVis = () => { if (document.visibilityState === 'visible') focus() }
     window.addEventListener('focus', focus)
-    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('focus', focus) }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', focus)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [file, browse])
 
   useEffect(() => {

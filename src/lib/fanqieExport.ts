@@ -418,11 +418,77 @@ ${spineRefs.join('\n')}
 /** 浏览器 / WebView 里的另存为（原生壳内由原生写「下载」，见 lib/saveFile.ts） */
 export { saveBlob } from './saveFile'
 
-/** 导入文档工作站阅读（EPUB 去重由 importDoc 的 hash 负责） */
+/** 导入文档工作站阅读：同书（sourceUrl = fanqie:<bookId>）原位更新 EPUB 本体并保留阅读进度与批注 */
 export async function importFanqieToDocs(book: FanqieBook, chapters: FanqieChapterRow[]): Promise<string> {
   const blob = await buildFanqieEpub(book, chapters)
   const file = new File([blob], `${sanitizeFilename(book.title)}.epub`, { type: 'application/epub+zip' })
-  const { importDoc } = await import('@/db/docs')
-  const result = await importDoc(file)
-  return result.doc.id
+  const sourceKey = `fanqie:${book.id}`
+  const [{ db }, { importDoc }, { sha256Hex }] = await Promise.all([
+    import('@/db/db'),
+    import('@/db/docs'),
+    import('@/lib/modelCache'),
+  ])
+
+  const existing = await db.docs
+    .where('sourceUrl')
+    .equals(sourceKey)
+    .filter((d) => !d.deletedAt)
+    .first()
+
+  if (!existing) {
+    const result = await importDoc(file)
+    await db.docs.update(result.doc.id, { sourceUrl: sourceKey, updatedAt: Date.now() })
+    return result.doc.id
+  }
+
+  const buf = await blob.arrayBuffer()
+  const newHash = await sha256Hex(buf)
+  if (newHash === existing.hash) return existing.id
+
+  const oldHash = existing.hash
+  const now = Date.now()
+  const nextBlob = new Blob([buf], { type: 'application/epub+zip' })
+
+  await db.transaction(
+    'rw',
+    [db.docs, db.blobs, db.positions, db.annotations, db.bookmarks, db.docText, db.tombstones],
+    async () => {
+      await db.blobs.put({ hash: newHash, blob: nextBlob })
+      await db.docs.update(existing.id, {
+        hash: newHash,
+        title: book.title.trim() || existing.title,
+        size: nextBlob.size,
+        updatedAt: now,
+        sourceUrl: sourceKey,
+      })
+
+      // 迁移阅读进度、批注与书签到新 hash，并刷新 updatedAt 以便多端同步同步新锚点
+      const pos = await db.positions.get(oldHash)
+      if (pos) {
+        await db.positions.put({ ...pos, hash: newHash, updatedAt: now })
+        await db.positions.delete(oldHash)
+        await db.tombstones.put({ id: oldHash, ts: now })
+      }
+      const anns = await db.annotations.where('docHash').equals(oldHash).toArray()
+      if (anns.length) {
+        await db.annotations.bulkPut(anns.map((a) => ({ ...a, docHash: newHash, updatedAt: now })))
+      }
+      const bms = await db.bookmarks.where('docHash').equals(oldHash).toArray()
+      if (bms.length) {
+        await db.bookmarks.bulkPut(bms.map((b) => ({ ...b, docHash: newHash, updatedAt: now })))
+      }
+
+      const others = await db.docs.where('hash').equals(oldHash).count()
+      if (others === 0) {
+        await db.blobs.delete(oldHash)
+        await db.docText.delete(oldHash)
+      }
+    },
+  )
+
+  const updatedDoc = await db.docs.get(existing.id)
+  if (updatedDoc) {
+    void import('@/lib/docTextIndex').then(({ indexDoc }) => indexDoc(updatedDoc, nextBlob))
+  }
+  return existing.id
 }

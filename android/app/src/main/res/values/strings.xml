@@ -24,4 +24,6 @@
     <string name="task_widget_prio_normal">常规</string>
     <string name="task_widget_prio_high">重要</string>
     <string name="task_widget_prio_urgent">紧急</string>
+    <string name="task_widget_stale_day">昨日快照 · 点此刷新今日</string>
+    <string name="quick_add_tile_label">速记待办</string>
 </resources>

@@ -22,10 +22,13 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -48,7 +51,12 @@ public class TaskWidgetProvider extends AppWidgetProvider {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (MIUI_APPWIDGET_UPDATE.equals(intent.getAction())) {
+        String action = intent != null ? intent.getAction() : null;
+        if (MIUI_APPWIDGET_UPDATE.equals(action)
+            || Intent.ACTION_DATE_CHANGED.equals(action)
+            || Intent.ACTION_TIME_CHANGED.equals(action)
+            || Intent.ACTION_TIMEZONE_CHANGED.equals(action)
+            || Intent.ACTION_BOOT_COMPLETED.equals(action)) {
             refreshAll(context);
             return;
         }
@@ -159,6 +167,7 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         JSONArray tasks = new JSONArray();
         String hint = context.getString(R.string.task_widget_all_done);
         String dateLabel = "";
+        String savedDay = "";
         int doneCount = 0;
         String raw = snapshot.optString("payload", "");
         JSONArray saved = null;
@@ -167,10 +176,19 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                 JSONObject obj = new JSONObject(raw);
                 saved = obj.optJSONArray("tasks");
                 dateLabel = obj.optString("date", "");
+                savedDay = obj.optString("day", "");
                 doneCount = obj.optInt("done", 0);
             }
         } catch (JSONException ignored) { /* 仍然显示本地待同步任务 */ }
-        if (saved == null) hint = raw.isEmpty() ? "打开应用后同步待办" : "打开应用以重新同步";
+        String todayDay = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        boolean staleDay = !savedDay.isEmpty() && !savedDay.equals(todayDay);
+        if (saved == null) {
+            hint = raw.isEmpty() ? "打开应用后同步待办" : "打开应用以重新同步";
+        } else if (staleDay) {
+            // 跨日后不再沿用昨天的「今日已完成」计数，避免误显示「今日待办已清空」
+            doneCount = 0;
+            hint = context.getString(R.string.task_widget_stale_day);
+        }
 
         Set<String> completingSnapshot;
         synchronized (COMPLETING_IDS) {
@@ -237,11 +255,10 @@ public class TaskWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_add,
             widgetActivityIntent(context, WidgetAddTaskActivity.class, null, base + 1));
 
-        // 极简顶栏轻量计数（无胶囊底色）
+        // 极简顶栏轻量计数（颜色走 XML @color/widget_text_secondary，随系统深浅色即时切换）
         if (activeCount > 0) {
             views.setViewVisibility(R.id.widget_count, View.VISIBLE);
             views.setTextViewText(R.id.widget_count, String.valueOf(activeCount));
-            views.setTextColor(R.id.widget_count, ContextCompat.getColor(context, R.color.widget_text_secondary));
         } else {
             views.setViewVisibility(R.id.widget_count, View.INVISIBLE);
             views.setTextViewText(R.id.widget_count, "");
@@ -254,11 +271,6 @@ public class TaskWidgetProvider extends AppWidgetProvider {
             return views;
         }
         views.setViewVisibility(R.id.widget_empty_wrap, View.GONE);
-
-        int colorPrimaryText = ContextCompat.getColor(context, R.color.widget_text_primary);
-        int colorDoneText = ContextCompat.getColor(context, R.color.widget_text_done);
-        int colorDanger = ContextCompat.getColor(context, R.color.widget_danger);
-        int colorChip = ContextCompat.getColor(context, R.color.widget_chip_text);
 
         for (int i = 0; i < rows; i++) {
             JSONObject task = tasks.optJSONObject(i);
@@ -279,19 +291,18 @@ public class TaskWidgetProvider extends AppWidgetProvider {
             if (completing) {
                 row.setInt(R.id.widget_row_card, "setBackgroundResource", R.drawable.widget_row_done_bg);
                 row.setImageViewResource(R.id.widget_check, R.drawable.widget_check_done);
-                row.setTextColor(R.id.widget_task, colorDoneText);
+                setDynamicTextColor(context, row, R.id.widget_task, R.color.widget_text_done);
                 row.setInt(R.id.widget_task, "setPaintFlags", Paint.ANTI_ALIAS_FLAG | Paint.STRIKE_THRU_TEXT_FLAG);
             } else if (checkedFlash) {
                 row.setInt(R.id.widget_row_card, "setBackgroundResource", R.drawable.widget_row_done_bg);
                 row.setImageViewResource(R.id.widget_check, R.drawable.widget_check_done);
-                row.setTextColor(R.id.widget_task, colorPrimaryText);
+                // 默认文字色已在 widget_task_row.xml 绑定 @color/widget_text_primary，不写静态 ARGB
                 row.setInt(R.id.widget_task, "setPaintFlags", Paint.ANTI_ALIAS_FLAG);
             } else {
                 row.setInt(R.id.widget_row_card, "setBackgroundResource", R.drawable.widget_row_bg);
                 int checkRes = (overdue || priority == 0) ? R.drawable.widget_check_p0
                     : priority == 1 ? R.drawable.widget_check_p1 : R.drawable.widget_check;
                 row.setImageViewResource(R.id.widget_check, checkRes);
-                row.setTextColor(R.id.widget_task, colorPrimaryText);
                 row.setInt(R.id.widget_task, "setPaintFlags", Paint.ANTI_ALIAS_FLAG);
             }
 
@@ -303,21 +314,19 @@ public class TaskWidgetProvider extends AppWidgetProvider {
                 row.setOnClickPendingIntent(R.id.widget_check, completeIntent(context, id, title, count + 1, total));
             }
 
-            // 右侧轻量纯文本：打卡进度 / 逾期 / 截止时间（无多余胶囊底色）
+            // 右侧轻量纯文本：打卡进度 / 逾期 / 截止时间（默认走 XML @color/widget_chip_text，仅逾期动态切 danger 资源）
             if (total > 1) {
                 row.setViewVisibility(R.id.widget_progress, View.VISIBLE);
                 row.setTextViewText(R.id.widget_progress, count + "/" + total);
-                row.setTextColor(R.id.widget_progress, colorChip);
                 row.setOnClickPendingIntent(R.id.widget_progress, open);
             } else if (overdue && !completing) {
                 row.setViewVisibility(R.id.widget_progress, View.VISIBLE);
                 row.setTextViewText(R.id.widget_progress, "逾期");
-                row.setTextColor(R.id.widget_progress, colorDanger);
+                setDynamicTextColor(context, row, R.id.widget_progress, R.color.widget_danger);
                 row.setOnClickPendingIntent(R.id.widget_progress, open);
             } else if (!time.isEmpty()) {
                 row.setViewVisibility(R.id.widget_progress, View.VISIBLE);
                 row.setTextViewText(R.id.widget_progress, time);
-                row.setTextColor(R.id.widget_progress, colorChip);
                 row.setOnClickPendingIntent(R.id.widget_progress, open);
             } else {
                 row.setViewVisibility(R.id.widget_progress, View.GONE);
@@ -326,6 +335,19 @@ public class TaskWidgetProvider extends AppWidgetProvider {
             views.addView(R.id.widget_tasks, row);
         }
         return views;
+    }
+
+    /**
+     * 动态绑定颜色资源而非硬编码 ARGB 整数：
+     * Android 12+（API 31+）直接传 @ColorRes 给 RemoteViews.setColor，系统切换深浅主题时
+     * 桌面启动器会立刻按 values / values-night 重解析，无需等待或手动点击刷新。
+     */
+    private static void setDynamicTextColor(Context context, RemoteViews views, int viewId, int colorRes) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            views.setColor(viewId, "setTextColor", colorRes);
+        } else {
+            views.setTextColor(viewId, ContextCompat.getColor(context, colorRes));
+        }
     }
 
     /**

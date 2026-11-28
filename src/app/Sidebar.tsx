@@ -23,12 +23,14 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const savedCollapsed = useUi((s) => s.sidebarCollapsed)
+  const hiddenNavPaths = useUi((s) => s.hiddenNavPaths)
   const setPaletteOpen = useUi((s) => s.setPaletteOpen)
   const [readerExpanded, setReaderExpanded] = useState(false)
   const reading = /^\/docs\/.+/.test(pathname)
   const collapsed = reading ? !readerExpanded : savedCollapsed
   const setCollapsed = useUi((s) => s.setSidebarCollapsed)
   const modK = modKeyLabel('K')
+  const visibleNavItems = NAV_ITEMS.filter((item) => !hiddenNavPaths.includes(item.path))
 
   const badgeText = todayCount > 99 ? '99+' : String(todayCount)
 
@@ -66,7 +68,7 @@ export function Sidebar({ todayCount }: { todayCount: number }) {
       </div>
 
       <nav aria-label="主导航" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 px-2.5 py-1.5">
-        {NAV_ITEMS.map((item) => (
+        {visibleNavItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}

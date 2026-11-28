@@ -20,6 +20,10 @@ export function parseAppUrl(url: string): string | null {
     const id = query.get('id')
     return id ? `/tasks?focus=${encodeURIComponent(id)}` : '/today'
   }
+  if (host === 'share') {
+    const qs = query.toString()
+    return qs ? `/share?${qs}` : '/share'
+  }
   return null
 }
 

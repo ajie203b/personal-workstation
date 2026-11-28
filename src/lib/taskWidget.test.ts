@@ -5,6 +5,7 @@ const bridge = vi.hoisted(() => ({ take: vi.fn(), ack: vi.fn(), update: vi.fn() 
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => true }, registerPlugin: () => bridge }))
 vi.mock('@/lib/notify', () => ({ syncTaskNotification: vi.fn(), cancelTaskNotification: vi.fn() }))
 import { db } from '@/db/db'
+import { addDaysStr, todayStr } from '@/lib/date'
 import { drainTaskWidgetActions, syncTaskWidget } from './taskWidget'
 
 beforeEach(async () => {
@@ -71,4 +72,30 @@ it('同一批次多次习惯打卡全部累计，不会跳过第 2 次及以后'
   const saved = await db.tasks.get('h')
   expect(saved?.checkin?.count).toBe(2)
   expect(saved?.status).toBe('todo')
+})
+
+it('小组件快速添加支持自然语言解析，同时尊重显式优先级并写入 day 日期标记', async () => {
+  bridge.take.mockResolvedValueOnce({
+    adds: [
+      { id: 'nlp1', title: '明天14:00 交报告 #工作 P1', priority: 2 },
+      { id: 'nlp2', title: '买牛奶', priority: 0 },
+    ],
+  })
+  await drainTaskWidgetActions()
+
+  const t1 = await db.tasks.get('nlp1')
+  expect(t1?.title).toBe('交报告')
+  expect(t1?.due).toBe(addDaysStr(1))
+  expect(t1?.dueTime).toBe('14:00')
+  expect(t1?.tags).toEqual(['工作'])
+  expect(t1?.priority).toBe(1)
+  expect(t1?.tier).toBe('upcoming')
+
+  const t2 = await db.tasks.get('nlp2')
+  expect(t2?.title).toBe('买牛奶')
+  expect(t2?.priority).toBe(0)
+  expect(t2?.tier).toBe('today')
+
+  const payload = JSON.parse(bridge.ack.mock.calls[0][0].payload)
+  expect(payload.day).toBe(todayStr())
 })

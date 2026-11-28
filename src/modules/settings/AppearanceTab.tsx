@@ -24,6 +24,9 @@ export function AppearanceTab() {
   const setHaptics = useUi((s) => s.setHaptics)
   const sidebarCollapsed = useUi((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useUi((s) => s.setSidebarCollapsed)
+  const hiddenNavPaths = useUi((s) => s.hiddenNavPaths)
+  const toggleHiddenNavPath = useUi((s) => s.toggleHiddenNavPath)
+  const resetHiddenNavPaths = useUi((s) => s.resetHiddenNavPaths)
 
   return (
     <div className="flex flex-col gap-4 max-w-xl">
@@ -100,6 +103,43 @@ export function AppearanceTab() {
           <p className="text-[13px] text-on-surface-2 mt-0.5">开启后桌面端只显示图标栏，把横向空间让给内容；随时可在侧栏左下角展开。</p>
         </div>
         <JellySwitch checked={sidebarCollapsed} onChange={() => setSidebarCollapsed(!sidebarCollapsed)} label="侧栏默认收起" />
+      </section>
+
+      <section className="card p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-[14px] font-semibold">极简工作台导航</h2>
+            <p className="text-[13px] text-on-surface-2 mt-0.5">按需隐藏暂不常用的侧栏与底栏模块，减少干扰；随时仍可通过全局搜索进入。</p>
+          </div>
+          {hiddenNavPaths.length > 0 && (
+            <button
+              type="button"
+              onClick={resetHiddenNavPaths}
+              className="shrink-0 text-[12px] text-primary hover:underline cursor-pointer"
+            >
+              恢复全部
+            </button>
+          )}
+        </div>
+        {([
+          { path: '/tools', label: '显示「工具中心」', hint: 'PDF、OCR、手写计算、证件照、番茄小说等本地工具' },
+          { path: '/stats', label: '显示「统计与模型额度」', hint: '热力图、专注周报、AI 会员与 API 额度管理' },
+        ] as const).map((item) => {
+          const shown = !hiddenNavPaths.includes(item.path)
+          return (
+            <div key={item.path} className="flex items-center justify-between gap-4 pt-2 border-t border-outline/60">
+              <div>
+                <p className="text-[13px] font-medium">{item.label}</p>
+                <p className="text-[12px] text-on-surface-2 mt-0.5">{item.hint}</p>
+              </div>
+              <JellySwitch
+                checked={shown}
+                onChange={() => toggleHiddenNavPath(item.path)}
+                label={item.label}
+              />
+            </div>
+          )
+        })}
       </section>
     </div>
   )

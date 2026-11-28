@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { ExternalLink, Maximize2, RefreshCw, Search, X } from 'lucide-react'
 import { openExternal } from '@/lib/links'
 import { Dialog } from '@/shared/ui/Sheet'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { isNative, isTauri } from '@/lib/native'
 import { INTEL_CHART_META_URLS, INTEL_CHART_URLS } from '@/lib/intelSources'
 import {
@@ -161,11 +162,13 @@ export function IntelligenceCard() {
   }, [intelData, searchQuery, vendorFilter])
 
   const topScore = intelData?.models[0]?.score || 100
+  const [chartProgress, setChartProgress] = useState<number | null>(null)
 
   const refresh = async () => {
     if (viewMode === 'list') {
       if (refreshing) return
       setRefreshing(true)
+      setChartProgress(null)
       try {
         const res = await refreshIntelDetailed(true)
         if (res.data) setIntelData(res.data)
@@ -177,6 +180,7 @@ export function IntelligenceCard() {
     }
     if (refreshRef.current) return
     setRefreshing(true)
+    setChartProgress(null)
     const requestedAt = Date.now()
     let best: RankingChart | null = null
     let lastController: AbortController | null = null
@@ -191,7 +195,11 @@ export function IntelligenceCard() {
         const metaUrl = `${INTEL_CHART_META_URLS[index]}?v=${stamp}`
         try {
           const [image, date] = await Promise.all([
-            downloadChartImage(url, controller.signal),
+            downloadChartImage(url, controller.signal, (loaded, total) => {
+              if (refreshRef.current === controller) {
+                setChartProgress(total > 0 ? loaded / total : null)
+              }
+            }),
             fetchChartDate(metaUrl, controller.signal),
           ])
           if (refreshRef.current !== controller) return
@@ -221,6 +229,7 @@ export function IntelligenceCard() {
         refreshRef.current = null
       }
       setRefreshing(false)
+      setChartProgress(null)
     }
   }
 
@@ -233,7 +242,12 @@ export function IntelligenceCard() {
   const updatedLabel = formatUpdatedAt(updatedAt)
 
   return (
-    <section aria-labelledby="ranking-heading" data-pinned-leaderboard="true" className="ranking-panel">
+    <section aria-labelledby="ranking-heading" data-pinned-leaderboard="true" className="ranking-panel relative overflow-hidden">
+      <TopProgressLine
+        active={refreshing || intelLoading}
+        progress={refreshing && viewMode === 'chart' ? chartProgress : null}
+        label="正在刷新 AI 榜单"
+      />
       <header className="ranking-intro">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-baseline gap-2 min-w-0">

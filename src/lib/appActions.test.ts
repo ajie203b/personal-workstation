@@ -19,6 +19,12 @@ describe('parseAppUrl', () => {
   it('任务 id 里的特殊字符要转义', () => {
     expect(parseAppUrl('com.personal.workstation://task?id=a%26b')).toBe('/tasks?focus=a%26b')
   })
+  it('安卓系统分享中转 → 分享收件箱路由', () => {
+    expect(parseAppUrl('com.personal.workstation://share?title=hi&text=https%3A%2F%2Fexample.com')).toBe(
+      '/share?title=hi&text=https%3A%2F%2Fexample.com',
+    )
+    expect(parseAppUrl('com.personal.workstation://share')).toBe('/share')
+  })
   it('不认识的地址返回 null', () => {
     expect(parseAppUrl('com.personal.workstation://unknown')).toBeNull()
     expect(parseAppUrl('https://example.com/quickadd')).toBeNull()

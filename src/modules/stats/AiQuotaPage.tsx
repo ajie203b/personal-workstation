@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { arraySwap, rectSwappingStrategy } from '@dnd-kit/sortable'
 import { DragSort, DragSortItem } from '@/shared/ui/DragSort'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { CalendarDays, Plus, Pencil, Trash2, WalletCards } from 'lucide-react'
+import { BellPlus, CalendarDays, Minus, Plus, Pencil, Trash2, WalletCards } from 'lucide-react'
 import { db } from '@/db/db'
+import { addTask } from '@/db/tasks'
 import { useUi } from '@/stores/ui'
 import { DatePicker } from '@/shared/ui/DatePicker'
 import { Dialog } from '@/shared/ui/Sheet'
@@ -12,6 +13,7 @@ import { Segmented } from '@/shared/ui/Segmented'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { todayStr } from '@/lib/date'
 import { uid } from '@/lib/id'
+import { findExpiringQuotas } from '@/modules/today/dailyDigest'
 import { PROVIDER_GROUPS } from './quotaBrands'
 import { PROVIDERS, QUOTA_KEY, quotaSummary, quotaDisplayMode, quotaExpiry, quotaProviderLabel, quotaBrand, orderQuotaEntries, applyQuotaOrder, type QuotaDisplayMode, type QuotaEntry, type QuotaRecord } from './aiQuota'
 
@@ -90,6 +92,58 @@ export function AiQuotaPage() {
     } catch { toast('删除失败，请重试') }
   }
 
+  async function adjustNumeric(entry: QuotaEntry, delta: number) {
+    const mode = quotaDisplayMode(entry)
+    if (mode === 'none') return
+    try {
+      await db.transaction('rw', db.settings, async () => {
+        const current = ((await db.settings.get(QUOTA_KEY))?.value as QuotaRecord[] | undefined) ?? []
+        const next = current.map((item) => {
+          if ('deleted' in item || item.id !== entry.id) return item
+          const updatedAt = Math.max(Date.now(), (item.updatedAt ?? 0) + 1)
+          if (mode === 'balance') {
+            const cur = item.balance ?? 0
+            return { ...item, balance: Math.max(0, Number((cur + delta).toFixed(4))), updatedAt }
+          }
+          const cur = item.used ?? 0
+          return { ...item, used: Math.max(0, Number((cur + delta).toFixed(4))), updatedAt }
+        })
+        await db.settings.put({ key: QUOTA_KEY, value: next })
+      })
+    } catch {
+      toast('更新失败，请重试')
+    }
+  }
+
+  async function createRenewTask(entry: QuotaEntry) {
+    const title = `续费检查：${entry.name}`
+    const today = todayStr()
+    try {
+      await addTask({
+        title,
+        tier: 'today',
+        priority: 1,
+        due: entry.expiresAt && entry.expiresAt >= today ? entry.expiresAt : today,
+        tags: ['额度续费'],
+      })
+      toast(`已加入今日任务：${title}`)
+    } catch {
+      toast('创建续费任务失败')
+    }
+  }
+
+  const quotaOverview = useMemo(() => {
+    const soon = findExpiringQuotas(entries, todayStr(), 7)
+    const balancesByUnit = new Map<string, number>()
+    for (const e of entries) {
+      if (quotaDisplayMode(e) === 'balance' && typeof e.balance === 'number' && Number.isFinite(e.balance)) {
+        const unit = (e.balanceUnit || '元').trim() || '元'
+        balancesByUnit.set(unit, (balancesByUnit.get(unit) ?? 0) + e.balance)
+      }
+    }
+    return { total: entries.length, soonCount: soon.length, balances: [...balancesByUnit.entries()] }
+  }, [entries])
+
   return <div className="mx-auto w-full max-w-7xl px-3.5 md:px-8 pt-3 md:pt-4 pb-24 flex flex-col gap-3 md:gap-4">
     <header className="flex items-center md:items-start gap-3">
       <div className="flex-1 min-w-0">
@@ -100,6 +154,19 @@ export function AiQuotaPage() {
         <Plus size={15} />添加
       </Button>
     </header>
+    {entries.length > 0 && (
+      <div className="card px-3.5 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px]">
+        <span className="text-on-surface-2">共 <b className="text-on-surface tabular-nums">{quotaOverview.total}</b> 项订阅/额度</span>
+        {quotaOverview.soonCount > 0 && (
+          <span className="text-danger font-medium tabular-nums">7 天内到期 / 已过期：{quotaOverview.soonCount} 项</span>
+        )}
+        {quotaOverview.balances.length > 0 && (
+          <span className="text-on-surface-2 tabular-nums">
+            余额合计：{quotaOverview.balances.map(([unit, val]) => `${val.toLocaleString('zh-CN')} ${unit}`).join(' · ')}
+          </span>
+        )}
+      </div>
+    )}
     <p className="hidden md:block text-xs text-on-surface-2">数据由你手动填写和更新，保存在本机并随应用备份；无需填写 API 密钥。长按卡片可调整顺序。</p>
     {draft && <form onSubmit={save} className="card p-4 flex flex-col gap-4" aria-label={editing ? '编辑额度记录' : '添加额度记录'}>
       <div className="flex items-center justify-between"><h2 className="font-semibold">{editing ? '编辑记录' : '添加记录'}</h2><button type="button" onClick={() => setDraft(null)} className="text-sm text-on-surface-2">取消</button></div>
@@ -138,7 +205,7 @@ export function AiQuotaPage() {
         const entry = orderedEntries.find(item => item.id === id)
         return entry ? <div data-quota-overlay aria-hidden="true" className="h-full overflow-hidden rounded-[20px] shadow-xl ring-1 ring-primary/15"><QuotaCard entry={entry} onEdit={() => {}} onDelete={() => {}} overlay /></div> : null
       }}>
-      <div className="grid auto-rows-fr grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full min-w-0"><QuotaCard entry={entry} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} onReadNote={() => setNoteEntry(entry)} /></DragSortItem>)}</div>
+      <div className="grid auto-rows-fr grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{orderedEntries.map(entry => <DragSortItem key={entry.id} id={entry.id} label={`拖动排序 ${entry.name}`} className="h-full min-w-0"><QuotaCard entry={entry} onAdjust={(delta) => void adjustNumeric(entry, delta)} onRenewTask={() => void createRenewTask(entry)} onEdit={() => { setDraft({ ...entry }); setEditing(true); setError(''); document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }) }} onDelete={() => setPendingDelete(entry)} onReadNote={() => setNoteEntry(entry)} /></DragSortItem>)}</div>
     </DragSort>
     <p className="md:hidden text-[11px] text-on-surface-2/80 text-center pt-1">数据保存在本机并随备份同步 · 长按卡片可排序</p>
     {noteEntry && <Dialog open onOpenChange={() => setNoteEntry(null)} title="备注">
@@ -156,15 +223,24 @@ export function AiQuotaPage() {
 }
 
 
-function QuotaCard({ entry, onEdit, onDelete, onReadNote, overlay = false }: { entry: QuotaEntry; onEdit: () => void; onDelete: () => void; onReadNote?: () => void; overlay?: boolean }) {
+function QuotaCard({ entry, onEdit, onDelete, onReadNote, onAdjust, onRenewTask, overlay = false }: {
+  entry: QuotaEntry
+  onEdit: () => void
+  onDelete: () => void
+  onReadNote?: () => void
+  onAdjust?: (delta: number) => void
+  onRenewTask?: () => void
+  overlay?: boolean
+}) {
   const mode = quotaDisplayMode(entry)
   const summary = mode === 'quota' ? quotaSummary(entry) : null
   const expiry = quotaExpiry(entry.expiresAt, todayStr())
   const metadata = [quotaProviderLabel(entry.name, entry.provider), entry.kind, entry.account].filter(Boolean).join(' · ')
-  const number = (value: number) => value.toLocaleString('zh-CN')
+  const number = (value: number) => value.toLocaleString('zh-CN', { maximumFractionDigits: 6 })
   const barTone = summary
     ? (summary.exceeded || summary.percent >= 95 ? 'bg-danger' : summary.percent >= 75 ? 'bg-p1' : 'bg-primary')
     : 'bg-primary'
+  const stepValue = mode === 'balance' ? 1 : entry.total && entry.total >= 1000 ? Math.max(1, Math.round(entry.total / 100)) : 1
 
   return <article className="card card-hover p-4 flex h-full flex-col gap-3 min-w-0">
     <div className="flex items-start gap-3">
@@ -172,15 +248,39 @@ function QuotaCard({ entry, onEdit, onDelete, onReadNote, overlay = false }: { e
       <div className="min-w-0 flex-1"><h2 className="font-semibold leading-5 break-words">{entry.name}</h2><p className="mt-1 text-xs text-on-surface-2 break-words">{metadata}</p></div>
       <div className="flex shrink-0"><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`编辑 ${entry.name}`} onClick={onEdit} className="p-2 rounded-lg text-on-surface-2 hover:bg-surface-3 hover:text-on-surface transition-colors cursor-pointer"><Pencil size={15} /></button><button type="button" tabIndex={overlay ? -1 : undefined} aria-label={`删除 ${entry.name}`} onClick={onDelete} className="p-2 rounded-lg text-on-surface-2 hover:bg-danger/10 hover:text-danger transition-colors cursor-pointer"><Trash2 size={15} /></button></div>
     </div>
-    {mode === 'balance' && <div><p className="text-xs text-on-surface-2">账户余额</p><p className="mt-1 text-xl font-bold tracking-[-0.02em] tabular-nums break-words">{entry.balance != null ? <>{number(entry.balance)} <span className="text-sm font-normal text-on-surface-2">{entry.balanceUnit || '元'}</span></> : <span className="text-sm font-normal text-on-surface-2">尚未填写余额</span>}</p></div>}
+    {mode === 'balance' && (
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs text-on-surface-2">账户余额</p>
+          <p className="mt-1 text-xl font-bold tracking-[-0.02em] tabular-nums break-words">
+            {entry.balance != null ? <>{number(entry.balance)} <span className="text-sm font-normal text-on-surface-2">{entry.balanceUnit || '元'}</span></> : <span className="text-sm font-normal text-on-surface-2">尚未填写余额</span>}
+          </p>
+        </div>
+        {!overlay && onAdjust && entry.balance != null && (
+          <div className="inline-flex items-center gap-1 shrink-0">
+            <button type="button" aria-label={`减少 ${stepValue} 余额`} title={`-${stepValue}`} onClick={() => onAdjust(-stepValue)} className="grid place-items-center size-7 rounded-lg border border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface hover:bg-surface-3 cursor-pointer"><Minus size={13} /></button>
+            <button type="button" aria-label={`增加 ${stepValue} 余额`} title={`+${stepValue}`} onClick={() => onAdjust(stepValue)} className="grid place-items-center size-7 rounded-lg border border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface hover:bg-surface-3 cursor-pointer"><Plus size={13} /></button>
+          </div>
+        )}
+      </div>
+    )}
     {mode === 'quota' && (summary ? <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="min-w-0 break-words"><span className="text-xs text-on-surface-2">剩余 </span><span className="font-bold tabular-nums">{number(summary.remaining)}</span> <span className="text-sm text-on-surface-2">{entry.unit}</span></p><p className="text-xs text-on-surface-2 tabular-nums">已用 {number(entry.used!)} / {number(entry.total!)}</p></div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="min-w-0 break-words"><span className="text-xs text-on-surface-2">剩余 </span><span className="font-bold tabular-nums">{number(summary.remaining)}</span> <span className="text-sm text-on-surface-2">{entry.unit}</span></p><div className="flex items-center gap-1.5"><p className="text-xs text-on-surface-2 tabular-nums">已用 {number(entry.used!)} / {number(entry.total!)}</p>{!overlay && onAdjust && <span className="inline-flex items-center gap-0.5"><button type="button" aria-label={`减少已用 ${stepValue}`} title={`已用 -${stepValue}`} onClick={() => onAdjust(-stepValue)} className="grid place-items-center size-6 rounded-md border border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface cursor-pointer"><Minus size={11} /></button><button type="button" aria-label={`增加已用 ${stepValue}`} title={`已用 +${stepValue}`} onClick={() => onAdjust(stepValue)} className="grid place-items-center size-6 rounded-md border border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface cursor-pointer"><Plus size={11} /></button></span>}</div></div>
       <div className="mt-2 h-2 rounded-full bg-surface-3 overflow-hidden" role="progressbar" aria-label={`${entry.name} 已用额度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(summary.percent)}><div className={`h-full rounded-full transition-[width] duration-300 ${barTone}`} style={{ width: `${summary.percent}%` }} /></div>
       {summary.exceeded && <p className="mt-1 text-xs font-medium text-danger">已超过记录的总额度</p>}
     </div> : <p className="text-sm text-on-surface-2">{entry.total != null ? `总额度 ${number(entry.total)} ${entry.unit}` : entry.used != null ? `已用 ${number(entry.used)} ${entry.unit}` : '尚未填写额度'}</p>)}
     <footer className="mt-auto grid grid-cols-1 gap-2">
       {(entry.expiresAt || (mode !== 'none' && entry.resetAt)) && <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-outline pt-3">
         {entry.expiresAt && <div className="flex items-center gap-2 text-sm"><CalendarDays size={15} className={expiry?.tone === 'expired' || expiry?.tone === 'soon' ? 'text-danger' : 'text-primary'} /><span className="font-medium tabular-nums">{entry.expiresAt}</span>{expiry && <span className={expiry.tone === 'expired' || expiry.tone === 'soon' ? 'text-xs font-semibold text-danger' : 'text-xs text-on-surface-2'}>{expiry.text}</span>}</div>}
+        {!overlay && onRenewTask && (expiry?.tone === 'soon' || expiry?.tone === 'expired') && (
+          <button
+            type="button"
+            onClick={onRenewTask}
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-full bg-danger/10 text-danger text-[11px] font-medium hover:bg-danger/18 transition-colors cursor-pointer"
+          >
+            <BellPlus size={11.5} /> 转续费任务
+          </button>
+        )}
         {mode !== 'none' && entry.resetAt && <span className="text-xs text-on-surface-2 tabular-nums">重置 {entry.resetAt}</span>}
       </div>}
       <div className="h-5">

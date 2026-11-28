@@ -16,6 +16,9 @@ import { ToolIconTile } from '@/shared/ui/ToolIconTile'
 import { BackButton } from '@/shared/ui/BackButton'
 import type { SegmentOption } from '@/shared/ui/Segmented'
 import { cn } from '@/lib/cn'
+import { db } from '@/db/db'
+import { docToFile } from '@/shared/ui/LibraryDocPickerDialog'
+import { useUi } from '@/stores/ui'
 import { PdfHandoffContext, type PdfToolTab, type PendingPdfHandoff } from './handoff'
 import { MergePanel } from './MergePanel'
 import { SplitPanel } from './SplitPanel'
@@ -91,6 +94,32 @@ export function PdfToolPage() {
   const clearHandoff = useCallback((seq: number) => {
     setPending(prev => (prev && prev.seq === seq ? null : prev))
   }, [])
+
+  // ?docId=<id>：从文档库或阅读器直达 PDF 工具箱时，自动读取库内 PDF 交接给目标面板
+  const docIdParam = params.get('docId') ?? ''
+  const loadedDocIdRef = useRef('')
+  useEffect(() => {
+    if (!docIdParam || loadedDocIdRef.current === docIdParam) return
+    loadedDocIdRef.current = docIdParam
+    let alive = true
+    void (async () => {
+      const doc = await db.docs.get(docIdParam)
+      if (!alive) return
+      if (!doc || doc.deletedAt || doc.kind !== 'pdf') {
+        useUi.getState().toast('未找到对应的 PDF 文档')
+        return
+      }
+      const file = await docToFile(doc)
+      if (!alive) return
+      if (!file) {
+        useUi.getState().toast('未找到该 PDF 本地本体')
+        return
+      }
+      const targetTab: PdfToolTab = TABS.some((item) => item.value === requested) ? (requested as PdfToolTab) : 'compress'
+      handoff(file, targetTab)
+    })()
+    return () => { alive = false }
+  }, [docIdParam, requested, handoff])
 
   const handoffValue = useMemo(
     () => ({ currentTab: tab, pending, handoff, clearHandoff }),

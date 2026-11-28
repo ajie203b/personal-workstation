@@ -19,6 +19,7 @@ import { BackButton } from '@/shared/ui/BackButton'
 import { Button, useAsyncButton } from '@/shared/ui/Button'
 import { EmptyState } from '@/shared/ui/EmptyState'
 import { Segmented } from '@/shared/ui/Segmented'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { importDoc } from '@/db/docs'
@@ -31,6 +32,7 @@ import {
 } from './ocrPipeline'
 import type { OcrLine, OcrProgress } from './ocrEngine'
 import { recognizePixelsOnSharedWorker } from './ocrClient'
+import { takePendingOcrFiles } from './ocrHandoff'
 
 /** 送进 Worker 的像素与尺寸 */
 interface RgbaImage {
@@ -130,7 +132,12 @@ function OcrProgressBar({
   const baseLabel = progress.phase === 'download' ? '下载模型' : '本地识别'
   const label = queuePos && queuePos.total > 1 ? `${baseLabel}（第 ${queuePos.current}/${queuePos.total} 张）` : baseLabel
   return (
-    <section className="card p-4 flex flex-col gap-2.5">
+    <section className="card relative overflow-hidden p-4 flex flex-col gap-2.5">
+      <TopProgressLine
+        active
+        progress={progress.ratio >= 0 ? progress.ratio : null}
+        label={label}
+      />
       <div className="flex items-center gap-3">
         <Loader2 size={15} className="animate-spin text-primary shrink-0" />
         <div className="flex-1 min-w-0">
@@ -139,12 +146,6 @@ function OcrProgressBar({
             <p className="text-[11.5px] text-on-surface-2 tabular-nums">
               {progress.ratio < 0 ? '下载中' : `${percent}%`}
             </p>
-          </div>
-          <div className="mt-1.5 h-1.5 rounded-full bg-surface-3 overflow-hidden">
-            <div
-              className={cn('h-full rounded-full transition-[width] duration-200', progress.ratio < 0 ? 'animate-pulse w-1/3' : 'bg-primary')}
-              style={progress.ratio < 0 ? undefined : { width: `${percent}%` }}
-            />
           </div>
         </div>
         <Button onClick={onCancel} variant="outline" size="sm" className="h-8 px-3 shrink-0">
@@ -309,6 +310,13 @@ export function OcrPage() {
     },
     [revokePages, toast],
   )
+
+  // 接收 PDF 转图等工具交接过来的图片队列，打开即自动批量识别
+  useEffect(() => {
+    const incoming = takePendingOcrFiles()
+    if (incoming.length) void handleFiles(incoming, false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 粘贴图片识别（ref 转发最新处理函数，监听只挂一次）
   const pasteHandlerRef = useRef<(files: Blob[]) => void>(() => {})

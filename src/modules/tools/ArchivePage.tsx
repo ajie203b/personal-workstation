@@ -25,6 +25,7 @@ import { isNative, isTauri } from '@/lib/native'
 import { openSavedAction } from '@/lib/saveFile'
 import { cn } from '@/lib/cn'
 import { BackButton } from '@/shared/ui/BackButton'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { useUi } from '@/stores/ui'
 import {
   archiveFileExt, canImportArchiveBook, controlDesktopArchive, downloadArchiveLink,
@@ -53,6 +54,11 @@ function formatFileSize(bytes: number): string {
 function errorText(error: unknown, fallback: string): string {
   if (typeof error === 'string') return error
   return error instanceof Error ? error.message : fallback
+}
+
+function archiveProgressRatio({ progress }: ArchiveDownloads): number | null {
+  if (!progress || !progress.total || progress.total <= 0) return null
+  return Math.max(0, Math.min(1, progress.received / progress.total))
 }
 
 function transferText({ downloading, progress, items, target }: ArchiveDownloads): string {
@@ -188,7 +194,12 @@ function DesktopArchiveBrowser({ close, downloads, target, onTargetChange, onErr
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label="安娜的档案浏览器"
       className="fixed inset-0 z-[100] flex flex-col bg-surface">
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-1.5 border-b border-outline px-2 sm:px-4">
+      <header className="relative overflow-hidden flex min-h-14 shrink-0 flex-wrap items-center gap-1.5 border-b border-outline px-2 sm:px-4">
+        <TopProgressLine
+          active={downloads.downloading || starting}
+          progress={downloads.downloading ? archiveProgressRatio(downloads) : null}
+          label="安娜的档案下载进度"
+        />
         <Button size="icon" title="返回上一页或工具" aria-label="返回" onClick={() => action('back')}><ArrowLeft size={18} /></Button>
         <Button size="icon" title="首页" aria-label="首页" onClick={() => action('home')}><Home size={17} /></Button>
         <Button size="icon" title="刷新" aria-label="刷新" onClick={() => action('reload')}><RotateCw size={17} /></Button>
@@ -461,7 +472,12 @@ export function ArchivePage() {
             </div>
           </div>
 
-          <section className="card p-4" aria-labelledby="archive-downloads-title">
+          <section className="card relative overflow-hidden p-4" aria-labelledby="archive-downloads-title">
+            <TopProgressLine
+              active={downloads.downloading || importingLocal || Boolean(busy)}
+              progress={downloads.downloading ? archiveProgressRatio(downloads) : null}
+              label="电子书下载进度"
+            />
             <div className="flex items-center justify-between gap-2">
               <h2 id="archive-downloads-title" className="text-sm font-semibold">下载列表</h2>
               {desktop && (
@@ -562,7 +578,8 @@ export function ArchivePage() {
           </section>
         </>
       ) : (
-        <section className="card p-5 flex flex-col gap-4">
+        <section className="card relative overflow-hidden p-5 flex flex-col gap-4">
+          <TopProgressLine active={importingLocal} label="导入本地文档" />
           <div className="flex items-start gap-3">
             <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-surface-2 text-on-surface-2 shrink-0">
               <Info size={18} />

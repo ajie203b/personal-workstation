@@ -34,7 +34,7 @@ interface TensorMsg {
 
 self.onmessage = async (e: MessageEvent) => {
   const msg = e.data as
-    | { type: 'init'; key: string; modelBuffer: ArrayBuffer }
+    | { type: 'init'; key: string; modelBuffer: ArrayBuffer; wasmOnly?: boolean }
     | { type: 'run'; id: number; key: string; inputs: Record<string, TensorMsg> }
   try {
     const ort = await getOrt()
@@ -44,7 +44,7 @@ self.onmessage = async (e: MessageEvent) => {
         sessions.delete(msg.key)
         await prev.release().catch(() => undefined)
       }
-      if ((navigator as Navigator & { gpu?: unknown }).gpu) {
+      if (!msg.wasmOnly && (navigator as Navigator & { gpu?: unknown }).gpu) {
         try {
           sessions.set(msg.key, await ort.InferenceSession.create(msg.modelBuffer, { executionProviders: ['webgpu'] }))
           self.postMessage({ type: 'ready', key: msg.key, provider: 'webgpu' })

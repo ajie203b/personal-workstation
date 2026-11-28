@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Base64;
 
 import androidx.core.content.FileProvider;
@@ -158,19 +159,38 @@ public class FileExportPlugin extends Plugin {
                     call.reject("空响应");
                     return;
                 }
+                final long total = Math.max(0L, body.contentLength());
+                emitDownloadProgress(fileName, 0L, total);
                 writeToDownloads(call, fileName, mimeType, out -> {
                     byte[] buf = new byte[32 * 1024];
+                    long loaded = 0L;
+                    long lastEmit = System.currentTimeMillis();
                     try (InputStream in = body.byteStream()) {
                         int n;
                         while ((n = in.read(buf)) != -1) {
                             out.write(buf, 0, n);
+                            loaded += n;
+                            long now = System.currentTimeMillis();
+                            if (now - lastEmit >= 100L) {
+                                lastEmit = now;
+                                emitDownloadProgress(fileName, loaded, total);
+                            }
                         }
                     }
+                    emitDownloadProgress(fileName, loaded, total > 0L ? total : loaded);
                 });
             } catch (Exception e) {
                 call.reject("下载失败：" + e.getMessage(), e);
             }
         });
+    }
+
+    private void emitDownloadProgress(String fileName, long loaded, long total) {
+        JSObject payload = new JSObject();
+        payload.put("fileName", fileName);
+        payload.put("loaded", loaded);
+        payload.put("total", total);
+        notifyListeners("downloadProgress", payload);
     }
 
     /** 调起系统分享面板，把导出的文件发给其他应用（微信、QQ、邮件等）。 */
@@ -355,6 +375,20 @@ public class FileExportPlugin extends Plugin {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("写入失败：" + e.getMessage(), e);
+        }
+    }
+
+    /** 跳转到本应用的系统设置详情页（供澎湃 OS / MIUI / 鸿蒙等设置自启动与省电无限制） */
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.fromParts("package", getContext().getPackageName(), null));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("无法打开系统应用设置：" + e.getMessage(), e);
         }
     }
 }

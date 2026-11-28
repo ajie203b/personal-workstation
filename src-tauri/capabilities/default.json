@@ -5,6 +5,8 @@
   "webviews": ["main", "md-*"],
   "permissions": [
     "allow-save-text-file",
+    "allow-save-binary-file",
+    "allow-reveal-saved-file",
     "allow-local-markdown-pick",
     "allow-local-markdown-list",
     "allow-local-markdown-read",

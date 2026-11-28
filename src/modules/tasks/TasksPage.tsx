@@ -1,13 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { CalendarDays, Columns3, Grid2x2, List } from 'lucide-react'
-import { TIERS, TIER_LABEL, type Tier } from '@/db/db'
+import { CalendarDays, Columns3, FileText, Filter, Grid2x2, List, Search, X } from 'lucide-react'
+import { PRIORITY_VAR, TIERS, TIER_LABEL, type Priority, type Tier } from '@/db/db'
 import { useAllTasks, deriveDone, deriveToday } from '@/db/hooks'
 import { sortTasks } from '@/db/tasks'
 import { checkInWithUndo, toggleTaskWithUndo } from './taskActions'
 import { useTasksUi } from '@/stores/tasks'
 import { QuickAdd } from './QuickAdd'
 import { TaskList } from './TaskList'
+import { filterTasks } from './taskTemplates'
 import { Segmented } from '@/shared/ui/Segmented'
 import { SelectMenu } from '@/shared/ui/SelectMenu'
 import { PageSkeleton } from '@/shared/ui/Skeleton'
@@ -52,19 +53,44 @@ export function TasksPage() {
   const viewParam = params.get('view')
   const view: View = (['list', 'board', 'calendar', 'quadrant'] as const).includes(viewParam as View) ? (viewParam as View) : 'list'
 
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filterQuery, setFilterQuery] = useState('')
+  const [filterPriority, setFilterPriority] = useState<'all' | Priority>('all')
+  const [filterTag, setFilterTag] = useState('')
+  const [onlyWithDoc, setOnlyWithDoc] = useState(false)
+
+  const allTaskTags = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of all) if (t.status !== 'done') for (const tag of t.tags) set.add(tag)
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  }, [all])
+
+  const hasTaskFilter = Boolean(filterQuery.trim() || filterPriority !== 'all' || filterTag || onlyWithDoc)
+  const filteredAll = useMemo(
+    () => filterTasks(all, { query: filterQuery, priority: filterPriority, tag: filterTag, onlyWithDoc }),
+    [all, filterQuery, filterPriority, filterTag, onlyWithDoc],
+  )
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
     for (const t of TIERS) c[t] = 0
-    for (const task of all) if (task.status !== 'done') c[task.tier]++
+    for (const task of filteredAll) if (task.status !== 'done') c[task.tier]++
     return c
-  }, [all])
+  }, [filteredAll])
   const doneCount = useMemo(() => deriveDone(all).length, [all])
 
   const visible = useMemo(() => {
     if (isLogbook) return []
-    if (tier === 'today') return sortTasks(deriveToday(all))
-    return sortTasks(all.filter((t) => t.status !== 'done' && t.tier === tier))
-  }, [all, tier, isLogbook])
+    if (tier === 'today') return sortTasks(deriveToday(filteredAll))
+    return sortTasks(filteredAll.filter((t) => t.status !== 'done' && t.tier === tier))
+  }, [filteredAll, tier, isLogbook])
+
+  const clearTaskFilter = () => {
+    setFilterQuery('')
+    setFilterPriority('all')
+    setFilterTag('')
+    setOnlyWithDoc(false)
+  }
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params)
@@ -107,6 +133,22 @@ export function TasksPage() {
 
         {!isLogbook && (
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="筛选任务"
+              aria-expanded={filterOpen}
+              onClick={() => setFilterOpen((v) => !v)}
+              className={cn(
+                'relative inline-flex items-center gap-1.5 h-[36px] px-2.5 rounded-[11px] border text-[12.5px] font-medium transition-colors cursor-pointer',
+                filterOpen || hasTaskFilter
+                  ? 'border-primary/50 bg-primary-soft text-primary'
+                  : 'border-outline bg-surface/90 text-on-surface-2 hover:text-on-surface',
+              )}
+            >
+              <Filter size={14} />
+              <span className="hidden sm:inline">筛选</span>
+              {hasTaskFilter && <span className="size-1.5 rounded-full bg-primary" aria-hidden />}
+            </button>
             <Segmented
               size="sm"
               touchSized
@@ -134,6 +176,85 @@ export function TasksPage() {
           </button>
         )}
       </div>
+
+      {/* 多维筛选条（关键词 / 优先级 / 标签 / 关联文档） */}
+      {!isLogbook && (filterOpen || hasTaskFilter) && (
+        <div className="card px-3.5 py-2.5 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[160px] max-w-xs">
+            <Search size={13.5} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-2/75" />
+            <input
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="筛选标题、备注或子任务…"
+              aria-label="筛选任务关键词"
+              className="w-full h-8 pl-8 pr-7 rounded-[9px] bg-surface-2 border border-outline text-[12.5px] outline-none focus:border-primary/60"
+            />
+            {filterQuery && (
+              <button
+                type="button"
+                aria-label="清空任务关键词"
+                onClick={() => setFilterQuery('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center size-5 rounded-full text-on-surface-2 hover:bg-surface-3 cursor-pointer"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <div className="inline-flex items-center gap-1" role="group" aria-label="按优先级筛选">
+            {([0, 1, 2, 3] as const).map((p) => {
+              const active = filterPriority === p
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setFilterPriority((prev) => (prev === p ? 'all' : p))}
+                  aria-pressed={active}
+                  className={cn(
+                    'h-7 px-2 rounded-[8px] border text-[11.5px] font-medium cursor-pointer transition-colors',
+                    active ? 'border-transparent text-white' : 'border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface',
+                  )}
+                  style={active ? { background: PRIORITY_VAR[p] } : undefined}
+                >
+                  P{p}
+                </button>
+              )
+            })}
+          </div>
+          {allTaskTags.length > 0 && (
+            <SelectMenu
+              ariaLabel="按标签筛选"
+              title="按标签筛选"
+              value={filterTag}
+              onChange={setFilterTag}
+              triggerClassName="h-7 rounded-[8px] text-[12px]"
+              options={[
+                { value: '', label: '全部标签' },
+                ...allTaskTags.map((tag) => ({ value: tag, label: `#${tag}` })),
+              ]}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => setOnlyWithDoc((v) => !v)}
+            aria-pressed={onlyWithDoc}
+            className={cn(
+              'inline-flex items-center gap-1 h-7 px-2 rounded-[8px] border text-[11.5px] cursor-pointer transition-colors',
+              onlyWithDoc ? 'border-primary/50 bg-primary-soft text-primary font-medium' : 'border-outline bg-surface-2 text-on-surface-2 hover:text-on-surface',
+            )}
+          >
+            <FileText size={12} /> 含关联文档
+          </button>
+          {hasTaskFilter && (
+            <button
+              type="button"
+              onClick={clearTaskFilter}
+              className="ml-auto text-[12px] text-primary hover:underline cursor-pointer"
+            >
+              清空筛选
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 所有视图共用同一个快速添加：看板 / 日历 / 四象限不再只能拖拽 */}
       {!isLogbook && (
@@ -169,18 +290,18 @@ export function TasksPage() {
           {isLogbook ? (
             <LogbookView />
           ) : view === 'board' ? (
-            <BoardView tasks={all} />
+            <BoardView tasks={filteredAll} />
           ) : view === 'calendar' ? (
-            <CalendarView tasks={all} onOpenTask={openTask} onToggleDone={completeTask} />
+            <CalendarView tasks={filteredAll} onOpenTask={openTask} onToggleDone={completeTask} />
           ) : view === 'quadrant' ? (
-            <QuadrantView tasks={all} onOpenTask={openTask} />
+            <QuadrantView tasks={filteredAll} onOpenTask={openTask} />
           ) : (
             <TaskList
               scope={`tasks-${tier}`}
               tier={tier}
               tasks={visible}
-              emptyTitle={emptyMap[tier].title}
-              emptyHint={emptyMap[tier].hint}
+              emptyTitle={hasTaskFilter ? '没有符合筛选条件的任务' : emptyMap[tier].title}
+              emptyHint={hasTaskFilter ? '调整或清空筛选条件即可查看全部待办。' : emptyMap[tier].hint}
             />
           )}
         </Suspense>

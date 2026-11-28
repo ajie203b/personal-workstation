@@ -12,6 +12,49 @@
  */
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-web'
 
+export const ONNX_FORCE_WASM_LS_KEY = 'kairos:onnx-force-wasm'
+export const ONNX_FORCE_WASM_DB_KEY = 'onnxForceWasm'
+
+/** 主线程同步读取「强制 WASM 安全模式」开关（防止部分低配显卡/WebView 上 WebGPU 崩溃） */
+export function getForceWasmMode(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(ONNX_FORCE_WASM_LS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 写入「强制 WASM 安全模式」并同步到 IndexedDB（供 OCR / 手写计算 Worker 线程读取） */
+export async function setForceWasmMode(enabled: boolean): Promise<void> {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (enabled) localStorage.setItem(ONNX_FORCE_WASM_LS_KEY, '1')
+      else localStorage.removeItem(ONNX_FORCE_WASM_LS_KEY)
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const { db } = await import('@/db/db')
+    await db.settings.put({ key: ONNX_FORCE_WASM_DB_KEY, value: enabled })
+  } catch {
+    /* ignore */
+  }
+  workerSingleton?.dispose()
+  inlineSingleton?.dispose()
+}
+
+async function isForceWasmEffective(): Promise<boolean> {
+  if (getForceWasmMode()) return true
+  try {
+    const { db } = await import('@/db/db')
+    const row = await db.settings.get(ONNX_FORCE_WASM_DB_KEY)
+    return row?.value === true
+  } catch {
+    return false
+  }
+}
+
 export interface TensorData {
   type: 'float32' | 'int32' | 'int64' | 'uint8'
   data: Float32Array | Int32Array | Uint8Array | BigInt64Array
@@ -92,7 +135,7 @@ class OnnxRunner {
       }
       worker.addEventListener('message', onMessage)
       worker.addEventListener('error', onError)
-      worker.postMessage({ type: 'init', key, modelBuffer }, [modelBuffer])
+      worker.postMessage({ type: 'init', key, modelBuffer, wasmOnly: getForceWasmMode() }, [modelBuffer])
     })
     this.ready.set(key, p)
     // 失败的 Promise 不能留在缓存里，否则同一页面重试还会拿到旧错误
@@ -156,7 +199,8 @@ class InlineOnnxRunner {
     if (existing) return existing
     const p = (async () => {
       const ort = await this.runtime()
-      if (!opts.wasmOnly && (navigator as Navigator & { gpu?: unknown }).gpu) {
+      const forceWasm = opts.wasmOnly || (await isForceWasmEffective())
+      if (!forceWasm && (navigator as Navigator & { gpu?: unknown }).gpu) {
         try {
           this.sessions.set(key, await ort.InferenceSession.create(modelBuffer, { executionProviders: ['webgpu'] }))
           this.providers.set(key, 'webgpu')

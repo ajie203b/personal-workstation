@@ -17,6 +17,8 @@ export interface HttpOptions {
   proxyFallback?: boolean
   /** 状态码前置检查（返回异常前先触发，例如 429 映射） */
   onStatus?: (status: number) => void
+  /** 流式下载进度回调（Web / Tauri 生效；total 为 0 表示服务端未返回 Content-Length） */
+  onProgress?: (loaded: number, total: number) => void
 }
 
 export interface HttpTextResult {
@@ -130,10 +132,49 @@ export async function httpText(url: string, opts: HttpOptions = {}): Promise<Htt
   )
 }
 
+async function readResponseBytes(
+  res: Response,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<ArrayBuffer> {
+  if (!onProgress || !res.body || typeof res.body.getReader !== 'function') {
+    const buf = await res.arrayBuffer()
+    onProgress?.(buf.byteLength, buf.byteLength)
+    return buf
+  }
+  const contentLen = Number(res.headers.get('content-length'))
+  const total = Number.isFinite(contentLen) && contentLen > 0 ? contentLen : 0
+  onProgress(0, total)
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let loaded = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value && value.byteLength > 0) {
+        chunks.push(value)
+        loaded += value.byteLength
+        onProgress(loaded, total)
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  onProgress(loaded, total || loaded)
+  const out = new Uint8Array(loaded)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return out.buffer
+}
+
 export async function httpBytes(url: string, opts: HttpOptions = {}): Promise<HttpBytesResult> {
   const timeoutMs = opts.timeoutMs ?? 60_000
   const connectTimeoutMs = opts.connectTimeoutMs ?? Math.min(timeoutMs, 15_000)
   if (isNative()) {
+    opts.onProgress?.(0, 0)
     const res = await CapacitorHttp.get({
       url,
       headers: opts.headers,
@@ -144,6 +185,7 @@ export async function httpBytes(url: string, opts: HttpOptions = {}): Promise<Ht
     assertStatus(res.status, res.status < 400, opts.onStatus)
     const raw = res.data as string | ArrayBuffer
     const bytes = typeof raw === 'string' ? (base64ToBytes(raw).buffer as ArrayBuffer) : raw
+    opts.onProgress?.(bytes.byteLength, bytes.byteLength)
     return {
       bytes,
       finalUrl: res.url || url,
@@ -152,7 +194,7 @@ export async function httpBytes(url: string, opts: HttpOptions = {}): Promise<Ht
   }
   return withProxyFallback(url, opts, (target) =>
     readFetchResponse(target, opts, timeoutMs, connectTimeoutMs, async (res) => ({
-      bytes: await res.arrayBuffer(),
+      bytes: await readResponseBytes(res, opts.onProgress),
       finalUrl: target === url ? res.url || url : url,
       contentType: res.headers.get('content-type') ?? '',
     })),

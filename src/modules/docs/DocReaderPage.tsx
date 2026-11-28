@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import type { Annotation, Doc, Task } from '@/db/db'
-import { addAnnotation, deleteBookmark, getDocBlob, repairHtmlKind, touchDoc, updateAnnotation } from '@/db/docs'
+import { db, type Annotation, type Doc, type Task } from '@/db/db'
+import { addAnnotation, deleteBookmark, getDocBlob, importDoc, repairHtmlKind, touchDoc, updateAnnotation } from '@/db/docs'
 import { useAnnotations, useDoc, useDocBacklinks } from '@/db/hooks'
 import { toggleDone } from '@/db/tasks'
 import { MORPH_NAME, morphClose } from '@/lib/viewTransition'
@@ -9,13 +10,16 @@ import { isFutureTask } from '@/lib/date'
 import { READER_PANEL_LIMITS, useUi } from '@/stores/ui'
 import { cn } from '@/lib/cn'
 import { readDocumentText } from '@/lib/readDocumentText'
+import { isSaveCancelled, openSavedAction } from '@/lib/saveFile'
 import { shareMarkdown } from '@/lib/shareDoc'
 import { useDocumentPrintTitle } from '@/lib/printDocument'
 import { Skeleton } from '@/shared/ui/Skeleton'
+import { TopProgressLine } from '@/shared/ui/TopProgressLine'
 import { recognizeImageDataUrl } from '@/modules/tools/ocr/ocrClient'
 import { AnnotationReviewDialog } from './AnnotationReviewDialog'
 import { CitationDialog } from './CitationDialog'
-import { exportAnnotationsToMarkdownFile } from './exportAnnotations'
+import { exportAnnotatedPdf, exportAnnotationsToMarkdownFile } from './exportAnnotations'
+import { docMentionsTitle, findDocByWikiTarget } from './wikiLinks'
 import { isAnnotationDue } from './reviewSm2'
 import { MdReader, parseMdBlocks } from './MdReader'
 import type { TocItem } from './PdfReader'
@@ -69,6 +73,46 @@ function StandardDocReader({ doc, docId }: { doc?: Doc | null; docId?: string })
   useDocumentPrintTitle(doc?.title)
   const annotations = useAnnotations(doc?.hash)
   const backlinks = useDocBacklinks(docId)
+  const docBacklinks = useLiveQuery(
+    async () => {
+      if (!doc?.title || !doc.id) return [] as Doc[]
+      const [docs, texts] = await Promise.all([db.docs.toArray(), db.docText.toArray()])
+      const textByHash = new Map(texts.map((t) => [t.hash, t.text]))
+      return docs.filter((other) => {
+        if (other.id === doc.id || other.deletedAt) return false
+        const body = textByHash.get(other.hash)
+        return Boolean(body && docMentionsTitle(body, doc.title))
+      })
+    },
+    [doc?.id, doc?.title],
+    [] as Doc[],
+  )
+
+  const handleWikiLink = useCallback((target: string) => {
+    void db.docs.toArray().then((docs) => {
+      const match = findDocByWikiTarget(docs, target)
+      if (match) {
+        navigate(`/docs/${match.id}`)
+        return
+      }
+      toast(`文档库暂无《${target}》`, {
+        label: '新建笔记',
+        run: () => {
+          const safe = target.replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ').trim().slice(0, 60) || '新建笔记'
+          const file = new File([`# ${target}\n\n`], `${safe}.md`, { type: 'text/markdown' })
+          void importDoc(file)
+            .then(async ({ doc: created }) => {
+              if (doc?.folderId) {
+                const { setDocFolder } = await import('@/db/folders')
+                await setDocFolder(created.id, doc.folderId)
+              }
+              navigate(`/docs/edit/${created.id}`)
+            })
+            .catch(() => toast('新建笔记失败'))
+        },
+      })
+    })
+  }, [doc?.folderId, navigate, toast])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const {
@@ -447,11 +491,23 @@ function StandardDocReader({ doc, docId }: { doc?: Doc | null; docId?: string })
         onExportNotes={exportNotes}
         onExportMdFile={() => {
           void exportAnnotationsToMarkdownFile(doc)
-            .then((name) => toast(`已导出 ${name}`))
-            .catch(() => toast('导出失败'))
+            .then((name) => toast(`已导出 ${name}`, openSavedAction()))
+            .catch((e) => { if (!isSaveCancelled(e)) toast('导出失败') })
         }}
+        onExportAnnotatedPdf={doc.kind === 'pdf' ? () => {
+          void exportAnnotatedPdf(doc)
+            .then((name) => toast(`已导出带批注 PDF：${name}`, openSavedAction()))
+            .catch((e) => { if (!isSaveCancelled(e)) toast(e instanceof Error ? e.message : '导出带批注 PDF 失败') })
+        } : undefined}
         onOpenCitation={() => setCitationOpen(true)}
         onOpenReview={() => setReviewOpen(true)}
+        onOpenInTool={
+          doc.kind === 'pdf'
+            ? { label: '用 PDF 工具箱处理', run: () => navigate(`/tools/pdf?docId=${doc.id}&tool=compress`) }
+            : doc.kind === 'md' || doc.kind === 'txt' || doc.kind === 'docx'
+              ? { label: '用 NJUST 报告排版', run: () => navigate(`/tools/njust-report?docId=${doc.id}`) }
+              : undefined
+        }
         reviewDueCount={reviewDueCount}
       />
 
@@ -534,12 +590,16 @@ function StandardDocReader({ doc, docId }: { doc?: Doc | null; docId?: string })
         )}
 
         <div className="flex-1 min-w-0 relative min-h-0 bg-surface">
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2px]" aria-hidden>
-            <div
-              className="h-full origin-left bg-primary/70 transition-transform duration-200 ease-out"
-              style={{ transform: `scaleX(${progressPct})`, opacity: progressPct > 0.002 ? 1 : 0 }}
-            />
-          </div>
+          {!content && !loadFail ? (
+            <TopProgressLine active label="正在加载文档" />
+          ) : (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2px]" aria-hidden>
+              <div
+                className="h-full origin-left bg-primary/70 transition-transform duration-200 ease-out"
+                style={{ transform: `scaleX(${progressPct})`, opacity: progressPct > 0.002 ? 1 : 0 }}
+              />
+            </div>
+          )}
           {content?.kind === 'md' && (
             <MdReader
               hash={doc.hash}
@@ -547,6 +607,7 @@ function StandardDocReader({ doc, docId }: { doc?: Doc | null; docId?: string })
               settings={settings}
               annotations={annotations}
               jump={jump}
+              onWikiLink={handleWikiLink}
               onSelection={(sel) => {
                 if (sel) setSelectedPdfAnn(null)
                 setSelection(sel ? { kind: 'md', ...sel } : null)
@@ -727,13 +788,14 @@ function StandardDocReader({ doc, docId }: { doc?: Doc | null; docId?: string })
             onChange={setRightTab}
             tabs={[
               { value: 'anns', label: '批注', count: annotations.length },
-              { value: 'backlinks', label: '反链', count: backlinks.length },
+              { value: 'backlinks', label: '反链', count: backlinks.length + docBacklinks.length },
             ]}
             collapse={{ side: 'right', onCollapse: () => toggleReaderPanel('right') }}
           />
           <RightContent
             annotations={annotations}
             backlinks={backlinks}
+            docBacklinks={docBacklinks}
             rightTab={rightTab}
             onJump={doJump}
             onToTask={task.open}
@@ -781,6 +843,7 @@ function StandardDocReader({ doc, docId }: { doc?: Doc | null; docId?: string })
         mdHeadings={mdHeadings}
         annotations={annotations}
         backlinks={backlinks}
+        docBacklinks={docBacklinks}
         leftTab={leftTab}
         onLeftTabChange={setLeftTab}
         rightTab={rightTab}

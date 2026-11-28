@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Bell, BellOff } from 'lucide-react'
+import { Bell, BellOff, ShieldAlert, Settings } from 'lucide-react'
 import { useUi } from '@/stores/ui'
 import { Button } from '@/shared/ui/Button'
 import { JellySwitch } from '@/shared/ui/JellySwitch'
 import { Dialog } from '@/shared/ui/Sheet'
 import { getNotifyEnabled, requestNotifyPermission, setNotifyEnabled } from '@/lib/notify'
+import { FileExport } from '@/lib/saveFile'
 
-/** 提醒通知开关（仅安卓 App 内渲染） */
+/** 提醒通知开关与系统保活向导（仅安卓 App 内渲染） */
 export function NotifyCard() {
   const [on, setOn] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
+  const [keepAliveOpen, setKeepAliveOpen] = useState(false)
   const [pending, setPending] = useState<number | null>(null)
   const [exact, setExact] = useState<boolean | null>(null)
   const [perm, setPerm] = useState<string | null>(null)
@@ -163,6 +165,43 @@ export function NotifyCard() {
           )}
         </div>
       )}
+
+      <div className="mt-3 pt-3 border-t border-outline/60 flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[12px] text-on-surface-2">
+          澎湃 OS / MIUI / 鸿蒙等易受后台限制？查看提醒与小组件保活建议。
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => setKeepAliveOpen(true)}>
+          <ShieldAlert size={14} /> 保活与磁贴向导
+        </Button>
+      </div>
+
+      <Dialog
+        open={keepAliveOpen}
+        onOpenChange={setKeepAliveOpen}
+        title="安卓提醒、小组件与磁贴设置指南"
+        description="按以下 4 步配置，避免国产系统后台杀进程导致提醒延迟或桌面小组件停在昨天。"
+      >
+        <div className="flex flex-col gap-3 text-[12.5px] leading-relaxed text-on-surface-2">
+          <ol className="flex flex-col gap-2 list-decimal pl-4">
+            <li><b className="text-on-surface">省电策略设为「无限制」</b>：应用详情 → 省电策略 / 电池 → 选择「无限制」，避免熄屏后系统推迟番茄钟与任务闹钟。</li>
+            <li><b className="text-on-surface">允许自启动与关联启动</b>：应用详情 → 权限管理 → 开启「自启动」，确保重启手机或跨零点后自动刷新提醒与小组件。</li>
+            <li><b className="text-on-surface">锁屏与悬浮通知</b>：通知管理中开启「允许通知」「锁屏通知」「横幅/悬浮通知」，重要到期不再漏看。</li>
+            <li><b className="text-on-surface">下拉快捷磁贴速记</b>：下拉系统控制中心 → 编辑磁贴 → 添加「速记待办」，在任意 App 界面即可 2 秒速记任务（支持自然语言时间与标签）。</li>
+          </ol>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => setKeepAliveOpen(false)}>知道了</Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                void FileExport.openAppSettings?.().catch(() => toast('无法直接跳转，请手动在系统设置中搜索 Kairos'))
+              }}
+            >
+              <Settings size={14} /> 前往系统应用详情
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog
         open={askOpen}
